@@ -1,0 +1,1463 @@
+Title: Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution
+
+URL Source: https://arxiv.org/pdf/2603.25449v1
+
+Published Time: Fri, 27 Mar 2026 01:05:22 GMT
+
+Number of Pages: 33
+
+Markdown Content:
+# Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+Geri Gokaj #
+
+Karlsruhe Institute of Technology 
+
+Marvin Künnemann #
+
+Karlsruhe Institute of Technology 
+
+Sabine Storandt #
+
+University of Konstanz 
+
+Carina Truschel #
+
+University of Konstanz 
+
+Abstract 
+
+The Pareto sum of two-dimensional point sets P and Q in R2 is defined as the skyline of the points in their Minkowski sum. The problem of efficiently computing the Pareto sum arises frequently in bi-criteria optimization algorithms. Prior work establishes that computing the Pareto sum of sets P and Q of size n suffers from conditional lower bounds that rule out strongly subquadratic 
+
+O(n2−ϵ)-time algorithms, even when the output size is Θ( n). Naturally, we ask: How efficiently can we approximate Pareto sums, both in theory and practice? Can we beat the near-quadratic-time state of the art for exact algorithms? On the theoretical side, we formulate a notion of additively approximate Pareto sets and show that computing an approximate Pareto set is fine-grained equivalent to Bounded Monotone Min-Plus Convolution. Leveraging a remarkable ˜O(n1.5)-time algorithm for the latter problem (Chi, Duan, Xie, Zhang; STOC ’22), we thus obtain a strongly subquadratic (and conditionally optimal) approximation algorithm for computing Pareto sums. On the practical side, we engineer different algorithmic approaches for approximating Pareto sets on realistic instances. Our implementations enable a granular trade-off between approximation quality and running time/output size compared to the state of the art for exact algorithms estab-lished in (Funke, Hespe, Sanders, Storandt, Truschel; Algorithmica ’25). Perhaps surprisingly, the (theoretical) connection to Bounded Monotone Min-Plus Convolution remains beneficial even for our implementations: in particular, we implement a simplified, yet still subquadratic version of an algorithm due to Chi, Duan, Xie and Zhang, which on some sufficiently large instances outperforms the competing quadratic-time approaches. 
+
+2012 ACM Subject Classification Theory of computation → Problems, reductions and completeness; Theory of computation → Computational geometry 
+
+Keywords and phrases computational geometry, fine-grained complexity, algorithm engineering 
+
+Supplementary Material Software (Source Code) : https://github.com/ggokaj/SoCG26-ParetoSum 
+
+archived at swh:1:dir:53715b7d04ec81c190b784371b4675bc28183aee 
+
+Funding Geri Gokaj : Partially supported by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation) - 462679611. 
+
+Marvin Künnemann : Partially supported by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation) - 462679611. 
+
+Carina Truschel : Funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Found-ation) – Project-ID 251654672 – TRR 161. 
+
+> arXiv:2603.25449v1 [cs.CG] 26 Mar 2026
+
+2 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution         
+
+> Figure 1 Two Pareto sets P, Q on the left arising from bi-criteria route planning. Depicted on the right is the Minkowski sum P+Qwith the Pareto sum P S (P, Q ).
+
+1 Introduction 
+
+In multi-criteria decision-making processes and in algorithms for multi-objective optimization, a central computational task is to obtain and filter non-dominated solutions. This is essential in order to keep intermediate solution sets interpretable and computationally tractable. Often, partial solutions must be combined in the course of the algorithm, and non-dominated filtering must be applied to the resulting set. This core problem is known as Pareto sum : Given two sets P, Q ⊂ R2 of non-dominated points 1 (also called skylines or Pareto sets), the Pareto sum 
+
+P S (P, Q ) is defined as the skyline of their Minkowski sum P + Q := {p + q | p ∈ P, q ∈ Q}.Recently, exact algorithms have been developed for Pareto sum computation with a running time in ˜O(n2) [ 14 ]. Naturally, the question arises whether this algorithm admits the best-possible time complexity for this problem or whether there is hope for designing asymptotically faster ones. The study of fine-grained complexity has emerged as a powerful framework for understanding the algorithmic complexity of problems within the class P. Using fine-grained reductions, the conjectured intractability of one key problem can be transferred to another problem, yielding a conditional lower bound on how fast the other problem can be solved. For the Pareto sum problem, it was recently shown that an algorithm with a running time in O( min {n2, nk }1−δ ) for δ > 0, where k denotes the output size, would disprove the 3-SUM hypothesis [ 16 ]. The conditional lower bound matches the complexity of known algorithms (up to subpolynomial factors), which renders the existence of subquadratic algorithms for Pareto sum (even with linear output sizes) unlikely. However, in practical applications, Pareto sum instances of substantial input size n and with output sizes k ∈ Ω( n) frequently arise. On such instances, exact computation takes at least quadratic time, which is typically impractical. This motivates our study of approximation algorithms for Pareto sum. We define a point set ˜S to be an approximation of S := P S (P, Q )
+
+if for each element s in S there is a point ˜s in ˜S of “similar quality” (specifically, ˜s ≤ s+(∆ , ∆) )and each ˜s ∈ ˜S is indeed close to a point in P + Q (specifically p + q ≤ ˜s ≤ p + q + (∆ , ∆) 
+
+for some p ∈ P, q ∈ Q). This provides an additive approximation guarantee. This definition caters well to many practical applications of Pareto sum computation. For example, in bi-criteria route planning, the goal is to find the set of Pareto-optimal paths between the source and the target node with respect to two metrics. Route planning techniques for this           
+
+> 1We call a set Sof points non-dominated, if there do not exist distinct vectors s, s ′∈Ssuch that s≤s′.
+
+Gokaj, Künnemann, Storandt, Truschel 3
+
+setup heavily rely on Pareto sum computations and the number of resulting skyline points is oftentimes huge [ 14 , 17 , 28 ]. Thus, the goal is to reduce the number of Pareto-optimal paths to be considered within the algorithm and also as an output for the user. Multiplicative approximation algorithms tend to not work well in this scenario, because for paths with a value of zero or close to zero in one metric, even slightly suboptimal paths induce huge approximation factors. Additive approximations do not suffer from the same issue and are also much easier to interpret for a user (for example, if it is guaranteed that the reported route has at most 2 minutes of extra driving time). In this paper, we propose an efficient additive-approximation algorithm that allows one to trade running time against solution quality. We rigorously analyze its theoretical properties and also provide an extensive empirical study of its performance on synthetic and real data sets. 
+
+1.1 Related Work 
+
+The Pareto sum problem has already been extensively studied from a theoretical and practical perspective. A simple approach follows by computing the Minkowski sum explicitly and then applying general algorithms for skyline computation [ 19 , 11 ]. In [ 20 ], the practical relevance of the problem was emphasized, and novel algorithms were proposed that achieve a subquadratic space consumption for certain input set structures. Algorithms with guaranteed output-sensitive space consumption were proposed in [ 14 ]. A simple Sort & Compare algorithm was proven to run in O(n2 log n) on input sets of size n, and a sweep search algorithm to run in O(nk + n log n) where k denotes the output size. Experiments on synthetic instances and instances stemming from bi-criteria route planning in road networks confirm that these algorithms outperform those that fully compute the Minkowski sum and also the ones proposed in [ 20 ]. In [ 21 ], Pareto sum computation is used as a subroutine for multiobjective spanning tree or TSP computation which uses a tree decomposition as basis. For join nodes, an algorithm similar to Sort & Compare is used to obtain the desired combined result. In [15 ], several additional fine-grained complexity results for Pareto sum are provided. This includes a quadratic lower bound for Pareto sum computation even for k = Θ( n) under the 3-SUM hypothesis (which is even more believable than the previous min-plus convolution quadratic lower bound by [ 14 ], as the min-plus convolution hypothesis implies the 3-SUM hypothesis). Moreover, they established Pareto sum as a complete problem for a wide class of logical and geometric problems, further adding interest to the problem from the side of complexity theory. 
+
+1.2 Our Contributions 
+
+In this paper, we explore the degree to which the quadratic-time bottleneck for the Pareto sum problem – which is observable both in practice [ 14 ] and substantiated by conditional lower bounds [ 14 , 15 , 16 ] – can be circumvented by additively approximating Pareto sums. To this end, in Section 3, we formally introduce a natural relaxation of Pareto sums to 
+
+∆-approximate Pareto sums: intuitively, ˜S is an approximation of the true Pareto set S
+
+of P, Q if for any s ∈ S, we have an approximate point ˜s of “similar quality” (specifically, 
+
+˜s ≤ s + (∆ , ∆) ). Conversely, any such ˜s ∈ ˜S is of similar quality to some actual point in 
+
+P + Q ("i.e.", there are p ∈ P, q ∈ Q with p + q ≤ ˜s ≤ p + q + (∆ , ∆) ). 2
+
+Crucially, our results rely on establishing a certain fine-grained equivalence between approximating Pareto sums and Bounded Monotone Min-Plus Convolution, the latter of       
+
+> 2In fact, we often even achieve the stronger guarantee that ˜S⊆P+Q, see Definition 5.
+
+4 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+which has received increasing interest in recent years [ 10 , 12 , 5 , 7, 13 ]. This leads to the following theoretical results: For any sets P, Q of at most n points in [0 , W ]2, we can compute an ϵW -approximate Pareto sum ˜S in time ˜O(n + (1 /ϵ )1.5). This leverages a remarkable algorithm due to Chi, Duan, Xie and Zhang [ 12 ] solving Bounded Monotone Min-Plus Convolution in strongly subquadratic time ˜O(n1.5).Conversely, we show that any ˜O(n + (1 /ϵ )1.5−δ )-time algorithm for computing an ϵW -approximate Pareto sum would give a polynomial-factor improvement for Bounded Monotone Min-Plus Convolution. This establishes a fine-grained equivalence of the approximate Pareto sum and Bounded Min-Plus Convolution. Some approximation problems [ 9 , 8] are known to be fine-grained equivalent to min-plus convolution, but this appears to be the first such connection for bounded monotone min-plus convolution. We observe that slightly stronger approximation guarantees can be obtained if a witness-reporting version of Bounded Monotone Min-Plus Convolution can be achieved. Indeed, we show that such witnesses can be reported in strongly subquadratic time, by adapting a 
+
+˜O(n1.6)-time algorithm for Bounded Monotone Min-Plus Convolution [ 12 ] using techniques due to Alon and Naor [2]. Subsequently, we observe how beneficial our relaxation to approximate Pareto sums can be on realistic input sets. To this end, we empirically fine-tune and evaluate a number of different approaches, leading to the following results: On synthetic and realistic inputs, we can approximate Pareto sums significantly more efficiently than computing them exactly. E.g., on generated data sets with 10 6 points and coordinates in [0 , 2 · 10 6], computing an additive (∆ = 20) -approximation saves a computation time of up to three orders of magnitude. Furthermore, the size of the returned sets reduces significantly with coarser approximation parameters. Thus, we enable an effective choice of running time/solution size vs. approximation quality. We focus on efficiently solving the Bounded Pareto sum problem, which denotes the special case in which all coordinates are integer values in {0, . . . , W − 1} – such instances occur naturally in our approximation algorithms (after a scaling step), but are of independent interest in bi-criteria optimizations with integral cost functions (e.g., in routing). Here, we empirically evaluate and compare several algorithmic approaches: (1) a natural adaptation of the Sort & Compare method of [ 14 ] to BucketSort & Compare, (2) a convex-pruning algorithm inspired by a fast algorithm for Near-convex Min-Plus Convolution [ 6 ], and (3) an algorithm based on a ˜O(n1.6)-time algorithm for Bounded Monotone Min-Plus Convolution [ 12 ] (which we will refer to as CDXZ algorithm). Perhaps surprisingly, we observe that depending on the class of inputs, either one of these approaches may outperform the others. This indicates that the (theoretical) connection between Pareto sums and Bounded Monotone Min-Plus convolution can also be exploited in practice to obtain practical algorithms (depending on the instances). We feel that our results add practical evidence (and extend theoretical evidence, e.g. [23 , 9 , 4]) that studying the connections of geometric (and other) problems with certain formulations of convolution-type problems is beneficial for algorithmic research. 
+
+2 Bounded Pareto Sum 
+
+In this section, we prove our core reduction which is the basis for developing new algorithms for (approximate) Pareto sum computation. Throughout the paper, we abbreviate [n] := Gokaj, Künnemann, Storandt, Truschel 5
+
+{0, 1, . . . , n − 1, n } and use the interval notation [a, b ] := {a, a + 1 , . . . , b − 1, b } for some 
+
+a, b ∈ Z, with a ≤ b. We say that a point (x, y ) dominates another point (x′, y ′), if x ≤ x′
+
+and y′ ≤ y with at least one coordinate being strictly smaller. A point set is called a Pareto set if it contains no dominated elements. For a point p, we denote by p.x and p.y the x and 
+
+y-coordinate of p respectively. The Pareto front of a set S, consists of the non-dominated points in S. We are now ready to define the problems of interest. 
+
+▶ Definition 1 (Bounded Pareto Sum) . Given Pareto sets P, Q of size n with integer coordin-ates in [W ]2, compute the set S of non-dominated points in P + Q := {p + q | p ∈ P, q ∈ Q}.
+
+We remark that for bounded Pareto sum, we always have W ≥ n − 1, as in a Pareto set the coordinates per dimension all need to be different. 
+
+▶ Definition 2 (Bounded Monotone Min-Plus Convolution) . Given two monotone decreasing arrays A and B of size n with positive entries bounded by W = O(n). Compute an array C,where for each k ∈ [2 n − 2] , we have C[k] := min i∈[n−1] (A[i] + B[k − i]) .
+
+The following reduction is also illustrated in Figure 2 on a small Pareto sum instance 3.
+
+▶ Theorem 3. An instance of bounded Pareto Sum with sets P, Q of size n and entries 
+
+(x, y ) ∈ [W ]2 can be reduced in time O(W ) to an instance of bounded monotone min-plus convolution of two sequences A, B of size W with entries in [W ].
+
+Proof. We first perform a transformation of the x-coordinates of P and Q such that the first points in P and Q have an x-coordinate of 0. This can be achieved by simply subtracting the minimum x-coordinate value from each entry in the respective Pareto set. Note that this transformation does not affect the dominance relationship of any pair of points in the Minkowski sum and also the transformation can be easily remedied after having computed the Pareto sum by performing the transformations backwards. Next, we construct a min-plus convolution instance as follows. We initialize two sequences 
+
+A, B of size W with a default value of W for each entry. Then, for each p ∈ P with i = p.x ,we set A[i] = p.y . Similarly, for each q ∈ Q with i = q.x , we set B[i] = q.y . To make A and B
+
+monotone, we iterate through each of them from left to right and replace an entry at position 
+
+i with that of the entry at i − 1 if the latter is smaller. Clearly, this construction takes O(W )
+
+time and results in a min-plus convolution instance with monotonically decreasing input sequences whose entries are in [W ].Now, let C denote the min-plus convolution of A, B . We construct the Pareto Sum 
+
+S∗ of P, Q as a set of pairs (k, C [k]) for all k ∈ [2 W ] where k = 0 or C[k] < C [k − 1].This step again requires O(W ) time. To prove correctness, we first show that the set 
+
+S∗ := {(k, C [k]) |k ∈ [2 W ]} is a superset of the correct Pareto Sum S. By definition, C[k]
+
+equals min i+j=k A[i] + B[j]. Let now s = p + q be an element of the Pareto Sum of P, Q 
+
+with s.x = k. We want to show that C[k] = s.y . By definition of the Pareto sum, p.y + q.y 
+
+is the smallest y-coordinate among all points in P + Q with an x-coordinate of k. We need to prove that there are no pairs A[i], B [j] with i + j = k and A[i] + B[j] < s.y . If for all relevant A[i] and B[j] pairs, we have (i, A [i]) ∈ P and (j, B [j]) ∈ Q this follows from the definition of the Pareto Sum. Otherwise, assume w.l.o.g. that (i, A [i]) /∈ P . Then we have 
+
+Bi = p′.y where p′ has the maximum x-coordinate smaller than i in P (as a result of the            
+
+> 3A similar construction has been noted by Chan and Lewenstein for the special case that Pand Q
+> are connected sets "i.e." all points in Pand Qhave a neighboring point with L1distance 1; see [ 10 ,Remark 3.4]
+
+6 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution P = {(2 , 6) , (4 , 3) , (7 , 2) }Q = {(0 , 7) , (3 , 6) , (4 , 1) }W = 7 ABC3332227776111113 13 10 10 77444333333{(0 , 13) , (2 , 10) , (4 , 7) , (6 , 4) , (9 , 3) }0123456701234567012345678910 11 12 13 14 {(0 , 6) , (2 , 3) , (5 , 2) }66S = {(2 , 13) , (4 , 10) , (6 , 7) , (8 , 4) , (11 , 3) }
+
+Figure 2 Reduction from Pareto sum to bounded monotone min-plus convolution and back-transformation of the solution on a small example. 
+
+monotonicity enforcing step). If Ai = p′.y , we know that A[p′.x ] = A[i] with p′.x < i . As B
+
+is monotonically decreasing, we thus have B[p′.x ] + B[k − p′.x ] ≤ A[i] + B[j]. This argument can be iterated as long as either the current element of A or that of B got their final values only in the monotonicity enforcing steps. Therefore, we always end up with A[i∗], B [j∗]
+
+where i∗ + j∗ = k, A[i∗] + B[j∗] ≤ A[i] + B[j] and (i∗, A [i∗]) ∈ P as well as (j∗, B [j∗]) ∈ Q.It follows that C[k] = p.y and thus also S∗ ⊇ S.It remains to show that we prune exactly the elements from C that are not in S. For a pair (k, C [k]) , we observe the following: If C[k] = A[i] + B[j] and w.l.o.g. (i, A [i]) /∈ P then there is a point p ∈ P that dominates A[i]. Thus, C[p.x + j] ≤ C[k] with p.x + j < i + j. As 
+
+C is monotonically decreasing, we know that (k, C [k]) gets pruned. The only remaining pairs are those with C[k] = A[i] + B[j] where (i, A [i]) ∈ P and (j, B [j]) ∈ Q. If for such a point we have C[k] ≥ C[k − 1], we know that (k − 1, C [k − 1]) dominates (k, C [k]) and therefore 
+
+(k, C [k]) is rightfully removed. Thus, after the pruning, only points (k, C [k]) = p + q remain in the set S which are non-dominated by any pair p′ + q′ with p′ ∈ P, q ′ ∈ Q. S∗ = S
+
+follows. ◀
+
+According to our theorem, if bounded monotone min-plus convolution can be solved in time T (n, W ) for arrays of size n with entries in [W ], then we can solve bounded Pareto Sum in time O(W + T (W, W )) . This makes algorithms for bounded monotone min-plus convolution applicable to Pareto Sum with little overhead to carry out the reduction and the back-transformation of the solution. By applying the algorithm of [12], we get: 
+
+▶ Corollary 4. Given two Pareto sets P, Q of size n with integer entries (x, y ) ∈ [W ]2, we can compute the Pareto sum of P and Q in time ˜O(W 1.5).
+
+3 Additive Approximation of Pareto sum 
+
+In this section, we study additive approximation algorithms for Pareto sum with arbitrary real-valued inputs. To formalize our notion of approximation, observe that the Pareto sum of P and Q can be defined as the set S satisfying the following three conditions: (1) S dominates P + Q,"i.e."., for every p ∈ P and q ∈ Q, there exists some s ∈ S with s ≤ p + q, (2) S ⊆ P + Q and (3) S is a Pareto set, "i.e.", pairwise non-dominating. To obtain an approximate Pareto set, it is only natural to relax the first condition by allowing an additive slack of ∆ > 0 in the domination inequality. Formally, we arrive a the following notion of approximation: Gokaj, Künnemann, Storandt, Truschel 7
+
+▶ Definition 5 (∆-Approximative Pareto sum) . Let P, Q, ˜S ⊆ R2. We call ˜S a ∆-approximation of the Pareto sum of P, Q if the following conditions hold: 
+
+1. for all p ∈ P, q ∈ Q, there exists some ˜s ∈ ˜S with ˜s ≤ p + q + (∆ , ∆) .
+
+2. ˜S ⊆ P + Q,
+
+3. ˜S is a Pareto set. 
+
+Let us remark that we could have arrived at this definition via slightly adapting the notion of an approximative Pareto front by the authors in [ 22 ], which leans on the notion of Papadimitriou and Yannakakis [ 24 ]: Let dH (S, ˜S) denote the directed Hausdorff distance between S and ˜S under some “distance” d, "i.e.", dH (S, ˜S) := max s∈S min ˜s∈ ˜S d(s, ˜s).
+
+Following [ 22 ], we call a set ˜S a ∆-approximation for the Pareto set S if dH (S, ˜S) ≤ ∆. As a natural (asymmetric) “distance” measure d(s, ˜s) that quantifies the disadvantage of taking 
+
+˜s over s (w.r.t domination of other points), we define: d(s, ˜s) = max {0, ˜s.x − s.x, ˜s.y − s.y }.
+
+Note that this measure is a more suitable definition than using, e.g., ∥˜s − s∥∞, which would unnaturally punish a point that is worse by ≤ ∆ in x-direction, but much better (by 
+
+≫ ∆) in y-direction. With this notion, ˜S is a ∆-approximative Pareto sum of P, Q , if ˜S
+
+∆-approximates S, (2) ˜S ⊆ P + Q, and (3) ˜S is a Pareto set. s = ( x, y )xx + ∆ yy + ∆ ˜s1˜s2                       
+
+> Figure 3 The points ˜s1and ˜s2are examples of points with d(˜s, s )≤∆for the shown s∈S. Note that if s∈S, then no point in P+Qdominates s("i.e.", no point lies to the lower left of s).
+
+To obtain such an approximation, we proceed as follows: we first scale down the points of P and Q by dividing the x and y-coordinates by a scaling parameter t, creating the sets P ′ and Q′. We additionally save a representative rep (p′) ∈ P, rep (q′) ∈ Q for each (rounded) point p′ ∈ P ′ and q′ ∈ Q′ in the original sets (we choose the one with minimal 
+
+L1 norm but any representative works). Then we compute the Pareto sum S′ for the sets 
+
+P ′ and Q′ and determine, from each s′ = p′ + q′ ∈ S′, an approximate point ˜s using the representatives of p′ and q′, which yields an approximate set ˜S. As we shall prove, this simple idea turns out to be conditionally optimal, by devising a fine-grained equivalence with bounded ( min , +) -convolution. This algorithm is formalized in Algorithm 1, which takes as input P, Q and a scaling factor t, and returns a 2t-approximation of the Pareto sum of P
+
+and Q.
+
+▶ Lemma 6. For any P, Q and t > 0, let S denote P S (P, Q ) and let ˜S denote the result of ApproximateParetoSum( P, Q, t ). Then ˜S is a 2t-approximation of the Pareto sum of P, Q .
+
+Proof. We first argue that the set Z computed in Algorithm 1 satisfies the relaxed domination condition with ∆ = 2 t, specifically, that for all p + q with p ∈ P, q ∈ Q, there exists some 8 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution  
+
+> Algorithm 1 ApproximateParetoSum( P, Q, t )
+
+P ′ ← {( ⌊ p.x t ⌋, ⌊ p.y t ⌋) | p ∈ P }
+
+Q′ ← {( ⌊ q.x t ⌋, ⌊ q.y t ⌋) | q ∈ Q}
+
+for p′ ∈ P ′ do 
+
+rep( p′) ← arg min p∈P
+
+{∥p∥1 | p′ = (⌊ p.x t
+
+⌋ , ⌊ p.y t
+
+⌋)} 
+
+end for for q′ ∈ Q′ do 
+
+rep( q′) ← arg min q∈Q
+
+{∥q∥1 | q′ = (⌊ q.x t
+
+⌋ , ⌊ q.y t
+
+⌋)} 
+
+end for 
+
+P ′ ← Pareto front of P ′, Q′ ← Pareto front of Q′ {if necessary }
+
+S′ ← P S (P ′, Q ′), where s′ ∈ S′ is given as (p′, q ′) with s′ = p′ + q′ and p′ ∈ P ′, q ′ ∈ Q′
+
+Z ← { rep( p′) + rep( q′) | (p′, q ′) ∈ S′}
+
+return ˜S ← Pareto front of Zz = rep (p′) + rep (q′) ∈ Z with z ≤ p + q + (2 t, 2t). Indeed, for any p ∈ P, q ∈ Q, consider their rounded points p′ = (⌊ p.x t ⌋, ⌊ p.y t ⌋) ∈ P ′, q′ = (⌊ q.x t ⌋, ⌊ q.y t ⌋) ∈ Q′. By definition of the Pareto sum S′ of P ′, Q ′, there must exist some ( ˜p + ˜q) ∈ S′ with ˜p + ˜q ≤ p′ + q′. We claim that z := rep(˜ p) + rep(˜ q) approximately dominates p + q, since 
+
+z = rep(˜ p) + rep(˜ q) ≤ (t˜p + ( t, t )) + ( t˜q + ( t, t )) = t(˜ p + ˜ q) + 2( t, t ) ≤ t(p′ + q′) + 2( t, t )
+
+≤ p + q + 2( t, t ),
+
+where we used rep (x′) ≤ tx ′ + ( t, t ) for any rounded point x′ in the first line, and tx ′ ≤ x for any x and rounded point x′ in the third line. We claim that the lemma follows: Filtering out dominated points in Z ensures that ˜S
+
+is a Pareto set (establishing Condition 3.), without affecting the domination condition (if 
+
+z ∈ Z dominates z′ ∈ Z, then whenever z′ ≤ p + q + ( t, t ), then z ≤ z′ ≤ p + q + ( t, t ), so z′
+
+is never needed to ensure the condition). Finally, clearly ˜S ⊆ Z ⊆ P + Q as any element of 
+
+Z is explicitly given as rep (p′) + rep (q′) for corresponding rep (p′) ∈ P and rep (q′) ∈ Q. ◀▶ Theorem 7. Let T (n, W ) denote the runtime of monotone min-plus convolution of arrays of size n and entries bounded by W with witness reporting. Given sets P, Q of n points in R2, we can compute a ∆-approximate Pareto sum in time O(n + ( W/ ∆) log (W/ ∆) + T (W/ ∆, W/ ∆)) .
+
+Proof. Given Lemma 6, it remains to show that ApproximateParetoSum( P, Q, t ) with 
+
+t := ∆ /2 can be computed in the desired running time. After O(n)-time preprocessing, the main step in Algorithm 1 is to compute the Pareto sum S′ of P ′, Q ′. By our rounding, P ′, Q ′
+
+have integer coordinates in {0, . . . , ⌊W/ ∆⌋} , and Theorem 3 is applicable to obtain S′ and thus Z in time T (⌊W/ ∆⌋, ⌊W/ ∆⌋). Observe that Z is a set of size at most O(W/ ∆) . Thus, we can compute its Pareto front in time O(( W/ ∆) log( W/ ∆)) , concluding the claim. ◀▶ Corollary 8. Given sets P, Q of n points with real coordinates in [0 , W ]2 and ϵ > 0, we can compute an ϵW -approximation of the Pareto sum in time ˜O (n + (1 /ϵ )1.6).
+
+Proof. Follows from the ˜O(n1.6) time algorithm of [ 12 ], and our witness reporting extension, described in Section E in the appendix 4. ◀   
+
+> 4We remark that it is very plausible that our witness reporting algorithm extends to the ˜O(n1.5)algorithm.
+
+Gokaj, Künnemann, Storandt, Truschel 9
+
+Let us also now show a lower bound, which will nicely complement Algorithm 1. 
+
+▶ Theorem 9. Let Tapx (n, W, ∆) denote the running time of computing, given Pareto sets 
+
+P, Q in R2 
+
+> ≥0
+
+with maximum coordinate bounded by W , a ∆-approximation of their Pareto sum, with witnesses. If there exists α ≥ 0 and c such that Tapx (n, W, ∆) ≤ O(n + ( W/ ∆) c)
+
+whenever ∆ = Θ( W α), then bounded monotone min-plus convolution can be computed in time O(nc), with witnesses. 
+
+Proof. The proof is an adaptation of the reduction from min-plus convolution to Pareto sum given in [ 14 ]. Consider an arbitrary min-plus convolution instance A[0 , ..., n −1] , B [0 , ..., n −1] 
+
+with monotonicity (specifically, A[i] > A [i + 1] , B [i] > B [i + 1] for all i) and entries in 
+
+{0, . . . , O (n)}. We construct the sets of points 
+
+P := {(i · (2 n α 
+
+> 1−α
+
+), A [i] · (2 n α 
+
+> 1−α
+
+)) | i ∈ [n − 1] },Q := {(i · (2 n α 
+
+> 1−α
+
+), B [i] · (2 n α 
+
+> 1−α
+
+)) | i ∈ [n − 1] }.
+
+Consider a ∆-approximation ˜S of the Pareto sum of P, Q with ∆ = n α 
+
+> 1−α
+
+. By construction of the point sets, if a point ˜s ∈ ˜S ⊆ P + Q ∆-dominates a point p + q, "i.e.", ˜s ≤ p + q + (∆ , ∆) ,then it already dominates p + q, "i.e.", ˜s ≤ p + q. Thus, ˜S is the true Pareto sum of 
+
+P, Q , and we can extract the min-plus convolution C of A, B : By construction, for every 
+
+k ∈ [2 n − 2] , there must be a point in P S (P, Q ) with x-coordinate k · (2 n α 
+
+> 1−α
+
+) and y-coordinate (min i∈[n−1] A[i] + B[k − i]) · (2 n α 
+
+> 1−α
+
+), revealing C[k] = min i∈[n−1] (A[i] + B[k − i]) .The existence of a point with x-coordinate k · (2 n α 
+
+> 1−α
+
+) for every k ∈ [2 n − 2] follows by the decreasing values of C[k]. Also, witnesses for such points can be transferred. Note that the constructed instance of Pareto sum Approximation consists of n points in P, Q with coordinates bounded by W ≤ O(n1+ α 
+
+> 1−α
+
+) = O(n 11−α ) and ∆ = n α 
+
+> 1−α
+
+. Thus, if 
+
+Tapx (n, W, ∆) ≤ O(n + ( W/ ∆) c) = O(n + ( n 11−α − α 
+
+> 1−α
+
+)c), then we can compute the min-plus convolution of A, B in time O(nc), with witnesses. ◀▶ Remark 10. Even without witness reporting, we still get a fine-grained equivalence (for slightly weaker guarantees), by a minor adaptation of Algorithm 1 and Theorem 9. We relax the condition ˜S ⊆ P + Q to the milder condition that each ˜s is in the vicinity of a point p + q ∈ P + Q. More formally, for all ˜s ∈ ˜S there exist p ∈ P and q ∈ Q such that 
+
+p + q ≤ ˜s ≤ p + q + 2( t, t ). The details can be found in Section F. 
+
+4 Framework and Implementation 
+
+Our proposed additive approximation algorithm, presented in Algorithm 1, consists of scaling down the instance, computing the Pareto sum of the transformed point sets, and then scaling up the solution. The Pareto sum instance after scaling is captured by our definition of bounded Pareto sum. To compute its solution, we can obviously directly apply any Pareto sum algorithm. By virtue of Theorem 3, however, also any algorithm for bounded min-plus convolution translates to an algorithm for bounded Pareto sum when performing the required reduction and back-transformation of the solution. Thus, depending on whether we use an algorithm directly designed for Pareto sum or a convolution algorithm, the computation pipeline needs to be adapted. Figure 4 provides an overview of our framework. In the following, we describe the algorithms of each category in more detail. 
+
+4.1 Algorithms for (bounded) Pareto sum 
+
+We start with the algorithms designed directly for Pareto sum computation. 10 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution reduction  
+
+> Input
+> Output
+> back
+> transformation
+> back scaling
+> + witness reporting
+> scaling by
+> factor t
+> Naive
+> CDXZ
+> Convex-Pruning (CP)
+> Bounded Monotone
+> Min-Plus Convolution
+> Pareto Sum
+> Sort & Compare (SC)
+> BucketSort & Compare (BSC)
+> Successive Sweep Search (SSS)
+
+Figure 4 Overview of the main steps of our additive approximation algorithms. An important step is to compute the Pareto sum of the scaled instance. This can either be done directly via a Pareto sum algorithm or by an algorithm for bounded monotone min-plus convolution when applying the proper forward and backward reduction steps. 
+
+Sort & Compare (SC) and Successive sweep search (SSS) 
+
+We implemented both state of the art algorithms for (general) Pareto sum computation from [14 ] as a baseline. In a nutshell, the Sort & Compare algorithm sorts the points in the sumset 
+
+P + Q lexicographically and performs constant time dominance checks per point based on this ordering. Further details on the baselines can be found in Section D in the appendix. 
+
+BucketSort & Compare (BSC) 
+
+For bounded integral Pareto sum, we can improve the Sort & Compare algorithm, by using bucketsort to sort the points, directly updating the minimal y-coordinate for a corresponding 
+
+x-coordinate. Further details can be found in section C in the appendix. 
+
+4.2 Algorithms for min-plus convolution 
+
+After the reduction to min-plus convolution, we can of course use the naive quadratic time algorithm for the latter. In the following, we discuss two more sophisticated and (potentially) faster convolution algorithms. 
+
+CDXZ Algorithm 
+
+We discuss a simplified version of the ˜O(n1.6)-algorithm [ 12 , Section 4.1] for monotone bounded min-plus convolution in a detailed fashion in Section A in the appendix. Using this algorithm in our Pareto sum reduction framework results in a running time of O(W 1.6 log W )
+
+for bounded Pareto sum. Let us highlight the main improvements and simplifications we achieved, which are also presented in Section A in the Appendix. Gokaj, Künnemann, Storandt, Truschel 11 
+
+We removed the segment tree data structure. Making use of our simpler enhanced min-plus convolution algorithm instead of using a segment tree with interval updates is simpler and improves the runtime theoretically and practically. We improved the bound of b, which was previously ranging from b ∈ { 0, 1, 2} to b ∈ { 0, 1}.
+
+The better bound of the constant b, is insignificant in the theoretical analysis of the algorithm, but it plays an important role in the error correction part. Besides the initial polynomial multiplication of P and Q, every other part of the algorithm in the error correction phase will be repeated b-times, thus the better bound on b will result on repeating these costly parts of the algorithm twice instead of thrice. As the set Tb can be of expected size O(n1.6) (for the choice of β = 0 .4) , we do not save it explicitly like [ 12 ] suggests. In order to circumvent storing the set Tb, we make an online computation of the polynomials Rp,b [k]( x) simultaneously, updating the polynomials after having seen a new pseudo-witness (i, k − i) on the fly. We implemented the version without witness reporting, as the witness reporting algorithm would be too inefficient in practice. This leads to a weak approximation of the Pareto sum; details can be found in Section F in the appendix. For the multivariate polynomial multiplication, we perform a standard reduction to the univariate case, by turning P and Q
+
+into univariate polynomials. Instead of FFT, we make use of the polynomial multiplication offered by the library FLINT [ 27 ], where the univariate polynomials are kept as lists. Instead of using binary search trees in the computation of Tb, we performed a linear search, after saving for each possible modulo value i ∈ [p − 1] the indices k with C′[k] + b mod p = i.This turned out to be faster in the experiments. The parameters α and β are not fixed as the optimal theoretical runtime suggests. The choice of the parameters α and β are transferred to the choice of the scaling factor nα and the prime p, which are now inputs of the implementation; see Figure 7 for the influence of these parameters on the runtime. 
+
+Convex Pruning (CP) algorithm 
+
+Bringmann and Cassis developed an algorithm for min-plus convolution, suited towards the case, where the arrays A and B are near-convex [ 6 ]. We implemented two versions of their algorithm with and without witness reporting. Our implementation is close to the descriptions in [ 6 ], with the main difference being that we did not use sparse convolutions, but rather an enhanced min-plus convolution computation, which works particularly well when the arrays A and B have few distinct entries. We precomputed groups of entries of the same value in A and B. More details on the enhanced min-plus convolution can be found in Algorithm 2 and further details on the precise changes can be found in Section B in the appendix. 
+
+4.3 Further engineering 
+
+Algorithm 1 has been implemented mostly matching its description, with small changes, which we describe now. When using a convolution algorithm within Algorithm 1, we also perform the needed reduction from bounded Pareto sum to montone bounded min-plus convolution and the transformation backwards. The reduction closely follows the constructive proof of Theorem 3, the backwards transformation can be achieved very simply with a standard 2-pointer approach. At the end of Algorithm 1, instead of computing the Pareto front of the set Z by sorting, we do the following: For each newly inserted point, we look back and remove all points, which are dominated by this new point. This will work fast as the set Z is almost a Pareto set, so few corrections need to be made. 12 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 0 25 50 75 100 125 150 175 200        
+
+> x
+> 0
+> 25
+> 50
+> 75
+> 100
+> 125
+> 150
+> 175
+> 200
+> y
+> Near-linear Input Generation
+> Original Set
+> Perturbed Set 50 100 150 200 250 300 350 400
+> x
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> 350
+> 400
+> y
+> Near-curved Input Generation
+> Original Set
+> Perturbed Set
+
+Figure 5 Two different versions of generating input sets with values in the range [0 , 2n]: Near-linear and near-curved input sets are based on the linear and curve generator, respectively, where we apply perturbation to a subset of the points. 
+
+5 Experimental Evaluation 
+
+In the following, we evaluate our approximate algorithm with the different choices for bounded Pareto sum computation sketched above. While all algorithms are described for the case that 
+
+P and Q are of the same size n, they also all work for differing sizes. Our code is written in C++. It was compiled with gcc using -O3. In our implementation of the CDXZ algorithm, we use routines from FLINT (Fast Library for Number Theory) [ 27 ]. All experiments were conducted on a single core of an AMD Threadripper 3970 with 256 GB of RAM. We set a time-out of one hour per run. Running times are always averaged over 10 runs. 
+
+Benchmarks. We use three types of benchmarks in our evaluation. Two are synthetic to allow us to control instance properties, while the third benchmark consists of real data. 
+
+Benchmark 1: Instances with bounded range. First, we use an instance generator that allows us to fix n and W . Here, it is important to ensure W ≥ n − 1 to guarantee that there are enough distinct natural numbers in the range to construct a Pareto set. We use W = c · n
+
+for c ≥ 1. To efficiently create a strictly monotonically increasing sequence, we initialize an array with a counter γi for each i ∈ [W ]. Then, we increment a randomly selected counter in each of n rounds. Afterwards, we sweep over this array, starting at position 0, and perform the following operations: If γi > 1, we set γi = 1 and γi+1 = γi+1 + γi − 1. Here, entry 0 is assumed to be the successor of γW . We stop when all entries are 0 or 1 which happens after each entry has been considered at most twice. Then, for all γi = 1 , element i is added to the sequence. This produces a valid sequence in time O(n + W ). Pareto sets can then be constructed by using two such sequences, one sorted increasingly for the x-coordinates and the other one decreasingly for the corresponding y-coordinates. 
+
+Benchmark 2: Function-based instance generator. For any strictly monotonically decreasing function f defined on R+, sampling n points (x, f (x)) provides us with a Pareto set. We use two base functions: the first uses f (x) = −x and the second f (x) = cx with a constant 
+
+c ∈ R+. We slightly perturb the points to have more input variability, while guaranteeing that pairwise non-dominance is upheld. We refer to the resulting instances as near-linear or near-curved. See Figure 5 for an illustration. We note that by means of the perturbation, the resulting point sets are no longer convex. Gokaj, Künnemann, Storandt, Truschel 13 0.0 0.2 0.4 0.6 0.8 1.0   
+
+> Input Size n1e6
+> 0
+> 500
+> 1000
+> 1500
+> 2000
+> 2500
+> 3000
+> 3500
+> Running Time [sec]
+> Running Time for Exact Pareto Sum Computation
+> CDXZ
+> Naive MP
+> Successive Sweep (SSS)
+> Sort & Compare (SC)
+> BucketSort & Compare (BSC)
+> Convex-Pruning (CP)
+
+Figure 6 Running times for Pareto sum computation on generated inputs of size up to n = 100 , 000 
+
+with values in the range of [0 , 2n] and a timeout of 1 hour. 
+
+Benchmark 3: Route planning instances. Finally, we also use real-world data sets for evaluation. The instances stem from bi-criteria route planning in line with [ 14 ]. Here, given a graph in which the edges are augmented with two cost values (in our case distance in meters and positive height difference in centimeters), the goal is to compute all Pareto-optimal paths from a source node s to a target node t. Using bi-directional search to answer such queries, or constructing a data structure which accelerates query answering [ 26 ], demands to combine and filter the set of Pareto-optimal paths from s to some intermediate node v, and from v to the target t. The cost pairs of these two path sets form our inputs P and Q. The benchmark contains roughly 100000 instances based on randomly chosen s, v and t triples in a directed road network with one million nodes and two million edges. Note that the sizes of P and Q
+
+might differ significantly in each instance. 
+
+Results for Exact Pareto Sum. For a general comparison of the different algorithms for Bounded Pareto sum discussed in this paper, we first applied a scalability study on the range-bound instances with all point coordinates being integers, see Figure 6. We observe huge performance differences. SSS is by far the slowest approach. Its theoretical performance is only subquadratic in case the output size is in o(n). However, for the considered instances there are roughly 4n output points. The BSC algorithm performs best and also significantly outperforms the plain SC algorithm. Even more remarkably, also the min-plus convolution based algorithms, naive and CP, outperform SC. While CDXZ beats SSS, it is a bit slower than SC on this instance type. As described in Section 4, our implementation of the CDXZ algorithm allows us to choose its parameters. We conducted a series of tests on synthetic instances of different sizes to determine a good parameter choice, see Figure 7 for an example. We observe that the parameter values heavily impact the performance. Across all tested instances, scaling factors of 25 and p = 2 were among the top configurations. We therefore use those values in all subsequent experiments. We remark, though, that additional fine-tuning or choices adaptive to n could potentially further improve the performance. 14 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 2 3 5 7 11 13 17 19 23                                                                                                                                                                                                         
+
+> b
+> 12345678910 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25
+> a
+> 28.14 24.77 20.93 19.11 17.24 16.79 16.05 15.79 15.41
+> 16.89 14.03 11.15 9.74 8.33 7.93 7.45 7.25 7.07
+> 11.96 9.56 7.20 6.07 5.02 4.74 4.36 4.39 4.14
+> 8.89 6.96 5.10 4.28 3.49 3.30 3.08 3.03 2.99
+> 6.94 5.33 3.85 3.24 2.72 2.58 2.45 2.44 2.69
+> 5.65 4.29 3.13 2.64 2.26 2.19 2.15 2.20 2.26
+> 4.74 3.63 2.63 2.22 2.00 1.97 2.03 2.08 2.23
+> 4.15 3.14 2.32 2.02 1.84 1.84 1.97 2.03 2.20
+> 3.66 2.78 2.08 1.85 1.77 1.82 1.94 2.05 2.23
+> 3.32 2.52 1.91 1.74 1.77 1.81 1.98 2.09 2.84
+> 3.05 2.33 1.83 1.68 1.80 1.89 2.09 2.19 2.58
+> 2.83 2.18 1.76 1.64 1.84 1.92 2.15 2.41 2.70
+> 2.66 2.05 1.69 1.61 1.84 1.96 2.35 2.49 2.82
+> 2.56 1.99 1.65 1.61 1.88 2.01 2.44 2.61 3.09
+> 2.44 1.92 1.64 1.73 1.94 2.07 2.53 2.72 3.20
+> 2.37 1.86 1.64 1.72 1.97 2.12 2.64 2.83 3.34
+> 2.27 1.81 1.61 1.74 2.02 2.33 2.74 3.04 3.48
+> 2.22 1.84 1.61 1.76 2.07 2.40 2.82 3.15 3.64
+> 2.18 1.80 1.63 1.80 2.12 2.47 3.03 3.26 4.78
+> 2.16 1.84 1.67 1.84 2.42 2.66 3.22 3.47 4.22
+> 2.14 1.80 1.77 1.87 2.48 2.76 3.33 3.59 4.38
+> 2.12 1.81 1.78 1.90 2.56 2.84 3.44 3.71 4.52
+> 2.11 1.80 1.79 1.97 2.63 2.93 3.55 4.07 4.70
+> 2.15 1.83 1.83 2.02 2.73 3.02 3.66 4.20 4.85
+> 2.13 1.82 1.86 2.05 2.80 3.17 4.01 4.34 5.00
+
+Parameter Testing for CDXZ Algorithm 
+
+> 5
+> 10
+> 15
+> 20
+> 25
+> running time [sec]
+
+Figure 7 Parameter testing for the CDXZ algorithm on inputs of size n = 20000 in the range 2n.
+
+However, our main interest is in computing approximate solutions. In the following, we investigate how the algorithms perform when used as a plug-in in our approximation framework. In the remainder of the experiments, we focus on the BSC algorithm as well as the convolution based algorithms, as they outperform the baseline algorithms. 
+
+Results for Approximate Pareto Sum. Next, we present comparative running time results of our approximation algorithm with different inner methods of Pareto sum computation applied to the scaled down inputs. For fair comparison, we use the non-witness reporting variants for all of them. Figures 8, 9, and 10 depict the results for range-bounded, near-linear and near-curve instances, respectively, using a value range of 2n and a scaling factor of t = 10 .Interestingly, for each input type, another algorithm performs best. For range-bounded instances, BSC is the fastest with CDXZ being second, while on near-linear instances CDXZ outperforms the other two methods. On near-curved instances, however, CP is clearly the best, beating the others by at least an order of magnitude. The performance of CP relies on its ability to prune pairs, which on near-curved instances applies to up to 95% of total point pairs, see Figure 11. Finally, we consider our third benchmark set, which consists of bi-criteria route planning instances of varying size. Figure 12 shows the running time and approximation quality of our algorithms for different scaling factors. We observe that BSC performs best with CP being a close second, especially for larger values of t. They both improve on exact computation by over an order of magnitude and also stay well below the theoretical additive approximation bound of 2t. Examples of approximate solutions can be found in Figures 13. One can see that even when choosing a larger t, the Pareto sum is still well represented by the computed solution. Indeed, larger values of t are quite reasonable in our application. For example, a route that is up to 100 meters longer than another one is almost indistinguishable to a user if the total route length is anyway in the orders of kilometers. Furthermore, the user usually does not want to be presented with hundreds of routing options, but a concise and diverse set of reasonable options. This is achievable with our approach, as we can not only reduce the running time with larger t but also the output size, see Figures 14 and 15. Clearly, our algorithm provides good trade-offs between running time Gokaj, Künnemann, Storandt, Truschel 15 0.0 0.2 0.4 0.6 0.8 1.0 
+
+Input size n 1e6 
+
+10 5
+
+10 4
+
+10 3
+
+10 2
+
+10 1
+
+10 0
+
+10 1
+
+10 2
+
+10 3
+
+> Running Time [sec]
+
+Running Time for Inputs with Bounded Range 
+
+Exact: BucketSort & Compare (BSC) 
+
+Approx: BucketSort & Compare (BSC) 
+
+Approx: Convex-Pruning (CP) 
+
+Approx: CDXZ Algorithm 
+
+Figure 8 Running time of the approximation variants on inputs generated with bounded range of 2n using a scaling factor of t = 10 .0.0 0.2 0.4 0.6 0.8 1.0        
+
+> Input size n1e6
+> 10 5
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> Running Time [sec]
+
+Running Time for Near-linear Inputs 
+
+> Exact: BucketSort & Compare (BSC)
+> Approx: BucketSort & Compare (BSC)
+> Approx: Convex-Pruning (CP)
+> Approx: CDXZ Algorithm
+
+Figure 9 Running time of the approximation variants with a scaling factor of t = 10 on near-linear inputs generated in the range of up to 2n.16 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 0.0 0.2 0.4 0.6 0.8 1.0 
+
+Input size n 1e6 
+
+10 5
+
+10 4
+
+10 3
+
+10 2
+
+10 1
+
+10 0
+
+10 1
+
+10 2
+
+10 3
+
+> Running Time [sec]
+
+Running Time for Near-curved Inputs 
+
+Exact: BucketSort & Compare (BSC) 
+
+Approx: BucketSort & Compare (BSC) 
+
+Approx: Convex-Pruning (CP) 
+
+Approx: CDXZ Algorithm 
+
+Figure 10 Running time of the approximation variants with a scaling factor of t = 10 on near-curved generated inputs in the range of up to 2n.0.0 0.2 0.4 0.6 0.8 1.0   
+
+> Input size n1e6
+> 0
+> 5
+> 10
+> 15
+> 20
+
+Convexity Measure for Near-curved Inputs 0.0 0.2 0.4 0.6 0.8 1.0   
+
+> Input size n1e6
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> Ratio of Pruned Pairs [%]
+
+Prune Ratio for Convex-Pruning (CP) on Near-curved Inputs 
+
+Figure 11 Convexity measure for near-curved inputs (left) and ratios of pruned pairs by the CP algorithm with respect to all available pairs in the index space (right). Gokaj, Künnemann, Storandt, Truschel 17 2 3 4 5 6 7 8 9 10 50 100 200 500 1000 
+
+Scaling Factor t
+
+10 4
+
+10 3
+
+10 2
+
+10 1
+
+> Running Time [sec]
+
+Running Time for Additive Approximation 
+
+Approx: BucketSort & Compare (BSC) 
+
+Approx: Convex-Pruning (CP) 
+
+Approx: CDXZ Algorithm 2 3 4 5 6 7 8 9 10 
+
+Scaling Factor t
+
+2.5 
+
+5.0 
+
+7.5 
+
+10.0 
+
+12.5 
+
+15.0 
+
+17.5 
+
+20.0 
+
+> Directed Hausdorff Distance
+
+Quality of the Additive Approximation 
+
+Approx: BucketSort & Compare (BSC) 
+
+Approx: Convex-Pruning (CP) 
+
+Approx: CDXZ Algorithm 
+
+2t 
+
+Figure 12 Running time of approximations on real benchmark for varying scaling factors 
+
+t = 2 , . . . , 1000 (top) and solution quality for t = 2 , . . . , 10 (bottom). This shows the difference of the quality of approximation with (BSC,CP) and without witness reporting(CDXZ). 18 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 225000 230000 235000 240000 245000 250000 
+
+x
+
+220000 
+
+230000 
+
+240000 
+
+250000 
+
+260000 
+
+> y
+
+Approximating the Pareto Sum 
+
+Pareto Sum 
+
+Approx. Pareto Sum ( t = 2) 
+
+Approx. Pareto Sum ( t = 25) 225000 230000 235000 240000 245000 250000 
+
+x
+
+220000 
+
+230000 
+
+240000 
+
+250000 
+
+260000 
+
+> y
+
+Approximating the Pareto Sum 
+
+Pareto Sum 
+
+Approx. Pareto Sum ( t = 25) 
+
+Approx. Pareto Sum ( t = 100) 
+
+Figure 13 Example for approximate Pareto sum on real benchmark data. The approximative solution for t = 2 results in a quality of ∆ = 2 (left) whereas for t = 25 the quality is ∆ = 38 and for 
+
+t = 100 we have ∆ = 153 (right). 
+
+and solution quality, which allows one to choose the best t depending on the application. 2 3 4 5 6 7 8 9 10 50 100 200 500 1000  
+
+> Scaling Factor t
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> 1200
+> Approximation Quality
+> Running Time and Quality of Additive Approximation (Convex-Pruning)
+> Approx. Quality
+> Running Time
+> 0.0000
+> 0.0002
+> 0.0004
+> 0.0006
+> 0.0008
+> 0.0010
+> Running Time [sec]
+
+Figure 14 Approximation quality ∆ and running time of the approximation using the CP algorithm on real benchmarks with varying scaling factor t = 2 , . . . , 1000 .2 3 4 5 6 7 8 9 10 50 100 200 500 1000  
+
+> Scaling Factor t
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> 1200
+> Approximation Quality
+> Quality of Additive Approximation (Convex-Pruning)
+> Approx. Quality
+> Ratio of Exact Output Size
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Ratio (sizeApprox / sizeExact)
+
+Figure 15 Quality of the approximation using the CP algorithm on real benchmarks for varying scaling factors t = 2 , . . . , 1000 . We compare the ratio of the output size of the approximation and the exact algorithm to the approximation quality ∆.Gokaj, Künnemann, Storandt, Truschel 19 
+
+6 Future Work & Discussion 
+
+We have established that fine-grained reductions are not only a means to obtain theoretical intractability results, but also a tool to efficiently solve problems via reductions to other problems for which fast algorithms are implemented and engineered. To further foster (bounded monotone) min-plus convolution as a core primitive, it would be interesting to know whether the ˜O(n1.5) algorithm [ 12 , Section 4.2], admits an efficient implementation. The main drawback right now is that it needs 9 calls to the monotone bounded min-plus function, and that the constant b ∈ [−4, 7] is much larger than in the algorithm we implemented. It seems that significant simplifications are needed beforehand. We believe that the convex pruning algorithm can benefit from practical sparse convolution algorithms, especially on near-linear inputs. Is it possible to engineer fast sparse convolution algorithms in practice? Finally, can we leverage our min-plus convolution results to obtain practical improvements for knapsack [5, 7] or the tree sparsity problem [23, 3]? 
+
+References 
+
+1 A Aggarwal, M Klawe, S Moran, P Shor, and R Wilber. Geometric applications of a matrix searching algorithm. In Proceedings of the Second Annual Symposium on Computational Geometry , SCG ’86, page 285–292, New York, NY, USA, 1986. Association for Computing Machinery. doi:10.1145/10515.10546 .
+
+2 Noga Alon and Moni Naor. Derandomization, witnesses for boolean matrix multiplication and construction of perfect hash functions. Algorithmica , 16(4/5):434–449, 1996. doi:10.1007/ BF01940874 .
+
+3 Arturs Backurs, Piotr Indyk, and Ludwig Schmidt. Better approximations for tree sparsity in nearly-linear time. In Philip N. Klein, editor, Proceedings of the Twenty-Eighth Annual ACM-SIAM Symposium on Discrete Algorithms, SODA 2017, Barcelona, Spain, Hotel Porta Fira, January 16-19 , pages 2215–2229. SIAM, 2017. doi:10.1137/1.9781611974782.145 .
+
+4 Karl Bringmann. Approximating subset sum ratio faster than subset sum. In David P. Woodruff, editor, Proceedings of the 2024 ACM-SIAM Symposium on Discrete Algorithms, SODA 2024, Alexandria, VA, USA, January 7-10, 2024 , pages 1260–1277. SIAM, 2024. 
+
+doi:10.1137/1.9781611977912.50 .
+
+5 Karl Bringmann and Alejandro Cassis. Faster knapsack algorithms via bounded monotone min-plus-convolution. In Mikolaj Bojanczyk, Emanuela Merelli, and David P. Woodruff, editors, 49th International Colloquium on Automata, Languages, and Programming, ICALP 2022, July 4-8, 2022, Paris, France , volume 229 of LIPIcs , pages 31:1–31:21. Schloss Dagstuhl - Leibniz-Zentrum für Informatik, 2022. doi:10.4230/LIPICS.ICALP.2022.31 .
+
+6 Karl Bringmann and Alejandro Cassis. Faster 0-1-knapsack via near-convex min-plus-convolution. In Inge Li Gørtz, Martin Farach-Colton, Simon J. Puglisi, and Grzegorz Herman, editors, 31st Annual European Symposium on Algorithms, ESA 2023, Amsterdam, The Nether-lands, September 4-6, 2023 , volume 274 of LIPIcs , pages 24:1–24:16. Schloss Dagstuhl - Leibniz-Zentrum für Informatik, 2023. URL: https://doi.org/10.4230/LIPIcs.ESA.2023.24 , doi: 10.4230/LIPICS.ESA.2023.24 .
+
+7 Karl Bringmann, Anita Dürr, and Adam Polak. Even faster knapsack via rectangular monotone min-plus convolution and balancing. In Timothy M. Chan, Johannes Fischer, John Iacono, and Grzegorz Herman, editors, 32nd Annual European Symposium on Algorithms, ESA 2024, September 2-4, 2024, Royal Holloway, London, United Kingdom , volume 308 of LIPIcs , pages 33:1–33:15. Schloss Dagstuhl - Leibniz-Zentrum für Informatik, 2024. doi:10.4230/LIPICS. ESA.2024.33 .
+
+8 Karl Bringmann, Ahmed Ghazy, and Marvin Künnemann. Exploring the Approximability Landscape of 3SUM. In Timothy Chan, Johannes Fischer, John Iacono, and Grzegorz Herman, editors, 32nd Annual European Symposium on Algorithms (ESA 2024) , volume 308 of Leibniz 20 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+International Proceedings in Informatics (LIPIcs) , pages 34:1–34:15, Dagstuhl, Germany, 2024. Schloss Dagstuhl – Leibniz-Zentrum für Informatik. URL: https://drops.dagstuhl. de/entities/document/10.4230/LIPIcs.ESA.2024.34 , doi:10.4230/LIPIcs.ESA.2024.34 .
+
+9 Karl Bringmann and Vasileios Nakos. A fine-grained perspective on approximating subset sum and partition. In Dániel Marx, editor, Proceedings of the 2021 ACM-SIAM Symposium on Discrete Algorithms, SODA 2021, Virtual Conference, January 10 - 13, 2021 , pages 1797–1815. SIAM, 2021. doi:10.1137/1.9781611976465.108 .
+
+10 Timothy M. Chan and Moshe Lewenstein. Clustered integer 3sum via additive combinatorics. In Rocco A. Servedio and Ronitt Rubinfeld, editors, Proceedings of the Forty-Seventh Annual ACM on Symposium on Theory of Computing, STOC 2015, Portland, OR, USA, June 14-17, 2015 , pages 31–40. ACM, 2015. doi:10.1145/2746539.2746568 .
+
+11 Wei-Mei Chen, Hsien-Kuei Hwang, and Tsung-Hsi Tsai. Maxima-finding algorithms for multidimensional samples: A two-phase approach. Computational Geometry , 45(1-2):33–53, 2012. 
+
+12 Shucheng Chi, Ran Duan, Tianle Xie, and Tianyi Zhang. Faster min-plus product for monotone instances. In Stefano Leonardi and Anupam Gupta, editors, STOC ’22: 54th Annual ACM SIGACT Symposium on Theory of Computing, Rome, Italy, June 20 - 24, 2022 , pages 1529–1542. ACM, 2022. doi:10.1145/3519935.3520057 .
+
+13 Weiming Feng and Ce Jin. Approximately counting knapsack solutions in subquadratic time. In Yossi Azar and Debmalya Panigrahi, editors, Proceedings of the 2025 Annual ACM-SIAM Symposium on Discrete Algorithms, SODA 2025, New Orleans, LA, USA, January 12-15, 2025 , pages 1094–1135. SIAM, 2025. doi:10.1137/1.9781611978322.32 .
+
+14 Daniel Funke, Demian Hespe, Peter Sanders, Sabine Storandt, and Carina Truschel. Pareto sums of pareto sets: Lower bounds and algorithms. Algorithmica , pages 1–34, 2025. 
+
+15 Geri Gokaj and Marvin Künnemann. Completeness theorems for k-sum and geometric friends: Deciding fragments of linear integer arithmetic. In Raghu Meka, editor, 16th Innovations in Theoretical Computer Science Conference, ITCS 2025, January 7-10, 2025, Columbia University, New York, NY, USA , volume 325 of LIPIcs , pages 55:1–55:25. Schloss Dagstuhl -Leibniz-Zentrum für Informatik, 2025. doi:10.4230/LIPICS.ITCS.2025.55 .
+
+16 Geri Gokaj, Marvin Künnemann, Sabine Storandt, and Carina Truschel. (multivariate) k-sum as barrier to succinct computation. In Anne Benoit, Haim Kaplan, Sebastian Wild, and Grzegorz Herman, editors, 33rd Annual European Symposium on Algorithms, ESA 2025, September 15-17, 2025, Warsaw, Poland , volume 351 of LIPIcs , pages 42:1–42:19. Schloss Dagstuhl - Leibniz-Zentrum für Informatik, 2025. URL: https://doi.org/10.4230/LIPIcs. ESA.2025.42 , doi:10.4230/LIPICS.ESA.2025.42 .
+
+17 Boris Goldin and Oren Salzman. Approximate bi-criteria search by efficient representation of subsets of the pareto-optimal frontier. In Proceedings of the International Conference on Automated Planning and Scheduling , volume 31, pages 149–158, 2021. 
+
+18 Shashwat Kasliwal, Adam Polak, and Pratyush Sharma. 3sum in preprocessed universes: Faster and simpler. In Ioana Oriana Bercea and Rasmus Pagh, editors, 2025 Symposium on Simplicity in Algorithms, SOSA 2025, New Orleans, LA, USA, January 13-15, 2025 , pages 158–165. SIAM, 2025. doi:10.1137/1.9781611978315.12 .
+
+19 David G Kirkpatrick and Raimund Seidel. Output-size sensitive algorithms for finding maximal vectors. In Proceedings of the First Annual Symposium on Computational Geometry , pages 89–96, 1985. 
+
+20 Kathrin Klamroth, Bruno Lang, and Michael Stiglmayr. Efficient dominance filtering for unions and minkowski sums of non-dominated sets. Computers & Operations Research , 163:106506, 2024. 
+
+21 Joshua Marc Könen, Heiko Röglin, and Tarek Stuck. Parameterized algorithms for computing pareto sets. In 33rd Annual European Symposium on Algorithms (ESA 2025) , pages 105–1. Schloss Dagstuhl–Leibniz-Zentrum für Informatik, 2025. Gokaj, Künnemann, Storandt, Truschel 21 
+
+22 Julien Legriel, Colas Le Guernic, Scott Cotton, and Oded Maler. Approximating the pareto front of multi-criteria optimization problems. In Javier Esparza and Rupak Majumdar, editors, Tools and Algorithms for the Construction and Analysis of Systems, 16th International Conference, TACAS 2010, Held as Part of the Joint European Conferences on Theory and Practice of Software, ETAPS 2010, Paphos, Cyprus, March 20-28, 2010. Proceedings , volume 6015 of Lecture Notes in Computer Science , pages 69–83. Springer, 2010. doi:10.1007/ 978-3-642-12002-2\_6 .
+
+23 Marcin Mucha, Karol Wegrzycki, and Michal Wlodarczyk. A subquadratic approximation scheme for partition. In Timothy M. Chan, editor, Proceedings of the Thirtieth Annual ACM-SIAM Symposium on Discrete Algorithms, SODA 2019, San Diego, California, USA, January 6-9, 2019 , pages 70–88. SIAM, 2019. doi:10.1137/1.9781611975482.5 .
+
+24 Christos H. Papadimitriou and Mihalis Yannakakis. On the approximability of trade-offs and optimal access of web sources. In 41st Annual Symposium on Foundations of Computer Science, FOCS 2000, Redondo Beach, California, USA, November 12-14, 2000 , pages 86–92. IEEE Computer Society, 2000. doi:10.1109/SFCS.2000.892068 .
+
+25 Raimund Seidel. On the all-pairs-shortest-path problem. In S. Rao Kosaraju, Mike Fellows, Avi Wigderson, and John A. Ellis, editors, Proceedings of the 24th Annual ACM Symposium on Theory of Computing, May 4-6, 1992, Victoria, British Columbia, Canada , pages 745–749. ACM, 1992. doi:10.1145/129712.129784 .
+
+26 Sabine Storandt. Route planning for bicycles—exact constrained shortest paths made practical via contraction hierarchy. In Proceedings of the International Conference on Automated Planning and Scheduling , volume 22, pages 234–242, 2012. 
+
+27 The FLINT team. FLINT: Fast Library for Number Theory , 2025. Version 3.3.1, https: //flintlib.org .
+
+28 Carina Truschel and Sabine Storandt. Multi-criteria route planning with little regret. In 
+
+25th Symposium on Algorithmic Approaches for Transportation Modelling, Optimization, and Systems (ATMOS 2025) , pages 13–1. Schloss Dagstuhl–Leibniz-Zentrum für Informatik, 2025. 
+
+A Retracing the steps of the ˜O(n1.6)-time bounded monotone min-plus convolution algorithm [12] 
+
+The main idea of the algorithm of Chi, Duan, Xie and Zhang [ 12 , Section 4.1] (in the following called CDXZ algorithm) can be described in two main phases. In the first phase, we compute an approximation of the min-plus convolution of the arrays A and B. In particular they compute the min-plus convolution of scaled-down versions of A and B, which we denote as A′ and B′. The values are scaled-down by a factor nα. The benefit of scaling down is that many values in the original arrays A and B, will collapse to a same scaled down value. The min-plus convolution of the scaled down version A′, B ′ can now be computed faster, as we will see in Section A.1. Let C′ denote the min-plus convolution of A′ and B′.After computing the min-plus convolution C′, scaling up again will not suffice. Scaling the result array C′ up, introduces a certain error in each entry C′[k]. In the second phase, we attempt to correct this error. As a main tool, we make use of FFT for fast polynomial multiplication. Lemma 13, introduces an interesting connection between the scaled down min-plus convolution and the original min-plus convolution. Every solution (i, k − i) in the original min-plus convolution i.e., fulfilling A[i] + B[k − i] = C[k], will almost correspond to a solution in the scaled-down version. More precisely there exists a b ∈ { 0, 1} such that 
+
+A′[i] + B′[k − i] = C′[k] + b. In particular, given a solution (i, k − i) in the scaled-down version, we can now decide if (i, k − i) can potentially be a solution in the original version. 22 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+This insight leads to a first idea. By creating polynomials 
+
+P (x, y, z ) := ∑
+
+> i∈[n−1]
+
+xA[i]−nαA′[i]yA′[i]zi
+
+and 
+
+Q(x, y, z ) := ∑
+
+> i∈[n−1]
+
+xB[i]−nαB′[i]yB′[i]zi,
+
+and computing the polynomial multiplication T (x, y, z ) := P · Q, by looking at the monomials in T , we can infer at each index k = i + j (inferred by the degree of z), the error introduced by scaling down (inferred by the degree of x), and whether i and j are good indices i.e., 
+
+(i, j ) correspond to solutions in the original min-plus convolution problem (inferred by the degree of y). Sadly, this first idea will not work. Calculating the polynomial multiplication of P and Q will cost too much time, and the polynomials P and Q are too large. To reduce the size of the polynomials, we make use of hashing 5 modulo a prime p . Instead of noting down the scaled-down values in the polynomials, they first compute this value modulo 
+
+p. Formally they look at the polynomials, P (x, y, z ) := ∑ 
+
+> i∈[n−1]
+
+xA[i]−nαA′[i]yA′[i] mod pzi
+
+and Q(x, y, z ) := ∑ 
+
+> i∈[n−1]
+
+xB[i]−nαB′[i] mod pyB′[i]zi. While this again introduces the new problem of pseudo-witnesses i.e., pairs (i, k − i), which satisfy A′[i] + B′[k − i] ≡ C′[k] + b
+
+mod p but not A′[i] + B′[k − i]̸ = C′[k] + b, it turns out that we can efficiently identify those and remove them. When retracing the steps of [12] we emphasize the changes we made. 
+
+A.1 Computing the approximation 
+
+In order to compute the approximation, we first define the scaled-down versions of the arrays. For the value nα, where α ∈ (0 , 1) will be defined later, we set A′[i] := 
+
+⌊ A[i]
+
+> nα
+
+⌋
+
+and 
+
+B′[i] := 
+
+⌊ B[i]
+
+> nα
+
+⌋
+
+for every i ∈ [n − 1] . As the values in A and B were bounded by O(n), we can divide A′ and B′ into O(n1−α) many groups of the same value. Formally, we separate the index space [n − 1] := [0 , a 1 − 1] ∪ [a1, a 2 − 1] · · · ∪ [am−1, n − 1] , where a0 := 0 , a m = n
+
+and all values inside a group in the array A′ are equal, that is, for each j ∈ [m − 1] we have A′[aj ] = · · · = A′[aj+1 − 1] . Similarly, for the array B′, we separate the index space 
+
+[n − 1] := [0 , b 1 − 1] ∪ · · · ∪ [bℓ−1, n − 1] , where b0 := 0 and bℓ = n with the property that all values in B′ inside the intervals are equal, that is, for each j ∈ [ℓ − 1] we have 
+
+B′[bj ] = B′[bj + 1] = · · · = B′[bj+1 − 1] .To compute the min-plus convolution of A′ and B′, the authors in [ 12 ] introduce a segment tree with interval updates, where for each i ∈ [m − 1] and j ∈ [ℓ − 1] , they compute the value 
+
+A′[ai] + B′[bj ] and update the minimal value on the interval [ai + bj , a i+1 + bj+1 − 2] . This costs time O(n2−2α log( n)) .We observe that we can remove the segment tree entirely, and thereby the logarithmic factor, by simply making use of the enhanced min-plus convolution Algorithm 2. This will lead to a better runtime of O(n2−2α).
+
+We first show a simple observation, which will be beneficial to show the correctness of the enhanced min-plus convolution algorithms. 
+
+▶ Lemma 11. If C is the resulting min-plus convolution of monotonically decreasing arrays 
+
+A and B, then C is also monotonically decreasing.   
+
+> 5The same procedure has been recently used to solve 3-SUM in preprocessed universes using FFT [18].
+
+Gokaj, Künnemann, Storandt, Truschel 23   
+
+> Algorithm 2 Enhanced Min-Plus Convolution (A, B ).
+
+C := [ ∞, . . . , ∞]
+
+Divide A into intervals [0 =: a0, a 1 − 1] , . . . , [am−1, a m := n − 1] and B into intervals 
+
+[0 =: b0, b 1 − 1] , . . . , [bℓ−1, b ℓ := n − 1] of the same value. 
+
+for i ∈ [m − 1] do for j ∈ [ℓ − 1] do 
+
+C[ai + bj ] ← min {C[ai + bj ], A [ai] + B[bj ]}
+
+end for end for for i ∈ [1 , 2n − 2] do 
+
+C[i] ← min {C[i], C [i − 1] }
+
+end for return C
+
+Proof. Consider an index k ∈ [2 n − 3] , then there exists an index pair (i, (k − i)) ∈
+
+[n − 1] × [n − 1] , with C[k] = A[i] + B[k − i]. We will show that C[k + 1] ≤ C[k]. We give a potential witness for the index k + 1 , which is already not greater than C[k]. Either the index pair (i, (k − i) + 1) ∈ [n − 1] × [n − 1] or (i + 1 , (k − i)) ∈ [n − 1] × [n − 1] . Assume the first case (the second case is analogous), then by monotonicity of B, we have B[k − i] ≥ B[( k − i) + 1] ,and thereby C[k + 1] ≤ A[i] + B[( k − i) + 1] ≤ A[i] + B[k − i] ≤ C[k]. ◀
+
+We now proceed with the correctness of Algorithm 2. 
+
+▶ Lemma 12. Algorithm 2 computes the correct monotone min-plus convolution of A and B.
+
+Proof. After the division of A and B into intervals, we can assume for each i ∈ [m − 1] that 
+
+A[ai] = A[ai + 1] = · · · = A[ai+1 − 1] and for each j ∈ [ℓ − 1] that B[bj ] = B[bj + 1] = · · · =
+
+B[bj+1 − 1] .Let k ∈ [2 n − 2] be an arbitrary index. We show that the value of C[k] is computed correctly. Denote by c∗ the optimal value at index k. Clearly C[k] ≥ c∗. Let i ∈ [n − 1] be a witness for k i.e. A[i] + B[k − i] = c∗. Then i ∈ [am, a m+1 − 1] , and k − i ∈ [bo, b o+1 − 1] .We first argue that C[am + bo] = c∗. Clearly, A[am] + B[bo] ≤ c∗ by the computation of the minimum. By Lemma 11, C is monotonically decreasing, leading to A[am] + B[b0] ≥ c∗.Finally, in the last for loop, the propagation of the minimum leads to the fact that C[i+j] ≤ c∗
+
+as am + bo ≤ i + j ≤ am+1 − 1 + bo+1 − 1. ◀
+
+Dividing A and B into intervals of same value can be done in time O(n) as they are monotonically decreasing. In total, Algorithm 2 runs in time O(mℓ ), where m and ℓ denote the number of groups with same entries in A and B respectively. In the case of the arrays 
+
+A′ and B′, we have at most n1−α many groups, resulting in a total runtime of O(n2−2α).
+
+After computing the approximation, we can show the following relationship between the scaled-down min-plus convolution and the original min-plus convolution problem. The bound we show in the following will be a bit tighter than the bound calculated by [12]. 
+
+▶ Lemma 13. If A[i] + B[j] = C[i + j] then A′[i] + B′[j] = C′[( i + j)] + b with b ∈ { 0, 1}.
+
+Proof. We show this by the following calculation. Assume (i + j) = ( k + l) and C′[( i + j)] = 24 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+A′[k] + B′[l]. Then : 
+
+nα · C′[i + j] = nα · C′[k + l] (1) 
+
+= nα · (A′[k] + B′[l]) (2) 
+
+= nα · A′[k] + nα · B′[l] (3) 
+
+> A [k] + B[l] − 2nα (4) 
+
+≥ C[i + j] − 2nα (5) 
+
+= A[i] + B[j] − 2nα (6) 
+
+≥ nα · A′[i] + nα · B′[j] − 2nα (7) Thus, by dividing by nα, we obtain A′[i] + B′[j] − C′[i + j] < 2. ◀
+
+The authors in [ 12 ] have bounded this constant b ∈ { 0, 1, 2}, but by observing the strict inequality at Equation 4, we can infer that even b ∈ { 0, 1} holds. 
+
+A.2 Error Correction 
+
+This section entirely follows [ 12 ], there were no major simplifications made by us. Let p be a prime number, with nβ ≤ p ≤ 2nβ , where β ∈ (0 , 1) will be chosen later. We compute two polynomials 
+
+P (x, y, z ) := ∑
+
+> i∈[n−1]
+
+xA[i]−nαA′[i]yA′[i] mod pzi, Q (x, y, z ) := ∑
+
+> i∈[n−1]
+
+xB[i]−nαB′[i]yB′[i] mod pzi,
+
+and denote the polynomial multiplication by T (x, y, z ) := P · Q. The polynomials P and 
+
+Q are bounded by the length O(nα · nβ · n) = O(nα+β+1 ) and the multiplication costs 
+
+O(nα+β+1 log (n)) time using FFT. Furthermore, we denote the set of pseudo-witnesses for 
+
+b ∈ { 0, 1} as 
+
+Tb := {(i, k − i) | A′[i] + B′[k − i] ≡ C′[k] mod p ∧ A′[i] + B′[k − i]̸ = C′[k]] }
+
+▶ Lemma 14 ([ 12 ]) . The set Tb has expected size O(n2−β ) and can be computed in time 
+
+O(|Tb| + n2−2α log( n)) .
+
+Proof. Make use of the separation of A′ and B′ into intervals with the same value. When fixing two intervals [as, a s − 1] and [bt, b t+1 − 1] , the value A′[i] + B′[j] = ∆ is fixed for all (i, j ) ∈ [as, a s − 1] × [bt, b t+1 ]. The aim is to compute all (i, j ) ∈ Tb. After fixing two intervals search for all indices k ∈ [as + bt, a s−1 + bt−1 − 2] with the property that 
+
+C′[k] + b ≡ ∆ mod p and C′[k] + b̸ = ∆ , and simply enumerate all (i, k − i) satisfying 
+
+max {as, k + 1 − bt+1 } ≤ i ≤ min {as+1 − 1, k − bt}. The indices k can be searched using binary search trees. This results in a runtime of O(n2−2α log n + |Tb|). For any pair (i, k − i)
+
+such that A′[i] + B′[i]̸ = C′[k] + b as p is chosen uniformly random in the range [nβ , n 2β ],it holds that the probability that A′[i] + B′[i] − C′[k] − b is divisible by p, is bounded by 
+
+O(1 /β ). By linearity of expectation E(|Tb|) ≤ O (n2−β ). ◀
+
+Compute for each index k ∈ [2 n − 2] , and b ∈ { 0, 1} the polynomial 
+
+Rp,b [k]( x) := ∑
+
+> (i,k −i)∈Tb
+
+xA[i]−nαA′[i]+ B[k−i]−nαB′[k−i],Gokaj, Künnemann, Storandt, Truschel 25 
+
+and the polynomial 
+
+Cp,b [k]( x) := ∑ λx c, where λx cyC′[k]+ b mod pzk is a monomial in T (x, y, z ).
+
+Finally, by computing the value 
+
+sb[k] := min {c : λx c is a monomial in Cp,b [k] − Rp,b [k]} (8) for each b ∈ { 0, 1} and k ∈ [2 n − 2] , we can reconstruct the value of C[k] as 
+
+C[k] = min  
+
+> b∈{ 0,1}
+
+{nα(C′[k] + b) + sb[k]} .
+
+The correctness follows by the same calculation as performed by [ 12 ], but intuitively follows from the fact that in sb[k] we subtract from the total number of witnesses the number of pseudowitnesses. Although [ 12 ] have shown correctness for the case of monotonically increasing arrays A and B, the proof is indifferent of this fact, and works the same for mono-tonically decreasing arrays A and B. The final runtime will be O(n2−2α) + O(n2−β log ( n) ) + 
+
+O(n1+ α+β log (n)) . For the choice of α = 0 .2 and β = 0 .4, the runtime will amount to 
+
+O(n1.6 log n).
+
+B Convex-Pruning Algorithm [6] 
+
+We summarize the main idea of the algorithm of [ 6 ], for the details we refer to their highly readable paper. The algorithm of Bringmann and Cassis [ 6] works as follows: A function 
+
+f ′ : [ n] → Z is a Γ-near convex approximation of a function f : [ n] → Z, if f ′ is convex and 
+
+f ′(i) ≤ f (i) ≤ f ′(i) + Γ holds for each i ∈ [n − 1] i.e. f ′ additively approximates the function 
+
+f by a factor of Γ. Let A and B, be the input arrays, we want to compute the min-plus convolution of A and B.We first construct a convex approximation A′, where A′[i] ∈ Q, of the array A. The way we do this is by computing the lower convex hull (by a Graham scan for instance), of the points A = {(i, A [i]) : i ∈ [n − 1] }. We perform a linear interpolation between all the points in the convex hull to get a valid point for each index i ∈ [n − 1] . The same is performed for the array B to obtain a convex approximation B′. It is simple to see that this is the best point-wise convex approximation of the points in A and B. Moreover, we get values ΓA and 
+
+ΓB , which we can compute by computing ΓA := max i∈[n−1] A[i] − A′[i]. Similarly for the array B, we can compute ΓB . We set Γ = max {1, ΓA, ΓB }.
+
+Compute the min plus convolution of the convex arrays A′ and B′ and store it in an array 
+
+C′. This can be done in linear time by known methods such as the SMAWK algorithm by the authors in [ 1], which also computes witnesses for C′ i.e. for each k ∈ [2 n − 2] , a witness 
+
+i ∈ [n − 1] such that A′[i] + B′[k − i] = C′[k].
+
+We now concentrate on finding the min-plus convolution of the original arrays A and B,it turns out that the convex approximations can help us in pruning the search space of all possible indices (i, j ) ∈ [n − 1] × [n − 1] .
+
+For this, the relevant region R2Γ := {(i, k − i) : A′[i] + B′[k − i] ≤ C′[i + j] + 2Γ } is introduced. Let us now show the key lemma for the convex pruning algorithm. 
+
+▶ Lemma 15 ([6]) . If (i, j )̸ ∈ R2Γ then A[i] + B[j] > C [i + j].
+
+Proof. Assume (i, j )̸ ∈ R2Γ , and that C′[i + j] = A′[x] + B′[y] with x + y = i + j, then 
+
+A[i] + B[j] ≥ A′[i] + B′[j] > C ′[i + j] + 2Γ = A′[x] + Γ + B′[y] + Γ 
+
+≥ A[x] + B[y] ≥ C[i + j].26 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+◀
+
+Thus, all pairs (i, j ) ∈ [n − 1] 2, which are not in the relevant region, do not need to be checked in order to compute the min-plus convolution of A and B. We will now see how one can use this idea to prune larger segments (I, J ) ⊆ [n − 1] 2.First, we visualize the index space [n − 1] × [n − 1] by a square, with the point (0 , 0) 
+
+being in the lower left corner and (n, n ) in the upper right corner; see Figure 16. As a final definition, we need that of a monotone connected path. We call a set P ⊆ [n − 1] × [n − 1] aconnected monotone path 6 if for every k ∈ [2 n − 2] , we have precisely one (ik, j k) such that 
+
+ik + jk = k and that if (ik, j k) ∈ P then either (ik + 1 , j k) ∈ P or (ik, j k + 1) ∈ P. Bringmann and Cassis are able to show that the relevant region R2Γ is structured. The region R2∆ is bounded between two monotone connected paths; see Figure 16. Lastly, we can decide if a point (i, j ) is above or below the relevant region, by simply checking if we are outside the relevant region, and use the witness path for the convex approximations as a reference point. It even suffices to check one corner for a square 
+
+[iA, i B ] × [jA, j B ]; see Figure 16. After computing the convex approximations the value Γ and the witness path for the convex approximations, we can perform a call to Algorithm 3 (which was also described 7 in [6 ]), with parameters I = J = [ n − 1] , the arrays A, B for which we want to compute the min-plus convolution and an array C = [ ∞, . . . , ∞] of length 2n − 2, which we will improve throughout the algorithm. In the end C will be the min-plus convolution of the arrays A
+
+and B.     
+
+> Algorithm 3 Convex-Pruning Algorithm to compute the min-plus convolution of Aand B[6].
+
+convex pruning (I = [ iA, i B ], J = [ jA, j B ], A, B, C ) : 
+
+if (iA, j B )̸ ∈ R2Γ and (iA, j B ) is above witness path then return elif (iB , j A)̸ ∈ R2Γ and (iB , j A) is below witness path then return elif (iA, j B ) ∈ R2Γ and (iB , j A) ∈ R2Γ then 
+
+˜C[iA + jA, . . . , i B + jB ] ← min-plus convolution (A[iA, . . . , i B ], B [jA, . . . , j B ]) 
+
+for k ∈ [iA + jA, i B + jB ] do 
+
+C[k] ← min( C[k], ˜C[k]) 
+
+end for else split I and J into two halves I1, I 2, J 1, J 2, and recursively compute convex pruning on all 4 combinations The theoretical (and practical) runtime of the algorithm heavily depends on which min-plus convolution, we plug in in the computation of ˜C in Algorithm 3. Bringmann and Cassis observed that a sparse convolution is well suited in this case, as the size of the sumset 
+
+{(i, A [i]) | i ∈ [iA, i B ]} + {(j, B [j]) | j ∈ [jA, j B ]} is small. Using sparse convolutions in the convex pruning algorithm will result in Bringmann and Cassis delta-near convex min-plus convolution algorithm and run in time ˜O(Γ n). Due to the lack of practical and efficient sparse-convolution algorithms, we instead inserted the fastest min-plus convolution variant we had, which was the enhanced min-plus convolution algorithm described in Algorithm 2. Notice that this is a degree of freedom and one can also plug in other min-plus convolution computations in there, such as the CDXZ algorithm. Plugging in the enhanced min-plus         
+
+> 6In Figure 16 a monotone path crosses each diagonal ik+jk=kprecisely once.
+> 7We remark that the pseudocode of Bringmann and Cassis has minor typos.
+
+Gokaj, Künnemann, Storandt, Truschel 27 
+
+convolution algorithm in the computation of ˜C in Algorithm 3 leads to a runtime of Θ( W 2),where W denotes the length of the arrays A and B. Nevertheless, there is still potential for the algorithm to work well in practice, due to the pruning. Plugging the enhanced min-plus convolution algorithm in the convex pruning algorithm and then into our Pareto Sum framework leads to a runtime of O(n + W 2). We remark that the algorithm also works for differing sizes of A and B, for the runtime analysis and correctness proof, we refer to [ 6]. 
+
+R2Γ 
+
+(0 , 0) 
+
+(n, n )
+
+R2Γ 
+
+(0 , 0) 
+
+(n, n )             
+
+> Figure 16 To the left, we see that the relevant region R2Γ is bounded by the blue and red monotone connected paths. To the right, we see two possible squares, defined by [iA, i B]×[jA, j B].Both squares are in the non-relevant region, and can thus be ignored entirely for the min-plus convolution computation. It suffices to check only one point due to the monotone connected property of the paths. Namely, for the upper square it suffices to check the lower right corner (iA, j B)and for the lower square it suffices to check the upper left corner (iB, j A). We know in which part of the region we are, by checking if we are below or above the witness path, which always is contained in the relevant region. If a square is relevant it suffices to check the points defined by the upper left and lower right corner for relevance in the algorithm.
+
+C Bucketsort & Compare 
+
+In the bounded integer case, we can improve the sort and compare algorithm from [ 14 ] in a very simple manner. The sorting occurs in a typical bucketsort fashion, afterwards it remains to create the pareto set. The final algorithm will be very simple as sketched in Algorithm 4. Note that the algorithm assumes that the x-coordinates are bounded by W , and that we already translated the x-coordinate points of P and Q such that the smallest x-coordinate is 0, we can remedy this easily, by translating back the points in S afterwards. The running time of the algorithm is clearly in O(n2 + W ). It is simple to extend the algorithm above with witness reporting. 
+
+D Exact Pareto sum algorithms [14] 
+
+Based on the experiments conducted in [ 14 ], the fastest algorithms for Pareto sum computation across a large variety of inputs are the Sort & Compare algorithm (SC) and the Successive Sweep Search (SSS) algorithm. Both algorithms start by sorting the input sets P and Q lexicographically, and then operate on the matrix M where Mi,j = Pi + Qj . In the SC algorithm, a min-priority queue (PQ) is initialized with the elements M1,1 to M1,n . Whenever an element Mi,j extracted from the PQ, it is added to the solution set S if it is not dominated by the point last inserted in S. In any case, its column successor in M , that is, Mi,j +1 is inserted next into the PQ unless it is also dominated by the latest element added to S. The algorithm was shown to run 28 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution  
+
+> Algorithm 4 Bucketsort and compare (P, Q )
+
+C := [ ∞, . . . , ∞]
+
+for p ∈ P do for q ∈ Q do 
+
+C[p.x + q.x ] ← min {C[p.x + q.x ], p.y + q.y }
+
+end for end for 
+
+S ← ∅ , ℓ ← ∞ 
+
+for i = 0 to 2W do if C[i] < ℓ then 
+
+S ← S ∪ { (i, C [i]) }
+
+ℓ ← C[i]
+
+end if end for return S
+
+in time O(n2 log n) using O(n) space. The SSS algorithm uses a range-min oracle to detect the elements in S one-by-one. M1,1 is always part of S. Let now xmin and ymax denote the coordinates of the last point added to S. The algorithm starts at Mn, 1, that is, the last entry of the first column. Whenever it enters a new column j, it uses upwards linear search in that column until it reaches an entry Mi,j where either Mi,j .x > x min and Mi−1,j .x ≤ xmin or where Mi,j .y < y max and Mi−1,j .y ≥ ymax . It then switches to the next column. Among the elements at which such a switch occurred, it selects the smallest one and adds it to S. The process is repeated until the oracle does not find a new point. As each call to the range-min oracle can be implemented to take time in O(n), the algorithms runs in time O(nk + n log n)
+
+and uses again O(n) space. Note that for bounded Pareto sum, we always have k ∈ O (W ).
+
+E Witness Reporting 
+
+In this section, we extend the CDXZ algorithm for reporting witnesses. Formally, we want for each C[k], where k ∈ [2 n − 2] , an index i such that C[k] = A[i] + B[k − i]. Witness reporting has been mostly studied for boolean matrix multiplication [ 2, 25 ] but the techniques transfer to the boolean convolution setting (as is the case in the monotone bounded min-plus convolution algorithm). In Algorithm 5, we introduce a witness finding algorithm for CDXZ using techniques of Alon and Naor [ 2, 25 ] for boolean matrix multiplication witness finding. The algorithm is based on the following simple intuition. Assume, we want to compute witness for the usual polynomial multiplication of C(x) := A(x) · B(x), where A(x) and B(x)
+
+have coefficients in {0, 1}. If the coefficient of some monomial xk in the result polynomial 
+
+C(x) is 1, then we can recover its unique witness as follows: define a slight variation A′ of 
+
+A by replacing any monomial xi by ix i. In the product polynomial C′(x) = A′(x) · B(x),we can read off a witness i (such that xi is a nonzero monomial in A and xk−i is a nonzero monomial in B) as the coefficient of xk in C′(x).Alon and Naor’s approach now works in stages to also find witnesses for monomials xk
+
+with many witnesses: each stages gradually sifts down the number of witnesses by (randomly) ignoring/deleting some elements in B(x), and then performing the observation to compute the unique indices. Our adaption of the CDXZ algorithm will in fact find witnesses (if they exist) for the values nα(C′[k] + b) + sb[k] for both values of b ∈ { 0, 1}. One can then solve the original Gokaj, Künnemann, Storandt, Truschel 29 
+
+problem, by looking up which b was the true minimizer of C[k], and choosing that witness. We crucially make use of the following observation. 
+
+▶ Observation 16 (Witness count) . Let p be a fixed prime number, and b ∈ { 0, 1}. Assume that S ⊆ [n − 1] , and we have the polynomials 
+
+P (x, y, z ) := ∑
+
+> i∈[n−1]
+
+(
+
+xA[i]−nαA′[i]yA′[i] mod pzi)
+
+,
+
+and the polynomial 
+
+Q(x, y, z ) := ∑
+
+> i∈[n−1]
+
+xB[i]−nαB′[i]yB′[i] mod pzi.
+
+After calculating the following univariate polynomials for each index kC[k]( x) := ∑ λx c, where λx cyC′[k]+ b mod pzk is a monomial in P (x, y, z ) · S(x, y, z ).
+
+and taking the polynomials representing the pseudowitnesses 
+
+R[k]( x) := ∑
+
+> (i,k −i)∈Tb
+
+(
+
+xA[i]−nαA′[i]+ B[k−i]−nαB′[k−i])
+
+.
+
+We can observe that 
+
+Z[k] ← λ where λ is the coefficient of xsb[k] in C[k]( x) − RS [k]( x),
+
+computes the number of true witnesses for the index k (as we subtract the number of pseudowitnesses from the number of total witnesses). Moreover, if Z[k] = 1 , then we can compute a unique witness by reperforming the above calculation, but where we multiply each monomial xi in P (x, y, z ) and each monomial cixi in 
+
+R[k]( x) by its witness index i.
+
+We will try to gradually sift down the value of true witnesses Z[k] by dropping some elements in the polynomial Q(x, y, z ). Thus, throughout the algorithm, the polynomial Q(x, y, z ) and 
+
+RS [k]( x) will be sifted via a set S, by defining 
+
+QS (x, y, z ) := ∑
+
+> i∈S
+
+xB[i]−nαB′[i]yB′[i] mod pzi,
+
+and 
+
+RS [k]( x) := ∑
+
+> (i,k −i)∈Tb,k −i∈S
+
+xA[i]−nαA′[i]+ B[k−i]−nαB′[k−i],
+
+where initially S = [ n − 1] . In the case that at some point throughout the algorithm, we have that Z[k] = 1 (which is dependent on S), then we can find a witness by recomputing Z[k],but with the changed polynomials 
+
+P ′(x, y, z ) := ∑
+
+> i∈[n−1]
+
+i ·
+
+(
+
+xA[i]−nαA′[i]yA′[i] mod pzi)
+
+,
+
+and 
+
+R′ 
+
+> S
+
+[k]( x) := ∑
+
+> (i,k −i)∈Tb,k −i∈S
+
+i ·
+
+(
+
+xA[i]−nαA′[i]+ B[k−i]−nαB′[k−i])
+
+.
+
+In the following, let c := ⌈log log n + 9 ⌉, α := 82c and t = ⌈1 + 3 log 4/3(n)⌉. We will closely follow the correctness proof from Alon and Naor [ 2 ]. We call Si+1 ⊆ Si a good set if the following conditions hold: 30 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+Algorithm 5 Witness reporting for monotone bounded min-plus convolution. 
+
+Let p be a fixed prime number chosen as in Section A.2. Compute the bounded monotone min-plus convolution of A and B as described before. 
+
+for b ∈ { 0, 1} do 
+
+Let sb be the resulting array as defined in Equation 8 
+
+while there exists an index k with no witness do 
+
+Let L be the set of indices k ∈ [2 n − 2] with no known witness. 
+
+S1 ← { 0, . . . n − 1}
+
+T (x, y, z ) ← P (x, y, z ) · QS1 (x, y, z )
+
+for k ∈ [2 n − 2] do 
+
+C1[k]( x) := ∑ λx c, where λx cyC′[k]+ b mod pzk is a monomial in T (x, y, z ).
+
+end for for k ∈ [2 n − 2] do 
+
+Z1[k] ← λ where λ is the coefficient of xsb[k] in C1[k]( x) − RS1 [k]( x)
+
+end for for i = 1 , . . . , t do 
+
+Let L′ denote set of all k ∈ [2 n − 2] where Zi has a non-zero coefficient at most c.Find witnesses for all indices k in L′ and mark those in LSi+1 ← good set 
+
+Ti+1 (x, y, z ) ← P (x, y, z ) · QSi+1 (x, y, z )
+
+for k ∈ [2 n − 2] do 
+
+Ci+1 [k] := ∑ λx c, where λx cyC′[k]+ b mod pzk is a monomial in T (x, y, z ).
+
+end for for k ∈ [2 n − 2] do 
+
+Zi+1 [k] ← λ where λ is the coefficient of xsb[k] in Ci+1 [k]( x) − RSi+1 [k]( x)
+
+end for end for end while end for return witnesses Gokaj, Künnemann, Storandt, Truschel 31 
+
+The sum of the non-zero entries Zi+1 is at most 3/4-th of the entries in Zi (This leads to the fact that the algorithm terminates in at most 1 + 3 log 4/3(n) many steps). The fraction of entries in L that are 0 in Zi+1 but were not in L′ is at most α. 
+
+We find a good set by removing each element in Si+1 with probability 1/2, repeating this process until a good set is found. After O( log (n)) iterations, with high probability, we find a good set. Below, we show that such a set exists with a non-zero probability. Below, we also show how to find witnesses for all indices k in L′.
+
+▷ Claim 17. The probability that the sum of the entries in Zi+1 is at most 3/4-th of the sum of the entries in Zi is at least 1/3.
+
+Proof. Every entry i ∈ S is removed with probability 1/2. Thus the expected number of true positives also halves. Applying a Markov bound concludes the claim. ◀▷ Claim 18. The probability that a fixed entry in Zi which is at least c drops to 0 in step 
+
+i + 1 is at most 1/2c.
+
+Proof. We assume the worse case that we have independence on the indices and that we only pick true witnesses. We need to have removed at least c elements from S for the number of true witnesses to go down to 0, which happens with probability 1/2 each. This leads to a probability of at most 1/2c ◀▷ Claim 19. The probability that more than a fraction of α, in Zi which had value at least 
+
+c drop down to 0 in Zi+1 in step i + 1 , is at most 2−cα−1 = 1 /8.
+
+Proof. This follows by the probability above and applying a Markov bound. ◀▶ Lemma 20. During the algorithm Si+1 is good with probability at least 1/6. 
+
+Proof. We take the probability of the good event in Claim 17 and the bad event in Claim 19, and subtract that is 1/3 − 1/8 > 1/6. ◀▶ Lemma 21. For each index k in the entry L′ there is a positive probability that Zi+1 [k] = 1 .
+
+Proof. This event depends on at most c variables and is at least c/ 2c = Θ( log log( n)log( n) ). ◀▶ Lemma 22. The algorithm is sound i.e. if the algorithm reports a witness, it is a correct one. 
+
+Proof. The invariant of the algorithm is that Zi[k] counts the number of true witnesses for index k during round i, where in the i-th round we only keep the indices j, with j ∈ S (as 
+
+C[k]( x) counts all possible witnesses and RS [k]( x) the pseudo-witnesses). This count, will always be non-negative, and will reduce after each successive round monotonically. After the counts are not greater than c, by a polylogarithmic number of repetitions, by Lemma 21 we can find all witnesses for the indices which are in L′ by leveraging that if an iteration leads to the count reaching 1, we can apply Observation 16, to find a true witness. ◀▶ Lemma 23. All witnesses are found with high probability after O( log (n)) rounds of the algorithm. 
+
+Proof. By the definition of a good set S, at most a fraction α of the indices k will drop to 0
+
+(i.e. will not find a witness) in each round of the innermost loop going from 1 to t. As in the next iteration the sum of the entries in Zi+1 is at most 3/4-th of the entries, the inner most loop terminates in at most t = ⌈1 + 3 log 4/3(n)⌉ iterations. Thus, we find witnesses for a fraction of 1 − tα > 1/2 many indices k. Repeating O(log (n)) rounds of the algorithm boosts the probability to find witnesses for all indices k. ◀32 Approximating Pareto Sum via Bounded Monotone Min-Plus Convolution 
+
+▶ Lemma 24. The algorithm runs in expected time ˜O(n1.6).
+
+Proof. Every FFT call runs in time O(n1.6 log n), the inner while loop runs at most O( log n)
+
+many times, as the sum of the entries in Zi drops in every iteration by at least 3/4-th. Finding all witnesses for the elements in L′ and also searching for a good set Si+1 requires 
+
+˜O(n1.6) time. We need O( log n) many rounds of the algorithm to boost the probability to find witnesses for all indices k, as argued previously. ◀
+
+We remark that our algorithm can be derandomized by using c-wise ϵ-dependent distributions, by following precisely the exact approach as Alon and Naor, see [ 2][Section 2.3]. Finally, we also remark that it is plausible that this idea can be extended for reporting witnesses for the 
+
+˜O(n1.5)-algorithm from [12], as it follows the same style of counting true witnesses. 
+
+F Additive Pareto sum approximation without witnesses 
+
+We call a set ˜S a weak ∆-Pareto sum approximation for sets P, Q if it fulfills the following 3 criteria for all p ∈ P, q ∈ Q, there exists ˜s ∈ ˜S with ˜s ≤ p + q + (∆ , ∆) ,
+
+for all ˜s ∈ ˜S there exist p ∈ P and q ∈ Q such that p + q ≤ ˜s ≤ p + q + (∆ , ∆) ,
+
+˜S is a Pareto set. Thus in comparison to the usual definition only the second condition is relaxed. We describe Algorithm 6, which computes a weak 2t-Pareto sum approximation without needing witnesses.  
+
+> Algorithm 6 WeakApproximateParetoSum( P, Q, t )
+
+˜P ← {( ⌈ p.x t ⌉, ⌈ p.y t ⌉) | p ∈ P }
+
+˜Q ← {( ⌈ q.x t ⌉, ⌈ q.y t ⌉) | q ∈ Q}
+
+S′ ← P S ( ˜P , ˜Q)
+
+return ˜S ← Pareto front of {ts ′ | s ∈ S′}
+
+▶ Lemma 25. Algorithm 6, with input (P, Q, t ) leads to a weak Pareto sum approximation, set ˜S, "i.e.", fulfills the following 3 conditions: for all p ∈ P, q ∈ Q, there exists ˜s ∈ ˜S with ˜s ≤ p + q + 2( t, t )
+
+for all ˜s ∈ ˜S there exist p ∈ P and q ∈ Q such that p + q ≤ ˜s ≤ p + q + 2( t, t )˜S is a Pareto set. 
+
+Proof. Let p ∈ P and q ∈ Q, then there exists s′ ∈ S′ with s′ ≤ ˜p + ˜q (with ˜p =(⌈ p.x t ⌉, ⌈ p.y t ⌉) and ˜q = (⌈ q.x t ⌉, ⌈ q.y t ⌉)) and ˜s = ts ′. Then we have 
+
+˜s = ts ′ ≤ t
+
+(
+
+⌈ p.x t ⌉, ⌈ p.y t ⌉
+
+)
+
++ t
+
+(
+
+⌈ q.x t ⌉, ⌈ q.y t ⌉
+
+)
+
+≤
+
+(
+
+t( p.x t + 1) , t ( p.y t + 1) 
+
+)
+
++
+
+(
+
+t( q.x t + 1) , t ( q.y t + 1) 
+
+)
+
+≤ p + q + 2( t, t ).
+
+Let ˜s ∈ ˜S, then ˜s = ts ′ = t( ˜p + ˜q) for some ˜p ∈ ˜P , ˜q ∈ ˜Q. Moreover ˜p = (⌈ p.x t ⌉, ⌈ p.y t ⌉)Gokaj, Künnemann, Storandt, Truschel 33 
+
+and ˜q = (⌈ q.x t ⌉, ⌈ q.y t ⌉) for some q ∈ Q, p ∈ P . Observe that 
+
+p + q ≤
+
+(
+
+t⌈ p.x t ⌉, t ⌈ p.y t ⌉
+
+)
+
++
+
+(
+
+t⌈ q.x t ⌉, t ⌈ q.y t ⌉
+
+)
+
+= t(˜ p + ˜ q) = ˜ s
+
+≤
+
+(
+
+t( p.x t + 1) , t ( p.y t + 1) 
+
+)
+
++
+
+(
+
+t( q.x t + 1) , t ( q.y t + 1) 
+
+)
+
+= p + q + 2( t, t ).
+
+Immediate by the last line of the algorithm. 
+
+◀
+
+By making use of the ˜O(n1.5)-algorithm of [12] and the above lemma, we get: 
+
+▶ Corollary 26. Given sets P, Q of n points in [0 , W ]2 and ϵ > 0, we can compute a weak 
+
+ϵW -approximation of the Pareto sum in time ˜O (n + (1 /ϵ )1.5).
+
+Furthermore, we remark that the lower bound Theorem 9 still holds for the weak Pareto sum approximation. This follows by the same proof and noticing that for any ˜s ∈ ˜S, Condition 2) establishes that there exist p ∈ P, q ∈ Q such that p + q ≤ ˜s ≤ p + q + (∆ , ∆) . By construction of P, Q (since all coordinates are multiples of 2∆ ), we can thus safely round down to the closest multiple of 2∆ to obtain a corresponding better point ˜s′ ≤ ˜s that is a point in P + Q.Thus, we obtain a set ˜S′ ⊆ P + Q satisfying the conditions of Definition 5 as before, and the rest of the proof of Theorem 9 can be used verbatim.
