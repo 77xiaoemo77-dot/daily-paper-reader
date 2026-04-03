@@ -7,16 +7,16 @@
 
 ## 每次日报
 - 最新运行日期：2026-03-05 ~ 2026-04-03
-- 运行时间：2026-04-03 16:57:47 UTC
+- 运行时间：2026-04-03 17:13:29 UTC
 - 运行状态：成功
-- 本次总论文数：20
+- 本次总论文数：22
 - 精读区：0
-- 速读区：20
+- 速读区：22
 
 ### 今日简报（AI）
-深度速读 20 篇前沿文献，重点攻克量子计算在金融预测与组合优化领域的落地难题。
-混合量子-经典框架在波动率预测及回望期权定价上表现亮眼，为复杂金融建模提供了高效的量子加速方案。
-建议关注量子算法如何通过优化效率提升，重塑未来高复杂度金融衍生品的定价逻辑。
+今日聚焦量子计算在金融领域的深度应用，速览了波动率预测与保险定价等 22 篇前沿成果。
+重点关注量子电路 Born 机（QCBM）与振幅估计技术，它们在处理巨灾保险尾部风险和回望期权定价上展现出显著优势。
+建议关注量子-经典混合框架，这是当前克服硬件噪声并实现金融实用的主流路径。
 - 详情：[/20260305-20260403/README](/20260305-20260403/README)
 
 ### 精读区论文标签
@@ -25,64 +25,70 @@
 ### 速读区论文标签
 1. [A Hybrid Quantum-Classical Framework for Financial Volatility Forecasting Based on Quantum Circuit Born Machines](/20260305-20260403/2603.09789v1-a-hybrid-quantum-classical-framework-for-financial-volatility-forecasting-based-on-quantum-circuit-born-machines)  
    标签：评分：10.0/10、query:qmlfin
-   evidence：用于金融波动率预测的混合量子-经典框架
-2. [Variational and Annealing-Based Approaches to Quantum Combinatorial Optimization](/20260305-20260403/2603.19117v1-variational-and-annealing-based-approaches-to-quantum-combinatorial-optimization)  
+   evidence：基于量子电路波恩机的混合量子-经典金融波动率预测框架
+2. [Quantum Amplitude Estimation for Catastrophe Insurance Tail-Risk Pricing: Empirical Convergence and NISQ Noise Analysis](/20260305-20260403/2603.15664v1-quantum-amplitude-estimation-for-catastrophe-insurance-tail-risk-pricing-empirical-convergence-and-nisq-noise-analysis)  
    标签：评分：10.0/10、query:qmlfin
-   evidence：量子组合优化在金融领域的应用综述
+   evidence：用于保险尾部风险定价的量子振幅估计
 3. [Pricing Lookback Options on a Quantum Computer](/20260305-20260403/2604.00389v1-pricing-lookback-options-on-a-quantum-computer)  
    标签：评分：10.0/10、query:qmlfin
-   evidence：用于回望期权定价的量子算法
+   evidence：使用VarQITE定价回望期权的量子算法
 4. [Quantitative Universal Approximation for Noisy Quantum Neural Networks](/20260305-20260403/2604.02064v1-quantitative-universal-approximation-for-noisy-quantum-neural-networks)  
    标签：评分：10.0/10、query:qmlfin
-   evidence：用于量化金融的有噪量子神经网络
+   evidence：量化金融中含噪量子神经网络的通用逼近定理
 5. [Towards Exponential Quantum Improvements in Solving Cardinality-Constrained Binary Optimization](/20260305-20260403/2603.14744v1-towards-exponential-quantum-improvements-in-solving-cardinality-constrained-binary-optimization)  
    标签：评分：9.0/10、query:qmlfin
-   evidence：针对金融领域的基数约束二元优化
-6. [Quantum Amplitude Estimation for Catastrophe Insurance Tail-Risk Pricing: Empirical Convergence and NISQ Noise Analysis](/20260305-20260403/2603.15664v1-quantum-amplitude-estimation-for-catastrophe-insurance-tail-risk-pricing-empirical-convergence-and-nisq-noise-analysis)  
+   evidence：用于金融领域基数约束二元优化的量子算法
+6. [Variational and Annealing-Based Approaches to Quantum Combinatorial Optimization](/20260305-20260403/2603.19117v1-variational-and-annealing-based-approaches-to-quantum-combinatorial-optimization)  
    标签：评分：9.0/10、query:qmlfin
-   evidence：用于保险尾部风险定价的量子振幅估计
-7. [Model selection in hybrid quantum neural networks with applications to quantum transformer architectures](/20260305-20260403/2603.21749v1-model-selection-in-hybrid-quantum-neural-networks-with-applications-to-quantum-transformer-architectures)  
-   标签：评分：9.0/10、query:qmlfin
-   evidence：评估混合量子神经网络和Transformer架构的框架
-8. [Quantum Random Forest for the Regression Problem](/20260305-20260403/2603.22790v1-quantum-random-forest-for-the-regression-problem)  
+   evidence：量子组合优化在金融和工业领域的应用综述
+7. [Quantum Random Forest for the Regression Problem](/20260305-20260403/2603.22790v1-quantum-random-forest-for-the-regression-problem)  
    标签：评分：9.0/10、query:qmlfin
    evidence：用于随机森林回归和预测的量子算法
-9. [STN-GPR: A Singularity Tensor Network Framework for Efficient Option Pricing](/20260305-20260403/2603.26318v1-stn-gpr-a-singularity-tensor-network-framework-for-efficient-option-pricing)  
+8. [A new approach to rating scale definition with quantum-inspired optimization](/20260305-20260403/2603.26583v1-a-new-approach-to-rating-scale-definition-with-quantum-inspired-optimization)  
    标签：评分：9.0/10、query:qmlfin
-   evidence：用于高效期权定价和投资组合重估的张量网络框架
-10. [A new approach to rating scale definition with quantum-inspired optimization](/20260305-20260403/2603.26583v1-a-new-approach-to-rating-scale-definition-with-quantum-inspired-optimization)  
+   evidence：用于金融信用评级表定义的量子启发式优化
+9. [Q-Bridge: Code Translation for Quantum Machine Learning via LLMs](/20260305-20260403/2603.27836v1-q-bridge-code-translation-for-quantum-machine-learning-via-llms)  
    标签：评分：9.0/10、query:qmlfin
-   evidence：用于金融评级体系的量子启发式优化
-11. [Evolution of Photonic Quantum Machine Learning under Noise](/20260305-20260403/2603.09645v1-evolution-of-photonic-quantum-machine-learning-under-noise)  
+   evidence：量子机器学习（QML）的代码转换框架
+10. [Beyond Barren Plateaus: A Scalable Quantum Convolutional Architecture for High-Fidelity Image Classification](/20260305-20260403/2603.11131v1-beyond-barren-plateaus-a-scalable-quantum-convolutional-architecture-for-high-fidelity-image-classification)  
    标签：评分：8.0/10、query:qmlfin
-   evidence：光量子机器学习算法及其噪声影响的系统分析
-12. [Filtered Spectral Projection for Quantum Principal Component Analysis](/20260305-20260403/2603.13441v1-filtered-spectral-projection-for-quantum-principal-component-analysis)  
+   evidence：可扩展的量子卷积神经网络（QCNN）架构
+11. [Filtered Spectral Projection for Quantum Principal Component Analysis](/20260305-20260403/2603.13441v1-filtered-spectral-projection-for-quantum-principal-component-analysis)  
    标签：评分：8.0/10、query:qmlfin
-   evidence：用于数据处理的量子主成分分析
-13. [Hyper-Adaptive Momentum Dynamics for Native Cubic Portfolio Optimization: Avoiding Quadratization Distortion in Higher-Order Cardinality-Constrained Search](/20260305-20260403/2603.15947v1-hyper-adaptive-momentum-dynamics-for-native-cubic-portfolio-optimization-avoiding-quadratization-distortion-in-higher-order-cardinality-constrained-search)  
+   evidence：用于数据投影和光谱结构的量子主成分分析
+12. [How to find expressible and trainable parameterized quantum circuits?](/20260305-20260403/2603.14451v1-how-to-find-expressible-and-trainable-parameterized-quantum-circuits)  
    标签：评分：8.0/10、query:qmlfin
-   evidence：三次基数约束投资组合优化
+   evidence：识别可训练且具表达力的量子电路框架
+13. [Photonic Quantum-Enhanced Knowledge Distillation](/20260305-20260403/2603.14898v1-photonic-quantum-enhanced-knowledge-distillation)  
+   标签：评分：8.0/10、query:qmlfin
+   evidence：用于知识蒸馏的量子-经典混合框架
 14. [How Quantum Circuits Actually Learn: A Causal Identification of Genuine Quantum Contributions](/20260305-20260403/2603.16321v1-how-quantum-circuits-actually-learn-a-causal-identification-of-genuine-quantum-contributions)  
    标签：评分：8.0/10、query:qmlfin
-   evidence：量子机器学习性能提升的因果识别
-15. [The Average Relative Entropy and Transpilation Depth determines the noise robustness in Variational Quantum Classifiers](/20260305-20260403/2603.21300v1-the-average-relative-entropy-and-transpilation-depth-determines-the-noise-robustness-in-variational-quantum-classifiers)  
+   evidence：量子机器学习电路性能提升的因果识别
+15. [Quantum reservoir computing with classical and nonclassical states in an integrated optical circuit](/20260305-20260403/2603.17103v1-quantum-reservoir-computing-with-classical-and-nonclassical-states-in-an-integrated-optical-circuit)  
    标签：评分：8.0/10、query:qmlfin
-   evidence：变分量子分类器（VQC）中的噪声鲁棒性
-16. [The Quantum Structure of Markets: Linking Hamiltonian-Jacobi-Bellman Dynamics to Schrodinger Equation through Feynman Action](/20260305-20260403/2603.25086v1-the-quantum-structure-of-markets-linking-hamiltonian-jacobi-bellman-dynamics-to-schrodinger-equation-through-feynman-action)  
+   evidence：量子水库计算作为一种硬件友好的量子神经网络方案
+16. [Quantifying Gate Contribution in Quantum Feature Maps for Scalable Circuit Optimization](/20260305-20260403/2603.19805v1-quantifying-gate-contribution-in-quantum-feature-maps-for-scalable-circuit-optimization)  
+   标签：评分：8.0/10、query:qmlfin
+   evidence：机器学习中量子特征映射的优化
+17. [The Average Relative Entropy and Transpilation Depth determines the noise robustness in Variational Quantum Classifiers](/20260305-20260403/2603.21300v1-the-average-relative-entropy-and-transpilation-depth-determines-the-noise-robustness-in-variational-quantum-classifiers)  
+   标签：评分：8.0/10、query:qmlfin
+   evidence：变分量子分类器的噪声鲁棒性分析
+18. [Model selection in hybrid quantum neural networks with applications to quantum transformer architectures](/20260305-20260403/2603.21749v1-model-selection-in-hybrid-quantum-neural-networks-with-applications-to-quantum-transformer-architectures)  
+   标签：评分：8.0/10、query:qmlfin
+   evidence：评估混合量子神经网络和Transformer架构的框架
+19. [BRIDG-Q: Barren-Plateau-Resilient Initialisation with Data-Aware LLM-Generated Quantum Circuits](/20260305-20260403/2603.23979v1-bridg-q-barren-plateau-resilient-initialisation-with-data-aware-llm-generated-quantum-circuits)  
+   标签：评分：8.0/10、query:qmlfin
+   evidence：变分量子算法的数据感知初始化
+20. [Spectral methods: crucial for machine learning, natural for quantum computers?](/20260305-20260403/2603.24654v1-spectral-methods-crucial-for-machine-learning-natural-for-quantum-computers)  
+   标签：评分：8.0/10、query:qmlfin
+   evidence：用于量子机器学习的量子傅里叶变换和谱方法
+21. [The Quantum Structure of Markets: Linking Hamiltonian-Jacobi-Bellman Dynamics to Schrodinger Equation through Feynman Action](/20260305-20260403/2603.25086v1-the-quantum-structure-of-markets-linking-hamiltonian-jacobi-bellman-dynamics-to-schrodinger-equation-through-feynman-action)  
    标签：评分：8.0/10、query:qmlfin
    evidence：通过费曼作用量将市场动态与薛定谔方程联系起来
-17. [Non-Unitary Quantum Machine Learning: Fisher Efficiency Transitions from Distributed Quantum Expressivity](/20260305-20260403/2603.27377v1-non-unitary-quantum-machine-learning-fisher-efficiency-transitions-from-distributed-quantum-expressivity)  
+22. [Non-Unitary Quantum Machine Learning: Fisher Efficiency Transitions from Distributed Quantum Expressivity](/20260305-20260403/2603.27377v1-non-unitary-quantum-machine-learning-fisher-efficiency-transitions-from-distributed-quantum-expressivity)  
    标签：评分：8.0/10、query:qmlfin
    evidence：混合量子经典神经网络与非幺正量子机器学习框架
-18. [Q-Bridge: Code Translation for Quantum Machine Learning via LLMs](/20260305-20260403/2603.27836v1-q-bridge-code-translation-for-quantum-machine-learning-via-llms)  
-   标签：评分：8.0/10、query:qmlfin
-   evidence：量子机器学习的代码转换框架
-19. [Learning from imperfect quantum data via unsupervised domain adaptation with classical shadows](/20260305-20260403/2603.28294v1-learning-from-imperfect-quantum-data-via-unsupervised-domain-adaptation-with-classical-shadows)  
-   标签：评分：8.0/10、query:qmlfin
-   evidence：带领域自适应的量子-经典混合机器学习
-20. [Multi-Mode Quantum Annealing for Variational Autoencoders with General Boltzmann Priors](/20260305-20260403/2604.00919v1-multi-mode-quantum-annealing-for-variational-autoencoders-with-general-boltzmann-priors)  
-   标签：评分：8.0/10、query:qmlfin
-   evidence：用于变分自编码器的量子退火
 
 
 <div class="dpr-home-promo-card">

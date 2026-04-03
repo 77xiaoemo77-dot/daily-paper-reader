@@ -1,0 +1,345 @@
+Title: BRIDG-Q: Barren-Plateau-Resilient Initialisation with Data-Aware LLM-Generated Quantum Circuits
+
+URL Source: https://arxiv.org/pdf/2603.23979v1
+
+Published Time: Thu, 26 Mar 2026 00:48:20 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# BRIDG-Q: Barren-Plateau-Resilient Initialisation with Data-Aware LLM-Generated Quantum Circuits 
+
+Ngoc Nhi Nguyen [0009 −0006 −8228 −3615] (B), Thai T. Vu [0000 −0002 −9826 −3321] ,John Le [0000 −0003 −0019 −0345] , Hoa Khanh Dam [0000 −0003 −4246 −0526] , Dung Hoang Duong [0000 −0001 −8057 −4060] , and Dinh Thai Hoang [0000 −0002 −9528 −0863]  
+
+> 1
+
+University of Wollongong, Wollongong, NSW, Australia 
+
+nnn469@uowmail.edu.au , {tienv,johnle,hoa,hduong}@uow.edu.au  
+
+> 2
+
+University of Technology Sydney, Sydney, NSW, Australia 
+
+Hoang.Dinh@uts.edu.au 
+
+Abstract. Quantum circuit initialisation is a key bottleneck in vari-ational quantum algorithms (VQAs), strongly impacting optimisation stability and convergence. Recent work shows that large language models (LLMs) can synthesise high-quality variational circuit architectures, but their continuous parameter predictions are unreliable. Conversely, data-driven initialisation methods such as BEINIT improve trainability via problem-adaptive priors, yet assume fixed ansatz templates and ignore generative circuit structure. We propose BRIDG-Q (Barren-Plateau-
+
+Resilient Initialisation with Data-Aware LLM-Generated Quantum Cir-cuits), a neuro-symbolic pipeline that bridges this gap by coupling LLM-generated circuit architectures with empirical-Bayes parameter initiali-sation. BRIDG-Q uses AgentQ to generate problem-conditioned circuit topologies, removes generated parameters, and injects data-informed pa-rameter initialisations to mitigate barren plateau effects. Evaluations on graph optimisation benchmarks using residual energy gap and conver-gence metrics show improved optimisation robustness, indicating that data-driven initialisation remains effective even for LLM-generated cir-cuits, with oracle per-instance selection achieving approximately a 10% 
+
+reduction in final residual energy. 
+
+Reproducibility. All source code and data used in this study are publicly available at: https://github.com/nellyy2505/BRIDG-Q 
+
+Keywords: Variational quantum algorithms; barren plateaus; parameter ini-tialisation; empirical Bayes; Beta distribution; large language models; quantum circuit generation; neuro-symbolic optimisation. 
+
+# 1 Introduction 
+
+Variational Quantum Algorithms (VQAs) are a leading approach for near-term quantum computation, enabling hybrid quantum–classical optimisation on noisy  
+
+> arXiv:2603.23979v1 [cs.ET] 25 Mar 2026 2N. N. Nguyen et al.
+
+intermediate-scale quantum (NISQ) devices [ 21 ,17 ]. In a typical VQA, a parame-terised quantum circuit (PQC) prepares a quantum state whose parameters are iteratively updated by a classical optimiser to minimise a problem-dependent cost function, such as the expectation value of a Hamiltonian [ 3,16 ]. Despite their expressive power, VQAs are highly sensitive to circuit design choices, optimisation dynamics, and, critically, the initialisation of variational parameters [22]. A central obstacle to scalable VQA training is the barren plateau phenomenon, in which the variance of cost-function gradients decays exponentially with system size, rendering gradient-based optimisation ineffective [ 15 ]. Subsequent studies have shown that barren plateaus are not only determined by circuit depth, but also strongly influenced by entanglement structure and the locality of the cost function [4, 14 ]. As a result, uninformed parameter initialisation can cause optimisation to stagnate early, even when the circuit itself is sufficiently expressive. Two largely independent research directions have recently emerged to ad-dress complementary aspects of this challenge. On the one hand, data-driven initialisation strategies construct problem-adaptive priors over circuit parame-ters, significantly improving gradient behaviour during training [ 13 , 23 ]. On the other hand, large language models (LLMs) have been shown to generate expres-sive variational circuit architectures directly from problem descriptions [ 10 , 6]. However, existing pipelines typically combine LLM-generated circuit structures with generic or heuristic parameter initialisation, while data-driven initialisation methods assume fixed ansatz templates and do not exploit generative circuit synthesis. As a result, circuit architecture generation and parameter initialisation remain largely decoupled in end-to-end VQA workflows. In this work, we bridge these two lines of research through a neuro-symbolic 
+
+approach [ 9]. In our setting, “neuro-symbolic” denotes the combination of neural reasoning , embodied by an LLM that synthesises variational circuit topologies from data and examples, and symbolic inductive bias , encoded through human-interpretable rules for parameter initialisation grounded in empirical Bayes principles. This design complements the flexibility of learned structure generation with principled control over optimisation dynamics. Our framework provides the following contributions: 1. We introduce BRIDG-Q , a unified pipeline that couples LLM-generated variational circuit architectures with empirical-Bayes parameter initialisation. This approach explicitly addresses the disconnect between circuit synthesis and parameter optimisation in end-to-end VQA workflows. 2. Extending BEINIT [ 13 ], we propose a gate-aware stratified Beta initiali-sation scheme that applies role-specific parameter scaling to control early entanglement growth, hence mitigating barren plateau effects in deep circuits. 3. We conduct a paired empirical evaluation on approximately 580 graph-based optimisation instances from the AgentQ benchmark suite [ 10 ], using energy-gap and convergence-efficiency metrics to characterise both solution quality and optimisation dynamics. The structure of this paper is as follows. First, we review background on barren plateaus in variational quantum algorithms, data-driven parameter initial-BRIDG-Q: A Quantum Circuit Initialisation Framework 3
+
+isation, and recent progress in LLM-based circuit generation. We then introduce the BRIDG-Q framework, describing how LLM-generated circuit structures are combined with empirical-Bayes parameter initialisation, including the gate-aware stratified variant. Next, we define the evaluation metrics and experimental protocol used to assess both solution quality and convergence behaviour. We sub-sequently present paired empirical results on graph-based optimisation instances from the AgentQ benchmark, comparing BRIDG-Q variants against standard baselines. Finally, we discuss the implications of these findings, outline current limitations, and highlight directions for future work. 
+
+# 2 Related Work 
+
+Barren plateaus and parameter initialisation. The scalability of variational quan-tum algorithms (VQAs) is fundamentally limited by optimisation pathologies such as barren plateaus, first formally identified by McClean et al. , who showed that gradient variance can decay exponentially with the number of qubits un-der random parameter initialisation [ 15 ]. Subsequent analyses by Cerezo et al. 
+
+demonstrated that barren plateau behaviour depends on the locality of the cost function and the circuit structure [ 4], while Marrero et al. linked plateau forma-tion directly to entanglement growth and the emergence of unitary 2-designs [14 , 2]. These results motivated a line of work aimed at controlling circuit expres-sivity, particularly during the early stages of training. A number of heuristic and geometric initialisation strategies have been proposed to mitigate these effects [ 7]. Grant et al. introduced identity initialisation , in which parameters are chosen so that the circuit evaluates close to the identity operator, thereby preserving gradient magnitudes at initialisation [ 8]. More recently, Zhang et al. proposed 
+
+Gaussian initialisation schemes with depth-dependent variance, providing theo-retical guarantees that gradients vanish at most polynomially with circuit depth [24 ]. While these methods offer important insights into trainability, they do not exploit problem-specific structure encoded in the input instance. 
+
+Empirical-Bayes initialisation. BEINIT [ 13 ] proposes an empirical-Bayes ap-proach to parameter initialisation, in which circuit parameters are sampled from a Beta distribution whose hyperparameters are estimated from problem data via maximum likelihood. This strategy demonstrably increases gradient variance and reduces the likelihood of barren plateaus in deep variational circuits. However, BEINIT assumes a fixed ansatz structure and treats circuit parameters homo-geneously, without accounting for gate semantics or circuit topology generated dynamically. As a result, its applicability is limited to scenarios in which the circuit architecture is predefined. 
+
+LLM-based circuit generation. Recent work has shown that LLMs can generate ex-pressive variational circuit topologies directly from problem descriptions, reducing the need for manual ansatz design [ 16 , 18 ]. AgentQ [ 10 ] exemplifies this direction 4 N. N. Nguyen et al. 
+
+by synthesising problem-conditioned circuits that achieve competitive perfor-mance across a range of graph-based optimisation tasks. Nevertheless, existing pipelines generate circuit structure and continuous parameters jointly, with-out explicitly modelling parameter initialisation as a separate problem-adaptive design stage. As a result, the generated parameters do not incorporate fitted problem-aware priors or trainability-driven initialisation principles. 
+
+# 3 Methodology: The BRIDG-Q Framework 
+
+We propose BRIDG-Q , a neuro-symbolic framework that unifies generative topology design with data-driven parameter initialisation. The architecture ad-dresses the “compatibility gap” between the discrete, symbolic reasoning of LLMs and the continuous, geometric optimisation required for VQAs.  
+
+> Fig. 1. Overview of the BRIDG-Q neuro-symbolic pipeline for variational quantum optimisation. Figure created with assistance from Gemini 3 and edited by the authors.
+
+3.1 Architectural Overview 
+
+Figure 1 illustrates the BRIDG-Q pipeline as a directed acyclic workflow that transforms a graph-based combinatorial optimisation problem into an optimised variational quantum circuit. The design explicitly separates circuit structure generation , parameter initialisation , and variational optimisation . The workflow proceeds through four stages: 1. LLM-Based Circuit Generation (AgentQ). In the first stage, an LLM, AgentQ, is used to generate the structure of the variational ansatz. Condi-tioned on the input problem description, AgentQ produces an OpenQASM 3.0 [5 ] circuit specifying the gate sequence, qubit connectivity, and overall circuit layout. This stage is purely structural: although AgentQ emits numerical parameters, these are not retained, as they are not optimised with respect to the variational objective. BRIDG-Q: A Quantum Circuit Initialisation Framework 5
+
+2. OpenQASM Parsing and Parameter Stripping. The generated Open-QASM 3.0 [ 5] code is then parsed to recover the circuit topology and identify all parameterised gates. Any numerical parameter values produced by the LLM are removed at this stage. The output of this step is a parameter-free circuit template that preserves the LLM-generated structure while deferring all continuous parameter choices to a dedicated initialisation module. 3. Beta-Based Parameter Initialisation. In the third stage, BRIDG-Q injects parameters into the stripped circuit using data-driven Beta priors. Problem-specific features, such as graph edge weights and Hamiltonian coeffi-cients, are extracted from the input instance and normalised. These features are used to fit a Beta distribution via maximum likelihood estimation, follow-ing the BEINIT principle. From this learned prior, parameters are sampled using one of three variants: pure Beta sampling , a Beta–uniform mixture , or a gate-aware stratified Beta scheme .4. Variational Optimisation (VQE). The initialised circuit is optimised using a standard VQE loop [ 20 ], yielding optimised parameters and a final residual energy gap. 
+
+Illustrative example: Max-Cut. Consider a four-node weighted Max-Cut instance with edges {(0 , 1, 0.7) , (1 , 2, 0.3) , (2 , 3, 0.9) , (0 , 3, 0.5) } and Hamiltonian H =P 
+
+> (i,j )
+
+wij 12 (I − ZiZj ). In Stage 1, AgentQ produces a circuit with four ry and three crz gates. In Stage 2, all numerical angles are stripped, leaving seven empty parameter slots. In Stage 3, the normalised edge weights [0 .7, 0.3, 0.9, 0.5] yield a fitted prior Beta (1 .8, 1.4) ; under the stratified variant, ry parameters are mapped to [−π, π ] while crz parameters are confined to [−0.2, 0.2] . Stage 4 then optimises via a standard VQE loop. 
+
+3.2 Data-Driven Priors: The BEINIT Formulation 
+
+As outlined in the architectural overview, BRIDG-Q explicitly removes all LLM-generated numerical parameters, leaving a symbolic circuit template. Section 3.2 describes how this template is populated with data-driven initial parameters using an empirical-Bayes formulation based on BEINIT [13]. 
+
+Feature extraction. The key idea behind this empirical Bayes formulation is to encode structural information about the optimisation problem into the parameter prior. Concretely, we construct a feature vector xfeat by aggregating information from two complementary sources: 
+
+– the graph structure of the problem instance, such as edge weights or capacities in the combinatorial graph, and 
+
+– the Hamiltonian coefficients extracted from the problem’s cost function, provided by AgentQ as a cost_hamiltonian string. All extracted values are parsed, normalised to the interval [0 , 1] , and concatenated into a single empirical data vector. Although BEINIT originally estimates its 6 N. N. Nguyen et al. 
+
+prior from labelled classical datasets, we show that graph- and Hamiltonian-derived features serve as an effective surrogate, enabling instance-specific prior construction without supervised labels. 
+
+Beta distribution via MLE. Given the normalised feature vector {xi}Ni=1 , we fit a Beta distribution using maximum likelihood estimation (MLE), where each 
+
+xi ∈ [0 , 1] denotes a scalar feature extracted from the input instance. The Beta density is defined as 
+
+f (x; α, β ) = xα−1(1 − x)β−1
+
+B(α, β ) , (1) where α and β are shape parameters and B(α, β ) denotes the Beta function. The optimal parameters are obtained by solving 
+
+(ˆ α, ˆβ) = arg max 
+
+> α,β N
+
+X
+
+> i=1
+
+log f (xi; α, β ). (2) In practice, we perform a constrained Beta fit with fixed location and scale, and introduce a small numerical floor to avoid degenerate solutions. If the fitting procedure fails or the extracted features are constant, the method falls back to 
+
+ˆα = ˆβ = 1 , which corresponds to a uniform distribution. 
+
+Initialisation variants. Building on the learned Beta prior, we implement the following initialisation-only variants within BRIDG-Q: 
+
+– BRIDG-Q β–pure . All parameters θk are sampled directly from Beta ( ˆα, ˆβ),then mapped to gate-specific angular ranges. This injects a strong inductive bias derived from the problem instance while retaining full expressive capacity. 
+
+– BRIDG-Q β–mixture . To guard against overconfident or collapsed priors, we mix the learned Beta distribution with a uniform component: 
+
+θk ∼ (1 − λ) Beta (ˆ α, ˆβ) + λ U[0 , 1] , (3) where λ = 0 .2. This introduces controlled stochasticity at initialisation. While BEINIT injects Gaussian noise during training to escape saddle points [ 13 ], our use of a uniform mixture is restricted strictly to initialisation and serves to preserve exploration without modifying the optimisation dynamics. 
+
+3.3 BRIDG-Q β–stratified : Gate-Aware Initialisation 
+
+While standard Beta-based initialisation already improves trainability by shaping the initial parameter distribution according to the problem instance, it still applies a uniform scaling rule across all parameterised gates. In deep circuits, this can lead to excessive entanglement at initialisation, accelerating the formation of unitary 2-designs and inducing barren plateaus [ 19 ]. To address this limitation, we introduce BRIDG-Q β–stratified which follows this principle: it restricts the initial strength of entangling gates while allowing single-qubit driver gates to fully explore the parameter space. BRIDG-Q: A Quantum Circuit Initialisation Framework 7
+
+Algorithm 1 BRIDG-Q Initialisation 
+
+Require: Circuit description Q; problem instance (G, H )
+
+Ensure: Initial parameter vector θinit 
+
+1: C ← ParseOpenQASM (Q) {Recover gate list, wires, and param slots} 2: C∅ ← StripParameters (C) {Discard all LLM-emitted numeric values} 3: xfeat ← ExtractFeatures (G, H )
+
+4: Normalise xfeat to [0 , 1] 
+
+5: (ˆ α, ˆβ) ← MLE_BetaFit (xfeat )
+
+6: v ← SampleBeta ( ˆ α, ˆβ, |P| ) {|P| = # parameterised gates} 7: if variant = β–mixture then 
+
+8: Replace a fraction λ of entries in v with U[0 , 1] 
+
+9: end if 
+
+10: θinit ← [ ] ; p ← 1
+
+11: for each gate g ∈ C∅ in program order do 
+
+12: if g is parameterised then 
+
+13: v ← v[p]; p ← p + 1 
+
+14: if variant = β–stratified then 
+
+15: if g. type ∈ { rx , ry , u3 } then 
+
+16: θ ← 2πv − π
+
+17: else 
+
+18: θ ← (v − 0.5) · ϵ
+
+19: end if 
+
+20: end if 
+
+21: Append θ to θinit 
+
+22: end if 
+
+23: end for 
+
+24: return θinit 
+
+Core idea. The key idea is to decouple where parameters come from (the Beta distribution learned via BEINIT) from how they are applied (gate-specific scaling rules). All parameters are sampled from the same Beta prior, then mapped to gate-dependent angle ranges based on functional role. 
+
+Algorithmic procedure. Algorithm 1 summarises the BRIDG-Q initialisation process. Problem-specific features are extracted from the graph G and Hamilto-nian H, normalised to [0 , 1] , and used to fit a Beta distribution via maximum likelihood estimation, yielding shape parameters ( ˆα, ˆβ) (lines 3–5). The circuit is then traversed in program order (lines 11–23). For each parameterised gate, a latent value is sampled from the fitted Beta prior (line 6), the functional role of the gate is identified, and a role-specific scaling transformation is applied to obtain the initial parameter value θk (lines 12–19). The resulting parameters are assembled into the initial vector θinit returned for optimisation (lines 21–24). 
+
+Gate-specific scaling rules. In practice, the stratification is implemented as follows: 
+
+– Driver gates (e.g., rx , ry , u3 ) receive parameters mapped to the full angular range, 
+
+θk = 2 πv k − π, (4) 8 N. N. Nguyen et al. 
+
+corresponding to [−π, π ]. This allows these gates to immediately explore the full Bloch sphere and drive meaningful state evolution. 
+
+– Entangling gates (e.g., crz , crx , cry ) are initialised near the identity, 
+
+θk = ( vk − 0.5) ϵ, (5) where ϵ = 0 .4 by default, yielding a narrow range of [−0.2, 0.2] . This ensures that early entanglement is weak and gradually increases. 
+
+Rationale. By initialising entangling operations near the identity, BRIDG-Q β–stratified 
+
+induces a weakly entangled starting regime even for deep circuits. This delays early randomisation and mitigates gradient collapse associated with approximate unitary 2-designs [ 19 ]. As optimisation proceeds, entanglement increases only where supported by gradient descent, enabling a smooth transition from a highly trainable regime to a more expressive circuit. 
+
+Remarks. Some single-qubit gates (e.g., rz ) are conservatively scaled to prioritise stability at initialisation. This choice slightly restricts expressivity at t = 0 but does not limit the reachable parameter space during training. 
+
+# 4 Evaluation Metrics 
+
+We evaluate (i) solution quality via the residual energy gap and (ii) optimisation efficiency via iterations- and time-to-convergence. In practice, we report the evolution of the energy gap across optimisation steps and define it as 
+
+∆E (θt) = |E(θt) − Eexact | , (6) where E(θt) denotes the variational objective value at optimisation step t. Eexact 
+
+is the ground-truth optimal energy for the corresponding problem instance [1]. 
+
+4.1 Primary metric: Energy gap 
+
+Here the variational objective is defined as 
+
+E(θ) = ⟨ψ(θ)|H|ψ(θ)⟩, (7) where H denotes the problem Hamiltonian. Throughout this work, we use the absolute difference in Eq. (6) , which directly corresponds to the curves reported in our experimental results. The energy gap provides a direct and task-aligned measure of performance. Rather than focusing on optimiser-specific signals, it evaluates whether the learned parameters actually produce a low-energy state for the target Hamiltonian [ 20 ]. This distinction is particularly important in the presence of barren plateaus: an optimiser may appear to converge or stabilise while remaining far from the true optimum [ 4, 14 ]. By tracking ∆E (θt) over time, we capture both (i) final BRIDG-Q: A Quantum Circuit Initialisation Framework 9
+
+solution quality , where a smaller terminal gap indicates a better approximation to the optimal solution, and (ii) convergence behavior , reflected in how rapidly the energy gap decreases during optimisation. The reference value Eexact is taken from the AgentQ benchmark suite, which provides a classically computed optimum objective value for each instance [ 10 ]. This fixed reference enables paired, instance-wise comparisons across initialisation strategies under identical problem instances. 
+
+4.2 Secondary metrics: Optimisation efficiency 
+
+Energy-gap curves convey both quality and dynamics, but two additional metrics are useful for quantifying efficiency in a single scalar per run. 
+
+Iteration steps. We record the number of optimisation iterations executed, and in particular the iterations-to-converge :
+
+Tconv = min {t : ∆E (θt) ≤ ε} , (8) for a chosen tolerance ε. If the run never satisfies the criterion within a maximum budget Tmax , we set Tconv = Tmax and treat it as non-convergent under the given budget. Since each iteration entails multiple circuit evaluations, Tconv serves as a proxy for total quantum-resource usage. 
+
+Time to converge. We measure wall-clock time-to-converge as 
+
+tconv = elapsed wall-clock time until Eq. (8) is first satisfied , (9) including all forward evaluations (expectation estimation), gradient evaluations (if applicable), and classical optimiser overhead. This captures implementation-dependent costs not reflected by iteration counts. 
+
+# 5 Experimental Results 
+
+We evaluate BRIDG-Q using a paired comparison protocol in which all methods are tested on identical problem instances and circuit topologies, differing only in parameter initialisation. 
+
+5.1 Experimental Setup 
+
+Benchmark. Experiments are conducted on approximately 580 graph-based optimisation instances from the AgentQ benchmark [ 10 ], each consisting of a fixed problem Hamiltonian and an AgentQ-generated variational circuit expressed in OpenQASM 3.0. Following the AgentQ evaluation protocol, instances with missing baseline results or final baseline energy gap exceeding 5.0 are excluded, leaving 551 paired instances for analysis. 10 N. N. Nguyen et al. 
+
+Initialisation strategies. We compare the following methods, all evaluated on identical circuit topologies: 
+
+– AgentQ (baseline): LLM-generated parameters used directly. 
+
+– Random: Independent uniform sampling. 
+
+– Uniform: Deterministic uniform grid initialisation. 
+
+– BRIDG-Q β–pure : Sampling from a fitted Beta prior. 
+
+– BRIDG-Q β–mixture : Beta–uniform mixture ( λ = 0 .2). 
+
+– BRIDG-Q β–stratified : Gate-aware Beta initialisation. 
+
+– BRIDG-Q β–best : Oracle per-instance selection among Beta variants. This variant is reported solely to estimate the upper bound of Beta-based initiali-sation performance, and is not a deployable method. 
+
+Optimisation settings. All methods share identical optimisation hyperparameters, summarised in Table 1.            
+
+> Table 1. Experimental configuration shared across all evaluated initialisation strategies.
+> Parameter Value
+> Optimiser Adam [11] Maximum iterations ( Tmax )400 Convergence threshold ( ε)0.05 (energy gap) Baseline initialisation AgentQ-generated Beta mixture coefficient ( λ)0.2
+> Entangler scaling ( ϵ)0.4
+> Beta fitting method MLE (fixed support) Evaluation protocol Paired, per-instance
+
+Implementation and compute environment. All experiments are implemented in Python and executed on a Google Cloud Platform VM ( n1-standard-8 : 8 vCPUs, 30 GB RAM) equipped with a single NVIDIA T4 GPU, using Python 3.10 and CUDA 12.4. 
+
+5.2 Evaluation Results 
+
+Table 2 reports the paired performance of all initialisation strategies across 551 
+
+problem instances after baseline filtering. Results are summarised using mean residual energy, median paired improvement relative to the AgentQ baseline, success probability, and convergence latency, and wall-clock time. 
+
+Paired evaluation protocol and filtering. A run is considered successful if the final residual energy gap satisfies gap final ≤ 0.05 . Instances for which the baseline initialisation produces a final gap greater than 5.0 (or no valid result) are excluded. All reported statistics are computed using strict per-instance pairing: a BRIDG-Q: A Quantum Circuit Initialisation Framework 11 
+
+Table 2. Paired comparison of initialisation strategies under identical problem instances. Initialisation Method Mean Residual Median Improv. Success Prob. Conv. Latency Time (s) AgentQ (baseline) 0.440 ± 0.853 — 65 .0% 236 .3 1.99                                           
+
+> Random 1.453 ±4.079 −43 .14% 42 .6% 296 .22.70
+> Uniform 1.447 ±3.787 −37 .86% 44 .6% 314 .52.67
+> BRIDG-Q β–pure 1.203 ±2.967 −18 .23% 45 .9% 331 .72.66
+> BRIDG-Q β–mixture 1.147 ±3.265 −20 .61% 44 .8% 323 .62.72
+> BRIDG-Q β–stratified 1.373 ±4.150 −7.39% 49 .9% 342 .92.73
+> BRIDG-Q β–best 0.368 ±1.522 +10 .39 %69 .7%338 .62.79
+
+method contributes only when both it and the baseline produce valid energy gap and runtime measurements. We additionally report an oracle-selected variant, 
+
+BRIDG-Q β–best , which retrospectively chooses the best-performing BRIDG-Q variant per instance based on final gap (ties broken by runtime). 
+
+Baseline and uninformed strategies. AgentQ-generated initialisation provides a strong baseline, achieving a mean residual energy of 0.440 with a 65 .0% success probability. In contrast, uninformed strategies such as random and uniform initialisation perform substantially worse across all metrics. Both exhibit large residual energies, negative median paired improvements (below −35% ), and markedly lower success rates, confirming that naive initialisation is insufficient. We note that the large standard deviations in Table 2 reflect high instance-level variability inherent to the diverse graph structures in the benchmark; however, the consistent directionality of median paired improvements across all 551 instances, combined with the substantial gaps in success probability, suggest that the observed differences are unlikely to be attributable to noise alone. 
+
+Individual Beta-based strategies. When evaluated individually, Beta-based initiali-sations ( BRIDG-Q β–pure , BRIDG-Q β–mixture , and BRIDG-Q β–stratified ) improve upon random and uniform baselines but do not consistently outperform AgentQ. As shown in Table 2, their median paired improvements remain negative, indicating that no single fixed Beta prior is optimal across the full dataset. 
+
+Oracle-selected Beta initialisation. To assess the upper bound of Beta-based initialisation performance, we report an oracle-selected variant, BRIDG-Q β–best .For each instance, the oracle retrospectively selects the best-performing Beta-based strategy based on the final energy gap (with runtime as a tie-breaker). While not deployable, this analysis reveals that for a substantial fraction of instances, at least one Beta-based initialisation outperforms the AgentQ baseline. Quantitatively, the oracle-selected Beta strategy achieves the highest success probability ( 69 .7% ) and a positive median paired improvement of +10 .39% ,representing an approximate 10% reduction in residual energy relative to AgentQ (Table 2). These results indicate that the limitation of Beta-based initialisation lies not in the expressiveness of the priors themselves, but in the absence of an instance-aware mechanism for selecting the most suitable prior. 12 N. N. Nguyen et al.      
+
+> Fig. 2. Energy-gap trajectories for a representative problem instance (Sample 76). The plot shows the evolution of the absolute energy gap over optimisation iterations for differ-ent initialisation strategies. Beta-based methods ( BRIDG-Q β–pure ,BRIDG-Q β–mixture ,and BRIDG-Q β–stratified ) exhibit slower initial convergence but continue to reduce the energy gap beyond the point where standard baselines (AgentQ, random, uniform) stag-nate. In particular, BRIDG-Q β–stratified achieves the lowest final gap for this instance
+
+5.3 Discussion 
+
+Why Beta-based methods lose individually. The inconsistent performance can be attributed to instance heterogeneity. Different graph structures and Hamiltonian distributions induce distinct optimisation landscapes [ 12 ], for which a single prior shape may be mismatched. As a result, fixed Beta priors may either under-regularise or over-constrain certain instances, leading to suboptimal convergence despite improvements over uninformed initialisation. 
+
+What the oracle result reveals. The strong performance of the oracle-selected Beta variant demonstrates that data-driven priors are frequently beneficial, but their effectiveness is instance-dependent. The oracle exposes latent performance potential by showing that, for many instances, a suitable Beta-based initialisation exists that surpasses the LLM-generated baseline. This suggests that future gains depend less on inventing new priors and more on learning how to select or adapt priors based on instance-level signals. 
+
+Convergence behaviour. Beta-based methods typically require more optimisation steps than the AgentQ baseline, reflecting prolonged exploration rather than inefficiency. By delaying early entanglement and gradient collapse, these methods maintain informative gradients for longer, which increases the likelihood of reaching lower-energy solutions. 
+
+Practical considerations. Despite longer optimisation trajectories, wall-clock runtimes remain comparable across methods, indicating that improved robustness does not incur substantial computational overhead. BRIDG-Q: A Quantum Circuit Initialisation Framework 13 
+
+# 6 Conclusion 
+
+We presented BRIDG-Q , a neuro-symbolic framework that decouples LLM-based variational circuit synthesis from parameter initialisation in end-to-end VQA workflows. By injecting empirical-Bayes, gate-aware parameter priors into automatically generated circuit structures, BRIDG-Q addresses the mismatch between discrete circuit generation and continuous optimisation. Paired eval-uation on a large AgentQ benchmark shows that while no single Beta-based strategy consistently outperforms the AgentQ baseline, oracle per-instance se-lection achieves an approximately 10% reduction in final residual energy with comparable runtime, indicating improved robustness in deep VQAs. These results highlight both the effectiveness and limitations of fixed, hand-designed priors, as performance remains instance-dependent and oracle selection is not deployable. Future work will therefore focus on practical, instance-aware or adaptive initiali-sation strategies, as well as extending this framework to broader problem classes, circuit families, and hardware-aware settings. 
+
+# References 
+
+1. Anschuetz, E.R., Kiani, B.T.: Quantum variational algorithms are swamped with traps. Nature Communications 13 (1), 7760 (2022). https://doi.org/10.1038/ s41467-022-35364-5 
+
+2. Bañuls, M.C., Huse, D.A., Cirac, J.I.: Entanglement and its relation to en-ergy variance for local one-dimensional hamiltonians. Phys. Rev. B 101 ,144305 (Apr 2020). https://doi.org/10.1103/PhysRevB.101.144305 , https:// link.aps.org/doi/10.1103/PhysRevB.101.144305 
+
+3. Cerezo, M., Arrasmith, A., Babbush, R., Benjamin, S.C., Endo, S., Fujii, K., McClean, J.R., Mitarai, K., Yuan, X., Cincio, L., Coles, P.J.: Variational quantum algorithms. Nature Reviews Physics 3, 625–644 (2021). https://doi.org/10.1038/ s42254-021-00348-9 
+
+4. Cerezo, M., Sone, A., Volkoff, T., Cincio, L., Coles, P.J.: Cost-function-dependent barren plateaus in shallow parametrized quantum circuits. Nature Communications 
+
+12 (1), 1791 (2021). https://doi.org/10.1038/s41467-021-21728-w 
+
+5. Cross, A., Javadi-Abhari, A., Alexander, T., De Beaudrap, N., Bishop, L.S., Heidel, S., Ryan, C.A., Sivarajah, P., Smolin, J., Gambetta, J.M., Johnson, B.R.: Openqasm 3: A broader and deeper quantum assembly language. ACM Transactions on Quantum Computing 3(3) (Sep 2022). https://doi.org/10.1145/3505636 
+
+6. Dupuis, N., Buratti, L., Vishwakarma, S., Forrat, A.V., Kremer, D., Faro, I., Puri, R., Cruz-Benito, J.: Qiskit code assistant: Training llms for generating quantum computing code. In: 2024 IEEE LLM Aided Design Workshop (LAD). pp. 1–4 (2024). https://doi.org/10.1109/LAD62341.2024.10691762 
+
+7. Garcia-Saez, A., Latorre, J.I.: Addressing hard classical problems with adiabatically assisted variational quantum eigensolvers (2018), https://arxiv.org/abs/1806. 02287 
+
+8. Grant, E., Wossnig, L., Ostaszewski, M., Benedetti, M.: An initialization strategy for addressing barren plateaus in parametrized quantum circuits. Quantum 3, 214 (2019). https://doi.org/10.22331/q-2019-12-09-214 14 N. N. Nguyen et al. 9. Hitzler, P., Eberhart, A., Ebrahimi, M., Sarker, M.K., Zhou, L.: Neuro-symbolic approaches in artificial intelligence. National Science Review 9(6), nwac035 (03 2022). https://doi.org/10.1093/nsr/nwac035 , https://doi.org/10.1093/nsr/ nwac035 
+
+10. Jern, L., Uotila, V., Yu, C., Zhao, B.: AGENT-Q: Fine-tuning large language models for quantum circuit generation and optimization. arXiv preprint (2025) 11. Kingma, D.P., Ba, J.: Adam: A method for stochastic optimization. arXiv preprint (2014) 12. Krentel, M.W.: The complexity of optimization problems. In: Proceedings of the eighteenth annual ACM symposium on Theory of computing. pp. 69–76 (1986) 13. Kulshrestha, A., Safro, I.: BEINIT: Avoiding barren plateaus in variational quan-tum algorithms. In: 2022 IEEE International Conference on Quantum Computing and Engineering (QCE). pp. 197–203. IEEE (2022). https://doi.org/10.1109/ QCE53715.2022.00039 
+
+14. Marrero, C.O., Kieferová, M., Wiebe, N.: Entanglement-induced barren plateaus. PRX Quantum 2(4), 040316 (2021). https://doi.org/10.1103/PRXQuantum.2. 040316 
+
+15. McClean, J.R., Boixo, S., Smelyanskiy, V.N., Babbush, R., Neven, H.: Barren plateaus in quantum neural network training landscapes. Nature Communications 
+
+9(1), 4812 (2018). https://doi.org/10.1038/s41467-018-07090-4 
+
+16. Mitarai, K., Negoro, M., Kitagawa, M., Fujii, K.: Quantum circuit learning. Phys. Rev. A 98 , 032309 (Sep 2018). https://doi.org/10.1103/PhysRevA.98.032309 ,
+
+https://link.aps.org/doi/10.1103/PhysRevA.98.032309 
+
+17. Moll, N., Barkoutsos, P., Bishop, L.S., Chow, J.M., Cross, A., Egger, D.J., Filipp, S., Fuhrer, A., Gambetta, J.M., Ganzhorn, M., Kandala, A., Mezzacapo, A., Müller, P., Riess, W., Salis, G., Smolin, J., Tavernelli, I., Temme, K.: Quantum optimization using variational algorithms on near-term quantum devices. Quantum Science and Technology 3(3), 030503 (jun 2018). https://doi.org/10.1088/2058-9565/ aab822 , https://doi.org/10.1088/2058-9565/aab822 
+
+18. Ostaszewski, M., Grant, E., Benedetti, M.: Structure optimization for parameter-ized quantum circuits. Quantum 5, 391 (Jan 2021). https://doi.org/10.22331/ q-2021-01-28-391 , https://doi.org/10.22331/q-2021-01-28-391 
+
+19. Patti, T.L., Najafi, K., Gao, X., Yelin, S.F.: Entanglement devised barren plateau mitigation. Physical Review Research 3(3), 033090 (2021). https://doi.org/10. 1103/PhysRevResearch.3.033090 
+
+20. Peruzzo, A., McClean, J., Shadbolt, P., Yung, M.H., Zhou, X.Q., Love, P.J., Aspuru-Guzik, A., O’Brien, J.L.: A variational eigenvalue solver on a photonic quantum processor. Nature Communications 5, 4213 (2014). https://doi.org/10.1038/ ncomms5213 
+
+21. Preskill, J.: Quantum computing in the nisq era and beyond. Quantum 2, 79 (2018). https://doi.org/10.22331/q-2018-08-06-79 
+
+22. Qi, H., Xiao, S., Liu, Z., Gong, C., Gani, A.: Variational quantum algorithms: fundamental concepts, applications and challenges. Quantum Information Processing 
+
+23 (6), 1–32 (2024). https://doi.org/10.1007/s11128-024-04438-2 
+
+23. Rad, A., Seif, A., Linke, N.M.: Surviving the barren plateau in variational quantum circuits with bayesian learning initialization. arXiv preprint (2022) 24. Zhang, K., Liu, L., Hsieh, M.H., Tao, D.: Escaping from the barren plateau via gaussian initialisations in deep variational quantum circuits. In: Advances in Neural Information Processing Systems. vol. 35, pp. 18612–18627. Curran Associates, Inc. (2022)
