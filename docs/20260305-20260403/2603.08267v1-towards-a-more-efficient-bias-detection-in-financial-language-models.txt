@@ -1,0 +1,286 @@
+Title: Towards a more efficient bias detection in financial language models
+
+URL Source: https://arxiv.org/pdf/2603.08267v1
+
+Published Time: Tue, 10 Mar 2026 02:10:52 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) 
+
+# TOWARDS A MORE EFFICIENT BIAS DETECTION IN FINANCIAL LANGUAGE MODELS 
+
+Firas Hadj Kacem 1, Ahmed Khanfir 2,1 and Mike Papadakis 11 SnT, University of Luxembourg, Luxembourg  
+
+> 2
+
+RIADI, ENSI, University of Manouba, Tunisia 
+
+firashadjkacem@ieee.org ,
+
+ahmed.khanfir@ensi-uma.tn and 
+
+michail.papadakis@uni.lu 
+
+## ABSTRACT 
+
+Bias in financial language models constitutes a major obstacle to their adoption in real-world applications. Detecting such bias is challenging, as it requires iden-tifying inputs whose predictions change when varying properties unrelated to the decision, such as demographic attributes. Existing approaches typically rely on exhaustive mutation and pairwise prediction analysis over large corpora, which is effective but computationally expensive—particularly for large language mod-els—and can become impractical in continuous retraining and releasing processes. Aiming at reducing this cost, we conduct a large-scale study of bias in five fi-nancial language models, examining similarities in their bias tendencies across protected attributes and exploring cross-model–guided bias detection to identify bias-revealing inputs earlier. Our study uses approximately 17k real financial news sentences, mutated to construct over 125k original–mutant pairs. Results show that all models exhibit bias under both atomic (0.58%–6.05%) and inter-sectional (0.75%–5.97%) settings. Moreover, we observe consistent patterns in bias-revealing inputs across models, enabling substantial reuse and cost reduction in bias detection. For example, up to 73% of FinMA’s biased behaviors can be uncovered using only 20% of the input pairs when guided by properties derived from DistilRoBERTa outputs. 
+
+## 1 INTRODUCTION 
+
+The rapid progress in artificial intelligence has led to increasing interest in language models for tasks such as financial news analysis, risk assessment, and decision support (Xie et al., 2023). Recent ad-vances in transformer-based architectures enabled the development of specialized financial language models outperforming general-purpose ones on financial tasks (Yang et al., 2023; Xie et al., 2023; Araci, 2019). However, their adoption in real-world systems remains limited. Among the primary barriers to adoption is the presence of bias in language models (Guo et al., 2024), as biased predictions can result in discriminatory outcomes affecting individuals or groups. In the financial domain, such risks are amplified by strict regulatory requirements. Thus, bias detec-tion in financial language models has become a pressing concern for researchers and practitioners. Existing studies have shown that language models may exhibit bias toward protected attributes such as gender, race, or physical features (Kiritchenko & Mohammad, 2018; Bolukbasi et al., 2016). Nevertheless, most prior work focuses on general-purpose language models or evaluates bias using small datasets (Asyrofi et al., 2021). Moreover, bias detection techniques typically rely on exhaus-tive testing strategies; costly and difficult to scale to multiple models, continuous releases, or large corpora. Thus, there is a lack of empirical evidence on whether different financial language mod-els exhibit similar bias patterns and if bias-revealing inputs can be efficiently identified and reused across models. This work bridges these gaps by conducting a large-scale empirical study of bias in financial language models, i.e., two generative LLMs (FinMA (Yang et al., 2023) and FinGPT (Yang et al., 2023)) and three encoder-based models (FinBERT (Araci, 2019) and fine-tuned versions of 1
+
+> arXiv:2603.08267v1 [cs.AI] 9 Mar 2026
+
+Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) DeBERTa-v3 (Romero, 2024a) and DistilRoBERTa (Romero, 2024b)), on a dataset of real financial sentences, systematically mutated to reveal bias across protected attributes, i.e., race, gender and body. We use HInter (Souani et al., 2025) to perform single-attribute (atomic) and two-attribute (intersectional) mutations on 16,969 financial sentences from the Financial Sentiment Dataset (Fin-Sen), producing 125,161 original-mutant pairs. Aiming at (1) distinguishing bias-revealing inputs from others and (2) investigating results re-usability between model bias detection campaigns, we explore shared bias across models and quan-tify prediction shifts between original and mutated sentences for each model using Jensen-Shannon Distance (JSD) and Cosine Similarity. Our results demonstrate that the studied models exhibit both atomic (0.58% to 6.05%) and inter-sectional (0.75% to 5.97%) bias, with varying magnitudes across attributes. These low bias ratios indicate that a very small proportion of inputs reveals bias, confirming that bias-revealing inputs are rare and most of the mutation and inference effort is in vain, further motivating the main goal of the study: reducing the cost of bias detection in language models. More importantly, we show that a substantial portion of biased behavior can be uncovered by eval-uating only a small fraction of selected input pairs. In fact, the three lightweight models included in our study share over 94% of their bias-revealing inputs, forming empirical evidence of the eventual cost-gain in simply reusing bias-revealing inputs across models, i.e., lightweight ones. Although different, bias-revealing inputs in generative models can be distinguished from the predic-tion probability shifts. For instance, we find that bias-revealing inputs in large models, i.e., FinMA, tend to yield more distant prediction probabilities between the original and mutated sentences. In fact, prioritizing the test-inputs by decreasing Jensen–Shannon distance computed from lightweight model prediction scores, i.e., DistilRoBERTa, leads to an earlier bias discovery in other models, i.e., with just 20% of the test-inputs, 73% of FinMA’s bias is exposed, which is significantly larger than the ≈ 20% achieved by a random input-selection. These findings are encouraging and show a clear advantage in reusing prediction results between bias detection campaigns across models, par-ticularly guiding bias detection in large (expensive) models using results from lightweight (cheap) ones. The contributions of this paper are threefold. First, we provide a comprehensive empirical analysis of bias in five financial language models using a large-scale dataset of real financial statements. Second, we identify shared patterns in bias-revealing inputs across models, offering insights into the transferability of bias detection efforts. Third, we demonstrate that bias detection can be significantly accelerated by prioritizing inputs based on model-derived features, reducing costs on large models. We make our complete code base and setup instructions with additional details available 1 to enable reproducibility and support similar future research. 
+
+## 2 RELATED WORK 
+
+Bias Detection in Language Models Social bias in language models often originates from imbal-ances and existing prejudices embedded in the training data, causing models to reflect and reproduce gender, racial, or cultural stereotypes (Bender et al., 2021; Blodgett et al., 2020). Recent research has extensively studied such biases, consistently showing that they are pervasive across different architectures and tasks. Prior work has demonstrated that both generative (Si et al., 2025) and classification language models (Kiritchenko & Mohammad, 2018) can encode and amplify societal stereotypes related to sensitive attributes. Such bias in language models is typically studied through counterfactual (controlled-variation) test-ing (Kusner et al., 2017), which consists of evaluating software output variation under the variation of controlled properties in the fed inputs (Dwork et al., 2012). To this end, several datasets have been proposed, such as CrowS-Pairs, BBQ, and Winogender15,which provide curated inputs of minimally different sentence pairs, with only demographic attribute changes (Si et al., 2025). To not rely on existing datasets and favor realism in bias studies, recent works proposed automated input-generation approaches from existing real-world data. For instance, Asyrofi et al. (2021) proposed BiasFinder, a metamorphic testing approach that generates test cases by mutating sentences into input pairs that are expected to yield similar predictions, revealing a wider range of biases. Along 
+
+> 1https://github.com/Firas-HadjKacem/FinancialBias.git
+
+2Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) HInter     
+
+> +
+> SBIC !=
+> “The African
+> businessman is
+> wealthy”
+> “The American
+> businesswoman
+> is wealthy”
+> “The African
+> businesswoman
+> is wealthy”
+> Original
+> Statement
+> Language
+> Models
+> “The American
+> businessman is
+> wealthy”
+> Mutated
+> Statements
+> Atomic (Race)
+> Bias Detection
+> Bias-Revealing
+> Input Analysis
+> Test Case
+> Generation
+> Atomic (Gender)
+> Intersectional
+> (Race x Gender)
+> Inference
+> Prediction
+> Labels & Scores
+
+Figure 1: The experimental workflow the same lines of research, Souani et al. (2025) proposed HInter, an approach introducing one and two demographic attributes chnages per input, enabling the detection of not only atomic but also intersectional bias in the target models. In our work, we run HInter on the Financial Sentiment Dataset (FinSen) (Eaglewhl, 2023) to generate our test input pairs from real financial statements. As the detection relies on the variation of results, most studies on language models target classification tasks rather than generative ones. That is because model decision deviations are easier to distinguish between two different predicted labels compared to complex data, i.e., text. Similarly, in our work, we target a classification task – sentiment analysis – as the proxy to study bias in financial language models. Unlike previous works, we investigate specific characteristics of bias-revealing input pairs, partic-ularly common patterns within and across language models. Our study contributes to the language model bias detection research, providing empirical evidence that it can be significantly accelerated by prioritizing inputs based on model-derived features, reducing costs on large models. 
+
+Financial Language Models Over the past few years, a growing number of financial language models have been introduced, ranging from openly available models (e.g., FinBERT (Araci, 2019), FinGPT (Yang et al., 2023), and FinMA (Xie et al., 2023)) to proprietary solutions developed by private companies (e.g., BloombergGPT (Wu et al., 2023)). These models have been trained or fine-tuned on top of backbone pre-trained general-purpose models, using large financial corpora. Although very efficient in several financial downstream tasks Siala et al. (2026), an evaluation of their fairness and biases, as well as a comprehensive assessment and comparison of different archi-tecture types in this context is still lacking. Our study is among the first to explicitly evaluate demographic fairness in financial language mod-els. Given the increasing use of such models in high-stakes financial applications, these biases can potentially impact critical decisions in investment, lending, recruitment, etc. 
+
+## 3 METHOD 
+
+Our experimental workflow consists of four main phases, as illustrated in Figure 1: (1) the generation of bias test cases through input mutations, (2) sentiment prediction, (3) bias detection, and (4) cross-model bias-revealing inputs analysis. 3.1 BIAS TEST -CASE GENERATION 
+
+This step consists of generating a dataset of test cases for the purpose of bias detection. To do so, we use HInter (Souani et al., 2025), a black-box metamorphic fuzzing approach, which mutates input sentences by changing some properties (e.g., gender) while keeping meaning and grammatical struc-ture, generating several similar yet different versions of the original sentence. These replacements are employed using a bias dictionary derived from the Social Bias Inference Corpus (SBIC) (Au-tonlp, 2021), containing lists of terms and their substitutions for demographic categories. HInter focuses on three attribute axes commonly associated with bias: Gender , Race (the category group-ing terms related to Ethnicity, National Origin, etc.), and Body (the category grouping terms related to physical appearance). For example, the bias lexicon includes pairs of masculine ↔feminine pro-3Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) nouns (e.g., “he” ↔ “she”), gendered nouns (“businessman” ↔ “businesswoman”), stereotypically gendered jobs (“CEO” ↔ “Assistant”), nationality or ethnic descriptors (“American” ↔ “Chinese”), racial terms (“Black” ↔ “White”), and some body-related descriptors (“man” ↔ “autistic man”). With this dictionary, we generated mutated versions of each input using two main mutation types: • Atomic Mutations: Changing one sensitive attribute at a time in the input sentence. For instance, applying a Gender atomic mutation to the sentence “ The CEO said he was confident about.. ” produces the following mutated sentence “The CEO said she was confi-dent about..” , by changing he to she .• Intersectional Mutations: Changing two sensitive attributes simultaneously in the input sentence. For instance, applying a Gender & Race intersectional mutation to the sentence “He leads the American firm to success.” produces “ She leads the Asian firm to success.” by changing He and American to She and Asian , respectively. These higher-order mutations are designed to reveal intersectional biases that might only emerge when two attribute changes co-occur. 3.2 MODEL INFERENCE AND BIAS DETECTION 
+
+In this step, we ask the language models under test to predict the sentiment of each statement in our constructed dataset (original-mutant pairs). We collect every inference result – label and prediction probability of every class – mapped with its corresponding input and prediction model, necessary for our bias detection and study analysis. The sentiment analysis inference is operated differently depending on the target model’s functioning: 
+
+Lightweight (Classifier) models , i.e., FinBERT, DeBERTa-v3 (fine-tuned) and DistilRoBERTa (fine-tuned), offer the sentiment analysis task by design; taking as input the original sentence as-is and outputting its predicted sentiment together with the scores (logit values normalized by softmax) of each of the three possible labels ( Negative, Positive and Neutral ) via its classification head. 
+
+Generative Language Models , i.e., FinGPT and FinMA, are instruction-based models, requiring a specific prompt to process any task, i.e., the sentiment prediction. We follow the approach proposed by FinMA authors (Xie et al., 2023) to perform classification tasks, adopting a zero-shot prompting approach to produce sentiment labels. Specifically, we wrap each input sentence in a prompt asking for sentiment, as follows: Analyze the sentiment of this statement extracted from a financial news article. Provide your answer as either negative, positive, or neutral. Text: “<sentence >”Answer: Beyond the functional design of the prompt, extra steps are required to extract labels and scores from the generated output text. In fact, models do not always follow the given instruction, e.g., not pro-ducing the sentiment directly after the prompt, potentially adding spaces or other misleading tokens before or in the middle of the label. To tackle these issues, we restrict the vocabulary so that only token IDs that can begin a valid label variant are allowed (e.g, “positive”, “Positive” with possible spacing or punctuation, etc.). This ensures the model actually starts its answer with a sentiment label form. At the same time, it enables the score and label extraction in the same forward pass, from the logits of the corresponding generated token. Precisely, we parse the generated text to locate the first generated token corresponding to each of the sentiment labels, ignoring end-of-sequence or special tokens and including different label variants as spans (“Neg”+“ative”). Next, we extract the model logits exactly at the found labels’ locations. Finally, we attribute a score (probability) to each sentiment by softmaxing over the extracted logits, corresponding to each sentiment label. Whenever a label shows up in multiple tokenized forms, we combine them by using log-sum-exp before we apply softmax. This guarantees that variants of the sentiment labels (like “negative”, “ Negative”) are fairly aggregated. According to Goldberg (2017), “Log-sum-exp” is the numerically reliable way to add up probabilities in log space. With given log-scores {ℓi} for all possible tok-enizations of a label, we compute log X
+
+> i
+
+eℓi , which equals the log of the sum of their prediction 4Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) scores (probabilities). This enables us to compute the probability of the chosen label and compare it against other class logits in the same decoding step. By combining the logit extraction with the model’s native generational behavior, we obtain a hybrid logit extraction approach that avoids token misalignment issues and ensures we measure the model’s true confidence in the label it chose, ex-actly at the decision point. By ensuring consistency in predictions, we also guarantee comparable outputs to classifier models. We employ greedy decoding to ensure determinism and reproducibility of our experiments. 3.3 BIAS DETECTION 
+
+As the only difference between each original-mutant pair is the demographic change, we expect a truly unbiased model to produce the same sentiment for both. Consequently, we consider any label change, e.g., from ”Positive” to ”Negative” sentiment, as a biased prediction and thus the input pair as bias-revealing. By comparing the prediction results collected in the previous step of each original-mutant pair, we obtain a set of bias-revealing inputs for each model, mutation type, and demographic property. Hence, the bias detection ratios of every model can be computed as the fraction of the number of bias-revealing inputs over the total number of inputs. 3.4 BIAS -R EVEALING INPUT ANALYSIS 
+
+In this step, we investigate common trends and properties within bias-revealing inputs across models. We start by studying the overlap and disjoint sets of bias-revealing inputs in the studied models. This is important, as large overlaps would enable direct reuse of inputs between bias-detection campaigns, saving inference effort and computational cost of finding bias inputs. Moreover, we extend our study by investigating the overall decision shifts caused by mutations, beyond label flipping. To capture the decision shift, we compute the difference between the score vectors of every sentiment between the original-mutant pairs’ predictions. Using our prior defini-tions of probability distributions for sentences, we observe that P (Smutated )̸ = P (Sorig ) whenever the input is altered, even if the predicted label remains the same. These shifts range from slight vari-ations to ones large enough to cause a label flip. Our intuition is that such shifts can reveal subtle forms of bias not necessarily reflected in the output. More importantly, even when not revealing bias (no label prediction flip), such shifts could capture characteristics that differentiate bias-revealing inputs in the other models, enabling more cost-efficient cross-models guided bias-detection. To measure the change in the output vectors indicative of eventual bias, we use two distance metrics: 
+
+Jensen–Shannon Distance (JSD): is the square root of Jensen–Shannon divergence. We chose it because it is symmetric and finite (bounded from 0 to 1), unlike Kullback–Leibler divergence, and retaining an information-theoretic meaning of how different two distributions are (Fuglede & Topsøe, 2004). An input pair yields a JSD = 0 if its vectors are identical P (Smutated ) = P (Sorig )
+
+and approaches 1 when they are maximally different. In the context of bias detection, JSD serves as a graded indicator of bias-induced change: a high JSD indicates a high probability shift caused by the demographic mutation. 
+
+Cosine Similarity: The metric has been widely used in measuring similarities between model captured context (Salton et al., 1975). We use it to approximate the size of model prediction shifts by measuring the similarity between mutated and original prediction score vectors. This metric also takes floating numbers (0 to 1), where 1 indicates identical vectors and 0 completely different ones. 3.5 CROSS -MODEL GUIDED BIAS DETECTION 
+
+To investigate the practical usefulness of the observed common properties and trends between mod-els, we propose a cross-model guided bias detection approach. Unlike conventional random ap-proaches, we prioritize the set of input test pairs based on their prediction results from other models. To evaluate this approach’s effectiveness and cost-efficiency, we compare it with a random one, collecting bias-detection rates at every effort step in terms of input-pair inference. Although this approach could benefit any bias detection campaign, we focus particularly on assess-ing the advantage of guiding bias detection in large, expensive models using lightweight, cheaper 5Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) Table 1: Models bias rates on FinSen. Total tested pairs, per attribute: Body = 22,972; Gender = 105,962; Race = 121,490, overall = 125,161.                                               
+
+> Model Atomic (Body) Inter. (Body) Atomic (Gender) Inter. (Gender) Atomic (Race) Inter. (Race) Total (Atomic) Total (Inter.) Total Hidden (Inter.)
+> FinMA 9.23% 7.48% 2.77% 2.25% 3.25% 3.29% 3.99% 3.23% 4.05% FinGPT 5.39% 2.77% 6.10% 6.55% 6.13% 6.07% 6.05% 5.97% 31.29% FinBERT 1.89% 1.88% 0.69% 0.88% 0.25% 0.41% 0.58% 0.75% 30.34% DeBERTa-v3 1.69% 1.67% 0.70% 0.89% 0.30% 0.46% 0.60% 0.75% 29.95% DistilRoBERTa 1.69% 1.67% 0.70% 0.89% 0.30% 0.46% 0.60% 0.75% 29.95%
+
+ones. We refer to the classifiers (FinBERT, DeBERTa-v3 (fine-tuned), DistilRoBERTa (fine-tuned)) as the lightweight, smaller models, used as reference, and refer to the generative LLMs (FinMA, FinGPT) as the larger models, used as targets. On the six combinations of lightweight-large models, we run (100 times) bias detection campaigns applying each of the following input prioritization strategies: - Random input ordering as baseline, - Ordering inputs by decreasing JSD in the reference model’s predictions, - Ordering inputs by increasing cosine similarity in the reference model’s predictions, - Prioritizing inputs where the reference model flagged a bias 
+
+## 4 EXPERIMENTS 
+
+4.1 EXPERIMENTAL SETUP 
+
+Dataset: To conduct this study, we use the US subset of the Financial Sentiment Dataset (Fin-Sen) (Eaglewhl, 2023), featuring 16,969 financial sentences. FinSen provides a realistic sample of finance-related text spanning 15 years, extracted from financial news articles, headlines, and finan-cial statements. Sentence length varies from small (42 words) to long (186 words) statements. We mutate this dataset as described in Section 3.1 to construct 125,161 original-mutated bias test cases. We keep information relative to the attribute(s) changed in each pair, effectively partitioning the augmented corpora by mutation type. 
+
+Financial Language Models: We conduct our study on five financial language models including 2 multi-purpose generative LLMs and 3 encoder-based classifiers, obtained through fine-tuning on financial corpora: - FinMA: a 7B-parameter LLaMA2-based generative financial LLM from the PIXIU study(Xie et al., 2023). It was extensively trained on financial data and was specifically fine-tuned for sen-timent classification to generate textual sentiment labels when prompted. - FinGPT: also a 7B-parameter LLaMA2-based generative LLM, that was open-sourced by Yang et al. (2023). It was adapted for financial sentiment generation through additional financial corpus pre-training and lightweight fine-tuning via LoRA. - FinBERT: a classifier, classic BERT-based (110M parameters) financial sentiment model. It has been further pre-trained on financial texts, then fine-tuned on financial sentiment classification (us-ing datasets like Financial PhraseBank and FiQA) (Araci, 2019). - DeBERTa-v3 (fine-tuned, (Romero, 2024a)): a classifier DeBERTa-v3 base model (He et al., 2021), fine-tuned on financial news sentiment ( ≈44M parameters). - DistilRoBERTa (fine-tuned, (Romero, 2024b)): a classifier, distilled RoBERTa-base model (Liu et al., 2019), fine-tuned on financial news sentiment. It has ≈82M parameters. The links to the model Hugging Face IDs are listed in Table 4 in the Appendix Section A.1. 4.2 RESULTS 
+
+4.2.1 BIAS DETECTION EFFECTIVENESS IN FINANCIAL LANGUAGE MODELS 
+
+The five studied models showed biased behaviours with different magnitudes for the different mu-tations (atomic and intersectional) and wrt the three controlled properties. The percentage of bias-detecting pairs from our dataset is reported in Table 1, by model and controlled property. Perhaps 6Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) surprisingly, we notice that simple and lightweight models, i.e., FinBERT, DeBERTa-v3, and Distil-RoBERTa, exhibit lower overall atomic ( ≈ 0.6% ) and intersectional ( ≈ 0.75% ) bias ratios compared to larger ones, i.e., FinMA and FinGPT, scoring respectively 3.99% and 6.05% as atomic and 3.23% and 5.97% as intersectional bias. This encourages the use of small classification language mod-els over larger ones as a bias mitigation measure. The analysis of intersectional bias shows that a large proportion of it is hidden (not discovered by single property mutation) ; ≈ 30% of FinBERT, DeBERTa-v3 and DistilRoBERT, ≈ 31% of FinGPT, and ≈ 4% of FinMA, highlighting the impact of going beyond single-attribute bias detection by using higher-order mutations. 4.2.2 SHARED BIAS ACROSS MODELS 
+
+The Venn diagram of Figure 2 depicts the overlap and disjoint sets of bias-revealing input-pairs in the five studied models. Although common bias triggers exist, we notice that there is no universal set of com-mon bias-revealing inputs across models. However, we notice a clear overlap between models of similar architectural families, particularly between the three studied classifiers, with over 94% of their bias being revealed by the same inputs and a full overlap be-tween DeBERTa-v3 and DistilRoBERTa sets. These results are encouraging and endorse the re-usability of inputs between lightweight models, as one can uncover bias-revealing inputs in a model without running a full bias-detection campaign. However, despite their similar training and capac-ity, generative models share only a small set of bi-ased inputs (9). Together with the negligible overlap with the lightweight models, this encourages further investigation into common properties between bias-revealing inputs across models. 0 0 
+
+> 56
+> 51
+> 0
+> 0
+> 640
+> 9809
+> 0
+> 0
+> 4
+> 3
+> 0
+> 0
+> 90
+> 4913
+> 0
+> 0
+> 8
+> 0
+> 00
+> 232
+> 9
+> 0
+> 0
+> 0
+> 0
+> 0
+> 0
+> 0
+> FinSen: All-biased overlaps (5-way)
+> finma
+> fingpt
+> finbert
+> deberta
+> distilroberta
+
+Figure 2: Bias overlaps across models. 4.2.3 CROSS -M ODELS BIAS REVEALING INPUT -P AIRS ANALYSIS 
+
+Aiming at reducing model bias detection costs by distinguishing its bias-revealing input pairs prior to inference, we extend our study by investigating the magnitude of the decision shifts caused by the mutation in other models. More precisely, for a model M1 we compute the cosine and JSD distances between the original sentence and its mutated counterpart, each represented by its prediction scores (probabilities) obtained from a second model M2 . For instance, we illustrate in Figure 3a the dif-ference between FinMA’s (M1) bias-revealing pairs from non-bias-revealing ones, in terms of JSD computed on the predictions of each of the lightweight models (M2) . The box plots indicate that bias-revealing pairs tend to score more distant predictions than the non-revealing ones; with median JSD of ≈ 0.031 and ≈ 0.023 compared to ≈ 0.003 and ≈ 0.002 for respectively intersectional and atomic test cases. We observe similar distinguishing trends with different magnitudes when targeting the other models or computing the cosine similarity instead of the JSD. Very low Wilcoxon p-values (below 
+
+10 −32 ) and very far from 0.5 ˆA12 val-ues (over 0.35 difference, as illustrated in Table 2) indicate that the observed differences are significant and not hap-pening by chance, confirming that in the majority of the cases, bias-revealing in-puts can be effectively detected based on another model’s prediction shifts. Table 2: Vargha and Delaney ˆA12 effect size values of pre-diction shifts difference between FinMA bias-revealing and non bias-revealing inputs (computed on values of Figure3).                
+
+> ˆA12 FinBERT DeBERTa DistilRoBERTa FinMA FinGPT Atomic 0,88 0,88 0,88 0,99 0,16 Intersectional 0,85 0,85 0.85 0,99 0,18
+
+7Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) FinBERT    
+
+> DeBERTa
+> DistilRoBERTa
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> JSD
+> Original Intersection & Original Atomic per Model
+> (Biased vs Non-Biased, 4 boxes per model)
+> (ref=fingpt, FinSen)
+> Type Group
+> Intersection - Biased
+> Intersection - Non-Biased
+> Atomic - Biased
+> Atomic - Non-Biased
+
+(a) Lightweight models prediction shifts. FinMA     
+
+> FinGPT
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> JSD
+> Original Intersection & Original Atomic per Model
+> (Biased vs Non-Biased, 4 boxes per model)
+> (ref=finma, FinSen)
+> Type Group
+> Intersection - Biased
+> Intersection - Non-Biased
+> Atomic - Biased
+> Atomic - Non-Biased
+
+(b) Large models prediction shifts. 
+
+Figure 3: Comparison of FinMA bias-revealing and non-bias-revealing inputs, based on the JSD distance between original and mutated statements computed on their prediction probabilities, obtained from lightweight and large models. 
+
+Table 3: Comparison of the efficiency and cost efficiency of a guided input selection with a conventional (random) one, in detecting large model bias based on DistilRoBERTa predictions. We note respectively BD%, 
+
+∆, p-val, and ˆA12 , the bias detection ratio, the BD% difference with random, Wilcoxon p-values, and ˆA12 
+
+values. 
+
+Model / 20% 40% 60% 80% Effort BD% ∆ p-val ˆA12 BD% ∆ p-val ˆA12 BD% ∆ p-val ˆA12 BD% ∆ p-val ˆA12 
+
+Prioritization ranking DistilRoBERTa bias revealing inputs first. FinMA 23,12 +3,12 O(10 −18 ) 1 42,35 +2,35 O(10 −18 ) 0,996 61,53 +1,53 O(10 −17 ) 0,936 80,79 +0,79 O(10 −13 ) 0,835 
+
+FinGPT 20,07 +0,07 O(10 −2) 0,58 40,02 +0,02 O(10 −1) 0,52 60,03 +0,03 O(10 −1) 0,52 80,04 +0,04 O(10 −1) 0,52 
+
+Prioritization of inputs by decreasing JSD of their DistilRoBERTa prediction shifts. FinMA 73,01 +53,01 O(10 −18 ) 1 89,64 +49,64 O(10 −18 ) 1 95,49 +35,49 O(10 −18 ) 1 97,5 +17,5 O(10 −18 ) 1
+
+FinGPT 7,61 -12,39 1 0 34,14 -5,86 1 0 61,52 +1,52 O(10 −18 ) 1 82,76 +2,76 O(10 −18 ) 1
+
+4.2.4 COST -EFFICIENCY OF CROSS -MODEL GUIDED BIAS DETECTION 
+
+To evaluate the practical usefulness of the observed overlaps and differences in prediction shifts (findings of Sections 4.2.2 and 4.2.3 ) between input pairs, we compare the efficiency and cost-efficiency of a guided selection with a conventional (random) one. As lightweight models share most of their bias-revealing inputs (findings of Section 4.2.2), guiding any of them by another leads to near full bias detection at very low cost (95%+ at < 20% of inputs). Table 3 reports the large models’ detected bias ratio by effort spent in terms of input pairs’ predic-tions, when guided by those of a lightweight model, i.e., DistilRoBERTa, compared to a random approach. The positive ∆ values scored for both FinMA and FinGPT depict an advantage in prioritizing Distil-RoBERTa bias-revealing inputs over random, at low and high cost. These differences are relatively small, which can be explained by the small overlap between bias revealing input sets of the consid-ered models, as seen in Section 4.2.2. When prioritizing input pairs with larger JSD computed on DistilRoBERTa prediction probabilities, improvements over random ordering remain negligible for FinGPT and are only observable at higher effort. However, when applied to FinMA, this strategy shows a clear advantage, uncovering 73,01% and 89,64% of FinMA bias at only 20% and 40% of the effort. Conducted statistical tests and size-effect measures validate the significant advantage of the proposed input-prioritization strategy over random, with p-values in the order of 10 −18 and ˆA12 
+
+values of ≈ 1.
+
+## 5 CONCLUSION 
+
+This paper presented a large-scale study of demographic bias in financial language models, showing that large and lightweight models exhibit bias under both atomic and intersectional settings. This work represents the first comprehensive investigation of bias detection in financial language models. We further demonstrated that bias detection can be significantly accelerated by exploiting shared patterns in bias-revealing inputs across models, enabling a large fraction of biased behaviors to be uncovered using only a small subset of test inputs. In doing so, we provide the first empirical evi-dence supporting cross-model–guided bias detection as a promising direction for reducing the cost in bias auditing and any downstream bias-related tasks, i.e., mitigation, by providing practitioners 8Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) with essential bias-revealing inputs at significantly lower costs. Although obtained in the financial domain, our findings may generalize to other language models and application domains, which we leave for future work. 
+
+## ACKNOWLEDGMENT 
+
+This research was funded in whole, or in part, by the Luxembourg National Research Fund (FNR), grant reference NCER22/IS/16570468/NCER-FT. 
+
+## REFERENCES 
+
+Dogu Araci. FinBERT: Financial sentiment analysis with pre-trained language models. arXiv preprint , 2019. doi: 10.48550/arXiv.1908.10063. URL https://arxiv.org/abs/ 1908.10063 .Muhammad Hilmi Asyrofi, Imam Nur Bani Yusuf, Hong Jin Kang, Ferdian Thung, Zhou Yang, and David Lo. Biasfinder: Metamorphic test generation to uncover bias for sentiment analysis systems. arXiv preprint , 2021. doi: 10.48550/arXiv.2102.01859. URL https://arxiv.or g/abs/2102.01859 .Autonlp. Social bias inference corpus (sbic). https://autonlp.ai/datasets/social -bias-inference-corpus-(sbic)-, 2021. Emily M. Bender, Timnit Gebru, Angelina McMillan-Major, and Shmargaret Shmitchell. On the dangers of stochastic parrots: Can language models be too big? In Proceedings of the 2021 ACM Conference on Fairness, Accountability, and Transparency (FAccT ’21) , pp. 610–623, New York, NY, USA, 2021. Association for Computing Machinery. doi: 10.1145/3442188.3445922. URL 
+
+https://doi.org/10.1145/3442188.3445922 .Su Lin Blodgett, Solon Barocas, Hal Daum´ e III, and Hanna Wallach. Language (technology) is power: A critical survey of “bias” in NLP. arXiv preprint , 2020. doi: 10.48550/arXiv.2005.14050. URL https://arxiv.org/abs/2005.14050 .Tolga Bolukbasi, Kai-Wei Chang, James Y. Zou, Venkatesh Saligrama, and Adam Kalai. Man is to computer programmer as woman is to homemaker? debiasing word embeddings. arXiv preprint ,2016. doi: 10.48550/arXiv.1607.06520. URL https://arxiv.org/abs/1607.06520 .Cynthia Dwork, Moritz Hardt, Toniann Pitassi, Omer Reingold, and Richard Zemel. Fairness through awareness. In Proceedings of the 3rd Innovations in Theoretical Computer Science Conference , ITCS ’12, pp. 214–226, New York, NY, USA, 2012. Association for Comput-ing Machinery. ISBN 9781450311151. doi: 10.1145/2090236.2090255. URL https: //doi.org/10.1145/2090236.2090255 .Eaglewhl. FinSen: Financial sentiment dataset. Kaggle dataset, 2023. URL https://www.ka ggle.com/datasets/eaglewhl/finsen-financial-sentiment-dataset .Accessed 2026-01-11. Bent Fuglede and Flemming Topsøe. Jensen–shannon divergence and hilbert space embedding. 
+
+IEEE International Symposium on Information Theory , pp. 31, 2004. Yoav Goldberg. Neural Network Methods for Natural Language Processing . Morgan & Claypool, 2017. doi: 10.2200/S00762ED1V01Y201703HLT037. Yufei Guo, Muzhe Guo, Juntao Su, Zhou Yang, Mengqiu Zhu, Hongfei Li, Mengyang Qiu, and Shuo Shuo Liu. Bias in large language models: Origin, evaluation, and mitigation. arXiv preprint ,2024. doi: 10.48550/arXiv.2411.10915. URL https://arxiv.org/abs/2411.10915 .Pengcheng He, Xiaodong Liu, Jianfeng Gao, and Weizhu Chen. Deberta: Decoding-enhanced BERT with disentangled attention. In Proceedings of the International Conference on Learning Repre-sentations (ICLR) , 2021. 9Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) Svetlana Kiritchenko and Saif M. Mohammad. Examining gender and race bias in two hundred sentiment analysis systems. arXiv preprint , 2018. doi: 10.48550/arXiv.1805.04508. URL 
+
+https://arxiv.org/abs/1805.04508 .Matt Kusner, Joshua Loftus, Chris Russell, and Ricardo Silva. Counterfactual fairness. In Proceed-ings of the 31st International Conference on Neural Information Processing Systems , NIPS’17, pp. 4069–4079, Red Hook, NY, USA, 2017. Curran Associates Inc. ISBN 9781510860964. Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. Roberta: A robustly optimized BERT pretraining approach. arXiv , abs/1907.11692, 2019. Manuel Romero. DeBERTa-v3-ft-financial-news-sentiment-analysis. Hugging Face model, 2024a. URL https://huggingface.co/mrm8488/deberta-v3-ft-financial-new s-sentiment-analysis . Revision 7430ace. Manuel Romero. DistilRoBERTa-finetuned-financial-news-sentiment-analysis. Hugging Face model, 2024b. URL https://huggingface.co/mrm8488/distilroberta-f inetuned-financial-news-sentiment-analysis . Accessed 2026-01-? Gerard Salton, Anita Wong, and Chung-Shu Yang. A vector space model for automatic indexing. 
+
+Communications of the ACM , 18(11):613–620, 1975. doi: 10.1145/361219.361220. Shijing Si, Xiaoming Jiang, Qinliang Su, Zhou Yang, Mengqiu Zhu, Hongfei Li, Mengyang Qiu, Shuo Shuo Liu, and Lawrence Carin. Detecting implicit biases of large language models with Bayesian hypothesis testing. Scientific Reports , 15(1):12415, 2025. doi: 10.1038/s41598-025-9 5825-x. URL https://www.nature.com/articles/s41598-025-95825-x .Walid Siala, Ahmed Khanfir, and Mike Papadakis. Impact of llms news sentiment analysis on stock price movement prediction. arXiv preprint arXiv:2602.00086 , 2026. Badr Souani, Ezekiel O. Soremekun, Mike Papadakis, Setsuko Yokoyama, Sudipta Chattopadhyay, and Yves Le Traon. HInter: Exposing hidden intersectional bias in large language models. arXiv preprint , 2025. doi: 10.48550/arXiv.2503.11962. URL https://arxiv.org/abs/2503 .11962 .Shijie Wu, Ozan Irsoy, Steven Lu, Vadim Dabravolski, Mark Dredze, Sebastian Gehrmann, Prab-hanjan Kambadur, David Rosenberg, and Gideon Mann. Bloomberggpt: A large language model for finance. arXiv preprint arXiv:2303.17564 , 2023. Qianqian Xie, Weiguang Han, Xiao Zhang, Yanzhao Lai, Min Peng, Alejandro Lopez-Lira, and Jimin Huang. PIXIU: A large language model, instruction data and evaluation benchmark for finance. arXiv preprint , 2023. URL https://arxiv.org/abs/2306.05443 .Hongyang Yang, Xiao-Yang Liu, and Christina Dan Wang. FinGPT: Open-source financial large language models. arXiv preprint , 2023. doi: 10.48550/arXiv.2306.06031. URL https: //arxiv.org/abs/2306.06031 .10 Accepted at the ICLR 2026 Workshop on Advances in Financial AI (AFA) 
+
+## A APPENDIX 
+
+A.1 FINANCIAL LANGUAGE MODELS 
+
+Table 4: Links to the studied Financial language models in HugginFace 
+
+Model HuggingFace ID 
+
+FinMA https://huggingface.co/ChanceFocus/finma-7b-full 
+
+FinGPT https://huggingface.co/oliverwang15/FinGPT_v32_Llama2_ Sentiment_Instruction_LoRA_FT 
+
+FinBERT https://huggingface.co/ProsusAI/finbert 
+
+DeBERTa-v3 https://huggingface.co/mrm8488/deberta-v3-ft-financial -news-sentiment-analysis 
+
+DistilRoBERTa https://huggingface.co/mrm8488/distilroberta-finetuned -financial-news-sentiment-analysis 
+
+A.2 IMPLEMENTATION DETAILS 
+
+We implemented our experimental workflow as described earlier in Section 3 as python scripts, relying on well-established publicly available libraries, namely: - transformers for model loading, tokenization, and inference, - bitsandbytes for model quantization, - Pytorch for inference and on-GPU execution operations, - LogitsProcessor for vocabulary masking and constrained generation. - numpy and pandas for several vector operations. Other libraries and tools were also used throughout the codebase. All of these were important to load the financial models, generate predictions, obtain bias results, and quantify bias via JSD and Cosine similarity. We fixed random seeds for any stochastic operations (e.g., text generation ) to ensure reproducibility of results. The implementation of our approach and the reproduction package are available at https://gi thub.com/biasfinllms/iclr-finai-submission 
+
+A.3 COMPUTE INFRASTRUCTURE AND RESOURCES 
+
+Test Case Generation: We performed the mutation generation and dataset preprocessing on a standard workstation (Intel Core i7-1165G7 @ 2.8GHz CPU, 16GB RAM) without GPU accelera-tion, taking only a few hours to complete. 
+
+Model inference and analysis: To run the sentiment models on the 125k+ test cases and per-form bias analysis, we utilized GPU-enabled compute environments. Initial prototyping and spot-checking of model outputs were conducted on a single NVIDIA T4 GPU (via Google Colab’s free tier). However, the full-batch inference over all mutated pairs was more computationally intensive. To run these experiments, we utilized a high-performance server equipped with 3 × NVIDIA RTX A6000 GPUs (each with 49 GB of VRAM) and 504 GB of system RAM. 11

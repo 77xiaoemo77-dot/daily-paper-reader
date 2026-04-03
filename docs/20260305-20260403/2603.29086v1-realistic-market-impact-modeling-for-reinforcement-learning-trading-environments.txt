@@ -1,0 +1,231 @@
+Title: Realistic Market Impact Modeling for Reinforcement Learning Trading Environments
+
+URL Source: https://arxiv.org/pdf/2603.29086v1
+
+Published Time: Wed, 01 Apr 2026 00:18:29 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Realistic Market Impact Modeling for Reinforcement Learning Trading Environments 
+
+Lucas Riera Abbade 
+
+Escola Polit´ ecnica Universidade de S˜ ao Paulo 
+
+lucasabbade@usp.br 
+
+Anna Helena Reali Costa 
+
+Escola Polit´ ecnica Universidade de S˜ ao Paulo 
+
+anna.reali@usp.br 
+
+Abstract —Reinforcement learning (RL) has shown promise for trading, yet most open-source backtesting environments assume negligible or fixed transaction costs, which can cause agents to learn undesirable trading behaviors that fail on real-world execution. We introduce a suite of three Gymnasium-compatible trading environments—MACE (Market-Adjusted Cost Execu-tion) stock trading, margin trading, and portfolio optimization— that integrate nonlinear market impact models grounded in the Almgren–Chriss (AC) framework and the empirically validated square-root impact law. Each environment shares a unified infras-tructure: pluggable cost models, permanent impact tracking with exponential decay, and comprehensive trade-level logging. We evaluate five DRL algorithms (A2C, PPO, DDPG, SAC, TD3) on the NASDAQ 100 universe, comparing a fixed 10 bps baseline cost model against the AC model with Optuna-optimized hyperparam-eters. Our results show that (i) the cost model materially affects both absolute performance and the relative ranking of algorithms across all three environments—in stock trading, optimized PPO achieves the best OOS result (20% return, Sharpe 1.06) under the baseline but drops to 15% under AC, while TD3 improves from 15% to 18%; in portfolio optimization, TD3 under AC achieves 32% (best overall) while the same algorithm under baseline yields only 26% (worst among agents); (ii) the AC model produces dramatically different trading behavior—non-optimized TD3 in stock trading sees daily costs drop from $200k to $8k when switching to AC, with turnover falling from 19% to 1%; (iii) hyperparameter optimization (HPO) is essential for constraining pathological trading—without hyperparameter op-timization, agents exhibit monotonically increasing participation rates across epochs (e.g., SAC stock trading costs drop 82% with HPO); and (iv) algorithm choice interacts strongly with the cost model in environment-specific ways—in the margin environment, DDPG’s OOS Sharpe jumps from −2.1 to 0.3 under AC while SAC’s drops from −0.5 to −1.2. We release the full environment suite as an open-source extension to FinRL-Meta. 
+
+Index Terms —Reinforcement Learning, Market Impact, Gym-nasium, FinRL, Almgren–Chriss, Transaction Costs, Portfolio Optimization, Differential Sharpe Ratio 
+
+I. I NTRODUCTION 
+
+Reinforcement learning (RL) has emerged as a powerful paradigm for quantitative trading and portfolio optimiza-tion, capable of discovering dynamic strategies from market data [1]. However, a persistent reality gap exists between sim-ulated and live performance. Many prior studies train agents in idealized environments that neglect the market impact of their trades—the permanent and temporary price changes caused by large orders consuming finite liquidity [2]. A common simplification is to assume a fixed transaction cost of 10 basis points (bps), which does not scale with trade size, volatility, or available volume. This oversight allows agents to trade with unrealistic frequency, producing inflated backtest results [3]. We present a suite of three Gymnasium-compatible envi-ronments [4] that embed a nonlinear market impact model, calibrated using the Almgren–Chriss (AC) framework [2] and the square-root impact law [5]. The environments extend the FinRL-Meta library [6] and are designed for multi-asset trading. All three environments share a common infrastructure: 1) Pluggable impact models with permanent impact tracking : Almgren-Chriss, square-root, Obizhaeva– Wang [7], and a 10 bps baseline are available, others can be easily added using the same interface. 2) Trade-level logging : POV (order percentage of volume), turnover percentile, and per-stock permanent impact for detailed backtest cost analysis. 3) Report generator : Detailed report generator to visualize returns, sharpe, drawdowns, epoch evolution metrics, and trading costs. The three environments represent distinct RL formulations of portfolio management: 
+
+MACE Stock Trading (long-only): the Market-Adjusted Cost Execution (MACE) environment is our primary contribution. The agent outputs a continuous signal ai ∈ [−1, 1] per stock, converted to share quantities respecting position and volume limits. Uses a DSR reward [8] with drawdown penalty and online observation normalization (running-mean/variance with serializable state for train-to-test transfer). 
+
+Margin Trading (long/short with leverage): adapted from Gu et al. [9], who use the Dow Jones 30. We expand the universe to the NASDAQ 100 to test market impact on a larger set of stocks. Uses a profit + rolling Sharpe reward. 
+
+Portfolio Optimization (POE) (long-only): adapted from Costa & Costa [10], who use a small set of Brazilian equities. We again expand to the NASDAQ 100 for the same reason. Uses a log-return reward. Our contributions are as follows.  
+
+> •
+
+An open-source, unified environment suite with realistic market impact for RL trading research.  
+
+> •
+
+A systematic comparison of five DRL algorithms (A2C, PPO, DDPG, SAC, TD3) across three environment for-mulations under baseline (10 bps) vs. AC impact models, with Optuna-based hyperparameter optimization.  
+
+> •
+
+Evidence that the nonlinear AC cost signal produces qualitatively different training dynamics—enabling OOS 
+
+> arXiv:2603.29086v1 [cs.LG] 30 Mar 2026
+
+convergence, constraining over-trading, and altering the relative ranking of algorithms compared to flat-fee base-lines.  
+
+> •
+
+Analysis showing that hyperparameter optimization is critical not only for OOS performance but for prevent-ing pathological execution behavior such as unbounded growth in participation rates. II. M ARKET IMPACT MODELS 
+
+When a trader submits an order, executing against available liquidity moves the price against them, generating execution costs commonly referred to as market impact . The optimal-execution literature, notably the framework of Almgren and Chriss [2], decomposes these costs into a temporary com-ponent (the instantaneous cost of demanding liquidity, which reverts once the order is complete) and a permanent compo-nent (a lasting price shift reflecting the information content of the trade); the phenomenon has deeper roots in market-microstructure models of price formation such as Kyle’s model of informed trading [11]. The magnitude of both components depends on order size relative to available volume, asset volatility, and execution speed—none of which are captured by a flat basis-point fee [12]. Below we describe the two models used in our environments: the empirically validated square-root law (Section II-A) and the Almgren–Chriss cost decomposition (Section II-B), followed by our treatment of permanent impact decay (Section II-C). 
+
+A. The Square-Root Impact Law 
+
+Empirical studies document that the price impact of ametaorder scales as the square root of the fraction of average daily volume (ADV) traded [5], [13], [14]: 
+
+I(Q) = Y · σ ·
+
+r QV , (1) where I(Q) is the expected price change, expressed as a return, measured at end of execution, Q is the (unsigned) metaorder size, V is the average daily volume, σ is daily return volatility, and Y is an empirical prefactor typically calibrated in the range 0.5–1.0 depending on the market and dataset [13]. This reduced-form expression averages over execution styles and participation rates; richer models incorporate duration and schedule effects [13], [15]. After execution, impact partially decays; fair-pricing models [16] predict a long-run level of ∼ 23
+
+of peak impact, though empirical estimates vary with horizon and the decomposition of informational versus mechanical components [15], [17]. 
+
+B. Almgren–Chriss Cost Decomposition 
+
+Following the linear impact framework of [2], [14], we decompose the execution cost of a single-period trade of x
+
+shares at price P , with daily volatility σ and average daily volume V , into three components: 
+
+Cperm = 12 α σ  x/V  |x| P , (2) 
+
+Cspread = ε |x| P , (3) 
+
+Ctemp = β σ  x/V  |x| P , (4) where α controls permanent impact, ε is the half-spread (default 5 bps), and β controls temporary depth-depletion cost. The permanent price shift is ∆P = α σ (x/V ) P .
+
+C. Permanent Impact Decay 
+
+Real markets absorb the information content of trades over time. We model this with exponential decay: ∆Pt =∆Pt−1(1 − λ) each trading day, with half-life τ1/2 days so 
+
+λ = 1 − 2−1/τ 1/2 . Default τ1/2 = 5 days for large-cap equities [12]. III. E NVIRONMENT DESIGN 
+
+All three environments share a common Gymnasium inter-face: an observation vector encoding market state and portfolio positions, a continuous action space mapped to trades, and a reward signal that balances risk-adjusted return against exe-cution costs. The MACE (Market-Adjusted Cost Execution) stock trading environment is our primary contribution and is described in detail below. The margin trading and portfolio optimization environments preserve the state representation, action semantics, and reward functions defined by their origi-nal authors [9], [10]; our modifications to those environments are limited to integrating the pluggable impact model interface, permanent impact tracking, and trade-level logging described in Section I. 
+
+A. State Space 
+
+The observation is a flat vector composed of:  
+
+> •
+
+Cash (or margin features) as a fraction of total equity.  
+
+> •
+
+One-day log returns: log( P adj  
+
+> t
+
+/P adj 
+
+> t−1
+
+). 
+
+> •
+
+Position value as a fraction of total equity.  
+
+> •
+
+Technical indicators (MACD, RSI, CCI, etc.), scaled by 
+
+2−7. 
+
+> •
+
+Holdings relative to 20-day ADV: hi/ADV 20 ,i . 
+
+> •
+
+Optional : permanent impact in basis points, cooldown counters, risk-free rate. Observations are optionally standardized via online running-mean/variance normalization with serializable state for train →test transfer. 
+
+B. Action Space and Trade Execution a) Stock and Margin Trading: Actions ai ∈ [−1, 1] per stock. Let ¯ni = ⌊ϕ V /P i⌋ denote the maximum position size in shares, where V is portfolio value, Pi the current price, and ϕ the per-stock exposure limit (starting parameter). The desired trade is ∆i = ai × ¯ni; the resulting position is clamped to [−¯ni, ¯ni] and the trade is further clipped to a maximum fraction of daily volume. Sells are processed before buys to free cash. 
+
+b) Portfolio Optimization: Actions are raw logits for 
+
+N + 1 slots (cash plus N stocks), passed through a softmax to produce target weights wi. The environment computes the share-level rebalancing trades required to reach those targets, clips each trade to a maximum fraction of daily volume, and applies impact costs. C. Reward Function 
+
+We use the Differential Sharpe Ratio (DSR) [8] as the pri-mary reward signal for the MACE stock trading environment. The margin trader and portfolio optimization environments retain the reward functions defined by their respective au-thors [9], [10]. Let rt = Vt/V t−1 − 1 be the one-step portfolio return. The DSR update is: 
+
+μt = (1 − α)μt−1 + α r t , m2 
+
+> t
+
+= (1 − α)m2 
+
+> t−1
+
++ α r 2 
+
+> t
+
+,
+
+(5) DSR t = rt − μt−1
+
+ˆσt
+
+− 12 SR t−1
+
+ rt − μt−1
+
+ˆσt
+
+2
+
+, (6) where α = 1 /H with horizon H, ˆσt = pmax( m2 
+
+> t
+
+− μ2 
+
+> t
+
+, ϵ ),and SR t−1 = μt−1/ˆσt−1. The drawdown penalty augments the DSR: 
+
+Rt =  DSR t − ηdd (∆ DD t)2 × s , (7) where ∆DD t = max(0 , DD t − DD t−1) and s is a scaling factor. IV. E XPERIMENTAL SETUP 
+
+We evaluate five DRL algorithms on the NASDAQ 100 universe under two cost models (flat 10 bps baseline and Almgren–Chriss), with and without Optuna hyperparameter optimization. This section details the data, algorithms, HPO pipeline, and comparison protocol. 
+
+A. Data and Universe 
+
+We use the NASDAQ 100 universe with daily open, high, low, close, and volume data from January 2010 to January 2026, split 90/10 for training and out-of-sample (OOS) testing. HPO is performed on the data up until January 2025, with 2025 data being reserved for true OOS and final evaluation. The benchmark is the QQEW ETF (equal-weighted NAS-DAQ 100), chosen because the agent’s per-stock cap of 2% makes an equal-weighted benchmark more comparable than the cap-weighted QQQ. Technical indicators include MACD, RSI, CCI, Bollinger Bands, and moving averages from the FinRL indicator set. Note that we use a static NASDAQ 100 composition from circa 2021 that’s available in FinRL. While this introduces mild survivorship bias, the old list actually mitigates the bias in the OOS period relative to using the current composition, since stocks that were subsequently removed are included in training. 
+
+B. DRL Algorithms 
+
+We evaluate five algorithms from Stable-Baselines3 [18]: A2C, PPO, DDPG, SAC, and TD3. Each is trained epoch-by-epoch (one epoch = one pass through the training period) with per-epoch OOS evaluation to track overfitting. 
+
+C. Hyperparameter Optimization 
+
+We use Optuna [19] with TPE sampling and median pruning for HPO. The search space covers both environment parame-ters (reward scaling, DSR horizon, drawdown penalty weight, observation features, normalization) and algorithm-specific parameters (learning rate, network architecture, entropy coef-ficient, etc.). The objective is the best OOS annualized Sharpe ratio across epochs. 
+
+D. Comparison Protocol 
+
+For the stock trading and POE environments we run a combination of the 5 agents with (i) baseline (10 bps) vs Almgren-Chriss cost model, and (ii) default hyperparameters vs optimized hyperparameters, totaling 20 backtests. For the margin trader environment we stick to the configuration in [9], where they didn’t include TD3 to the comparison and use the hyperparameters as described in their work, only switching the cost models, totaling 8 backtests. V. R ESULTS 
+
+We present results for each environment in turn. The stock trading (Section V-A) and portfolio optimization (Section V-C) environments share the same comparison grid—five agents, two cost models, default and optimized hyperparameters—but reveal different dynamics: stock trading shows the strongest HPO effects and the most extreme cost differences, while POE produces the highest absolute returns and the clearest evidence that the AC cost signal improves training convergence. The margin trading environment (Section V-B) uses default pa-rameters only (following the original paper’s configuration) and isolates the cost model effect without HPO. 
+
+A. MACE Stock Trading: Five-Agent Comparison 
+
+All configurations outperform the QQEW benchmark (19% OOS return) except non-optimized TD3 under AC. The best result is optimized PPO under the baseline cost model: 20% annualized return and 1.06 Sharpe, switching to the AC cost model reduces return to 15% (Sharpe 1.03), but trading costs drop 55%, average order POV from 0.18 to 0.14, max drawdown from −20% to −16%, turnover from 1.3% to 1.1%, and volatility from 19% to 15%—a substantially less risky portfolio. TD3 shows the opposite pattern: AC improves 
+
+returns from 15% to 18% and Sharpe from 0.9 to 1.1, while turnover drops from 4% to 3%, costs fall 13%, and POV decreases from 0.36 to 0.20. DDPG also improves modestly under AC; A2C and SAC are slightly worse. HPO dramatically reduces trading activity. Optimized SAC cuts turnover from 5% to 2% on AC and trading costs by 82% (POV from 0.46 to 0.18); DDPG shows a similar pattern. All optimized agents place heavy emphasis on cost reduction, sometimes at the expense of raw returns. The most extreme case is non-optimized TD3 under the baseline: average order POV of 1%, daily turnover of 19%, and average daily trading cost of $200k. The same agent under AC achieves POV of 0.2%, turnover of 1%, and daily cost of $8k—a 96% reduction that only moderately affects returns (13% vs. 11%) because Fig. 1. OOS return—MACE stock trading, all five agents under baseline vs. AC impact, optimized params. Black line: QQEW benchmark (19%). 
+
+> Fig. 2. Non-optimized TD3 trading costs—MACE stock trading, baseline vs. AC cost model.
+
+lower volatility (17% to 12%) preserves Sharpe (0.8 to 0.9) (Fig. 2). Per-epoch analysis reveals that PPO, SAC, and A2C exhibit rising POV and turnover over training epochs—a tendency that HPO substantially mitigates. Optimized PPO’s IS POV on AC rises from 0.25% to 0.65%, vs. 1% to 2.4% for non-optimized (Fig. 3). Turnover follows the same pattern: non-optimized PPO 2.2% to 7.9% vs. optimized 0.54% to 1.47%. SAC shows similar dynamics (optimized turnover 1.12% to 3.85%, POV 0.72% to 1.56%; non-optimized stable at ∼8% turnover and ∼2.5% POV). A2C exhibits the same behavior to a lesser extent. 
+
+B. Margin Trading: Four-Agent Comparison 
+
+All agents underperform the QQEW benchmark OOS, al-though A2C and PPO outperform IS, suggesting overfitting that HPO could mitigate. The AC model’s effect varies signif-icantly by agent. A2C returns 5.5% (baseline) and 6.5% (AC) OOS, with IS returns of 13% and 17.5% respectively—the IS– OOS gap is large but the AC model produces slightly better OOS performance. PPO achieves 15% OOS under the baseline but only 9% under AC, despite similar turnover ( ∼3%) and 
+
+> Fig. 3. Average order POV per epoch—MACE stock trading, PPO, optimized vs. non-optimized (AC impact model).
+
+40% lower trading costs on AC. DDPG and SAC are the weakest performers, and the cost model makes a large dif-ference in opposite directions: DDPG improves dramatically under AC (OOS Sharpe from −2.1 to 0.3, annualized return from −11% to 2%, max drawdown from −23% to −6%) with similar trading costs and POV, while SAC degrades under AC (OOS Sharpe from −0.5 to −1.2, return from −3% to −7%), with lower POV (0.26 to 0.15) but ∼10% higher trading costs (Fig. 4). Training dynamics differ across algorithms. A2C behaves similarly under both cost models, with OOS Sharpe and return peaking around epoch 15 and degrading afterward; other metrics remain stable. PPO exhibits IS–OOS divergence—IS return rises slightly while OOS declines over epochs, more so under AC than baseline. PPO’s average trading costs and POV spike by epoch 10 (IS POV rising from ∼0.37 to ∼0.6) before partially receding to ∼0.5 (Fig. 5). DDPG and SAC show no evolution across epochs for any metric, consistent with early convergence to a near-deterministic policy, which could be improved with HPO. Fig. 4. OOS portfolio value—margin trading, A2C/PPO/DDPG/SAC, baseline vs. AC impact model.  
+
+> Fig. 5. PPO average order POV per epoch—margin trading.
+
+C. Portfolio Optimization: Five-Agent Comparison 
+
+All agents outperform the benchmark. TD3 exhibits the widest spread across cost models: with the AC model it achieves 32%—the highest OOS return of any configuration— while with the 10 bps baseline it returns 26%, the lowest among all agents. A2C obtains ∼30% under both models (slightly higher with AC); SAC reaches 30% (baseline) and 29% (AC); DDPG is comparable at 28% (baseline) and 27% (AC). PPO is the only agent whose AC performance is meaningfully worse than its baseline: 28% vs. 31%. The annualized Sharpe ratio improves from 0.9 to 1.1 for TD3 when switching from the baseline to AC; other agents remain in the 0.9–1.0 range. TD3 total trading cost decreases by 
+
+∼15% under AC relative to the baseline, while the remaining agents see ∼30% lower costs (Fig. 6). Training-epoch dynamics under the AC impact model reveal clear benefits of HPO. For TD3, the baseline-parameter agent has higher IS return than the optimized agent, yet lower OOS return; both IS and OOS metrics remain flat across epochs under baseline parameters. The optimized TD3 exhibits genuine convergence: IS return decreases gradually while OOS return improves substantially, and the same pattern holds for Sharpe (Fig. 7). Drawdown is unaffected by HPO. Turnover and average order POV increase over epochs for the optimized agent (final OOS POV: 0.13 vs. 0.10 for baseline; IS POV rises to 0.68 for optimized vs. 0.37 flat for baseline) but remain constant for the baseline. A2C shows a similar but less pronounced convergence pattern. PPO peaks at epoch 10 and   
+
+> Fig. 6. OOS annualized return—POE, all five agents under 10 bps baseline vs. AC impact.
+> Fig. 7. TD3 return and Sharpe per epoch—POE, baseline vs. optimized parameters.
+
+degrades afterward; critically, baseline-parameter PPO exhibits monotonically increasing POV and trading costs at every epoch (IS POV reaching 1.39 vs. 0.36 for optimized; OOS 0.16 vs. 0.11), confirming that HPO is essential for constraining PPO’s tendency toward over-trading. SAC returns and Sharpe are highly unstable across epochs for both configurations, oscillating substantially from epoch to epoch. Comparing TD3 (optimized) across cost models, the OOS convergence observed with the AC model does not occur with the 10 bps baseline: baseline-impact OOS annualized return stays flat at ∼16% while AC climbs to 19.35%, and Sharpe remains at 0.9 for baseline vs. 1.06 for AC (Fig. 8). This improvement occurs despite higher turnover (1.77% vs. 1.51%) and POV (0.13 vs. 0.11) under AC, suggesting that the nonlinear cost signal teaches the agent a more generalizable policy. A2C shows no meaningful difference between cost models. VI. L IMITATIONS AND FUTURE WORK 
+
+Although our work improves many aspects of RL backtest-ing relative to existing environments, some were not addressed and can be improved in future work. We use a fixed NASDAQ 100 composition; ideally the trading universe would reflect daily index membership, but this data is not freely available. Expanding to the S&P 500 or Russell 2000 would amplify cost differences, as participation rates in small-cap names are higher. Fig. 8. TD3 (optimized) sharpe per epoch—POE, AC vs. 10 bps baseline impact model. 
+
+The AC model assumes linear permanent impact with constant coefficients; the Obizhaeva–Wang model [7], which captures transient impact decay, is implemented in our code-base but not yet systematically evaluated. Carry costs (stock borrowing fees) are not calculated, which would be important for the margin trader. The Optuna HPO pipeline currently optimizes for OOS Sharpe. As shown in Section V, optimized configurations can increase drawdowns while improving Sharpe, different optimization objectives might yield better overall results. VII. C ONCLUSION 
+
+We presented a suite of three Gymnasium-compatible trad-ing environments with realistic, nonlinear market impact mod-els and evaluated five DRL algorithms (A2C, PPO, DDPG, SAC, TD3) across stock trading, margin trading, and portfo-lio optimization formulations. Our results demonstrate that: (1) the choice of cost model materially affects both absolute performance and the relative ranking of algorithms across all three environments—in stock trading, optimized PPO achieves 20% OOS return under the baseline but only 15% under AC, while TD3 improves from 15% to 18%; in POE, TD3 under AC achieves 32% (best overall) while the same algorithm under baseline yields only 26%; (2) the AC model produces dramatically different trading behavior—non-optimized TD3 in stock trading sees daily costs drop from $200k to $8k (96% reduction) when switching from baseline to AC, with turnover from 19% to 1%, while in POE the nonlinear cost model enables genuine training convergence that does not occur under flat fees; (3) hyperparameter optimization is essential not only for OOS performance but for constraining pathological execution—PPO and SAC exhibit rising POV and turnover across epochs without HPO (SAC stock trading costs drop 82% with HPO; PPO POE IS POV reaches 1.39 without HPO vs. 0.36 with); and (4) algorithm choice interacts strongly with both the environment and cost model—DDPG’s margin Sharpe jumps from −2.1 to 0.3 under AC while SAC’s drops from −0.5 to −1.2, PPO is the best stock trading agent under baseline but is hurt by AC, and TD3 benefits most from AC across both stock and POE environments. The full environment suite—with stock trading, margin trading, and portfolio optimization variants, plus Optuna HPO pipelines and comprehensive reporting—is released as an open-source extension to FinRL-Meta to support reproducible research in cost-aware reinforcement learning for finance. REFERENCES [1] S. Sun, R. Wang, and B. An, “Reinforcement learning for quantitative trading,” ACM Trans. Intell. Syst. Technol. , vol. 14, no. 3, Mar. 2023. [2] R. Almgren and N. Chriss, “Optimal execution of portfolio transactions,” 
+
+Journal of Risk , vol. 3, no. 2, pp. 5–39, 2001. [3] A. DETZEL, R. NOVY-MARX, and M. VELIKOV, “Model comparison with transaction costs,” The Journal of Finance , vol. 78, no. 3, pp. 1743– 1775, 2023. [4] G. Brockman, V. Cheung, L. Pettersson, J. Schneider, J. Schulman, J. Tang, and W. Zaremba, “Openai gym,” 2016. [5] B. T´ oth, Y. Lemperiere, C. Deremble, J. de Lataillade, J. Kockelkoren, and J.-P. Bouchaud, “Anomalous price impact and the critical nature of liquidity in financial markets,” Physical Review X , vol. 1, no. 2, p. 021006, 2011. [6] X.-Y. Liu, Z. Xia, J. Rui, J. Gao, H. Yang, M. Zhu, C. Wang, Z. Wang, and J. Guo, “Finrl-meta: Market environments and benchmarks for data-driven financial reinforcement learning,” in Advances in Neural Information Processing Systems , S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh, Eds., vol. 35. Curran Associates, Inc., 2022, pp. 1835–1849. [7] A. Obizhaeva and J. Wang, “Optimal trading strategy and supply/demand dynamics,” Journal of Financial Markets , vol. 16, no. 1, pp. 1–32, 2013. [8] J. Moody, L. Wu, Y. Liao, and M. Saffell, “Performance functions and reinforcement learning for trading systems and portfolios,” Journal of Forecasting , vol. 17, no. 5-6, pp. 441–470, 1998. [9] J. Gu, W. Du, A. M. M. Rahman, and G. Wang, “Margin trader: A reinforcement learning framework for portfolio management with margin and constraints,” in Proceedings of the Fourth ACM International Conference on AI in Finance , ser. ICAIF ’23. New York, NY, USA: Association for Computing Machinery, 2023, p. 610–618. [10] C. Costa and A. Costa, “POE: A general portfolio optimization envi-ronment for FinRL,” in Anais do II Brazilian Workshop on Artificial Intelligence in Finance . Porto Alegre, RS, Brasil: SBC, 2023, pp. 132–143. [11] A. S. Kyle, “Continuous auctions and insider trading,” Econometrica ,vol. 53, no. 6, pp. 1315–1335, 1985. [12] J.-P. Bouchaud, J. D. Farmer, and F. Lillo, “Chapter 2 - how markets slowly digest changes in supply and demand,” in Handbook of Financial Markets: Dynamics and Evolution , ser. Handbooks in Finance, T. Hens and K. R. Schenk-Hopp´ e, Eds. San Diego: North-Holland, 2009, pp. 57–160. [13] J.-P. Bouchaud, J. Bonart, J. Donier, and M. Gould, Trades, quotes and prices: financial markets under the microscope . Cambridge University Press, 2018. [14] R. Almgren, C. Thum, E. Hauptmann, and H. Li, “Direct estimation of equity market impact,” Risk , vol. 18, no. 7, pp. 58–62, 2005. [15] E. Bacry, A. Iuga, M. Lasnier, and C.-A. Lehalle, “Market impacts and the life cycle of investors orders,” Market Microstructure and Liquidity ,vol. 01, no. 02, p. 1550009, 2015. [16] J. D. Farmer, A. Gerig, F. Lillo, and H. Waelbroeck, “How efficiency shapes market impact,” Quantitative Finance , vol. 13, no. 11, pp. 1743– 1758, 2013. [17] X. Brokmann, E. S´ eri´ e, J. Kockelkoren, and J.-P. Bouchaud, “Slow decay of impact in equity markets,” Market Microstructure and Liquidity ,vol. 01, no. 02, p. 1550007, 2015. [18] A. Raffin, A. Hill, A. Gleave, A. Kanervisto, M. Ernestus, and N. Dor-mann, “Stable-baselines3: Reliable reinforcement learning implementa-tions,” Journal of Machine Learning Research , vol. 22, no. 268, pp. 1–8, 2021. [19] T. Akiba, S. Sano, T. Yanase, T. Ohta, and M. Koyama, “Optuna: A next-generation hyperparameter optimization framework,” in Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining , ser. KDD ’19. New York, NY, USA: Association for Computing Machinery, 2019, p. 2623–2631.

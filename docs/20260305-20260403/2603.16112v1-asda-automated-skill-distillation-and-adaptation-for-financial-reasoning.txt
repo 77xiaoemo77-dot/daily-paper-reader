@@ -1,0 +1,500 @@
+Title: ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning
+
+URL Source: https://arxiv.org/pdf/2603.16112v1
+
+Published Time: Wed, 18 Mar 2026 00:37:15 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 
+
+Tik Yu Yim, Wenting Tan, Sum Yee Chan, Tak-Wah Lam, and Siu Ming Yiu 
+
+The University of Hong Kong, Hong Kong SAR, China 
+
+{tyyim, wt212796}@connect.hku.hk, sumychan@hku.hk, {twlam, smyiu}@cs.hku.hk 
+
+Abstract. Adapting large language models (LLMs) to specialized fi-nancial reasoning typically requires expensive fine-tuning that produces model-locked expertise. Training-free alternatives have emerged, yet our experiments show that leading methods (GEPA and ACE) achieve only marginal gains on the FAMMA financial reasoning benchmark, exposing the limits of unstructured text optimization for complex, multi-step do-main reasoning. We introduce Automated Skill Distillation and Adapta-tion (ASDA), a framework that automatically generates structured skill artifacts through iterative error-corrective learning without modifying model weights. A teacher model analyzes a student model’s failures on financial reasoning tasks, clusters errors by subfield and error type, and synthesizes skill files containing reasoning procedures, code templates, and worked examples, which are dynamically injected during inference. Evaluated on FAMMA, ASDA achieves up to +17.33 pp improvement on arithmetic reasoning and +5.95 pp on non-arithmetic reasoning, sub-stantially outperforming all training-free baselines. The resulting skill artifacts are human-readable, version-controlled, and compatible with the Agent Skills open standard, offering any organization with a labeled domain dataset a practical and auditable path to domain adaptation without weight access or retraining 1.
+
+Keywords: LLM Adaptation · Financial Reasoning · Skill Distillation 
+
+· Training-Free Adaptation · Agent Skills 
+
+1 Introduction 
+
+Financial reasoning poses a distinctive challenge for general-purpose LLMs: it demands simultaneous mastery of multi-step quantitative calculation and deep domain-specific judgment, a combination that pure math or pure knowledge benchmarks do not jointly test [6,13]. Evaluations across multiple financial bench-marks confirm a persistent performance ceiling: FAMMA reveals that standard,  
+
+> 1
+
+Code and skill libraries are available at https://github.com/SallyTan13/ ASDA-skill  
+
+> arXiv:2603.16112v1 [cs.CL] 17 Mar 2026 2T.Y. Yim et al.
+
+non-reasoning frontier models achieve only 38–45% overall accuracy across eight financial subfields [13] 2; and FinBen finds that while LLMs handle information extraction well, they consistently struggle with advanced reasoning and com-plex financial QA [6]. FAMMA’s error analysis finds that domain-knowledge gaps dominate model errors [13], as models misapply financial concepts to the wrong context or lack the expertise to select the correct procedure. These are not failures that more parameters alone will fix—they require targeted advances in domain reasoning. The standard remedy—domain-specific fine-tuning—is costly, produces model-locked expertise that becomes obsolete with each model release, and depends on supervision resources that many organizations lack [11,14]. This is especially problematic in regulated industries such as financial services, legal, and healthcare, where organizations deploy commercial LLMs via black-box API without weight access. Automated prompt optimization offers a training-free al-ternative, but methods like GEPA [2] and ACE [1] optimize flat text strings —monolithic instruction blocks that lack the modularity and executability required for multi-step reasoning across diverse financial subdomains, as our FAMMA ex-periments confirm (Section 5). The missing abstraction is not a better prompt, but an executable skill : a modular, self-contained reasoning procedure that can be independently composed, tested, and updated for each target domain. We introduce Automated Skill Distillation and Adaptation (ASDA) ,a framework that automatically generates executable agent skills from error anal-ysis without modifying model weights. A teacher model diagnoses a student’s failures on financial tasks, clusters them by subfield and error type to identify the root causes of domain-knowledge gaps , and synthesizes skill files containing domain-specific reasoning procedures and code templates, which a selector in-jects at inference time. Evaluated on FAMMA, ASDA achieves up to +17.33 pp on arithmetic and +5.95 pp on non-arithmetic reasoning after iterative refinement, significantly outperforming all training-free baselines. The resulting skill library is not a better prompt, but a new representational layer between the model and its deployment context that can be version-controlled, audited, and regenerated for any successor model. 
+
+1.1 Contributions (1) ASDA framework. We introduce the first system to automatically gen-erate executable agent skills for domain-specific reasoning using only black-box LLM access—no weight updates or gradient computation—substantially outper-forming all training-free baselines on FAMMA. 
+
+(2) Self-sufficient adaptation from questions and answers alone. A self-teaching ablation shows that ASDA can improve a model using only the ques-tions and ground-truth answers in the training set—no superior teacher model   
+
+> 2Extended-thinking models (GPT-o1, DeepSeek-R1, Qwen-QwQ-32B) score 67–76% on FAMMA, and PoT-augmented variants reach 78–86%. We exclude these as think-ing budget introduces a confound orthogonal to domain adaptation; our evaluation targets standard non-reasoning models under fixed inference budgets. ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 3
+
+required—achieving +6.33 pp (73% of the full gain). This means any organization with a labeled domain dataset can run ASDA on their deployed model directly, without access to a stronger or more expensive model, making the framework practical for real-world enterprise deployment. 
+
+2 Related Work 
+
+2.1 Financial LLM Adaptation 
+
+Domain-specific fine-tuning has been the dominant approach to adapting LLMs for financial tasks. BloombergGPT [11] demonstrated the potential of finance-specific pretraining but required approximately 1.3 million GPU hours on a pro-prietary 363B-token corpus—resources beyond most organizations. FinGPT [14] offered a more accessible alternative through LoRA-based fine-tuning on open financial data. More recently, Xue et al. [13] explored distillation from DeepSeek-R1 to smaller models for financial reasoning. Despite these advances, all fine-tuning approaches share a fundamental limitation: they produce model-locked expertise that requires re-training when the base model is updated or replaced, and many are incompatible with black-box API access to commercial LLMs. 
+
+2.2 Training-Free Adaptation 
+
+Automated prompt optimization offers a weight-free alternative. Prior work for-malizes this as automatic differentiation over text [15] or optimizable module compositions [7]. GEPA [2] achieves state-of-the-art results on several bench-marks through reflective prompt evolution. ACE [1] takes a test-time knowledge accumulation approach, building contextual expertise during inference. While these methods avoid fine-tuning costs, their output is a flat text string—a mono-lithic instruction block that cannot represent the modular, multi-step procedural knowledge required for complex domain reasoning, as our FAMMA experiments confirm (Section 5). A complementary line of work treats failure analysis as the primary learning signal. LEMMA [3] synthesizes error-type-grounded training data for mathe-matical reasoning, consistently outperforming correction-agnostic data augmen-tation baselines, establishing that failure-driven analysis yields richer adaptation signal—a principle ASDA extends to training-free, executable skill generation. At the other end of the adaptation spectrum, test-time training (TTT) methods temporarily update model weights at inference, requiring gradient access incom-patible with black-box API deployments; ASDA occupies the gap between these approaches. 
+
+2.3 Skill-Based Agent Architectures 
+
+Recent agent work has explored skill libraries as reusable knowledge artifacts. Voyager [10] demonstrated that composable executable skills—stored as JavaScript 4 T.Y. Yim et al. 
+
+code—enable continual capability growth in open-ended Minecraft environments. The Agent Skills open standard [4] formalized portable Markdown skill files with routing metadata, progressive disclosure, and embedded code templates; ASDA generates skill artifacts compatible with this standard. On the skill-distillation side, a concurrent work, SkillRL [12], distills hier-archical skills from interactive agent rollouts and co-evolves them with a rein-forcement learning policy. SkillRL operates in the interactive agentic setting and still requires SFT and weight updates, whereas ASDA distills reasoning patterns from error analysis for static domain QA—entirely training-free and compatible with API-only models. Across threads, no prior work has addressed automated, training-free skill generation for domain-specific reasoning from error analysis, the gap ASDA fills. 
+
+3 Method: ASDA Framework 
+
+ASDA operates through a teacher–student architecture comprising two phases: (1) a warm-up pipeline that establishes an initial skill library from systematic error analysis, and (2) an iterative refinement loop that refines skills through repeated evidence collection and validation. Figure 1 provides an overview. Before describing each phase, we introduce three terms used throughout. An 
+
+error type is one of ten categories from a predefined taxonomy 3. A pattern is a single, named failure scenario within a skill file, one specific knowledge gap or recurring mistake the model makes. A skill file groups all patterns that share the same financial subfield and error type; for example, fixed_income/wrong_ method_selection.md collects all wrong-method failures observed in the fixed income subfield. 
+
+3.1 Skills Warm-Up Failure Analysis and Structured Annotation The warm-up stage con-structs an initial skill library K0 from the student model’s failures on the train-ing set. For each question the student answers incorrectly, the teacher model receives the question, the student’s incorrect answer and reasoning trace, and the ground-truth answer. The teacher is then prompted to perform failure anal-ysis and output a structured annotation in the following format:   
+
+> {"subfield": "fixed_income", "error_type": "wrong method selection", "root_cause": "Lacks knowledge that forward rates must be composed sequentially as discount factors, not applied independently per period" }
+> 3The ten error types are: visual evidence, wrong method selection, concept confusion, missed multi-step computation, unit/currency mistakes, missed constraints, wrong targets, wrong output format, code execution errors (PoT-specific), and other.
+
+ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 5Domain-Specific Reasoning Questions Failure Cases Failure Analysis               
+
+> WHY student model failed ？
+> - Missing Knowledge? - Concept Confusion? - Ignoring Constraints...
+> CLASSIFY the error type (Subfield ✖Error Type)
+> Clustering
+> Ground-Truth
+> Skills Distillation →Skill Libary K0
+> Test on Student Model with and w/o skills Kt Evidence Collection
+> Q+
+> Q-Q_gap analyze
+> Common Subfield
+> Attribution Analysis Coverage Refinement
+> ❌iterative refine / create
+> Refine skills create new skills Verify
+> Common Subfield
+> Update
+> Q_gap cases Q+ & Q- cases
+> ❌iterative refine
+> Refine skills
+> Verify
+> post-verification
+> Safety Refinement
+> Update
+> Skill Library Kt+1
+> Phase 1: Skill Warm Up Phase 2: Iterative Skill Refinement Inference Phase
+> Question
+> Context
+> Selected Skill Files
+> LLM-based Selector
+> Student Model
+> Augmented Prompt
+> Answer Student Model
+> Teacher Model
+
+Fig. 1. Overview of the ASDA framework. Phase 1 (warm-up): the teacher model analyzes student failures, producing structured annotations that are clustered by sub-field and error type to synthesize an initial skill library K0. Phase 2 (iterative re-finement): the library is refined through two sequential phases, coverage refinement (resolving uncovered failures in Qgap ) followed by safety refinement (suppressing re-gressions in Q−), with every skill update gated by a correctness threshold. Inference: 
+
+a selector reads SKILL.md and injects the relevant skill files into the student’s prompt. 
+
+The error_type field is constrained to the taxonomy defined above. The 
+
+root_cause field captures the underlying knowledge gap rather than a surface description of what was computed incorrectly, ensuring the diagnosis is action-able for skill synthesis. 
+
+Skill Library Organization The annotated failures are clustered by their 
+
+(subfield, error_type) pair. Each cluster becomes one skill file. The library is therefore organized as a two-level hierarchy: 
+
+SKILL.md % navigation + routing table common/ visual_evidence.md % cross-subfield patterns wrong_output_format.md fixed_income/ wrong_method_selection.md % one file per subfield x error type concept_confusion.md corporate_finance/ concept_confusion.md derivatives/ ... 
+
+Within each skill file, the teacher synthesizes one pattern per distinct failure scenario identified in the cluster. Each pattern contains: a concise description of the addressed knowledge gap, explicit "when to use“ conditions, step-by-step reasoning procedures, and worked examples or code templates. Figure 2 shows one pattern from fixed_income/wrong_method_selection.md ; the full file con-tains five additional patterns covering other recurring failure scenarios in that subfield. 6 T.Y. Yim et al. 
+
+The library also includes a top-level SKILL.md navigation file that summarizes the scope of each skill and provides a structured mapping from subfield keywords and failed financial patterns to skill file paths. This navigation file allows the downstream selector to identify relevant skills without parsing every skill file in full. 
+
+Skill Selection and Injection At inference time, an LLM-based selector reads the question text and the SKILL.md mapping table to identify the relevant fi-nancial subfield and match the question’s characteristics against listed patterns. The selector may choose multiple skill files for a single question, since complex fi-nancial reasoning often requires combining guidance from several patterns (e.g., a fixed income pricing question may need both wrong_method_selection.md 
+
+and common/missed_constraints.md ). Selected skill files are injected into the student’s prompt as domain knowledge, guiding it to follow the appropriate rea-soning procedure for the question. 
+
+3.2 Dual-Phase Iterative Skill Refinement 
+
+The warm-up stage captures the most systematic failure patterns but leaves two residual problems: coverage gaps , where some failures remain because existing skills do not yet address the required knowledge; and regressions , where skill injection causes previously correct answers to become incorrect because a skill overfits a narrow failure pattern and misleads the model on related but distinct questions. We address these through iterative refinement, alternating between a 
+
+coverage phase that expands skill coverage and a safety phase that suppresses regressions. Across both phases, every candidate skill update passes through a 
+
+verification gate : the updated skill is tested by having the student re-solve the target questions with the new skill injected, and is committed to the library only if the resulting accuracy meets a predefined threshold τ . If it fails, the teacher regenerates a revised proposal, repeating up to Nmax attempts before falling back to the previous skill version. The full procedure is summarized in Algorithm 1. 
+
+Evidence Collection and Attribution At the start of each refinement it-eration t, every training question is evaluated under two conditions: once with the current skill library Kt injected, and once without any skills. By comparing results, we partition the training set into three disjoint groups: Q+ 
+
+> t
+
+(correct with skills), Q− 
+
+> t
+
+(incorrect with skills but correct without, i.e., regressions introduced by the current library), and Qgap  
+
+> t
+
+(incorrect under both conditions, i.e., coverage failures that the library has not yet resolved). Since multiple skill files may be loaded for each question, a naïve per-question outcome cannot be attributed to a specific file. An attribution step follows: for each question in Q+ 
+
+> t
+
+, Q− 
+
+> t
+
+, and Qgap  
+
+> t
+
+, the teacher examines the student’s reason-ing trace alongside the loaded files and identifies the single file most responsible for the outcome. Questions are then re-grouped by their attributed file, produc-ing per-file evidence sets that isolate each file’s individual contribution to fixes, regressions, and remaining coverage gaps. ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 7fixed_income/wrong_method_selection.md 
+
+Sequential Discounting with Forward Rates for Coupon Bonds 
+
+When pricing coupon bonds using forward rates, each cash flow must be discounted by the cumulative product of (1 + forward_rate) for all periods from today to that cash flow's date, not by a single rate or simple average. 
+
+When to Use 
+
+Questions asking for bond price given a table/list of forward rates (labeled "Year 0 (today)", "Year 1", etc.) and bond characteristics (coupon rate, maturity, par value). 
+
+Procedure 
+
+1.  Price = Σ[CF t / Π(1 +  fi)] for  i=0 to  t−1  , where CF t is cash flow at time  t and  fi is forward rate for period  i
+
+2.  Extract all forward rates from the given table in chronological order ( f0, f1, f2, …) 
+
+3.  For each cash flow date  t, compute cumulative discount factor:  DF t = (1+ f0)(1+ f1)…(1+ ft−1 )
+
+4.  Divide each cash flow by its corresponding cumulative discount factor and sum all present values 
+
+5.  Return the final sum as the bond price (expression, not print) 
+
+Correct Code 
+
+Scenario: 3-year bond, 7% annual coupon, $1,000 par. Forward rates: Year 0=4%, Year 1=5%, Year 2=6%. 
+
+# Bond characteristics 
+
+par_value = 1000 
+
+coupon_rate = 0.07 
+
+maturity = 3
+
+annual_coupon = par_value * coupon_rate 
+
+# Forward rates for each period 
+
+forward_rates = [0.04 , 0.05 , 0.06 ]
+
+# Calculate price using sequential discounting 
+
+price = 0
+
+cumulative_discount = 1.0 
+
+for  year  in  range( 1, maturity + 1): cumulative_discount *= (1 + forward_rates[year - 1]) 
+
+if  year == maturity: cash_flow = annual_coupon + par_value 
+
+else :cash_flow = annual_coupon price += cash_flow / cumulative_discount price  # Result: approximately 1027.51 
+
+Common Bugs to Avoid 
+
+Using forward rates directly as discount rates without cumulative multiplication 
+
+✗
+
+Averaging forward rates instead of compounding them sequentially ✗
+
+Forgetting to include par value in final year's cash flow ✗
+
+Using  print(price)  instead of returning  price  as final expression 
+
+✗
+
+Off-by-one errors in indexing forward rates (Year 0 rate applies to Year 1 cash flow) 
+
+✗
+
+Fig. 2. One pattern from an ASDA skill file produced during warm-up from Haiku 3.5 failure analysis by Sonnet 4.5. The full file contains five additional patterns. 
+
+Coverage Phase For each skill file, the teacher examines the Qgap 
+
+t cases at-tributed to that file and diagnoses why coverage fails. Common causes include missing procedures for an edge case, trigger conditions that are too narrow to fire on relevant questions, or the absence of a worked example for a pattern the file does not yet contain. Based on this diagnosis, the teacher proposes an update, either by refining an existing pattern or by adding a new one. Each proposal is submitted to the verification gate: the student re-solves the attributed Qgap 
+
+t8 T.Y. Yim et al. 
+
+Algorithm 1 Dual-Phase Iterative Skill Refinement 
+
+Require: Skill library K0, training set D, student Ms, teacher Mt, max iterations T
+
+Ensure: Refined skill library K∗
+
+1: for t = 1 to T do 
+
+// Evidence Collection 
+
+2: Q+, Q −, Q gap ← EvalWithWithout (D, Kt, M s)
+
+3: AttributeToFiles (Q+, Q −, Q gap , M t)
+
+// Coverage Phase 
+
+4: for each file f with attributed Qgap 
+
+> f
+
+̸ = ∅ do 
+
+5: f ′ ← Mt.ProposeExpansion (f, Q gap  
+
+> f
+
+)
+
+6: if Verify (f ′, Q gap  
+
+> f
+
+, M s) ≥ τcov then 
+
+7: Kt[f ] ← f ′
+
+8: end if 
+
+9: end for 
+
+10: ˜Q+, ˜Q− ← PostCoverageVerify (Kt, Q +, Q gap , M s)
+
+// Safety Phase 
+
+11: for each file f with attributed ˜Q−
+
+> f
+
+̸ = ∅ do 
+
+12: f ′ ← Mt.ProposeRepair (f, ˜Q+ 
+
+> f
+
+, ˜Q− 
+
+> f
+
+)
+
+13: if Verify (f ′, ˜Q+ 
+
+> f
+
+, M s) ≥ τsafe then 
+
+14: Kt[f ] ← f ′
+
+15: end if 
+
+16: end for 
+
+17: Kt+1 ← K t
+
+18: end for 
+
+19: return KT
+
+cases with the candidate update injected, and the update is accepted only if the recovery rate exceeds τcov .After all per-file coverage updates are committed, a post-coverage verification pass re-evaluates the entire affected set. Cases in Qgap  
+
+> t
+
+that are now solved are promoted into an updated positive set ˜Q+ 
+
+> t
+
+. Cases in Q+ 
+
+> t
+
+that regress under the modified skills are merged with the existing Q− 
+
+> t
+
+to form an updated regression set ˜Q− 
+
+> t
+
+. This updated partition forms the input to the safety phase. 
+
+Safety Phase The safety phase resolves regressions in ˜Q− 
+
+> t
+
+, including both pre-existing ones and those newly introduced by the coverage phase, without dis-rupting correct behavior on ˜Q+ 
+
+> t
+
+. For each skill file, the teacher receives both sets simultaneously as contrastive evidence: the ˜Q+ 
+
+> t
+
+cases (annotated with what the current skill gets right) serve as preservation constraints, and the ˜Q− 
+
+> t
+
+cases (an-notated with what goes wrong) serve as repair targets. The teacher proposes a revised skill that removes or narrows the guidance responsible for the regressions while preserving the reasoning steps that produce correct answers on the posi-tive set. Each proposal again passes through the verification gate with threshold ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 9
+
+τsafe , which requires that accuracy on the positive cases not degrade too much while recovering as many negative cases as possible. After both phases complete, the updated library Kt+1 becomes the input for the next iteration. 
+
+4 Experimental Setup 
+
+4.1 Benchmark: FAMMA 
+
+FAMMA-Basic [13] provides the scale, arithmetic/non-arithmetic decomposi-tion, and self-contained textual context our pipeline requires. 4 It comprises 1,945 questions sourced from university textbooks and professional finance exams, spanning eight financial subdomains (e.g., corporate finance, derivatives, port-folio management) across three difficulty levels, with an explicit decomposition between arithmetic and non-arithmetic questions that enables separate evalua-tion of procedural and conceptual skill effectiveness. We use the FAMMA-Basic-Txt release, which provides OCR-extracted textual context for each question, ensuring that evaluation targets reasoning ability rather than retrieval. 5
+
+4.2 Data Filtering and Split 
+
+We restrict the corpus to the 1,378 English-language questions to control for lan-guage variation, ensuring that observed performance differences reflect reasoning capability alone. Since FAMMA provides no official train–test split, we construct our own: separating the English corpus into arithmetic and non-arithmetic sub-sets and applying stratified 60/40 splits based on difficulty level (easy, medium, hard) and question type (multiple-choice vs. open-ended). This produces 448 training and 300 test questions for arithmetic, and 378 training and 252 test questions for non-arithmetic. All reported results are on these held-out test sets and are therefore not directly comparable to those reported by Xue et al. [13]. 
+
+4.3 Evaluation Protocol 
+
+ASDA’s distillation pipeline operates on individual question–answer pairs, so we evaluate each question independently rather than in grouped LLM calls as in the original FAMMA protocol. FAMMA stores shared context only in the first sub-question of each group, so we propagate this context to all sub-questions to pre-serve information completeness. 6 Arithmetic questions use Program-of-Thought              
+
+> 4We also considered FinMR [5], FinanceMath [16], FinanceQA [9], and FinMME [8], but these are either too small for reliable train–test splits, withhold ground-truth answers for their primary test sets, yield baseline results that differ substantially from published figures, or focus on visual and retrieval-based reasoning rather than procedural financial reasoning.
+> 5FAMMA also includes a LivePro subset of 103 expert-curated questions, but only 35 are English-language and most are open-ended, making it too small for our pipeline.
+> 6Additional preprocessing: we enforce expression-based PoT outputs rather than
+> print() statements to prevent execution failures. 10 T.Y. Yim et al.
+> Table 1. Evaluation protocol modifications. Original FAMMA Ours Question handling Grouped sub-questions Independent MC evaluation LLM judge Rule-based exact match Open-ended evaluation LLM judge (GPT-4o) LLM judge (Qwen-Max) Arithmetic execution PoT PoT + MC mapping step
+
+(PoT) code execution, with an additional selection step that maps numeric out-puts to the closest multiple-choice option where applicable. For evaluation, we adopt a hybrid approach: rule-based exact matching for multiple-choice ques-tions and LLM-based judging for open-ended questions, replacing the original protocol’s use of LLM judging for all question types. Table 1 summarizes these modifications. Validation confirms these modifications do not inflate gains: swapping Qwen-Max for GPT-4o yields 99.3% agreement across 1,104 judgments (delta: 0.00 pp arithmetic, −0.39 pp non-arithmetic); adopting the full FAMMA LLM-judge strategy confirms the same shift. 
+
+4.4 Baselines 
+
+We compare ASDA against two leading training-free adaptation methods that operate under the same deployment constraint—black-box API access without weight modifications: GEPA [2] and ACE [1]. Both methods optimize a sin-gle monolithic text applied uniformly to all questions. The baseline condition uses the student model with a standard task prompt and no injected skills or optimized prompts. Neither GEPA nor ACE has previously been evaluated on FAMMA; the results reported here are, to our knowledge, the first published evaluations of both methods on this benchmark. To ensure a fair comparison, we adapt training conditions to each method’s architectural requirements. 7
+
+4.5 Implementation Details 
+
+Two components are fixed across all experimental conditions: Qwen-Max serves as the LLM evaluation judge for open-ended questions, and Qwen-Turbo per-forms the MC selection step that maps numeric PoT outputs to answer choices. All inference is run at temperature 0 for reproducibility. 8                                                
+
+> 7GEPA follows its original 3-way split protocol, training on 50% of our training pool (222 arithmetic, 188 non-arithmetic) and selecting the best prompt on the remaining 50%. ACE and ASDA use the full training pool (448 arithmetic, 378 non-arithmetic).
+> 8All models are accessed via the Anthropic API, with two exceptions: Haiku 3.5 via OpenRouter (no longer available on the Anthropic API directly) and Qwen models via DashScope. ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 11
+> Table 2. ASDA results across student models on FAMMA. For Haiku 3.5, GEPA and ACE are shown as reference baselines. All experiments use Sonnet 4.5 as the teacher model. WU = Warm-Up; E2 = best refinement epoch. ∆denotes absolute improvement in percentage points over each model’s own baseline.
+> Student Method Arithmetic Non-Arithmetic Acc. (%) ∆Acc. (%) ∆
+> Haiku 3.5 Baseline 41.00 —49.21 —GEPA [2] 42.33 +1.33 50.79 +1.58 ACE [1] 44.30 +3.30 49.60 +0.39 ASDA WU (ours) 49.67 +8.67 51.98 +2.78 ASDA E2 (ours) 58.33 +17.33 55.16 +5.95
+> Haiku 4.5 Baseline 64.67 —57.14 —ASDA WU (ours) 69.67 +5.00 56.35 −0.79 ASDA E2 (ours) 70.66 +5.99 58.74 +1.60
+
+5 Results and Analysis 
+
+5.1 Main Results 
+
+We evaluate ASDA across two student models on both arithmetic and non-arithmetic tasks. For Haiku 3.5, we additionally include GEPA and ACE as training-free reference points; both achieve only marginal gains on FAMMA, which suggests the structural limitations of flat-text optimization. ASDA consistently improves performance for Claude-family student models. On arithmetic, Haiku 3.5 gains +8.67 pp at warm-up and +17.33 pp after two refinement epochs. Haiku 4.5, despite its stronger 64.67% baseline, achieves a +5.99 pp—showing that ASDA adds value even for more capable models. Non-arithmetic gains are smaller but consistent for Haiku 3.5 (+2.78 pp warm-up, +5.95 pp at E2); Haiku 4.5 sees modest non-arithmetic improvement only after refinement (+1.60 pp at E2). 
+
+Effect of iterative refinement. The warm-up stage targets the most frequent fail-ure patterns and delivers the first large wave of gains. Iterative refinement then addresses residual failures that remain after initial skill injection. For arithmetic, accuracy improves from 49.67% at warm-up to 54.67% at epoch 1 and reaches 58.33% at epoch 2. A smaller but consistent trend holds for non-arithmetic, where epoch 2 peaks at 55.16%. Both domains regress at epoch 3 (arithmetic: 54.33%; non-arithmetic: 51.98%), indicating overfitting to residual training-set patterns after two refinement passes. In practice, two refinement epochs repre-sent the optimal operating point. 
+
+Gains by question type. Skills consistently produce larger gains on multiple-choice questions than on open-ended ones. For Haiku 3.5 arithmetic at warm-up, 12 T.Y. Yim et al.                
+
+> Table 3. Self-teaching ablation. Each model serves as both student and teacher; no superior model is involved. Full ASDA (Sonnet 4.5 teacher) results are shown for ref-erence.
+> Student Domain Baseline With Skills ∆
+> Full ASDA (Sonnet 4.5 teacher), for reference
+> Haiku 3.5 Arithmetic 41.00 49.67 +8.67 Haiku 3.5 Non-Arith 49.21 51.98 +2.78
+> Self-Teaching (student = teacher)
+> Haiku 3.5 Arithmetic 41.00 47.33 +6.33
+> Haiku 3.5 Non-Arith 49.21 50.79 +1.58
+
+MC accuracy rises by +14.39 pp compared to +3.73 pp for open-ended; Haiku 4.5 shows the same pattern (MC +7.91 pp, open-ended +2.48 pp). A skill that nar-rows the solution procedure is most useful when the answer space is already constrained to a few options. For open-ended generation, where the model must produce a free-form numerical or textual response, the guidance is less precise and the room for regression is higher. 
+
+Regressions reveal the complementary risk. In sampled cases, the most common pattern is skill-induced over-reasoning: the model elaborates beyond what the question requires and revises an already-correct judgment. Because the selector loads all skill files for a subfield as a bundle, every question receives guidance re-gardless of whether it needs it — questions the baseline already handles correctly can be destabilized by unnecessary procedural elaboration. 
+
+5.2 Qualitative Analysis 
+
+To illustrate how skill artifacts operate at inference time, Figure 3 presents an arithmetic case from the Haiku 3.5 warm-up evaluation where the baseline fails and skill injection succeeds. The same skill file was credited with 7 additional fixes on related fixed income questions, illustrating the reusability of subfield-specific skill artifacts. 
+
+5.3 Where Does the Improvement Come From? Self-Teaching Ablation 
+
+ASDA’s gains could come from two sources: knowledge contributed by a superior teacher model, or knowledge drawn from the training data itself. To separate these, we run a self-teaching configuration where the student model acts as its own teacher—it analyzes its own failures, builds the skill library, and then uses those skills at inference. No stronger model is involved. For Haiku 3.5 arithmetic, self-teaching achieves +6.33 pp—73% of the +8.67 pp gain from using a Sonnet 4.5 teacher. This shows that most of the benefit comes ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 13 FAMMA · ARITHMETIC · FIXED INCOME 
+
+What is the price of a 2-year maturity bond with a 5% coupon rate paid annually? (Par = $1,000) 
+
+Forward rates: Year 0 = 3%, Year 1 = 4%, Year 2 = 5%, Year 3 = 6% 
+
+A.  $1,092.97  B.  $1,054.24  C.  $1,028.51 ✓ D.  $1,073.34  E.  None 
+
+BASELINE (NO SKILLS)                                            
+
+> forward_rates =[0.03 ,0.04 ,0.05 ,0.06 ]par_value =1000
+> coupon_rate =0.05 ;maturity =2
+> def discount_cashflow(cf, yrs, rate):
+> return cf /(( 1+rate) ** yrs) coupon =par_value *coupon_rate bond_price =(discount_cashflow(coupon,
+> 1,forward_rates[ 0]) +discount_cashflow( coupon +par_value, 2,
+> forward_rates[ 1]))
+> #Year 2: 1050/(1.04)² =970.78
+> #Should be: 1050/(1.03×1.04)
+> bond_price
+> $1,019.33 → Option E ✗
+
+WITH ASDA SKILLS                                             
+
+> par_value =1000
+> coupon_rate =0.05 ;maturity =2
+> annual_coupon =par_value *coupon_rate forward_rates =[0.03 ,0.04 ]price =0
+> cumulative_discount =1.0
+> for year in range( 1,maturity +1):
+> cumulative_discount *= (
+> 1+forward_rates[year -1])
+> if year == maturity: cf =annual_coupon +par_value
+> else :cf =annual_coupon
+> price += cf /cumulative_discount
+> price
+> $1,028.75 → Option C ✓
+
+Error:  The baseline discounts Year 2 using (1.04)² = 1.0816, treating the Year 1 forward rate as a spot rate. The correct denominator chains all forward rates: (1.03)(1.04) = 1.0712. The skill file  fixed_income/wrong_method_selection.md  (Fig. 2) directly addresses this in its procedure and "Common Bugs to Avoid." 
+
+Fig. 3. Baseline vs. skill-augmented output on a FAMMA fixed income question (Haiku 3.5, warm-up). The skill file in Fig. 2 provides the domain-specific procedure that corrects the baseline error. The same skill file was credited with 7 additional fixes on related fixed income questions. 
+
+from the training data, not from the teacher’s superior knowledge. It is worth noting that the training questions provide only the question text and the correct answer—not worked solutions or step-by-step reasoning. Even so, seeing where it consistently goes wrong is enough for the model to identify its recurring failure patterns and synthesize skills to address them. In other words, the model al-ready possesses much of the relevant domain knowledge; the distillation process gives it the structure to apply that knowledge reliably. The remaining 2.34 pp gap reflects the teacher’s contribution—a stronger model produces sharper fail-ure diagnoses and more precise skill formulations. The same pattern holds for non-arithmetic (+1.58 pp self-teaching vs. +2.78 pp with a Sonnet teacher). 
+
+5.4 Are Skills Student-Specific? Cross-Transfer Experiment 
+
+The self-teaching results raise a natural follow-on question: once skills are dis-tilled for one model, can they benefit another? We apply skills generated from Haiku 3.5’s failures to Haiku 4.5 (a stronger model in the same family) and compare against skills derived from Haiku 4.5’s own failures. Cross-model transfer produces a net regression of −2.33 pp, driven by a sharp open-ended decline ( −6.21 pp) that overwhelms modest MC gains (+2.16 pp). In 14 T.Y. Yim et al.                  
+
+> Table 4. Skill portability: Haiku 4.5 arithmetic (300 eval questions). Own skills are generated from Haiku 4.5’s failures; cross-transfer uses skills generated from Haiku 3.5’s failures.
+> Skills Source Baseline With Skills ∆MC ∆Open ∆
+> Own skills (H4.5) 64.67 69.67 +5.00 +7.91 +2.48 H3.5 skills (cross-transfer) 64.67 62.33 −2.33 +2.16 −6.21
+
+contrast, Haiku 4.5 with its own ASDA skills gains a consistent +5.00 pp across both question types. The practical implication is direct: skills should be generated for each de-ployed model independently. Reusing skills across model generations is unlikely to yield positive returns and can actively harm the stronger model. At approx-imately $13 and ∼6 hours of wall-clock time per our model configurations, 9
+
+student-specific distillation is operationally feasible at deployment scale. 
+
+6 Discussion and Conclusion 
+
+Discussion. Two experimental findings illuminate the underlying mechanism of ASDA. The self-teaching result—where a model acting as its own teacher recovers 73% of the full arithmetic gain—shows that the primary source of im-provement is not the teacher’s superior knowledge but the structure imposed by the distillation process itself. Systematically enumerating failure patterns across a training set forces the model to externalize domain knowledge it already im-plicitly holds but cannot reliably apply during single-pass inference. The cross-transfer failure reinforces this view from the opposite direction: skills are not generic domain knowledge that transfers across models, but artifacts of a spe-cific model’s failure distribution. Applying one model’s skills to a stronger model actively constrains it by the weaker model’s blind spots. Together, these results characterize skills as model-specific failure remedies —a distinction with direct consequences for how skill libraries should be managed in practice. For organi-zations in regulated industries—financial services, legal, and healthcare—that rely on commercial LLMs via black-box API for knowledge-intensive workflows, ASDA offers a concrete operational path: run the distillation pipeline once on a labeled in-domain dataset, version-control the resulting skill files alongside ap-plication code, and regenerate them when the base model is upgraded. The skill library then functions as an auditable, inspectable knowledge layer that domain experts can review, compliance teams can certify, and engineering teams can update without touching model weights.     
+
+> 9Warm-up pipeline cost for the arithmetic configuration (Haiku 3.5 student, Son-net 4.5 teacher), including baseline generation, failure analysis, skill synthesis, and evaluation with skills: approximately $13 across ∼10M tokens in ∼6 hours wall-clock time. Costs computed at March 2026 API pricing. ASDA: Automated Skill Distillation and Adaptation for Financial Reasoning 15
+
+ASDA’s gains are largest when failure patterns are clustered and the task has well-defined procedural structure, as with arithmetic reasoning via Program-of-Thought. When errors are more dispersed—as in non-arithmetic tasks—the sig-nal available for distillation is weaker and regression risk increases. This bound-ary condition suggests that diagnostic quality (how cleanly errors cluster by type and subfield) predicts adaptation success alongside raw model capability. 
+
+Limitations. Results are confined to FAMMA and the Claude model family, leav-ing open how the error taxonomy, skill format, and refinement dynamics trans-fer to other domains. FAMMA’s OCR-extracted text also introduces a corpus-specific confound: skills distilled from questions with genuine OCR artifacts can encode data-correction heuristics that misfire on correctly parsed test questions, inflating regression counts in ways that may not appear on cleaner datasets. 
+
+Future Work. Cross-domain transfer. Legal and tax reasoning are the most nat-ural next targets, structured, procedural, and with explicit auditability require-ments that align with the skill library’s inspectable format. 
+
+Skill compression. The current pipeline generates 10–30 skill files per con-figuration. A pruning step that measures per-skill regression rates and merges narrowly scoped files could reduce regressions while sharpening routing precision. 
+
+Conclusion. The central finding of this work is that failure-driven distillation can externalize latent domain knowledge into an explicit, inspectable form that single-pass inference cannot access without modifying model weights. Our ab-lations further reveal that the resulting skills function as model-specific failure remedies : artifacts of a particular model’s failure distribution that cannot be transferred across model generations, but can be cheaply regenerated for any deployed model given only a labeled domain dataset—at a one-time cost of ap-proximately $13 and six hours of wall-clock time. The skill library is not a better prompt: it is a new representational layer between the raw model and its deploy-ment context, one that can be version-controlled, audited, and regenerated for successor models. Whether this layer generalizes to other knowledge-intensive domains, and how far self-teaching can substitute for stronger supervision, re-main the central open questions.   
+
+> Generative AI Disclosure The authors used generative AI tools to assist with manuscript editing and experimental pipeline development. All scientific content, in-cluding the hypotheses, experimental design, and conclusions, is entirely the work of the human authors.
+> Disclosure of Interests. The authors have no competing interests to declare that are relevant to the content of this article.
+
+References 
+
+> 1. Zhang, Q., Hu, C., Upasani, S., Ma, B., Hong, F., Kamanuru, V., Rainton, J., Wu, C., Ji, M., Li, H., Thakker, U., Zou, J., Olukotun, K.: Agentic Context En-gineering: Evolving Contexts for Self-Improving Language Models. arXiv preprint arXiv:2510.04618 (2025)
+
+16 T.Y. Yim et al. 2. Agrawal, L.A., Tan, S., Soylu, D., Ziems, N., Khare, R., Opsahl-Ong, K., Singhvi, A., Shandilya, H., Ryan, M.J., Jiang, M., Potts, C., Sen, K., Dimakis, A.G., Stoica, I., Klein, D., Zaharia, M., Khattab, O.: GEPA: Reflective prompt evolution can outperform reinforcement learning. arXiv preprint arXiv:2507.19457 (2025) 3. Pan, Z., et al.: LEMMA: Learning from errors for mathematical advancement in LLMs. In: Findings of ACL 2025. arXiv preprint arXiv:2503.17439 (2025) 4. Anthropic: Agent Skills: An open standard for executable agent knowledge. https: //agentskills.io (2025) 5. Deng, S., Peng, H., Xu, J., Mao, R., Giurcˇ aneanu, C.D., Liu, J.: FinMR: A Knowledge-Intensive Multimodal Benchmark for Advanced Financial Reasoning. arXiv preprint arXiv:2510.07852 (2025) 6. Xie, Q., et al.: FinBen: A holistic financial benchmark for large language models. In: NeurIPS 2024. arXiv preprint arXiv:2402.12659 (2024) 7. Khattab, O., Potts, C., Zaharia, M.: DSPy: Compiling declarative language model calls into self-improving pipelines. arXiv preprint arXiv:2310.03714 (2023) 8. Luo, J., et al.: FinMME: Benchmark Dataset for Financial Multi-Modal Reasoning Evaluation. arXiv preprint arXiv:2505.24714 (2025) 9. Mateega, S., Georgescu, C., Tang, D.: FinanceQA: A Benchmark for Evaluat-ing Financial Analysis Capabilities of Large Language Models. arXiv preprint arXiv:2501.18062 (2025) 10. Wang, G., Xie, Y., Jiang, Y., Mandlekar, A., Xiao, C., Zhu, Y., Fan, L., Anand-kumar, A.: Voyager: An open-ended embodied agent with large language models. arXiv preprint arXiv:2305.16291 (2023) 11. Wu, S., Irsoy, O., Lu, S., Daber, V., Dredze, M., Gehrmann, S., Gupta, P., Ishrat, S., Jha, A., Johnston, S., et al.: BloombergGPT: A large language model for fi-nance. arXiv preprint arXiv:2303.17564 (2023) 12. Xia, P., et al.: SkillRL: Evolving agents via recursive skill-augmented reinforcement learning. arXiv preprint arXiv:2602.08234 (2026) 13. Xue, Z., et al.: FAMMA: A benchmark for financial domain multilingual multi-modal question answering. arXiv preprint arXiv:2410.04526 (2024) 14. Yang, H., Liu, X., Wang, C.: FinGPT: Open-source financial large language models. arXiv preprint arXiv:2306.06031 (2023) 15. Yüksekgonül, E., Bianchi, F., Boen, J., Liu, T., Zou, J.: TextGrad: Automatic “differentiation” via text. arXiv preprint arXiv:2406.07496 (2024) 16. Zhao, Y., Liu, H., Long, Y., Zhang, R., Zhao, C., Cohan, A.: Finance-Math: Knowledge-Intensive Math Reasoning in Finance Domains. arXiv preprint arXiv:2311.09797 (2024)

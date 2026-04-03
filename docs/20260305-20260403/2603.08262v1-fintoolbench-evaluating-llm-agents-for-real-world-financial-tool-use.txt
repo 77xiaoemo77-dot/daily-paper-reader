@@ -1,0 +1,981 @@
+Title: FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use
+
+URL Source: https://arxiv.org/pdf/2603.08262v1
+
+Published Time: Tue, 10 Mar 2026 02:10:25 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use 
+
+## Jiaxuan Lu ∗
+
+Shanghai AI Laboratory 
+
+## Kong Wang ∗
+
+Hunan University 
+
+## Yemin Wang 
+
+Xiamen University 
+
+## Qingmei Tang 
+
+Tencent 
+
+## Hongwei Zeng 
+
+UCAS 
+
+## Xiang Chen 
+
+Tongji University 
+
+## Jiahao Pi 
+
+Shanghai AI Laboratory 
+
+## Shujian Deng 
+
+Shanghai AI Laboratory 
+
+## Lingzhi Chen 
+
+Shanghai AI Laboratory 
+
+## Yi Fu 
+
+Shanghai AI Laboratory 
+
+## Kehua Yang †
+
+Hunan University 
+
+## Xiao Sun †
+
+Shanghai AI Laboratory 
+
+Abstract 
+
+The integration of Large Language Models (LLMs) into the financial domain is driving a paradigm shift from passive information re-trieval to dynamic, agentic interaction. While general-purpose tool learning has witnessed a surge in benchmarks, the financial sec-tor, characterized by high stakes, strict compliance, and rapid data volatility, remains critically underserved. Existing financial evalua-tions predominantly focus on static textual analysis or document-based QA, ignoring the complex reality of tool execution. Con-versely, general tool benchmarks lack the domain-specific rigor required for finance, often relying on toy environments or a neg-ligible number of financial APIs. To bridge this gap, we introduce 
+
+FinToolBench , the first real-world, runnable benchmark dedicated to evaluating financial tool learning agents. Unlike prior works lim-ited to a handful of mock tools, FinToolBench establishes a realistic ecosystem coupling 760 executable financial tools with 295 rigorous, tool-required queries. We propose a novel evaluation framework that goes beyond binary execution success, assessing agents on finance-critical dimensions: timeliness, intent type, and regulatory domain alignment. Furthermore, we present FATR , a finance-aware tool retrieval and reasoning baseline that enhances stability and compliance. By providing the first testbed for auditable, agentic financial execution, FinToolBench sets a new standard for trustwor-thy AI in finance. The tool manifest, execution environment, and evaluation code will be open-sourced to facilitate future research. 
+
+CCS Concepts 
+
+• Information systems → Information retrieval ; • Computing methodologies → Artificial intelligence ; • Applied computing 
+
+→ Economics .
+
+Keywords 
+
+LLM Agents, Tool Use, Financial Benchmarks, Real-World APIs 
+
+1 Introduction 
+
+The integration of Large Language Models (LLMs) is driving a revolution in the financial industry, moving beyond static analysis to dynamic, autonomous interaction. Tool-using LLM agents are increasingly deployed as interfaces to financial data, translating natural-language requests into a sequence of API calls, database queries, and computations. This evolution promises to democratize 
+
+> ∗These authors contributed equally.
+> †Corresponding author.
+
+Figure 1: FinToolBench overview. Left: the scope of our bench-mark across representative categories. Right: an example of the standardized execution pipeline, where an LLM agent se-lects a tool, observes the environment output, and produces a final answer with an auditable tool trace. 
+
+access to sophisticated market analysis, yet it introduces risks that are unique to the domain. In this setting, a wrong tool call can be more damaging than a wrong free-form answer because it can look grounded while relying on stale data, drifting endpoints, or a mismatched market domain [ 9]. Evaluation must therefore assess not only whether tools are invoked and executed successfully, but also whether the resulting tool trace is acceptable under finance-specific constraints that practitioners actually care about. More broadly, recent work is moving toward agents that operate over longer horizons and in settings where tool use itself can evolve, which further increases the value of trace-level evaluation [ 13 , 17 ]. Despite rapid progress on tool-augmented reasoning, existing benchmarks leave a gap between what is easy to measure and what is necessary to trust. General tool benchmarks emphasize API correctness and executability, and they have begun to confront instability in real environments [ 9], but they rarely test finance-specific acceptability constraints. Existing finance benchmarks, in contrast, typically focus on knowledge- or document-centric QA. However, they suffer from a critical deficiency: they involve vir-tually no executable tools, relying instead on static datasets or a negligible number of mock interfaces. As a result, it remains hard to distinguish an agent that executes correctly from one whose 
+
+> arXiv:2603.08262v1 [cs.AI] 9 Mar 2026 Lu et al.
+
+tool choices are acceptable under timeliness, intent restraint, and domain alignment. We argue that current metrics are blind to three recurring failure modes essential for financial reliability. First, time-liness is often implicit in finance, e.g. , a question asking for “current” exchange rates is fundamentally unanswered if the agent retrieves a daily snapshot, even if the API call is syntactically perfect. Second, 
+
+intent restraint is critical, i.e. , an agent must strictly differentiate between informational queries and transactional actions, ensur-ing it never escalates to execution without explicit authorization. Third, domain alignment is essential, i.e. , the chosen tool chain must strictly adhere to the regulatory and market domain of the query (e.g. , utilizing equity market tools for a cryptocurrency inquiry is a hallucination of domain). To address these gaps, we introduce FinToolBench , a runnable benchmark built from real free-tier tools and tool-required ques-tions. FinToolBench represents a significant scaling of financial agent evaluation, comprising a tool library of 760 executable tools and a question set of 295 items, i.e. , 166 single-tool and 129 multi-tool. Crucially, each tool is annotated with three finance attributes, 
+
+i.e. , timeliness, intent type, and regulatory domain, enabling us to compute call-level compliance mismatch rates, i.e. , TMR , IMR ,
+
+DMR , alongside standard invocation and execution metrics. To demonstrate the utility of this benchmark, we also propose FATR 
+
+(Finance-Aware Tool Retrieval), a lightweight baseline. FATR ad-dresses the specific challenges of the financial domain by retrieving a small candidate set, injecting finance attributes into tool cards, and stabilizing execution with caching, retries, and output compres-sion. Figure 1 provides a snapshot of the benchmark scope and the standardized execution pipeline we evaluate, from user query to tool call, environment observation, and a trace-backed final answer. Our contributions are summarized as follows: (1) FinToolBench: A benchmark of 760 free-tier financial tools and 295 tool-required questions that produces auditable tool traces and evaluates tool use under real execution conditions. (2) Finance-Aware Evaluation: We propose a novel set of capa-bility metrics plus call-level compliance mismatch rates ( TMR ,
+
+IMR , DMR ) that specifically measure violations of timeliness, intent restraint, and domain alignment. (3) FATR Baseline: We introduce a lightweight baseline that in-jects finance attributes into tool cards and improves stability, providing a strong reference point for future work on trustwor-thy financial agents. 
+
+2 Related Work 2.1 Tool-Using Agents and Benchmarks 
+
+Tool-augmented agents interleave reasoning with external actions to improve grounding and support up-to-date answers. ReAct [ 29 ]and Toolformer [ 23 ] are representative examples, and recent sys-tems connect LLMs to large tool inventories and external APIs [ 21 , 22 ]. Correspondingly, benchmarks evaluate whether models can select and call tools at scale, including API-Bank [ 14 ] and Sta-bleToolBench [ 9]. Beyond API-centric suites, agent benchmarks emphasize long-horizon interaction in realistic environments, in-cluding AgentBench [ 15 ], GAIA [ 18 ], WebArena [ 32 ], WorkArena [5 ], and 𝜏 -bench [ 28 ]. Recent efforts further sharpen the evaluation focus toward tool-interface competence and agentic behavior. BFCL studies function-calling and tool-use evaluation under controlled protocols [ 20 ], and 𝜏 2-bench extends the setting to dual-control conversational environments that stress interaction and coordina-tion [ 1 ]. Concurrent work studies agents in settings where tools or capabilities evolve over time and where long-horizon traces are central artifacts. Beyond Static Tools investigates test-time tool evo-lution for scientific reasoning [ 17 ], and SCP explores a global web of autonomous scientific agents for discovery [ 13 ]. DeepResearch Arena provides an evaluation setting for research-oriented agents grounded in seminar tasks [ 25 ], and multi-agent evidence-based reasoning further motivates trace-centric diagnostics [27]. 
+
+2.2 Financial Benchmarks and Evaluation 
+
+In finance, most benchmarks emphasize domain knowledge and document-centric QA rather than executable tool use. Examples include FinanceBench [ 12 ], OpenFinData [ 19 ], and report-focused datasets such as FinQA [ 4] and TAT-QA [ 33 ]. While recent works like FinEval [ 8 ], FLAME [ 7], and the Finance Agent Benchmark [ 2 ]broaden knowledge coverage, critical limitations remain. For in-stance, although the Finance Agent Benchmark incorporates tool use for accessing filings, it neither releases a standardized large tool library nor defines call-level compliance metrics. Consequently, most datasets represent a "static" paradigm that stops at the final answer, failing to evaluate the executability and acceptability of tool traces under essential finance constraints, such as timeliness, intent restraint, and market-domain alignment. FinToolBench ad-dresses this by providing an execution-grounded environment that pairs a fully runnable tool inventory with tool-required questions, moving beyond static QA to support agentic workflows that require real-time data retrieval and multi-step reconciliation. Recent safety-oriented agent evaluations highlight complemen-tary concerns about the risks of tool use, including prospective safety benchmarks and web-agent benchmarks that probe delib-erate misuse [ 24 , 26 ]. However, these evaluations are not finance-specific and do not operationalize domain-grounded constraints like timeliness, intent limits, and regulatory scope. FinToolBench tar-gets this gap by explicitly defining finance constraints at the level of each tool call using a lightweight, auditable attribute schema. To our knowledge, this makes FinToolBench the first finance benchmark to enable direct measurement of timeliness, intent, and domain mismatches from execution traces, rather than relying solely on final answer correctness or generic safety checks. 
+
+2.3 Evaluation Standard 
+
+Because answer correctness is hard to score at scale for open-ended questions, recent work uses LLMs as judges with struc-tured rubrics, including MT-Bench [ 31 ] and G-Eval [ 16 ]. FinTool-Bench adopts repeated judging and reports both capability and compliance so that execution failures can be separated from evalu-ation uncertainty [ 16 , 31 ]. At the same time, recent studies show that LLM-based scoring can be unstable across runs and sensitive to prompting and evaluation design, which motivates calibration and robustness checks when using judges as measurement instru-ments [ 10 , 11 ]. Domain-specific judge frameworks also emphasize evidence-anchored rubrics. They also test evaluator robustness un-der distribution shift [ 6 ]. In line with these findings, we reduce FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use STAGE 5: QUESTION SOURCE STAGE 6: TOOL-QUESTION STAGE 7: HUMAN-IN-THE-LOOP STAGE 8: FINAL DATASET              
+
+> & QUESTION SELECTION ALIGNMENT & VERIFICATION STAGE VERIFICATION OUTPUT
+> Benchmark
+> Tool
+> Library
+> Benchmark
+> Question
+> Set
+> Semantic Tool Retrieval
+> & Executability
+> Runnable
+> Benchmark
+> STAGE 2: TOOL CURATION &
+> EXECUTABILITY FILTERING
+> STAGE 1: RAW DATA &
+> TOOL SOURCES
+> STAGE 3: TOOL NORMALIZATION
+> & MANIFEST CONSTRUCTION
+> STAGE 4: FINANCE ATTRIBUTE
+> ANNOTATION
+> Validated
+> Tool
+> Inventory
+> Automated Tool
+> Manifest Normalization
+> LLM-based Finance
+> Attribute Annotation
+> Update Frequency
+> Regulatory D omain
+> Intent Type
+> Sample schema:
+> {
+> "update_frequency": xxx,
+> "intent_type": xxx,
+> }
+> Finance QA
+> Sources
+> Tool-required
+> Question
+> Filtering
+> Human Expert Review
+> & Quality Assurance
+> Top-K semantic
+> retrieval
+> Multi-sample
+> Execution check
+> Annotation spot-checking
+> Tool-question alignment
+> verification
+> Compliance & format validation
+> Unified signatures
+> Canonical
+> arguments
+> Output schema
+> alignment
+> Rule-based Tool Filtering
+> & Executability Check
+> √Interface validity & parameter
+> completeness checks
+> √Deduplication and basic
+> constraint validation
+> √Executability check
+> Offline
+> Financial Tool
+> Repositories
+> Online Tool
+> Providers
+
+Figure 2: FinToolBench dataset construction pipeline. Stage 1 collects raw tool sources. Stage 2 performs tool curation and executability filtering to obtain a validated tool inventory. Stage 3 normalizes tools into a unified manifest with standardized signatures, canonical arguments, and aligned output schemas. Stage 4 annotates each tool with finance attributes (timeliness, intent type, regulatory domain). Stage 5 sources and selects tool-required questions. Stage 6 aligns questions with tools via semantic retrieval, multi-sample verification, and execution checks. Stage 7 adds human-in-the-loop quality assurance. Stage 8 outputs the benchmark tool library and benchmark question set as a runnable benchmark. 
+
+variance via repeated judging and explicitly separate tool execution from correctness, so that a failure to call or execute tools is not conflated with an evaluation artifact. Finally, recent work suggests that comparative setups can elicit more informative judgments than independent scoring by exposing missing evidence through contrastive context [ 30 ]. Our protocol is compatible with such im-provements, since the benchmark produces complete tool traces that can be inspected and re-judged under alternative rubric de-signs. 
+
+3 FinToolBench 
+
+FinToolBench is an execution-grounded benchmark designed to evaluate financial tool use under real execution. Its design empha-sizes two principles. First, every run produces an auditable tool trace. Second, evaluation separates capability ( i.e. , invocation and execution success) from compliance ( i.e. , call-level timeliness, in-tent, and domain alignment). The benchmark measures an agent’s ability to select tools from a large heterogeneous library, instantiate valid arguments, handle execution failures, and produce answers whose tool use respects finance-specific constraints. In contrast to prior tool-use benchmarks that focus primarily on API calling accuracy, FinToolBench evaluates both capability and compliance directly from executable tool traces. Figure 2 summa-rizes the construction pipeline. Concretely, we follow the staged process in Figure 2 to produce both a validated tool inventory and a tool-required question set. The pipeline has eight stages. Stages 1–4 cover Raw Data & Tool Sources, Tool Curation & Executability Filtering, Tool Normalization & Manifest Construction, and LLM-based Finance Attribute Annotation. Stages 5–8 cover Question Source & Question Selection, Tool-Question Alignment & Verifi-cation, Human-in-the-Loop Stage Verification, and Final Dataset Output. The design for evaluation follows lines of work that stress end-to-end tool selection, argument construction, and trace-based diagnosis under real execution. 
+
+3.1 Tool Inventory 
+
+3.1.1 Tool Sources. We construct the tool inventory from two com-plementary tool ecosystems with different reliability and documen-tation characteristics. We restrict to free-tier sources so that the benchmark is reproducible without proprietary data contracts. 
+
+RapidAPI. RapidAPI hosts a large marketplace of third-party APIs, providing broad coverage of real-time and web-based services. Free-tier access typically requires API keys. Lu et al. 
+
+AkShare. AkShare is an open-source Python library for program-matic access to financial data. It offers stable, research-oriented interfaces covering a wide range of financial domains. Together, these two sources provide complementary coverage: RapidAPI em-phasizes diversity and real-time accessibility, while AkShare offers reliable and well-documented financial data interfaces. 
+
+3.1.2 Tool Curation and Executability Filtering. 
+
+RapidAPI. We filter raw RapidAPI endpoints using a rule-based executability pipeline. A tool is retained only if it satisfies all of the following criteria: 
+
+• Interface validity: complete parameter definitions and non-empty descriptions. 
+
+• Deduplication: removal of duplicate names and semanti-cally identical interfaces. 
+
+• Rate-limit sufficiency: enforcement of minimum rate limits (e.g., 10/hour, 100/day, 300/month). 
+
+• Authentication feasibility: executable under free-tier access. 
+
+• Runtime executability: at least one successful test invo-cation. Endpoints with broken URLs, insufficient rate limits, undocu-mented or faulty authentication flows, or persistent execution fail-ures are discarded, which ensures that all RapidAPI tools included in FinToolBench are executable and reliable during evaluation. 
+
+AkShare. We select AkShare interfaces using finance-related function-name cues ( e.g. , stock, fund, bond, futures, option, index, macro, currency, crypto, rate, treasury, ETF), and verify executabil-ity through direct invocation. 
+
+Scale. We start from 5,470 candidate interfaces (4,507 RapidAPI endpoints and 963 AkShare interfaces). After filtering RapidAPI endpoints and selecting AkShare interfaces, the final tool library contains 760 tools. The full criteria and counts are given in appen-dix A. 
+
+3.1.3 Tool Normalization and Manifest Construction. To make the heterogeneous tool ecosystem amenable to retrieval, planning, and evaluation, we normalize each tool into a unified manifest schema. Each tool manifest includes: (i) a stable identifier, (ii) a short descrip-tion, (iii) a machine-readable signature with canonicalized parame-ter names and types. Normalization reduces avoidable agent errors: date and time fields follow consistent formats, common identifiers (e.g. , tickers) document explicit market conventions, and output schemas are aligned across sources. 
+
+Tool traces. During the evaluation process, FinToolBench en-forces rigorous logging to ensure transparency and reproducibility. Every tool invocation initiated by the agent is captured as a struc-tured execution trace, which constitutes the atomic unit of auditing, error diagnosis, and compliance evaluation. As detailed in Table 2, each record preserves the chronological context through a sequen-tial step index, allowing for the reconstruction of the agent’s rea-soning chain in multi-turn workflows. The schema also captures the specific tool_name and the exact JSON-formatted parameters 
+
+generated by the model, which are critical for detecting halluci-nated or malformed inputs. Furthermore, both the raw output and execution error states are logged to differentiate between model reasoning errors and system-level failures such as API rejections. 
+
+3.1.4 Finance Attribute Annotation. Financial constraints are fre-quently implicit within user queries, rendering compliance mea-surement impossible based on raw execution traces alone. To bridge this gap, FinToolBench incorporates a lightweight finance attribute schema that explicitly annotates every tool in the library. The struc-tured metadata enables both the baseline methods outlined in Sec-tion 4 and the quantitative evaluation metrics in Eq. (1) to rigorously assess operational acceptability. As summarized in Table 1, each tool is categorized along three distinct dimensions. These annotations are generated through an LLM-based labeling pipeline utilizing a three-vote majority agree-ment protocol to ensure consistency. Comprehensive details re-garding the labeling rubric and extended attributes, such as data sensitivity and compliance risk, are provided in Appendix B. By embedding these constraints directly into the tool definitions, our design decouples compliance standards from the agent under test, facilitating precise, trace-level auditing of domain mismatches. 
+
+3.2 Question Set Construction 
+
+3.2.1 Question Source and Question Selection. Tool-required ques-tions are adapted from existing finance QA datasets, including the FinanceBench [ 12 ] and the OpenFinData (dataset identifier 
+
+openfindata_release ) [ 19 ]. We standardize all sources into a uni-fied {question, answer, category} format by concatenating the original category fields with the question text when needed. We retain only questions that are identified by Qwen3-8B as requiring tool calls, with the question length limited to 500 characters. The construction pipeline, including retrieval, verification, and dedupli-cation, is detailed in the appendix (Appendix C). 
+
+3.2.2 Tool-required Question Filtering. To ensure that FinToolBench strictly evaluates the model’s ability to utilize external tools rather than its reliance on internal parametric memory, we implement a rigorous filtering protocol for candidate questions. Queries that can be accurately answered via static knowledge or common memoriza-tion are systematically excluded, which is critical in the financial domain, where data is often dynamic or proprietary. Consequently, we retain only those questions that necessitate the retrieval of real-time market data, specific regulatory filings, or quantitative calculations. 
+
+3.2.3 Tool-Question Alignment and Verification. We employ a ro-bust two-stage pipeline to establish and verify the ground-truth alignment between questions and tools. First, for each candidate question, we perform a coarse-grained retrieval of the top-20 rele-vant tools using BGE-M3 dense embeddings [ 3 ]. Second, to refine this set, we apply an LLM-based verification step using Qwen3-8B. We utilize a three-sample majority voting mechanism, retaining only those tools that receive at least two votes to ensure high-confidence alignment. To mitigate distribution skew and prevent the benchmark from being dominated by a few high-frequency tools, we group single-tool questions by tool name and cap them at two randomly selected questions per tool. Conversely, multi-tool questions, which represent more complex reasoning chains, are FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use 
+
+Table 1: Finance attribute schema used in FinToolBench.             
+
+> Attribute Values Evaluation role
+> update_frequency realtime ,daily ,as_filed ,periodic ,
+> static
+> Penalize stale calls when timeliness is required.
+> intent_type informational ,advisory ,transactional Penalize escalation beyond user intent.
+> regulatory_domain set-valued Penalize domain-mismatched tool usage.
+
+Table 2: Normalized tool-trace fields.       
+
+> Field Description
+> step The sequential order of the call within the multi-turn process.
+> tool_name The identifier of the specific tool invoked ( e.g. ,
+> symbols_sec_filings ).
+> parameters The JSON-formatted arguments generated by the model.
+> output The tool response, including data or structured error messages.
+> error Overall execution status, which captures null or specific system-level failures.
+
+fully retained without deduplication to preserve the diversity of agentic workflows. 
+
+3.2.4 Human-in-the-Loop Verification. While the scale of the bench-mark necessitates a reliance on automated retrieval and majority-vote labeling, we integrate a human-in-the-loop validation phase to ensure data quality. We conduct a rigorous spot-check evaluation where domain experts manually verify a statistically significant sample of the dataset. The audit focuses on two key aspects: confirm-ing the logical necessity of the aligned tools for the given queries and validating the consistency of the attribute annotations. Further-more, we check for compliance with execution assumptions and output formatting. This hybrid approach balances the scalability of automated generation with the reliability of expert oversight, providing a high degree of confidence in the benchmark’s validity. 
+
+3.3 Final Benchmark and Evaluation Protocol 
+
+The final benchmark comprises a unified tool library and a question set. The tool library contains 760 tools, and the question set contains 295 questions, including 166 single-tool and 129 multi-tool. Each evaluation run produces a final answer and a complete tool trace, enabling joint assessment of capability, and finance compliance. 
+
+3.4 Evaluation Metrics 
+
+We evaluate each run using two groups of metrics derived from the same auditable tool trace: capability, and compliance. Capability measures whether an agent uses tools and whether tool-augmented traces execute successfully. TIR (Tool Invocation Rate) is the frac-tion of samples with non-empty tool calls. TESR (Tool Execution Success Rate) is the fraction of samples whose tool-augmented traces execute successfully. We mark a sample successful when its final tool call returns a valid parsed output without error or exception. Intermediate failures and retries are allowed. CER is the conditional execution success rate, defined as CER = TESR /TIR 
+
+(0 when TIR = 0). Answer correctness is captured by Soft Score 
+
+and CSS . Numeric and choice tasks are evaluated using an LLM judge, with scores of 1 or 0 for exact match. Structured and free-text tasks are also evaluated by the LLM judge (GPT-5.1), with scores in {1, 0.5, 0}, averaged across three repeats. CSS is the mean Soft Score over samples with successful execution. Compliance metrics are defined over executed tool-call traces. For each question 𝑞 with trace 𝜏 = {( 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 )} 𝑚 𝑘 =1, we look up each tool’s finance tags from metadata, 𝐴 (𝑡 ) = (𝑓 (𝑡 ), 𝑖 (𝑡 ), 𝑑 (𝑡 )) 
+
+(timeliness, intent type, regulatory domains), and use an LLM judge (GPT-5.1) to assess per-call alignment in each dimension. We then mark a question as mismatched if any call in its trace is judged to violate the corresponding constraint: 
+
+TMR (𝑞, 𝜏 ) = 1∃𝑘 : 𝐽 𝑇 
+
+ 𝑞, 𝐴 (𝑡 𝑘 ), 𝜏 𝑘 
+
+ = 0 ,
+
+IMR (𝑞, 𝜏 ) = 1∃𝑘 : 𝐽 𝐼 
+
+ 𝑞, 𝐴 (𝑡 𝑘 ), 𝜏 𝑘 
+
+ = 0 ,
+
+DMR (𝑞, 𝜏 ) = 1∃𝑘 : 𝐽 𝐷 
+
+ 𝑞, 𝐴 (𝑡 𝑘 ), 𝜏 𝑘 
+
+ = 0 .
+
+(1) We report mismatch rates by averaging these indicators over questions with at least one tool call. Full metric definitions are given in the appendix D. 
+
+4 Finance-Aware Tool Routing (FATR) 
+
+We propose FATR, a baseline that makes finance constraints ex-plicit to a generic LLM planner. Rather than training a specialized policy, we reshape the context given to the planner and wrap execu-tion with stability utilities, keeping the approach implementation-friendly and model-agnostic. FATR serves primarily as an evaluation baseline and a reference implementation. 
+
+4.1 Problem Setup 
+
+Let T denote a tool library. Each tool 𝑡 ∈ T has a callable sig-nature 𝑠 𝑡 and finance attributes 𝑎 𝑡 = (𝑡 𝑡 , 𝑖 𝑡 , 𝑑 𝑡 ). Here, 𝑡 𝑡 is timeli-ness, 𝑖 𝑡 is intent type, and 𝑑 𝑡 is the set-valued regulatory domains. Given a question 𝑞 , an agent produces an answer ˆ𝑦 and a tool trace 
+
+𝜏 = {( 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 )} 𝑚 𝑘 =1. For the 𝑘 -th call, 𝑥 𝑘 and 𝑜 𝑘 denote the argu-ments and output. Our executor exposes all tools through a unified interface. The planner emits structured arguments 𝑥 𝑘 , and the ex-ecutor validates and dispatches the call. To support caching and evaluation, the returned output 𝑜 𝑘 is normalized into a compact schema ( e.g. , key fields). 
+
+4.2 Tool Inventory & Retrieval and Tool Cards 
+
+Figure 3 summarizes the FATR pipeline end to end. Given a question 
+
+𝑞 from the Question Inventory, FATR retrieves a small candidate set of tools from Tool Inventory & Retrieval to reduce the action space. A retriever embeds 𝑞 and tool metadata and selects the Top-𝐾 tools Lu et al. Compliance Metrics 
+
+LLM Planner 
+
+> Finance-Aware Tool Routing
+
+A Infer Constraints 
+
+# T(q) I(q) D(q)
+
+Timeliness · Intent · Domain 
+
+B Constraint-Aware Planning 
+
+Timeliness 
+
+Intent 
+
+Domain 
+
+C ReAct Loop 
+
+Plan Call Observe Answer 
+
+tool timestamp 
+
+2026-02-08 
+
+tool_name · timestamp · answer 
+
+Executor & Trace Recorder 
+
+Evaluation & Metrics 
+
+Capability · Compliance 
+
+# TIR TESR CER 
+
+# Soft Score CSS 
+
+# FMR IMR DMR 
+
+stock_search 
+
+Capability 
+
+Execution Trace Log 
+
+Tool Inventory & Retrieval 
+
+Tools 
+
+Tool Cards 
+
+Top-K Retrieval 
+
+Tool Call 
+
+Question Inventory 
+
+> Question
+> • ... ——
+> • ... ——
+> • ... ——
+
+Figure 3: Overview of Finance-Aware Tool Routing (FATR). FATR takes a Question Inventory and a Tool Inventory & Retrieval module that performs Top-𝐾 retrieval and formats retrieved tools as Tool Cards. An LLM Planner runs Finance-Aware Tool Routing by (A) Infer Constraints to derive (𝑇 (𝑞 ), 𝐼 (𝑞 ), 𝐷 (𝑞 )) over timeliness, intent, and domain, (B) Constraint-Aware Planning, and (C) a ReAct loop. An Executor & Trace Recorder dispatches tool calls and trace logs, which are then scored by Evaluation & Metrics for capability ( TIR , TESR , CER , Soft Score , CSS ) and compliance ( TMR , IMR , DMR ). 
+
+by cosine similarity (default 𝐾 =20 ) using BGE-M3 embeddings [ 3 ]. Each retrieved tool is formatted as a Tool Card containing tool name and description, together with the finance attributes 𝑎 𝑡 . The combination reduces distractors and makes prompting more stable under large catalogs. 
+
+4.3 Attribute-Aware Planning 
+
+The LLM Planner runs a ReAct loop [ 29 ]: it proposes a tool call, observes tool outputs, and iterates until producing a final answer. We cap the interaction horizon at max_steps=5 tool-augmented steps to limit latency and reduce exposure to tool drift. During planning, FATR enforces three families of constraints derived from the question: timeliness ( e.g. , match implied time sensitivity), intent restraint ( e.g. , avoid transactional tools unless explicitly required, and in FinToolBench transactional intent is treated as disallowed and penalized), and domain alignment ( e.g. , ensure intersection between the tool domain and the inferred question domain). In practice, these constraints are implemented as explicit prompt rules that guide the planner’s tool selection and reasoning. Concretely, the planner first performs Infer Constraints by ar-ticulating the implied requirement sets (𝑇 (𝑞 ), 𝐼 (𝑞 ), 𝐷 (𝑞 )) . It then performs Constraint-Aware Planning by selecting tools whose at-tributes are compatible with these sets and by maintaining the constraints throughout the ReAct loop. For multi-tool questions, the planner is encouraged to resolve ambiguity early ( e.g. , determine the correct market and ticker format) before executing downstream calls whose domains must remain consistent. The planner is also in-structed to surface key provenance fields in the final answer so that tool use is verifiable. Figure 4 illustrates our tool card format, which standardizes tool metadata and exposes finance-specific attributes used for both retrieval and constraint checking. While the primary goal is to evaluate models rather than to enforce policy, FATR can optionally apply conservative hard filters at inference time ( e.g. ,excluding transactional tools and removing domain-incompatible tools) to reduce unforced compliance errors. Pseudocode for the full pipeline is given in Appendix G. FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use TOOL CARD                                   
+
+> Tool_Name: MarketD ata_API
+> g e t _ m a r k e t _ d a t a ( t i c k e r : s t r , d a t e _ r a n g e : s t r ) - > d i c t
+> Retrieve historical s tock prices.
+> Use for trend analysis.
+> Requires valid ticker symbol.
+> [Timeliness :Real-time ]
+> [Intent Type :Informational ]
+> [Regulatory Domains: Equity, Fund ]
+> [Timeliness: Real-time]
+> [Intent Type: Informational ]
+> [Regulatory Domains: Equity ]
+> [Timeliness: Periodic ]
+> [Intent Type :Informational ]
+> [Regulatory Domains: Fund ]
+> TOOL IDENTIFIER
+> CALLABLE SIGNATURE
+> USAGE HINTS
+> Consistent tagged format stabilizes prompting and reduces ambiguity.
+> Tool_Name :Symbols Summary
+> Tool_Name :Fund Rating
+> Tool _Name :Quotes Stocks
+> [Timeliness: Daily] [Intent Type: Informational [Regulatory D omains: SEC,FINRA]
+> TOOL CARD
+
+Figure 4: Tool cards for attribute injection and constraint checking. 
+
+5 Experiments 5.1 Benchmark Setting 
+
+The following protocol is designed so that results on FinToolBench can be reproduced and compared fairly across studies. We run evaluation on all 295 questions. Each run uses a fixed tool-use limit, 
+
+i.e. , at most 5 tool-use rounds per question. In each round, multiple tool calls may be issued, with a per-call timeout of 60 seconds and up to 2 retries. Tool execution is performed in a controlled environment with deterministic caching and full logging of tool traces. For analysis, questions are stratified by single vs multi-tool and by inferred question category. We report metrics following the definitions in Section 3.4. 
+
+5.2 Baselines and Model Backends 
+
+We evaluate FinToolBench under a unified agent framework based on FATR, which integrates tool retrieval, finance-attribute injection, and stabilized execution. Unless otherwise specified, the overall pipeline including the retriever and executor is fixed, and only the LLM planner varies across different model backends. We con-sider several representative LLM backends as planners, including Doubao-Seed-1.6, Qwen3-8B, GLM-4.7-Flash, and GPT-4o. All mod-els interact with the same tool inventory, retrieval results, and execution environment, ensuring that performance differences can be attributed to the planner’s reasoning and tool-selection behavior rather than infrastructure variation. For answer correctness and requirement inference, we employ an LLM-as-a-judge. Exact model versions, decoding parameters, and inference hyperparameters are reported in the appendix (Appendix F). 
+
+5.3 Tool-Call Interface and Prompts 
+
+All agent variants share the same tool-call interface: the planner outputs either a final answer or a structured tool invocation speci-fying a tool ID and arguments. We constrain arguments to a JSON schema derived from the tool signature and return tool outputs in a normalized format. Retrieved tools are converted into function schemas for function calling. We prepend the finance tags, i.e. , time-liness, intent type, and regulatory domains, to the tool description. For tool-using variants, the prompt emphasizes (i) using tools when timeliness is required, (ii) avoiding transactional actions, and (iii) explicitly checking that the selected tools’ domains match the ques-tion. When tool outputs exceed a length threshold, an LLM-based extractor compresses responses to question-relevant fields before returning them to the planner, limiting context growth across multi-step traces. Detailed prompt templates and compression settings are given in the appendix E and appendix G. 
+
+5.4 Judges and Agreement 
+
+For computing Soft Score and for requirement inference in Eq. (1) ,we use GPT-5.1 as the judge and repeat each judgment three times to reduce variance. For Soft Score , we average the three judge scores. For compliance evaluation, we perform a single LLM-judge decision per tool call, since the output is a discrete match/mismatch label rather than a graded score. 
+
+6 Results 6.1 Main Results 
+
+Table 3 reports the end-to-end results on FinToolBench. A low TIR 
+
+indicates a tendency to rely on parametric knowledge rather than tool invocation, while a low CER points to planning or argument errors despite successful invocation. High mismatch rates signify that while traces may be executable, they violate specific finance constraints. Qwen3-8B exhibits the highest tool invocation rate (TIR =0.8712) and achieves the highest soft accuracy ( Soft Score 
+
+=0.4234). However, its comparatively low CER (0.3385) implies that while it is eager to use tools, it frequently suffers from argument instantiation errors or execution failures. Doubao-Seed-1.6 demon-strates the most balanced performance, attaining the highest overall execution success rate ( TESR =0.3254) and the second-highest CER 
+
+(0.5000), suggesting reliable tool planning and argument construc-tion. GLM-4.7-Flash shows weaker performance, characterized by higher mismatch rates across all dimensions ( TMR , IMR , DMR )and the lowest conditional success score ( CSS =0.3791). Conversely, GPT-4o adopts an extremely conservative strategy with the lowest invocation rate ( TIR =0.2267), leading to the lowest overall cover-age ( TESR =0.1400). Yet, when it does choose to invoke tools, it is highly precise, achieving the highest CER (0.6176) and CSS (0.6700), along with the lowest intent and domain mismatch rates, which highlights a trade-off, i.e. , GPT-4o prioritizes safety and precision over recall, often failing to attempt tool-required queries under our protocol. Overall, these results emphasize that neither aggressive tool use (as seen in Qwen) nor high precision (as seen in GPT-4o) is sufficient on its own. Reliable execution combined with active tool selection is necessary to maximize end-to-end performance. 
+
+6.2 Finance Attribute Injection 
+
+We study whether exposing finance tags, i.e. , timeliness, intent, and regulatory domain, inside tool cards changes tool-use behav-ior. We compare full FATR against a variant that keeps the same retriever and executor but omits finance tags from the tool-card text presented to the planner. Figure 5 summarizes the resulting trade-offs between tool-use coverage, conditional execution reliabil-ity, and compliance alignment. Two interacting effects explain the pattern. First, adding explicit finance tags can reduce TIR because the planner is more likely to avoid marginal or risky calls when constraints are salient. Second, TESR can decrease mechanically Lu et al. 
+
+Table 3: Main results on FinToolBench. 
+
+Model TIR TESR CER ↑ Soft Score ↑ CSS ↑ TMR ↓ IMR ↓ DMR ↓
+
+Doubao-Seed-1.6 0.6508 0.3254 0.5000 0.3958 0.4627 0.3438 0.6563 0.1719 Qwen3-8B 0.8712 0.2949 0.3385 0.4234 0.4040 0.3307 0.6887 0.1673 GLM-4.7-Flash 0.4407 0.2102 0.4769 0.2769 0.3791 0.4615 0.7231 0.1769 GPT-4o 0.2267 0.1400 0.6176 0.2302 0.6700 0.3529 0.5000 0.1176 15% 20% 25% 30% 35% 40% 45% 50% 55% 60% 65% 70% 
+
+> Percentage (%)
+> CER
+> Soft Score
+> CSS
+> FMR
+> IMR
+> DMR
+> 46.3%
+> 50.0%
+> 45.3%
+> 46.3%
+> 39.4%
+> 39.6%
+> 41.1%
+> 34.4%
+> 66.4%
+> 65.6%
+> 21.5%
+> 17.2%
+> Ablation Metrics Comparison
+> w/o Injection
+> Full (ours)
+
+Figure 5: Attribute injection ablation in FATR. We compare full tool cards with finance tags against a variant without attribute injection. Injection slightly reduces tool invocation (TIR ) under stricter acceptability checks, but it improves execution success conditioned on tool use ( CER ) and reduces mismatch rates ( TMR , IMR , DMR ). No tool Single-tool Multi-tool    
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> Count
+> 103
+> 114
+> 78
+> (a) Tool Count Distribution
+> 2 tools
+> 28.2%
+> 3 tools
+> 35.9%
+> 4 tools
+> 26.9%
+> Others
+> 9.0%
+> (b) Multi-tool Breakdown
+> 2 tools 3 tools 4 tools Others
+> Last-round Tool Usage
+
+Figure 6: Tool usage distribution on FinToolBench. Left: counts of runs with no tool call, a single tool call, and multi-ple tool calls. Right: breakdown of multi-tool traces by the number of tools invoked. 
+
+because it is defined over all questions, and fewer questions enter a tool-augmented trace that can succeed. To decouple coverage from conditional reliability, we report CER =TESR /TIR , which captures execution success given at least one tool call. Overall, injection primarily improves tool choice and compliance alignment rather than executor stability. 
+
+6.3 Tool Usage Distribution 
+
+Figure 6 provides a complementary view by summarizing tool usage in the last-round evaluation logs of Doubao-Seed-1.6, with one run per question. Out of 295 questions, 103 runs end without any tool call, 114 produce a single-tool trace, and 78 require multiple tools. Among the multi-tool traces, three-tool traces are most common, followed by two- and four-tool traces. The observed distribution motivates reporting both coverage ( TIR ) and conditional reliability (CER ) rather than relying on a single end-to-end success metric. 
+
+6.4 Category-Level Diagnosis 
+
+Aggregate metrics often mask the specific contexts in which an agent succeeds or fails. To facilitate a more granular diagnosis, we present a category-level breakdown of both capability and compli-ance metrics. The analysis reveals significant performance hetero-geneity across tool scopes. For instance, while the agent demon-strates robustness in macro interpretation, it struggles with strict adherence in structural tasks like value extraction, despite main-taining high soft scores. Such a breakdown allows us to pinpoint whether failures stem from capability deficits or rigid formatting mismatches, as detailed in Appendix H. 
+
+7 Conclusion 
+
+We present FinToolBench, a comprehensive framework that frames financial tool-use evaluation around both call-level capability and strict regulatory compliance. The benchmark uniquely couples a massive free-tier tool catalog (760 tools) with 295 complex, tool-required questions. Crucially, our evaluation protocol separates capability metrics (whether an agent can invoke and execute tools) from compliance metrics (whether its tool choices satisfy timeliness, intent, and domain constraints), mirroring real-world requirements in financial settings. To facilitate immediate adoption, we also pro-vide FATR, a practical baseline that effectively operationalizes these constraints via attribute injection and stability-oriented execution wrappers. We will open-source the tool manifest, question set, and evaluation scripts, allowing the community to standardize assess-ment on a common, runnable benchmark and compare agents under consistent conditions. Future work may extend coverage to pro-prietary real-time data feeds and further study agent robustness under inevitable tool API updates and policy drift. 
+
+Artifact Availability 
+
+The implementation and experimental scripts are available at: https: //github.com/Double-wk/FinToolBench.git. FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use 
+
+References 
+
+[1] Victor Barres, Honghua Dong, Soham Ray, Xujie Si, and Karthik R Narasimhan. 2025. 𝜏 2-bench: Evaluating conversational agents in a dual-control environment. 
+
+arXiv preprint arXiv:2506.07982 (2025). [2] Antoine Bigeard, Langston Nashold, Rayan Krishnan, and Shirley Wu. 2025. Finance agent benchmark: Benchmarking LLMs on real-world financial research tasks. arXiv preprint arXiv:2508.00828 (2025). [3] Jianlv Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian, and Zheng Liu. 2024. BGE M3-Embedding: Multi-lingual, multi-functionality, multi-granularity text embeddings through self-knowledge distillation. arXiv preprint arXiv:2402.03216 
+
+(2024). [4] Zhiyu Chen, Wenhu Chen, Charese Smiley, Sameena Shah, Iana Borova, Dylan Langdon, Reema Moussa, Matt Beane, Ting-Hao Huang, Bryan R Routledge, and William Yang Wang. 2021. FinQA: A dataset of numerical reasoning over financial data. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , Marie-Francine Moens, Xuanjing Huang, Lucia Specia, and Scott Wen-tau Yih (Eds.). Association for Computational Linguistics, Online and Punta Cana, Dominican Republic, 3697–3711. [5] Alexandre Drouin, Maxime Gasse, Massimo Caccia, Issam H Laradji, Manuel Del Verme, Tom Marty, Léo Boisvert, Megh Thakkar, Quentin Cappart, David Vazquez, et al . 2024. WorkArena: How capable are web agents at solving common knowledge work tasks? arXiv preprint arXiv:2403.07718 (2024). [6] Jennifer D’Souza, Hamed Babaei Giglou, and Quentin Münch. 2025. YESciEval: Robust LLM-as-a-judge for scientific question answering. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, 13749–13783. [7] Jiayu Guo, Yu Guo, Martha Li, and Songtao Tan. 2025. FLAME: Financial large-language model assessment and metrics evaluation. arXiv preprint arXiv:2501.06211 (2025). [8] Xin Guo, Haotian Xia, Zhaowei Liu, Hanyang Cao, Zhi Yang, Zhiqiang Liu, Sizhe Wang, Jinyi Niu, Chuqi Wang, Yanhui Wang, Xiaolong Liang, Xiaoming Huang, Bing Zhu, Zhongyu Wei, Yun Chen, Weining Shen, and Liwen Zhang. 2025. FinEval: A Chinese financial domain knowledge evaluation benchmark for large language models. In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , Luis Chiruzzo, Alan Ritter, and Lu Wang (Eds.). Association for Computational Linguistics, Albuquerque, New Mexico, 6258–6292. [9] Zhicheng Guo, Sijie Cheng, Hao Wang, Shihao Liang, Yujia Qin, Peng Li, Zhiyuan Liu, Maosong Sun, and Yang Liu. 2024. StableToolBench: Towards stable large-scale benchmarking on tool learning of large language models. arXiv preprint arXiv:2403.07714 (2024). [10] Rajarshi Haldar and Julia Hockenmaier. 2025. Rating Roulette: Self-inconsistency in LLM-as-a-judge frameworks. In Findings of the Association for Computational Linguistics: EMNLP 2025 . Association for Computational Linguistics, 24986– 25004. [11] Helia Hashemi, Jason Eisner, Corby Rosset, Benjamin Van Durme, and Chris Kedzie. 2024. LLM-Rubric: A multidimensional, calibrated approach to automated evaluation of natural language texts. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, 13806–13834. [12] Pranab Islam, Anand Kannappan, Douwe Kiela, Rebecca Qian, Nino Scherrer, and Bertie Vidgen. 2023. FinanceBench: A new benchmark for financial question answering. arXiv preprint arXiv:2311.11944 (2023). [13] Yankai Jiang, Wenjie Lou, Lilong Wang, Zhenyu Tang, Shiyang Feng, Jiaxuan Lu, Haoran Sun, Yaning Pan, Shuang Gu, Haoyang Su, Feng Liu, Wangxu Wei, Pan Tan, Dongzhan Zhou, Fenghua Ling, Cheng Tan, Bo Zhang, Xiaosong Wang, Lei Bai, and Bowen Zhou. 2025. SCP: Accelerating discovery with a global web of autonomous scientific agents. arXiv preprint arXiv:2512.24189 (2025). [14] Minghao Li, Yingxiu Zhao, Bowen Yu, Feifan Song, Hangyu Li, Haiyang Yu, Zhoujun Li, Fei Huang, and Yongbin Li. 2023. API-Bank: A comprehensive benchmark for tool-augmented LLMs. arXiv preprint arXiv:2304.08244 (2023). [15] Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen Men, Kejuan Yang, et al . 2024. AgentBench: Evalu-ating LLMs as agents. In International Conference on Learning Representations .arXiv:2308.03688. [16] Yang Liu, Dan Iter, Yichong Xu, Shuohang Wang, Ruochen Xu, and Chenguang Zhu. 2023. G-Eval: NLG evaluation using GPT-4 with better human alignment. 
+
+arXiv preprint arXiv:2303.16634 (2023). [17] Jiaxuan Lu, Ziyu Kong, Yemin Wang, Rong Fu, Haiyuan Wan, Cheng Yang, Wenjie Lou, Haoran Sun, Lilong Wang, Yankai Jiang, Xiaosong Wang, Xiao Sun, and Dongzhan Zhou. 2026. Beyond Static Tools: Test-Time Tool Evolution for Scientific Reasoning. arXiv preprint arXiv:2601.07641 (2026). [18] Grégoire Mialon, Clémentine Fourrier, Thomas Wolf, Yann LeCun, and Thomas Scialom. 2023. GAIA: a benchmark for general AI assistants. arXiv preprint arXiv:2311.12983 (2023). [19] OpenFinData. 2024. OpenFinData: An Open Financial Evaluation Dataset. GitHub repository. Release v0.1.0; Accessed: 2026-02-07. [20] Shishir G Patil, Huanzhi Mao, Fanjia Yan, Charlie Cheng-Jie Ji, Vishnu Suresh, Ion Stoica, and Joseph E Gonzalez. 2025. The Berkeley Function Calling Leaderboard (BFCL): From Tool Use to Agentic Evaluation of Large Language Models. In 
+
+Proceedings of the 42nd International Conference on Machine Learning (Proceedings of Machine Learning Research, Vol. 267) . PMLR, 48371–48392. [21] Shishir G Patil, Tianjun Zhang, Xin Wang, and Joseph E Gonzalez. 2024. Go-rilla: Large language model connected with massive APIs. Advances in Neural Information Processing Systems 37 (2024), 126544–126565. [22] Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, et al . 2024. ToolLLM: Facilitating large language models to master 16,000+ real-world APIs. In International Conference on Learning Representations . arXiv:2307.16789. [23] Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: Language models can teach themselves to use tools. Advances in Neural Information Processing Systems 36 (2023), 68539–68551. [24] Ada Defne Tur, Nicholas Meade, Xing Han Lù, Alejandra Zambrano, Arkil Pa-tel, Esin Durmus, Spandana Gella, Karolina Stańczak, and Siva Reddy. 2025. SafeArena: Evaluating the safety of autonomous web agents. arXiv preprint arXiv:2503.04957 (2025). [25] Haiyuan Wan, Chen Yang, Junchi Yu, Meiqi Tu, Jiaxuan Lu, Di Yu, Jianbao Cao, Ben Gao, Jiaqing Xie, Aoran Wang, Wenlong Zhang, Philip Torr, and Dongzhan Zhou. 2025. DeepResearch Arena: The first exam of LLMs’ research abilities via seminar-grounded tasks. arXiv preprint arXiv:2509.01396 (2025). [26] Hongfei Xia, Hongru Wang, Zeming Liu, Qian Yu, Yuhang Guo, and Haifeng Wang. 2025. SafeToolBench: Pioneering a prospective benchmark to evaluating tool utilization safety in LLMs. arXiv preprint arXiv:2509.07315 (2025). [27] Cheng Yang, Jiaxuan Lu, Haiyuan Wan, Junchi Yu, and Feiwei Qin. 2025. From What to Why: A multi-agent system for evidence-based chemical reaction con-dition reasoning. arXiv preprint arXiv:2509.23768 (2025). [28] Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik R Narasimhan. 2024. 𝜏 -bench: A benchmark for tool-agent-user interaction in real-world domains. arXiv preprint arXiv:2406.12045 (2024). [29] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R Narasimhan, and Yuan Cao. 2023. ReAct: Synergizing reasoning and acting in language models. In International Conference on Learning Representations . arXiv:2210.03629. [30] Qiyuan Zhang, Yufei Wang, Yuxin Jiang, Liangyou Li, Chuhan Wu, Yasheng Wang, Xin Jiang, Lifeng Shang, Ruiming Tang, Fuyuan Lyu, and Chen Ma. 2025. Crowd Comparative Reasoning: Unlocking comprehensive evaluations for LLM-as-a-judge. arXiv preprint arXiv:2502.12501 (2025). [31] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al . 2023. Judg-ing LLM-as-a-Judge with MT-Bench and Chatbot Arena. Advances in Neural Information Processing Systems 36 (2023), 46595–46623. arXiv:2306.05685. [32] Shuyan Zhou, Frank F Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar, Xianyi Cheng, Tianyue Ou, Yonatan Bisk, Daniel Fried, et al . 2024. WebArena: A realistic web environment for building autonomous agents. In International Conference on Learning Representations . arXiv:2307.13854. [33] Fengbin Zhu, Wenqiang Lei, Youcheng Huang, Chao Wang, Shuo Zhang, Jiancheng Lv, Fuli Feng, and Tat-Seng Chua. 2021. TAT-QA: A question an-swering benchmark on a hybrid of tabular and textual content in finance. arXiv preprint arXiv:2105.07624 (2021). Lu et al. 
+
+A Tool Curation Criteria 
+
+This section spells out the criteria used to build the FinToolBench tool inventory. The pipeline retains only tools that are executable under free-tier constraints. 
+
+A.1 RapidAPI Endpoints 
+
+Our RapidAPI pool is initialized from finance-related tools collected from the ToolBench paper, and then filtered with the two-stage pipeline below. 
+
+First-stage (rule-based) filters. Because RapidAPI listings vary in how authentication, billing, and rate limits are described, we programmatically crawl and parse endpoint pages to extract these fields, and then apply the deterministic criteria in Table 4. An end-point is excluded if it fails any row. 
+
+Table 4: First-stage RapidAPI filter criteria.                
+
+> Criterion Rule Description Missing or empty →excluded. Deduplication Duplicate names: keep first only. Authentication Exclude if Authorization or multi-step token (be-yond single API key) required. Existence Remove if endpoint does not resolve or returns persis-tent errors. Bank-card Exclude if free-tier requires card binding. Rate limits Require ≥10/h, ≥100/d, ≥300/m. Map Use an LLM to align endpoint parameter names with the tool signature and then manually spot-check the mappings.
+
+Second-stage (mapping and executability). Each endpoint that passes the first stage is mapped into our normalized schema. We align its parameter names to our tool signature with an LLM and then manually spot-check the mappings. We then test each mapped endpoint with at least one successful invocation (valid request and parsed response). Endpoints that fail consistently (timeouts, validation errors, or empty responses) are dropped. 
+
+Outcome. After the two-stage filtering process, we obtain 261 executable RapidAPI endpoints. All retained endpoints have at least one documented required or optional parameter. Endpoints that are parameter-free or rely solely on implicit path/query conventions are excluded. 
+
+A.2 AkShare Interfaces 
+
+AkShare functions are selected and then validated for executability. 
+
+Finance-domain filter. Function names are matched against a fixed set of finance-related keywords. A function is retained if its name (or module path) contains any of the following tokens: 
+
+• stock , fund , bond , futures , option , index , macro , currency ,
+
+fx , crypto , rate , treasury , etf 
+
+• finance , bank , insurance , security , derivative , swap , gold ,
+
+commodity , interest , libor , shibor , exchange , margin 
+
+Executability. Each candidate is invoked with minimal valid ar-guments, using defaults or small example values where possible. Interfaces that raise import errors, signature errors, or runtime errors under a timeout are discarded. 
+
+Outcome. After finance-domain filtering and executability vali-dation, we retain 499 AkShare interfaces in the final tool inventory. 
+
+A.3 Combined Inventory 
+
+After executability filtering, the final tool library contains 760 tools. All tools in FinToolBench are normalized into a single manifest schema, including tool name, description, and parameters. This uni-fied manifest enables auditable tool traces and call-level compliance metrics (TMR, IMR, DMR), where each run records the invoked tools together with their arguments and execution outcomes. 
+
+B Finance Attribute Schema and Labeling 
+
+Each tool is annotated with finance attributes that make timeliness, intent, and domain constraints explicit. These attributes support both tool cards (for planning) and compliance evaluation (TMR, IMR, DMR). 
+
+B.1 Attributes of the Tools 
+
+• Timeliness (timeliness ): one of 
+
+realtime , daily , as_filed , periodic , or static .
+
+– realtime : intra-day, low latency, such as ticks and order book. 
+
+– daily : updated once per trading day or batch, such as clos-ing prices and NAV. 
+
+– as_filed : event-driven, when a regulated entity files, such as filings and announcements. 
+
+– periodic : fixed calendar schedule, such as quarterly reports and GDP. 
+
+– static : rarely changes, such as identifiers and listing dates. 
+
+• Intent type (intent_type ): one of 
+
+informational , advisory , or transactional .
+
+– informational : read-only data access and factual retrieval without recommendations or actions. 
+
+– advisory : analysis or recommendation-oriented outputs that go beyond pure retrieval. 
+
+– transactional : action-triggering operations such as order placement, transfer, or account-changing behavior. 
+
+• Regulatory domain (regulatory_domain ): Subset of {equity, bond, fund, forex, derivatives, macro, economic_policy, sentiment_trading, esg, crypto}. Multiple val-ues are allowed per tool. 
+
+B.2 Labeling Protocol 
+
+Annotations are produced by an LLM (Qwen3-8B) given the tool name and description. Each attribute is labeled independently with three samples, and the final label is the majority vote. This protocol keeps labeling separate from the agent under test and makes the compliance layer auditable. 
+
+C Question Set Construction 
+
+The question set is built so that every retained question requires tool use. Questions answerable by static memorization or general reasoning are excluded. FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use 
+
+C.1 Sources 
+
+Questions are drawn from the FinanceBench release and the Open-FinData release (dataset identifier openfindata_release ). Only questions that require tool calls to answer are retained, such as current prices, time series, or structured data. 
+
+C.2 Filters 
+
+• Standardization: Convert all sources into a unified {question, answer, category} format. 
+
+• Maximum length: 500 characters to keep prompts within a fixed budget. 
+
+• Candidate retrieval: For each question, retrieve Top-𝐾 tools (𝐾 =20 ) using BGE-M3 embeddings. 
+
+• LLM tool selection: Given the Top-𝐾 tools, Qwen3-8B selects the most suitable tool(s). We sample three times and keep tools with at least two votes. 
+
+• Deduplication: For single-tool questions, keep at most two questions per tool to reduce skew. Multi-tool questions are not deduplicated by tool set. 
+
+C.3 Outcome 
+
+The final question set contains 295 questions, spanning both simple and compositional tool use: 166 single-tool questions and 129 multi-tool questions, classified by the number of tool calls observed at runtime. 
+
+D Metric Definitions 
+
+All metrics are defined over a fixed question set and a fixed evalua-tion protocol (timeout, retries, caching). We report capability (TIR, TESR, CER) and compliance (TMR, IMR, DMR) to separate whether an agent can run tools from whether its tool choices satisfy finance constraints. Below, 𝑁 denotes the number of questions. 
+
+D.1 Capability 
+
+• Tool Invocation Rate ( TIR ). Fraction of questions whose exe-cution invokes at least one tool call: 
+
+TIR = 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+1[ | tool _calls 𝑖 | > 0 ] .
+
+• Tool Execution Success Rate ( TESR ). Fraction of questions whose tool execution succeeds. We mark a question successful when its final tool call returns a valid parsed output without error or exception; intermediate failures and retries are allowed: 
+
+TESR = 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+1[ final tool call succeeds on question 𝑖 ] .
+
+• Conditional Execution Rate ( CER ). Success rate among ques-tions that invoked at least one tool call: 
+
+CER = TESR TIR , CER = 0 when TIR = 0.
+
+• Soft Score ( Soft Score ). We partition questions into three types based on the gold-answer format: (i) numeric/choice ques-tions, identified by the presence of a numeric or choices field in the gold answer; (ii) structured-analysis questions, identified by the presence of a criterium field in the gold answer; (iii) other 
+
+questions, all remaining non-numeric/choice/ criterium cases. All questions are judged by LLM (GPT-5.1). Numeric/choice ques-tions are scored in {1, 0}, while structured-analysis and other 
+
+questions are scored in {1, 0.5, 0}. Scores are averaged over three judging repeats. 
+
+SoftScore = 13𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =13
+
+∑︁  
+
+> 𝑟 =1
+
+𝑠 𝑖,𝑟 .
+
+• Conditional Soft Score ( CSS ). Mean Soft Score over questions with successful execution: 
+
+CSS = Soft Score TESR , CSS = 0 when TESR = 0.
+
+D.2 Compliance Mismatch Rates 
+
+For each question 𝑞 , an LLM(GPT-5.1) judge assesses whether the tools used in the execution are aligned with the question’s finance constraints in timeliness, intent type, and regulatory domain. Let the executed tool-use trace be 𝜏 = {( 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 )} 𝑚 𝑘 =1, where 𝑡 𝑘 is the tool name selected at step 𝑘 , 𝑥 𝑘 is the tool input (arguments), and 𝑜 𝑘 
+
+is the tool output. Tool attributes are not part of the trace; instead, for any tool 𝑡 we look up its finance tags from the tool metadata: 
+
+𝐴 (𝑡 ) = (𝑡 (𝑡 ), 𝑖 (𝑡 ), 𝑑 (𝑡 )) , corresponding to timeliness 𝑡 (𝑡 ), intent type 𝑖 (𝑡 ), and regulatory domains 𝑑 (𝑡 ).Define judge-level call alignment indicators: 𝐽 𝑇 (𝑞, 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 ,𝑇 (𝑡 𝑘 )) ∈ {0, 1}, 𝐽 𝐼 (𝑞, 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 , 𝐼 (𝑡 𝑘 )) ∈ { 0, 1}, and 𝐽 𝐷 (𝑞, 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 , 𝐷 (𝑡 𝑘 )) ∈ {0, 1}, where 1 means matched and 0 means mismatched. We then define mismatch-at-least-once indicators at the question level: 
+
+TMR (𝑞, 𝜏 ) = 1[∃ 𝑘 : 𝐽 𝑇 (𝑞, 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 ,𝑇 (𝑡 𝑘 )) = 0] ,
+
+IMR (𝑞, 𝜏 ) = 1[∃ 𝑘 : 𝐽 𝐼 (𝑞, 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 , 𝐼 (𝑡 𝑘 )) = 0] ,
+
+DMR (𝑞, 𝜏 ) = 1[∃ 𝑘 : 𝐽 𝐷 (𝑞, 𝑡 𝑘 , 𝑥 𝑘 , 𝑜 𝑘 , 𝐷 (𝑡 𝑘 )) = 0] .
+
+TMR, IMR, and DMR count the number of questions whose traces contain at least one mismatched tool call in the corresponding dimension. Each question is counted once, regardless of how many mismatches occur in its trace. We report these metrics as rates in 
+
+[0, 1] by dividing the mismatch count by the number of questions that invoked at least one tool call. Lower is better. 
+
+E Prompt Templates 
+
+This section documents the prompts for (i) intent mismatch evalua-tion, (ii) planner system instructions, and (iii) RapidAPI Parameter Alignment. 
+
+E.1 Intent-Match Evaluator (IMR) 
+
+We use an LLM(GPT-5.1) judge to decide whether a tool call’s 
+
+intent_type is compatible with the question requirement. The judge considers only intent (informational, advisory, transactional) and ignores execution success. 
+
+Intent match prompt (JSON-only output) 
+
+> You are a financial tool compliance evaluator. Determine whether the "question requirement" matches the "tool intent". Consider only tool intent. Do not consider whether the tool call succeeds. Tool intent must be one of informational / advisory / transactional. Lu et al.
+> Question: {question} Tool name: {tool_name} Tool intent (intent_type): {tags.get("intent_type")} Tool description: {tags.get("description") or ""} Output JSON only: { "match": "yes|no", "reason": "within 20 words" }
+
+E.2 Planner System 
+
+The planner is explicitly instructed to use the financial_tags 
+
+field inside each tool description when choosing tools. This makes timeliness, domain, and intent cues salient at selection time. 
+
+Planner system 
+
+> Subject to satisfying the question, first infer the question’s required finance tags: (a) required timeliness, (b) required regulatory_domains, and (c) allowed intent_type. Then select tools whose financial_tags best match these requirements: require domain overlap, prefer matching timeliness, and choose the lowest-risk intent (informational > advisory; avoid transactional unless explicitly requested). If multiple tools match, choose the one whose signature/description best fits the needed inputs/outputs.
+
+E.3 RapidAPI Parameter Alignment 
+
+RapidAPI documentation often uses parameter names that differ from those used in request examples. To reduce argument instan-tiation errors, we generate normalized Python wrappers whose function parameters exactly match the keys used in the request schema, and we verify mappings with manual spot-checking (Ta-ble 4, Map rule). For security, we show the API key as a placeholder. 
+
+Parameter-aligned Python code generation prompt 
+
+> You are a professional Python tool function generator. Rewrite the following raw API call code into a standard reusable function. Strictly follow the rules below. 1. Function name: {func_name} 2. Function parameters: - All input parameters: {param_str} - Additional fixed parameter: rapidapi_key: str = "<RAPIDAPI_KEY>" 3. The function must: - Use requests to send the HTTP request - Use X-RapidAPI-Key and X-RapidAPI-Host in headers - Return response.json() if possible, otherwise return response.text - Do not explain anything. Output pure Python code only - Parameter names must exactly match the keys in the parameter dictionary (case sensitive) Description: {desc} Parameter spec: {parameters} URL:{url} X-RapidAPI-Host:{url.split(’/’)[2]}
+
+F Commands and Reproduction Checklist 
+
+The following enables independent reproduction of the benchmark and evaluation pipeline so that results can be compared fairly across studies. 
+
+F.1 Environment and Models 
+
+RapidAPI keys are obtained following the official documentation. AkShare usage follows its documentation. Retriever: BGE-M3. Plan-ner: exact model names and versions, for example Doubao-Seed-1.6, Qwen3-8B, and GLM-4.7-Flash, plus inference hyperparameters (temperature, max tokens). Judge: GPT-5.1 (3 repeats) for Soft Score and requirement metrics. Record these identifiers in the repository README or a config file so that tables in the paper can be reproduced. 
+
+G Algorithm — FATR Pipeline 
+
+Algorithm 1 FATR pipeline 
+
+Require: Question 𝑞 , tool library T , retriever R, planner LLM 𝜋 ,Top-𝐾 (default 𝐾 =20 )
+
+Ensure: Final answer ˆ𝑦 , tool trace 𝜏  
+
+> 1:
+
+C ← R ( 𝑞, T , 𝐾 ) ⊲ Retrieve Top-𝐾 tools by similarity  
+
+> 2:
+
+Build tool cards: for each 𝑡 ∈ C , format Card (𝑡 ) with signature and finance attributes  
+
+> 3:
+
+𝜏 ← ∅ , ℎ ← ∅ ⊲ History of tool calls and outputs  
+
+> 4:
+
+repeat  
+
+> 5:
+
+Planner 𝜋 proposes next action given (𝑞, {Card (𝑡 )} 𝑡 ∈ C , ℎ ):tool 𝑡 and arguments 𝑥 (or final answer ˆ𝑦 ) 
+
+> 6:
+
+if action is tool call (𝑡, 𝑥 ) then  
+
+> 7:
+
+Validate 𝑡 ∈ C  
+
+> 8:
+
+Execute: 𝑜 ← Exec (𝑡, 𝑥 ) with timeout, optionally com-press 𝑜  
+
+> 9:
+
+Append (𝑡, 𝑥, 𝑜 ) to 𝜏 , update ℎ with observation  
+
+> 10:
+
+else  
+
+> 11:
+
+ˆ𝑦 ← planner output, break  
+
+> 12:
+
+until planner emits final answer or max steps  
+
+> 13:
+
+return ˆ𝑦 , 𝜏 
+
+The algorithm in this section summarizes the FATR pipeline: re-trieval, tool-card formatting, ReAct-style planning with finance constraints, and stabilized execution (timeout, retries, cache, op-tional output compression). When output compression is enabled, we use Qwen3-8B as the extractor to keep only question-relevant fields from long tool responses. This algorithm serves as the refer-ence implementation for the FATR baseline in the main paper. 
+
+H Category-Level Diagnosis 
+
+To further localize failure modes beyond aggregate averages, we report metrics broken down by question category. Figure 7 presents category-level performance for Doubao-Seed-1.6. The heatmap highlights substantial heterogeneity across categories. Categories with low TIR cap end-to-end execution success by limiting tool cov-erage. In contrast, categories with high TIR but low TESR indicate difficulties in argument construction, disambiguation, or endpoint instability even after the agent commits to tool use. FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use TIR 
+
+> TESR
+> CER
+> Soft Score
+> CSS
+> FMR
+> IMR
+> DMR
+
+announcement interpretation 
+
+business compliance 
+
+data inspection 
+
+domain-relevant 
+
+entity disambiguation 
+
+entity recognition 
+
+financial facts 
+
+fund analysis 
+
+industy interpretation 
+
+intent understanding 
+
+macro interpretaiton 
+
+metric calculation 
+
+metrics-generated 
+
+novel-generated 
+
+sector analysis 
+
+security compliance 
+
+stock analysis 
+
+stock interpretation 
+
+value extraction                                                                                                                     
+
+> 63.33% 10.00% 15.79% 40.00% 50.00% 36.84% 68.42% 5.26%
+> 60.00% 10.00% 16.67% 23.33% 0.00% 33.33% 100.00% 16.67%
+> 83.33% 50.00% 60.00% 50.00% 66.67% 20.00% 60.00% 0.00%
+> 71.43% 64.29% 90.00% 13.10% 16.67% 20.00% 50.00% 20.00%
+> 58.33% 50.00% 85.71% 66.67% 66.67% 28.57% 42.86% 14.29%
+> 50.00% 18.75% 37.50% 81.25% 83.33% 25.00% 75.00% 37.50%
+> 54.55% 18.18% 33.33% 81.82% 50.00% 50.00% 66.67% 16.67%
+> 76.47% 58.82% 76.92% 24.51% 13.33% 15.38% 38.46% 7.69%
+> 72.73% 24.24% 33.33% 35.86% 64.58% 50.00% 87.50% 41.67%
+> 0.00% 0.00% 100.00%
+> 85.71% 32.14% 37.50% 41.67% 40.74% 50.00% 91.67% 20.83%
+> 0.00% 0.00% 100.00%
+> 80.00% 70.00% 87.50% 12.50% 17.86% 12.50% 18.75% 0.00%
+> 66.67% 66.67% 100.00% 38.89% 58.33% 50.00% 66.67% 16.67%
+> 33.33% 0.00% 0.00% 88.89% 0.00% 100.00% 0.00%
+> 25.00% 0.00% 0.00% 39.58% 50.00% 100.00% 50.00%
+> 60.61% 45.45% 75.00% 62.12% 43.33% 0.00% 35.00% 0.00%
+> 78.12% 21.88% 28.00% 44.79% 40.48% 60.00% 84.00% 24.00%
+> 0.00% 0.00% 100.00%
+
+Metrics by Category 
+
+Figure 7: Metrics by category for Doubao-Seed-1.6 on FinToolBench. Rows are question categories and columns are evaluation metrics. 
+
+I Case Studies 
+
+This section presents representative end-to-end execution traces from our evaluation logs. Each case study reports the full question, the agent’s tool calls (with condensed outputs), the final answer, cor-rectness against dataset ground truth, and an analysis highlighting what the trace reveals about agentic financial tool use. 
+
+I.1 Case Study 1: Finance Attribute Injection Changes Tooling Behavior 
+
+This case examines whether finance-attribute injection changes tool-selection behavior when the first attempted interface is par-tially incompatible with the benchmark wrapper. We compare a baseline planner (without attribute tags in tool cards) against FATR under the same retrieval pool and execution budget. The key ques-tion is not only whether the run finishes, but whether the resulting trace supports the dataset’s intended reasoning target. 
+
+Takeaway. Attribute injection improves execution continuity (the agent keeps searching for viable tools after early failures), but it does not by itself guarantee semantic alignment with the benchmark intent. In this item, the injected run is operationally stronger but still judged incorrect because the final reasoning criterion diverges from the annotated ground-truth stance. This trace-level pattern is illustrated in Figure 8. 
+
+I.2 Case Study 2: Finance Attributes Reduce Redundant Tooling 
+
+This case focuses on trace efficiency rather than final-answer diffi-culty. The question can be answered with one fund-specific informa-tional endpoint, so extra calls mostly reflect planner uncertainty or weak tool prioritization. We use this example to show how finance tags can suppress unnecessary exploration. 
+
+Takeaway. Both runs are correct, but the injected run reaches the answer with a shorter and cleaner trace. This demonstrates that finance attributes can improve practical reliability by reducing avoidable calls and failures, even when end-task correctness is unchanged. This efficiency-oriented gain is illustrated in Figure 9. 
+
+I.3 Case Study 3: Finance Attributes Do Not Guarantee Numerical Fidelity 
+
+This case isolates a harder failure mode: the required numeric target is not directly exposed by the available tool outputs in a straight-forward way, and the planner must choose between abstaining and using a proxy. We compare how baseline and injected settings handle this under identical constraints. 
+
+Takeaway. Finance attributes can redirect the planner to a more plausible tool path, but they are not a substitute for numeric-grounding checks. When only proxy signals are available, a trace may look coherent and still produce quantitatively wrong conclusions. This failure mode is illustrated in Figure 10. Lu et al. 
+
+Case Study 1 ( financebench_9 ): injection recovers tool execution but not task framing 
+
+Question. Does AMEX have an improving operating margin profile as of 2022? If operating margin is not a useful metric for a company like this, then state that and explain why. 
+
+Ground truth. “Performance is not measured through operating margin.” 
+
+Baseline (no finance attributes). Tool trace. 
+
+Step 1: symbols_get_fundamentals → error (unexpected key-word argument fields ). 
+
+Final answer. No final answer is produced. 
+
+Correctness. Incorrect or unscored. 
+
+FATR (with injected finance attributes). Tool trace. 
+
+Step 1: symbols_get_fundamentals → empty. Step 2: symbols_get_sector_metrics → single-period margin. Step 3: symbols_get_fundamentals (limit=3 ) → empty. Step 4: symbols_financials_metrics → FY22 operating income grows slower than revenue. 
+
+Final answer. AMEX’s operating margin did not improve in 2022; revenue outpaced operating income. 
+
+Correctness. Incorrect. 
+
+Analysis. Finance attributes change tooling behavior. The injected run recovers from early API-interface failures and produces a tool-backed narrative, while the baseline fails to complete a trace. However, correctness still depends on aligning with the dataset’s intended criterion. Here, the tool-backed answer discusses margin trends instead of adopting the ground-truth stance that operating margin is not the right performance metric. 
+
+Figure 8: Single-box, end-to-end comparison for financebench_9 . The baseline fails due to an interface mismatch. FATR recovers a valid tool trace, but the final answer remains incorrect because it does not follow the dataset’s intended reasoning criterion. Case Study 2 ( openfindata_release_155 ): injection prunes redundant tools while preserving correctness Question. As a financial analyst, evaluate the downside risk profile of the Tianhong Yu’e Bao Money Market Fund using the downside risk data provided below. 
+
+Ground truth. Tianhong Yu’ebao has a low downside risk and is among the better performers in its category. 
+
+Baseline (no finance attributes). Tool trace. 
+
+fund_individual_analysis_xq → volatility metrics inconsis-tent with money funds. 
+
+fund_money_fund_info_em → timeout or serialization error. 
+
+rate_interbank → execution error. 
+
+fund_overview_em → confirms low downside risk. 
+
+Final answer. Tianhong Yu’e Bao Money Market Fund exhibits extremely low downside risk, significantly below the peer average, making it suitable for conservative investors. 
+
+Correctness. Correct. 
+
+FATR (with injected finance attributes). Tool trace. 
+
+fund_overview_em → confirms near-zero downside risk. 
+
+Final answer. Over the past year and across multiple short-term horizons, Tianhong Yu’e Bao Money Market Fund exhibits near-zero downside risk, significantly outperforming the peer average. 
+
+Correctness. Correct. 
+
+Analysis. Injection improves trace quality by pushing the planner toward a fund-specific, informational tool with appropriate scope. The baseline eventually reaches a suitable tool, but only after several failed or ill-suited calls. In this qualitatively straightforward item, both runs are correct, so the benefit mainly appears as a cleaner and more stable execution trace. 
+
+Figure 9: Single-box comparison for openfindata_release_155 . Injected finance attributes reduce redundant and incompatible tool calls while preserving correctness. FinToolBench: Evaluating LLM Agents for Real-World Financial Tool Use 
+
+Case Study 3 ( financebench_33 ): injection changes strategy but remains incorrect 
+
+Question. What is Nike’s three-year average cost of goods sold as a percentage of revenue from FY2016 to FY2018? 
+
+Ground truth. 55.1%. 
+
+Baseline (no finance attributes). Tool trace. 
+
+Income-statement tools → historical data locked or unavailable. 
+
+stock_get_cost_of_revenue → single-point value without year context. 
+
+Final answer. The requested three-year average cannot be calcu-lated with the available data. 
+
+Correctness. Incorrect. 
+
+FATR (with injected finance attributes). Tool trace. 
+
+symbols_get_sector_metrics → gross margin retrieved. 
+
+Final answer. Using gross margin (38.6%), the implied average COGS ratio is approximately 61.4%. 
+
+Correctness. Incorrect. 
+
+Analysis. Injection pushes the agent away from unavailable historical statements toward a proxy metric. This avoids dead ends, but it does not ensure numerical fidelity. Even with a cleaner trace, the agent can still produce an incorrect estimate when the required quantity is not directly supported by the available tools. 
+
+Figure 10: Single-box comparison for financebench_33 . Injected finance attributes change the tool strategy, but the resulting proxy-based estimate remains incorrect.

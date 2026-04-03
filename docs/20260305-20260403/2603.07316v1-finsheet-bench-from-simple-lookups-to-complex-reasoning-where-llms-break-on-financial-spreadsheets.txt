@@ -1,0 +1,517 @@
+Title: FinSheet-Bench: From Simple Lookups to Complex Reasoning, Where LLMs Break on Financial Spreadsheets
+
+URL Source: https://arxiv.org/pdf/2603.07316v1
+
+Published Time: Tue, 10 Mar 2026 00:56:11 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# FinSheet-Bench: From Simple Lookups to Complex Reasoning, Where LLMs Break on Financial Spreadsheets 
+
+## Jan Ravnik 1∗
+
+## , Matjaž Ličen 1, Felix Bührmann 1, Bithiah Yuan 2,Felix Stinson 1, and Tanvi Singh 11Qubera AG, Gartenstrasse 33, 8002 Zürich 
+
+> 2
+
+## University of Zurich, Department of Informatics, Binzmühlestrasse 14, 8050 Zürich March 2026 
+
+Abstract 
+
+While Large Language Models (LLMs) can accelerate text-heavy tasks in alternative investment due diligence, a gap remains in their ability to accurately extract and reason over structured tabular data from complex financial spreadsheets. Progress is held back by the lack of real industry fund portfolio datasets for benchmarking, as private equity data rooms are confidential. To address this, we introduce FinSheet-Bench , a benchmark of synthetic financial portfolio data modeled on real private equity fund structures, designed to evaluate LLM performance on text-serialized spreadsheet question answering and numeric reasoning tasks. Our evaluation of ten model configurations from OpenAI, Google, and Anthropic on fi-nancial spreadsheets, including complex layouts, fund dividers, and multi-line column names, reveals that no standalone model achieves error rates low enough for unsuper-vised use in professional finance applications. The best-performing model, Gemini 3.1 Pro, achieves 82.4% accuracy across twenty-four evaluation files of varying complexity and struc-tural layout (approximately 1 error per 6 questions), followed by GPT-5.2 with reasoning at 80.4%, Claude Opus 4.6 with thinking at 80.2%, and Gemini 3 Pro at 80.2%. Performance degrades substantially on larger, more complex spreadsheets: the largest spreadsheet (152 companies, 8 funds) yields an average accuracy of just 48.6% across all models, compared to 86.2% on the easiest evaluation file. These difficulty patterns are consistent across all ten models, indicating that they reflect LLM limitations rather than idiosyncratic model weak-nesses. Reliable financial spreadsheet extraction will likely require architectural approaches that separate document understanding from deterministic computation. 
+
+# 1 Introduction 
+
+Large Language Models (LLMs) such as GPT-5 [OpenAI, 2025], Gemini 3.1 Pro [Google, 2026], and Claude Opus 4.6 [Anthropic, 2026] now routinely match or exceed human performance on many text-based tasks. In the financial services industry, practitioners already use LLMs in document-heavy workflows: analyzing legal agreements, extracting key clauses from pri-vate placement memoranda, summarizing due diligence questionnaires, and drafting investment memos [Wu et al., 2023, Lee et al., 2025, Lopez-Lira et al., 2025]. 
+
+## 1.1 The Due Diligence Bottleneck 
+
+Alternative investment due diligence remains one of the most resource-intensive processes in finance. Evaluating a single private equity or venture capital fund can require significant analyst 
+
+> ∗
+
+Corresponding author: info@qubera.ch 
+
+1
+
+> arXiv:2603.07316v1 [cs.AI] 7 Mar 2026
+
+effort and cost. 1 With global private markets assets under management now exceeding $24 trillion [McKinsey, 2026], Limited Partners (LPs) need tools to scale diligence without sacrificing rigor. While LLMs can significantly accelerate text-based diligence tasks (document review, clause comparison, compliance checking, and memo generation), a persistent challenge is the extraction of structured financial data from Excel spreadsheets. Portfolio monitoring spreadsheets, cash flow statements, and track record files are central to fund evaluation, yet these files have no standard format. They vary in sheet structure, column naming, header placement, data layout, and the use of formatting conventions that convey semantic meaning. 
+
+## 1.2 The Spreadsheet Challenge 
+
+Financial spreadsheets present several challenges that distinguish them from both unstructured text and simplified tabular benchmarks: 1. Complex multi-sheet structures : Real financial models span multiple worksheets with complex cross-references, fund dividers, and section headers embedded within data rows. 2. Non-standard layouts : Unlike clean CSV datasets, financial spreadsheets contain merged cells, hierarchical multi-row headers, embedded formulas, footnotes, and visual formatting that conveys semantic meaning. 3. Domain-specific conventions : Financial terminology, calculation methodologies, and presentation standards vary across institutions and asset classes. 4. Low tolerance for errors : In professional finance, even small numerical errors can have significant consequences. A 5% error in a valuation metric could misrepresent millions in investment decisions. Industry practitioners typically expect very high accuracy (often cited as ∼97%+) for automated financial workflows. 2
+
+## 1.3 The Dataset Gap 
+
+A key obstacle to progress in financial spreadsheet extraction is the lack of publicly available, real-world benchmark datasets. Private equity fund data rooms are confidential by nature. LPs sign non-disclosure agreements, and fund managers guard their portfolio data closely. This con-fidentiality makes it impossible to create public benchmarks from real data, leaving researchers without a standardized way to evaluate extraction systems. Existing tabular benchmarks such as WikiTableQuestions [Pasupat & Liang, 2015], Spider [Yu et al., 2018], and TabFact [Chen et al., 2020] use simplified, well-structured tables that do not capture the complexity of real financial spreadsheets. Even financial-specific benchmarks like FinQA [Chen et al., 2021] and TAT-QA [Zhu et al., 2021] focus on public company filings rather than the messy, multi-sheet workbooks used in private markets. 
+
+> 1Industry practitioners report figures ranging from 55–120 analyst hours and $20k–$100k per fund evaluation, with total pre-investment costs of $200k–$1M per allocation. These estimates are based on practitioner experience rather than published surveys.
+> 2This threshold is an operational heuristic based on practitioner experience, not a formally defined regulatory standard. At 97% accuracy on a 100-question extraction, approximately 3 answers would still be wrong, requiring human review. At the 82.4% accuracy of our best model, roughly 1 in 6 questions is wrong, meaning the review burden may be approaching that of manual extraction. See Section 7 for further discussion.
+
+22 Related Work 
+
+## 2.1 LLMs on Tabular Data 
+
+Prior work has explored LLM capabilities on tabular data through benchmarks like WikiTable-Questions [Pasupat & Liang, 2015], Spider [Yu et al., 2018], and TabFact [Chen et al., 2020], focusing on semantic parsing, SQL generation, and fact verification over relatively clean tabu-lar data. More recent work has examined LLM performance on spreadsheet tasks specifically: SheetCopilot [Li et al., 2023] and SpreadsheetLLM [Dong et al., 2024] propose specialized archi-tectures for spreadsheet understanding, TableBench [Wu et al., 2025] reveals that even frontier LLMs fall short of human performance across 18 fields of table QA, and the SemEval-2025 shared task [Osés Grijalba et al., 2025] provides a recent community-wide evaluation of LLM tabular reasoning. Closest to our setting, TableLLM [Zhang et al., 2025] evaluates tabular data manipulation in real office scenarios, though on well-structured tables rather than the complex, multi-fund financial layouts we target. These benchmarks share a common limitation: they use simplified, well-structured data that does not capture the complexity of real-world financial models. We focus specifically on private equity portfolio analysis, where spreadsheet structures are irregular and error tolerance is minimal. 
+
+## 2.2 Financial NLP and Document Understanding 
+
+Financial NLP spans sentiment analysis [Araci, 2019], document classification [Loukas et al., 2022], and information extraction from financial reports [Chen et al., 2021]. FinQA [Chen et al., 2021] and TAT-QA [Zhu et al., 2021] specifically address question answering over financial documents with tables, but focus primarily on public company filings rather than the complex spreadsheet models used in private markets. Li et al. [Li et al., 2025] introduce a framework for automated financial data extraction from unstructured documents using LLMs, while Ke et al. [Ke et al., 2025] survey the growing field of LLMs applied to document intelligence more broadly. Recent work on financial document processing has highlighted the challenges of extracting structured data from unstructured or semi-structured sources [Wu et al., 2023, Lopez-Lira et al., 2025]. 
+
+## 2.3 Reasoning and Chain-of-Thought 
+
+Chain-of-thought prompting [Wei et al., 2022] and its variants yield large gains on mathematical reasoning tasks; self-consistency [Wang et al., 2023] and tree-of-thought [Yao et al., 2023b] extend these gains further. 
+
+# 3 The FinSheet-Bench Dataset 
+
+## 3.1 Dataset Construction 
+
+The synthetic data is derived from original portfolio monitoring spreadsheets sent by various General Partners (GPs) to family offices as part of the data room for fund investments. We distinguish two aspects of the construction process: 
+
+• Layout and templates : The structural characteristics of each file (sheet organization, column names, header placement, fund dividers, formatting conventions) are modeled on the 8 real source spreadsheets. These structural templates preserve the realistic complexity that makes financial spreadsheet extraction challenging. 3• Cell values : All cell values were regenerated through the transformation procedure de-scribed below. No original cell values appear in the dataset. This means the dataset is best described as synthetic data generated from real structural tem-plates , rather than “anonymized” real data. The transformations (shifting, scaling, perturbation) are designed to prevent reconstruction of original values. The structural templates themselves could in principle reveal information about the source files’ layouts, though not about the un-derlying financial data. 
+
+3.1.1 Transformation of General Information and Formatting 
+
+The following transformations were applied to remove all identifying information from each source file: 
+
+• The name of the original fund was replaced by a generic one. 
+
+• Any notes, watermarks, and larger pieces of text were regenerated to appear similar to the original text but not contain any identifying information. When this was not possible, the text was removed. 
+
+• Names of persons in the spreadsheet were replaced with new fictitious ones. 
+
+3.1.2 Row-Level Data Generation 
+
+The data consists of individual rows, each containing information pertaining to a single invest-ment. To keep the data structurally consistent with the original spreadsheet while ensuring it contains no real information, a new row was generated based on each original row using the following procedure: 1. Company identity : New fictitious companies were generated with data including the company name, headquarters location, and a description matching the name. When re-quired, the company was also assigned to an appropriate industrial sector matching the categories in the original data or using the GICS Industry Classification Standard. 2. Realized/unrealized status : The status was copied from the original row, because depending on the status, specific cells are left blank. This pattern must be preserved in the generated row. 3. Dates : New entry and exit dates were generated. If the status was unrealized, no exit date was given or the current date was used instead (depending on the original data formatting). 4. Categorical values : Values in columns that are independent from the rest of the data (typically text inputs, e.g., whether a company is public or private) were randomly sampled from the values in the original data. When dependencies exist between categorical entries (e.g., “Country” and “Local currency”), both values were copied from the same original row to maintain consistency, or one value was chosen at random and the other was matched manually. 5. Numerical values : Two scaling factors A and B were randomly chosen from the interval 
+
+[0 .5, 2.0] . For each value, an additional perturbation factor k was drawn uniformly from 
+
+[0 .95 , 1.05] to further obfuscate the relationship to the original data. Entry-related values were multiplied by Ak , exit-related values by Bk , and ratios between exit and entry values by kB/A . Values constrained to [0 , 1] (e.g., ownership stakes) were multiplied only by k
+
+and capped at 1. All generated numerical values were rounded to match the precision of the original data. 4Note that this perturbation scheme does not explicitly preserve accounting identities (e.g., Assets = Liabilities + Equity, or Net Debt = Total Debt − Cash). Because entry and exit values are scaled by different factors ( A and B respectively), and each value receives an independent perturbation k, relationships between values that should be arithmetically consistent in real data may be broken in the synthetic data. However, these relationships often do not hold in real data either, as they also contain minor inconsistencies in ac-counting identities. In cases where the values actually follow an exact equation, the same equation is used in the synthetic data as well to calculate the values exactly. 6. Other entities : Names of people (e.g., board members) and other companies (e.g., co-investors) were replaced with new fictitious names. Once the original rows were anonymized using these rules, additional synthetic rows were generated using the same principles and appended to the data. 
+
+3.1.3 Version Generation 
+
+This procedure produced 8 Excel files, each containing more rows than the original file; these are denoted as “version A.” From each version A file, two additional variants (“version B” and “version C”) were derived, for a total of 24 files. In versions B and C, the underlying data was left mostly intact; however, approximately one-third of the rows were removed at random, and structural modifications were applied: empty columns were added or removed, data columns were removed, merged, or split (e.g., “Industrial sector” and “Subsector” separated into two columns), and list separators were changed (e.g., commas to semicolons). The specific modifications for each version are detailed in Appendix A. 
+
+3.1.4 Ground Truth Generation 
+
+For each synthetic spreadsheet, standardized tables were manually extracted containing only the relevant data fields in a consistent format, removing formatting artifacts such as merged cells and layout variations. Using these standardized tables, ground truth answers were computed via deterministic Python functions that extract values and perform calculations with full numeric precision, ensuring reproducible and verifiable expected values for all benchmark questions. 
+
+# 4 Experimental Setup 
+
+## 4.1 Models Evaluated 
+
+We evaluated ten model configurations spanning three providers. The complete list is shown in Table 1. 
+
+## 4.2 Question Categories 
+
+We designed questions spanning seven categories of increasing complexity across four complexity levels, shown in Table 2. Category describes what operation is performed; Complexity describes 
+
+how many cognitive steps are required. The complexity levels were assigned based on the number of cognitive operations and data access patterns required: 
+
+• Low : Single-step value lookup or boolean classification (1 column, no calculation). Even “low” tasks like Q1 may require scanning the entire sheet for fund boundaries. 
+
+• Medium : Multi-step operations with simple logic, such as filtering, list extraction, or multi-value lookups (2–3 columns, simple grouping). 5Table 1: Models evaluated in this study, with approximate public release dates. No provider publicly discloses parameter counts; we therefore report only the model name, provider, and release date. 
+
+Model Provider Release Date 
+
+GPT-3.5-Turbo OpenAI Jan 2024 GPT-4o OpenAI May 2024 GPT-5.2 (no reasoning) OpenAI Dec 2025 GPT-5.2 (reasoning) OpenAI Dec 2025 Gemini 2.0 Flash Google Feb 2025 Gemini 2.5 Pro Google Jun 2025 Gemini 3 Pro Google Nov 2025 Gemini 3.1 Pro Google Feb 2026 Claude Opus 4.6 Anthropic Feb 2026 Claude Opus 4.6 (thinking) Anthropic Feb 2026 
+
+• High : Aggregation and calculation tasks (sum, average, max/min, sorting) across multiple rows and 3+ columns. 
+
+• Very High : Multi-step statistical operations (median, percentile) requiring computed intermediate values and group-level aggregation. Table 2: Question classification by type and complexity. Each of the 16 question templates is mapped to one of the seven categories defined above.                                                    
+
+> Q# Question (abbreviated) Category Complexity
+> 1How many funds are there? Simple Lookup Low 2How many companies are in each fund? Counting Medium 3Which fund is the latest? Simple Lookup Low 4List all companies in the newest fund List Extraction Medium 5List all companies sorted by entry EBITDA Sorting High 6Highest entry EBITDA company per fund? Aggregation High 7Which funds have unrealized investments? Filtering Medium 8How many unrealized investments per fund? Counting Medium 9Is [company] realized or unrealized? Simple Lookup Low 10 Entry enterprise value for [company]? Simple Lookup Low 11 Total unrealized capital per fund? Aggregation High 12 Average entry EV per fund? Aggregation High 13 Most recent exit date? Aggregation Medium 14 Highest entry debt/EBITDA ratio? Aggregation High 15 Average net debt at acquisition for [fund]? Aggregation High 16 Median net debt/EBITDA for all funds Complex Aggregation Very High
+
+## 4.3 Evaluation Protocol 
+
+For each question: 1. The full spreadsheet data (in comma-separated text format; see Section 4.5.1) was provided as context 2. A single question was posed to the model 63. The model’s response was evaluated using a cascading verification system (see Section 4.3.1 for full specification). 
+
+4.3.1 Cascading Verification System 
+
+We employ a three-tier cascading verification system for the automated evaluation of free-text LLM answers against structured ground-truth values. 
+
+Tier 1: Exact matching (resolves ∼25% of answers). Strict rule-based extraction is attempted first. A result is accepted at this tier only if confidence ≥ 0.95 .
+
+• Numeric answers : A number is extracted via strict regex (requiring clear word bound-aries) and compared with 2.5% relative tolerance (half of the 5% tolerance used in Tier 2). We chose 5% as the primary tolerance because ground-truth values in our dataset are rounded to 1–2 decimal places (e.g., multiples to 1 decimal, currency values to nearest million), and models frequently reproduce values at different precision (e.g., “12.3” vs. “12.34”). 
+
+• String answers : Case-insensitive exact match after whitespace normalization (e.g., “Fund III” matches “FundIII”). 
+
+• List answers : Items are extracted, lowercased, and compared as sets using Jaccard sim-ilarity (intersection over union) with a strict threshold of 0.95. Comparison is order-insensitive for all list questions. 
+
+• Dictionary answers (e.g., “Fund I: 5, Fund II: 3”): Keys are matched and each value is verified independently; the answer is accepted if ≥95% of key-value pairs match. 
+
+• Date answers : Parsed and compared with 1-day tolerance to handle timezone and time-of-day formatting differences. 
+
+• Boolean answers : Keyword detection (e.g., “realized”/“unrealized”, “yes”/“no”). 
+
+Tier 2: Fuzzy matching (resolves ∼25%). When Tier 1 confidence is below 0.95, a more tolerant rule-based pass is applied. A result is accepted at this tier if confidence ≥ 0.70 .
+
+• Numeric answers : Broader regex extraction (any number in text) with the full 5% relative tolerance, i.e., |a − e|/|e| < 0.05 .
+
+• String answers : Partial/substring matching (ground truth contained in answer) and se-quence similarity via Python’s difflib.SequenceMatcher (Ratcliff/Obershelp algorithm) with a threshold of 0.95. 
+
+• List answers : Jaccard set similarity with a relaxed threshold of 0.75. Items are compared as sets (order-insensitive; duplicates are not preserved). 
+
+• Dictionary answers : Key-value pair matching with a relaxed threshold of 0.75. 
+
+Tier 3: LLM adjudication (resolves ∼48%). LLM adjudication (GPT-4o-mini and Gem-ini 3 Flash Preview) is invoked when Tiers 1 and 2 produce confidence below 0.70, which oc-curs frequently for multi-field and list-type answers where free-text responses are difficult to parse with rules alone. The adjudicator receives both the expected and actual answers with a structured Pydantic schema requiring a boolean verdict, confidence score, extracted value, and explanation. The LLM adjudicator handles word-number conversion (e.g., “four” → 4), semantic equivalence of differently phrased answers, and complex formatting variations that rule-based 7tiers cannot resolve. All 2,332 LLM-adjudicated answers were independently checked using both models. The two models agreed on 93.1% of answers (2,171/2,332); the 161 discrepant cases (6.9%) were manually reviewed and resolved. Table 3: Verification tier distribution by answer type. Values are approximate percentages of answers resolved at each tier, aggregated across all model and question evaluations ( 10 × ∼ 
+
+500 ≈ 5,000 total). The high proportion of LLM adjudication reflects the difficulty of rule-based parsing of free-text responses, particularly for multi-field (dict) and list answers.                 
+
+> Answer Type Tier 1 (Exact) Tier 2 (Fuzzy) Tier 3 (LLM)
+> Numeric/Dict (Q1–2, Q6, Q8, Q10–12, Q14–16) 15% 30% 51% String/Date/Bool (Q3, Q9, Q13) 60% 10% 26% List (Q4, Q5, Q7) 4% 19% 73%
+> Overall (all types) ∼25% ∼25% ∼48%
+> The remaining ∼3% of evaluations (132 of 5,010) are GPT-3.5-Turbo context-overflow errors on files exceeding its 16K token limit; these produced no model answer and are excluded from the tier percentages.
+
+4.3.2 Question Sampling and Dataset Coverage 
+
+The 16 question templates include three parameterized templates (Q9, Q10, Q15) that generate one question per entity (company or fund). Because running every entity for every model is prohibitively expensive, we sample a fixed number of entities per template ( sample_size=3 ,
+
+seed=42 ) to keep cost manageable while ensuring reproducibility. The total number of evaluated questions therefore varies depending on which data files were benchmarked: All models were evaluated on 24 evaluation files (8 version A, 8 version B, and 8 version C structural variants) with sample_size=3 and seed=42 , yielding up to 22 questions per file (ap-proximately 500 total per model). Per-file question counts vary because some templates require columns not present in every file, and version B and C files have fewer applicable templates due to removed columns (see Table 8 for file sizes and per-file statistics). GPT-3.5-Turbo could not process 6 of 24 files due to its 16K context limit; those questions were treated as errors. All comparisons in the paper are made on per-question accuracy (percentage correct) to normalize across different totals. 
+
+## 4.4 Data Format 
+
+All evaluation files are provided in a single text format: each Excel workbook is converted to a plain text file where sheets are separated by === Sheet: <name> === headings, with cell values rendered in comma-separated (CSV-like) format. This is the only serialization format used in all experiments reported in this paper. Converting the benchmark files to alternative representations (structured JSON, tabular HTML, or other formats) is a natural direction for future format-sensitivity studies (see Section 7). 
+
+## 4.5 Prompt Design 
+
+We deliberately used identical, minimal prompts for all models to ensure that performance dif-ferences reflect model capabilities rather than prompt optimization, to mirror real-world deploy-ment where maintaining model-specific prompts is impractical, and to ensure reproducibility. 
+
+4.5.1 Spreadsheet Serialization 
+
+A key methodological decision, and a central limitation of this study, is how raw Excel spread-sheets are converted to text for LLM consumption. We deliberately chose text/CSV serialization 8because it reflects how LLMs are overwhelmingly used in practice for spreadsheet extraction to-day. Text serialization is the de facto industry standard for feeding tabular data to language models: commercial RAG pipelines, document processing systems, and the research benchmarks cited in Section 2 all serialize tables as text. Evaluating this modality therefore has direct prac-tical relevance, as it benchmarks the approach that practitioners actually deploy. Further, our results suggest that serialization-independent reasoning failures dominate the accuracy gap; see Section 6.2 for a detailed analysis of modality-dependent versus modality-independent failure modes. 
+
+Serialization Specification. Each .xlsx workbook is processed sheet-by-sheet using the 
+
+openpyxl library in data_only=True mode (formula cells return their cached value, not the formula). The steps are: 1. Cell reading : Every cell is read left-to-right, top-to-bottom, using openpyxl ’s iter_rows (values_only=True) . None cells are emitted as empty strings. All other values are cast to str() .2. Merged cells : openpyxl reports only the top-left value of a merged region; all other cells in the merge are None (rendered as empty). No special handling is applied. 3. Hidden rows/columns : Not filtered; all rows and columns appear in the output regard-less of Excel visibility settings. 4. Row numbers : Not included. The model sees no row or column indices. 5. Number formatting : Cell values are Python-native: floats remain as-is (e.g., 1200000.0 ,not $1.2M ); dates appear as datetime objects cast to their string representation (e.g., 
+
+2024-06-15 00:00:00 ). 6. Trailing cleanup : Trailing all-empty columns and trailing all-empty rows are stripped per sheet. 7. Output format : Each row is written with Python’s csv.writer (comma-separated, RFC 4180 quoting). Multi-line cell values (e.g., “Enterprise\nValue”) are enclosed in double quotes with embedded newlines preserved. 8. Sheet boundaries : All sheets in the workbook are placed in a single text file. Each sheet is preceded by a separator line: === Sheet: <name> === . Sheets are concatenated with a blank line between them. The model therefore sees a single text document containing all non-empty sheets in workbook order, with comma-separated columns, one row per line, and no row/column indices. Empty rows (e.g., fund dividers) are preserved as blank CSV lines. 
+
+Example. A minimal 3 × 4 region serializes as: 
+
+=== Sheet: Portfolio Company Data Sheet === ,,,, ,Nebula Portfolio Company Datasheet,,,, ,$ in millions,,,, ,,,, ,,,, ,Company,"Initial Investment Date",Industry Vertical,Status ,Apex Inc,2022-01-15 00:00:00,Technology,Realized ,Bloom Ltd,2023-06-01 00:00:00,Healthcare,Unrealized 
+
+9Note that the header “Initial Investment\nDate” spans two lines inside quotes, empty cells produce consecutive commas, and title/subtitle rows appear as data rows with most columns empty. 
+
+Information loss. This serialization discards several information channels present in the orig-inal Excel files: merged cells are flattened (only the top-left value survives), cell background colors and font formatting (bold, underline, italic) are lost, table borders and boundary lines are removed, cross-sheet references are not preserved, and spatial grouping (column widths, indenta-tion) is collapsed. These visual cues are not merely aesthetic. In financial spreadsheets, bold text typically denotes subtotals or section headers, underlines separate data blocks, cell background colors distinguish fund sections, and table borders delineate data regions from annotations. Fund dividers and section headers are preserved as text rows but lose their visual distinctive-ness, becoming indistinguishable from data rows. This information loss directly contributes to the failure modes (row misidentification, incorrect column selection). Vision-capable models processing rendered images of the spreadsheet could potentially recover these cues. Serialized file sizes vary substantially: the smallest variant B/C files contain approximately 7K characters (∼5K tokens for GPT, ∼9K for Gemini), while the largest A-version file (synthetic4_A, 152 companies) reaches approximately 108K characters ( ∼44K GPT tokens, ∼63K Gemini tokens). Because of this lossy serialization, the results in this paper reflect LLM performance on 
+
+text-serialized spreadsheet QA , not on native Excel comprehension. If models were given struc-tured JSON, tabular HTML, or image-based representations, results might differ. Investigating alternative serialization formats is a direction for future work. All results reported here use the comma-separated text serialization described above. The “spatial” failures discussed in Sec-tion 6.2 are therefore partially attributable to the serialization method removing the 2D grid structure before the model processes the data. 
+
+4.5.2 Prompt Template 
+
+The prompt template used for all models was: 
+
+System: You are analyzing financial data for portfolio companies and funds. DATA: {spreadsheet_content} Please provide direct, concise answers based on the data provided. User: {question} 
+
+No chain-of-thought prompting, few-shot examples, or other prompt engineering techniques were applied. This represents a “zero-shot” baseline evaluation. We do vary vendor-supported inference-time reasoning settings (OpenAI reasoning_effort , Anthropic extended_thinking ), which are model configuration parameters rather than prompt modifications. Prompt optimiza-tion could potentially improve individual model scores, but would confound the comparison across models and reduce external validity. 
+
+## 4.6 Metrics 
+
+We evaluate each model on three dimensions: accuracy (percentage of correct answers), re-sponse time (average seconds per question), and token usage (input and output tokens 10 consumed). Accuracy is the primary metric, but response time and token usage matter for practitioners because they directly determine API cost and throughput: a model that is 2% more accurate but 10 × slower or 5 × more expensive per query may not be the right choice for processing hundreds of spreadsheets under time and budget constraints. 
+
+# 5 Results 
+
+## 5.1 Overall Model Performance 
+
+Figure 1 presents the overall accuracy of each model on the FinSheet-Bench dataset. Table 4 provides detailed metrics. 
+
+Figure 1: LLM accuracy on financial spreadsheet tasks plotted against model release date. Bub-ble size indicates average response time per question. At 82.4%, even the best model produces approximately 1 error per 6 questions. Newer models and models with reasoning generally achieve higher accuracy. See Table 4 for detailed results. Across all ten configurations, no standalone LLM achieves error rates low enough for unsupervised use in production financial workflows. The best-performing model, Google’s Gemini 3.1 Pro, achieves 82.4% accuracy on twenty-four evaluation files (approximately 1 error per 6 questions), followed by GPT-5.2 with reasoning at 80.4%, Claude Opus 4.6 with thinking at 80.2%, and Gemini 3 Pro at 80.2%. Performance degrades on larger, more complex spreadsheets: synthetic4_A (152 companies, 8 funds) yields much lower accuracy for most models, with GPT-5.2 with reasoning and Claude Opus 4.6 with thinking both dropping to 55% on that file, while Gemini 3.1 Pro achieves 82% there. File complexity is clearly a key driver of accuracy, though the newest models hold up better on the most complex files. GPT-3.5-Turbo’s low effective accuracy (24.8%) is partly a coverage story: it could not process 6 of 24 files due to its 16K context limit (failures are distributed across A, B, and C variants). On the 369 questions it could process, GPT-3.5-Turbo achieves 33.6% accuracy, still the lowest among all models. 11 Table 4: Overall model performance on FinSheet-Bench. All models except GPT-3.5-Turbo achieve 100% coverage (fraction of questions the model could process). Accuracy (Processed) is the primary comparison metric: accuracy computed on the subset of questions each model could process. Effective Accuracy = Accuracy (Processed) × Coverage; this composite metric is reported only for GPT-3.5-Turbo to capture its coverage penalty and should not be compared directly against other models’ accuracy scores. For all models with 100% coverage, Effective Accuracy equals Accuracy (Processed).                                                        
+
+> Model Cov. Acc. Eff. Acc. Time (s) Total Tokens Gemini 3.1 Pro 100% 82.4% 82.4% 27.60 13,455,183 GPT-5.2 (reasoning) 100% 80.4% 80.4% 16.37 8,861,018 Claude Opus 4.6 (thinking) 100% 80.2% 80.2% 23.14 9,759,287 Gemini 3 Pro 100% 80.2% 80.2% 21.62 13,575,897 Gemini 2.5 Pro 100% 78.8% 78.8% 11.17 13,122,140 Claude Opus 4.6 100% 66.7% 66.7% 7.11 9,145,661 GPT-5.2 (no reasoning) 100% 57.7% 57.7% 3.04 8,353,847 GPT-4o 100% 54.1% 54.1% 6.17 8,474,293 Gemini 2.0 Flash 100% 50.1% 50.1% 2.27 12,533,984 GPT-3.5-Turbo ∗73.7% 33.6% 24.8% 1.63 2,900,242
+> ∗GPT-3.5-Turbo exceeded its 16K context limit on 6 of 24 files. Coverage = 369/501 = 73.7%. Accuracy on those 369 questions = 33.6% (124/369).
+
+## 5.2 Accuracy by Question Category 
+
+Table 5 and Figure 2 show accuracy broken down by the question categories. The results show a steep performance drop: while simple lookups generally achieve high accuracy (89.1% overall, though individual models and questions vary), tasks requiring calculation and complex aggregation score much lower. Table 5: Pooled accuracy by question category. “All Models” is the pooled accuracy across all ten model configurations; “Top 3” is the pooled accuracy of the three best-performing models (Gemini 3.1 Pro, GPT-5.2 reasoning, Claude Opus 4.6 thinking).                                         
+
+> Category Complexity Example Attempts All Models Top 3
+> Simple Lookup Low How many funds are there? 1,870 89.1% 93.6% List Extraction Medium List all companies in the newest fund 200 85.5% 93.3% Filtering Medium Which funds have unrealized investments? 230 70.9% 84.1% Aggregation High What is the average entry EV per fund? 1,780 53.7% 76.2% Counting Medium How many unrealized invest-ments per fund? 460 41.7% 66.7% Sorting High List all companies sorted by entry EBITDA 240 37.5% 79.2% Complex Agg. Very High Calculate median net debt/EBITDA for all funds 230 19.6% 33.3%
+
+This pattern is consistent across all models: tasks requiring multi-step numerical reasoning show much lower accuracy than simple information retrieval. Even “simple” tasks like Q1 (“How many funds are there?”) may require scanning the entire sheet to identify fund boundaries. Counting (Q2, Q8) is surprisingly difficult at 41.7%, likely because it requires accurate fund boundary detection in serialized text. 12 Figure 2: LLM accuracy by question category (stacked bars). The dark base shows pooled accuracy across all ten models; the middle segment adds the gain when restricting to the top 3 models; the lightest segment adds the further gain of the single best-performing model per category (labeled above each bar). Simple lookups achieve high accuracy, but performance drops for tasks requiring calculation or multi-step reasoning. Sorting (37.5% all models, 83% best) is particularly challenging given that list extraction achieves 85.5%; models can identify 
+
+what is in a list but struggle with ordering by magnitude . See text for a detailed discussion of tokenization artifacts vs. reasoning failures. 
+
+Top-3 models only. Restricting the analysis to the three best-performing models (Gemini 3.1 Pro, GPT-5.2 with reasoning, Claude Opus 4.6 with thinking) provides a more practical view of current capabilities. These models achieve 93.6% on simple lookups, 93.3% on list extraction, 84.1% on filtering, 76.2% on aggregation, 66.7% on counting, 79.2% on sorting, and 33.3% on complex aggregation. This difficulty gradient persists: even the best available models drop from ∼94% on simple tasks to ∼33% on complex aggregation. However, the absolute accuracy levels are substantially higher than the all-model averages, particularly for counting (66.7% vs. 41.7%) and sorting (79.2% vs. 37.5%), suggesting that the latest reasoning-enabled models have partially closed the gap on these challenging categories. Figure 3 visualizes the relationship between task complexity and accuracy. Accuracy drops steadily as task complexity increases, and the pattern holds across all ten models, pointing to a limitation of current LLM architectures rather than quirks of individual question categories. For the top three models specifically, accuracy by complexity level is: Low 94%, Medium 81%, High 74%, Very High 33%. The gradient is less steep than for all models combined (Low 89% to Very High 20%), but the qualitative pattern is unchanged: even the best current models lose over 60 percentage points between simple and very complex tasks. Figure 4 compares all ten model configurations across question categories. Earlier models struggle with most tasks; the latest reasoning-enabled models reach near-perfect accuracy on simple lookups but still fall short on complex aggregation and sorting, despite clear gains over their predecessors. Figure 5 provides a complete view of model performance across all question types, showing which tasks are hardest. 13 Figure 3: Accuracy vs. task complexity level (stacked bars). The dark base shows pooled accuracy across all ten models; the middle segment adds the gain when restricting to the top 3 models; the lightest segment adds the further gain of the single best-performing model per complexity level (labeled above each bar). Low-complexity tasks achieve ∼89–95% accuracy, but performance drops sharply at High and Very High complexity, where tasks require multi-step calculations, aggregations, or sorting. Even the best individual model drops to 47.8% on Very High complexity. 
+
+Figure 4: Model performance comparison by question type across all ten model configurations (OpenAI, Google, Anthropic). 14 Figure 5: Heatmap of accuracy by model and question type across all ten model configurations (4 OpenAI, 4 Google, 2 Anthropic). Green indicates high accuracy; red indicates failure. Results span twenty-four evaluation files (approximately 500 questions per model; some files contribute fewer questions due to missing columns; see Section 4.2 for per-file question counts). 
+
+## 5.3 The Reasoning Gap 
+
+Enabling extended reasoning yields large accuracy gains. GPT-5.2 improves from 57.7% to 80.4% (+22.8pp) with reasoning enabled, while Claude Opus 4.6 improves from 66.7% to 80.2% (+13.6pp) with adaptive thinking. Both models score markedly higher with reasoning turned on. However, vendors bundle mul-tiple changes in “reasoning mode” (decoding constraints, verbosity constraints, internal scratch-pad, tool use policies) that are not independently controllable. We therefore cannot isolate the contribution of chain-of-thought processing from these confounds. Google’s Gemini 3 Pro uses internal reasoning by default and we did not test its performance without reasoning. Figure 6 summarizes the impact of reasoning across accuracy, response time, and token usage. 
+
+## 5.4 Model Generation Progress 
+
+An important question for practitioners is how rapidly LLM capabilities are improving on finan-cial spreadsheet tasks. The answer, shown in Table 6, is: quickly, but not yet quickly enough. Approximately two years ago, when GPT-3.5-Turbo represented the state of the art, structured financial extraction from spreadsheets was virtually impossible; today, the best models approach 82% accuracy, a 3.3 × improvement across just two model generations. Yet despite this progress and intense cross-provider competition, with the top four models clustered within ∼2pp of each other, the error rates remain too high for unsupervised use. Even Gemini 3.1 Pro at 82.4% would require substantial human review, and performance degrades further on larger, more complex files, showing that reasoning capabilities alone are insufficient to overcome the challenges of complex spreadsheet structures. The rate of improvement is fast, but standalone models are not yet production-ready. 15 Figure 6: Impact of extended reasoning/thinking on model performance across three met-rics. Left: Accuracy comparison, where GPT-5.2 gains +22.8pp and Claude Opus 4.6 gains +13.6pp when reasoning/thinking is enabled. Center: Response time increases with reasoning enabled. Right: Output token usage per question increases substantially with reasoning (GPT-5.2: ∼11 ×, Claude: ∼5×). Table 6: Accuracy progression across model generations. “vs Previous” compares against the preceding row within the same provider, except for GPT-5.2 (reasoning), which compares against its non-reasoning variant. See Table 4 for GPT-3.5-Turbo’s coverage breakdown. 
+
+Provider Model Coverage Effective Acc. vs Previous 
+
+OpenAI GPT-3.5-Turbo ∗ 73.7% 24.8% —OpenAI GPT-4o 100% 54.1% +29.3pp OpenAI GPT-5.2 (no reasoning) 100% 57.7% +3.6pp OpenAI GPT-5.2 (reasoning) 100% 80.4% +22.8pp Google Gemini 2.0 Flash 100% 50.1% —Google Gemini 2.5 Pro 100% 78.8% +28.7pp Google Gemini 3 Pro 100% 80.2% +1.4pp Google Gemini 3.1 Pro 100% 82.4% +2.2pp Anthropic Claude Opus 4.6 100% 66.7% —Anthropic Claude Opus 4.6 (thinking) 100% 80.2% +13.6pp 
+
+> ∗Coverage = 73.7%; accuracy on processable questions = 33.6% (124/369).
+
+16 5.5 Token Usage and Cost Analysis 
+
+Figure 7 shows the average token consumption per question for each model, and Table 7 provides precise per-question statistics for cost estimation and API budget planning. Input tokens are not comparable across providers due to tokenizer differences. Thus, cross-provider comparisons are not meaningful. However, reasoning increases output tokens substantially: GPT-5.2 produces 
+
+∼11 × more output tokens with reasoning (1,118 vs. 106), while Claude shows a ∼5× increase. This higher output volume correlates with higher accuracy in reasoning mode. 
+
+Figure 7: Average input and output token usage per question by model, ordered by accuracy. Input tokens (top) and output tokens (bottom) are shown on separate scales so that the much smaller output token counts remain visible. Reasoning-enabled models consume significantly more output tokens. Claude Opus 4.6 with thinking uses ∼5× more output tokens than default mode. 
+
+## 5.6 Performance by Data File 
+
+Performance varies substantially across files (Table 8): synthetic2_C achieves the highest accu-racy at 86.2% while synthetic4_A scores just 48.6%. The drop on synthetic4_A (152 companies, 8 funds) confirms that file complexity is a key driver of accuracy. Version B and C files do not uniformly outperform or underperform their A counterparts: some variants score higher (e.g., synthetic4_B at 67.2% vs. synthetic4_A at 48.6%, likely because the reduced row count lowers complexity; synthetic2_C at 86.2% vs. synthetic2_A at 69.5%) while others score lower (e.g., synthetic2_B at 55.2% vs. synthetic2_A at 69.5%, likely due to structural modifications like removing the fund column). Both file size and layout complexity independently affect model performance. Figure 8 visualizes these per-file differences as a heatmap across all models. 
+
+File length vs. accuracy. Figure 9 examines whether raw file length (in characters) predicts accuracy for the top three models (Gemini 3.1 Pro, GPT-5.2 with reasoning, Claude Opus 4.6 with thinking). The linear trend is negative but moderate: approximately −0.23 percentage 17 Table 7: Average token consumption per question by model 
+
+Model Input Output Total Accuracy 
+
+Gemini 2.0 Flash 24,916 101 25,017 50.1% Gemini 2.5 Pro 24,917 1,274 26,191 78.8% Gemini 3 Pro 24,917 2,180 27,097 80.2% Gemini 3.1 Pro 24,722 2,133 26,855 82.4% GPT-3.5-Turbo ∗ 8,737 158 8,895 24.8% GPT-5.2 (no reasoning) 16,567 106 16,673 57.7% GPT-5.2 (reasoning) 16,567 1,118 17,685 80.4% GPT-4o 16,568 345 16,913 54.1% Claude Opus 4.6 17,974 280 18,254 66.7% Claude Opus 4.6 (thinking) 17,991 1,488 19,479 80.2% 
+
+> ∗GPT-3.5-Turbo averages are lower because some files exceeded its 16K context limit; token counts reflect only the processable questions.
+
+Table 8: Accuracy by data file (all models, averaged). Version B and C files are structural variants with approximately one-third fewer rows and modified column layouts. For files where GPT-3.5-Turbo’s evaluation returned no verification result (6 of 24 files), that model is excluded from the average. 
+
+File Companies / Funds Accuracy Questions 
+
+synthetic1_A.csv 45 / 4 74.1% 22 synthetic1_B.txt ∼30 / 4 76.8% 22 synthetic1_C.txt ∼30 / 4 83.6% 22 synthetic2_A.csv 89 / 5 69.5% 21 synthetic2_B.txt ∼59 / 5 55.2% 21 synthetic2_C.txt ∼59 / 5 86.2% 21 synthetic3_A.txt 114 / 6 70.7% 22 synthetic3_B.txt ∼76 / 6 79.0% 10 synthetic3_C.txt ∼76 / 6 81.8% 22 synthetic4_A.csv 152 / 8 48.6% 22 synthetic4_B.txt ∼101 / 8 67.2% 22 synthetic4_C.txt ∼101 / 8 63.1% 22 synthetic5_A.txt 58 / 4 66.7% 21 synthetic5_B.txt ∼38 / 4 63.3% 21 synthetic5_C.txt ∼38 / 4 71.4% 21 synthetic6_A.txt 46 / 5 75.3% 19 synthetic6_B.txt ∼30 / 5 73.7% 19 synthetic6_C.txt ∼30 / 5 74.2% 19 synthetic7_A.txt 34 / 3 56.8% 22 synthetic7_B.txt ∼22 / 3 62.3% 22 synthetic7_C.txt ∼22 / 3 66.8% 22 synthetic8_A.txt 108 / 9 52.0% 22 synthetic8_B.txt ∼72 / 9 56.1% 22 synthetic8_C.txt ∼72 / 9 49.5% 22 18 Figure 8: Heatmap of accuracy by model and data file. Each cell shows the percentage of questions answered correctly by a given model on a given file. Files are ordered by average difficulty (hardest at top). The number of questions per file ranges from 10 (synthetic3_B) to 22 (most files), with three parameterized templates sampled at sample_size=3 . synthetic4_A is consistently the hardest file across all models; synthetic2_C is among the easiest. GPT-3.5-Turbo shows no result (context overflow) on 6 of 24 files exceeding its context limit, with failures distributed across A, B, and C variants. points per 1K additional characters ( R2 = 0 .30 , Pearson r = −0.55 ). While accuracy does tend to be lower on the longest files (e.g., synthetic4_A at 108K characters averages 64% across the top three models, vs. 91% on synthetic1_C at 13K characters), the relationship is confounded by the fact that longer files also tend to have more funds, more complex layouts, and different structural modifications. Shorter files that happen to have unusual structural changes (e.g., removing the fund column) can perform worse than longer but structurally simpler files. 
+
+# 6 Discussion 
+
+## 6.1 Accuracy Requirements in Financial Due Diligence 
+
+None of the ten configurations tested produce error rates acceptable for unsupervised produc-tion use. Accuracy drops from above ∼90% on simple lookups to just above 30% on complex calculations for the top 3 models, and this gradient is shared across all models, pointing to a structural limitation of LLM-based numerical reasoning on tabular data. This limitation matters in alternative investment due diligence, where extracted data feeds directly into investment decisions. An LP evaluating a $50M commitment to a private equity fund relies on accurate portfolio metrics (IRR, multiples, enterprise values) to assess fund per-formance. A 5% error rate in data extraction could lead to systematic misvaluation, erroneous peer comparisons, and poor capital allocation decisions. 
+
+## 6.2 Why Standalone LLMs Fail on Spreadsheets 
+
+Our results point to several likely limitations: 19 Figure 9: Average accuracy of the top three models (Gemini 3.1 Pro, GPT-5.2 reasoning, Claude Opus 4.6 thinking) vs. file length in characters. Each point represents one evaluation file; the solid black line shows the average trend. The negative slope ( −0.23 pp per 1K characters, 
+
+R2 = 0 .30 ) indicates a moderate relationship, though file-specific structural complexity remains an important confounding factor. 
+
+• Tokenization disrupts structure : Sequential tokenization disrupts the two-dimensional structure of spreadsheets. Column headers become separated from their values, and row relationships are difficult to maintain across long contexts. 
+
+• Position vs. semantics : Spreadsheets encode meaning through position (cell C5 derives meaning from column header C1 and row label A5), a spatial relationship that token-based processing handles poorly. Our text serialization (Section 4.5.1) removes much of this structure before the model sees it; alternative modalities (e.g., rendered images) could mitigate this. 
+
+• Numeric precision : LLMs lack specialized numerical processing and cannot match de-terministic computation, particularly for financial ratios with multiple decimal places. 
+
+• Modality-dependent vs. modality-independent failures : It is useful to distinguish failures that are caused by text serialization (e.g., row misidentification due to lost visual cues) from failures that are inherent to LLM reasoning regardless of input modality (e.g., incorrect arithmetic, sorting errors, median computation). Our category-level results (Ta-ble 5) suggest the latter dominate: sorting, complex aggregation, and counting fail at high rates. 
+
+## 6.3 Hypothetical: Brute-Force Extraction via Per-Value Queries 
+
+Our benchmark results suggest an interesting hypothetical approach to closing the accuracy gap: since the best-performing models achieve near-perfect accuracy on single-value lookups (e.g., Q10 entry enterprise value: 100% for four of the top five models), one could in principle reconstruct an entire standardized table by issuing one LLM call per cell, asking for each company’s value in each column individually, and then performing all calculations deterministically on the resulting 20 table. This “brute-force extraction” approach would bypass the multi-step reasoning failures that dominate our error analysis (sorting, aggregation, median computation) by reducing every extraction to the task category where LLMs already excel: simple lookups. However, this approach has significant practical limitations. First, it requires a structural discovery step before per-value extraction can begin: the system must know which companies exist, which funds they belong to, and which columns are present, itself a non-trivial task (Q1 “how many funds?” reaches only 83% even for top models, and Q2 “how many companies per fund?” achieves 74% for GPT-5.2 with reasoning). Second, the cost would be extreme: a spreadsheet with 100 companies and 15 data columns would require ∼1,500 individual API calls, each sending the full spreadsheet context ( ∼15–20K input tokens), resulting in ∼30M input tokens for a single file. At current API pricing, this would cost roughly $100 per spreadsheet depending on the provider and model, compared to a few cents for a single-call approach that answers all questions at once. Third, latency would be prohibitive: at ∼5 seconds per call, 1,500 calls would take over 2 hours sequentially; even with parallelization, rate limits would make this impractical for production use on hundreds of files. Nevertheless, the brute-force approach is conceptually instructive: it demonstrates that de-composing extraction from computation is the core architectural insight. If each value can be retrieved individually with near-perfect accuracy, and all downstream calculations are performed deterministically, the accuracy degradation on complex tasks disappears entirely. A more practical middle ground between single-call QA and per-cell brute force is a staged pipeline approach: 1. Schema discovery : Use one or two LLM calls to identify the table headers, fund bound-aries, and column semantics, producing a structured schema (e.g., a JSON column map). 2. Row-level extraction : For each row (company), issue a single LLM call that extracts all column values at once, guided by the discovered schema. This reduces the per-file call count from ∼1,500 (one per cell) to ∼100 (one per company) for a 100-company file. 3. Deterministic computation : All downstream calculations (averages, medians, ratios, sorting) are performed programmatically on the extracted table, eliminating the multi-step reasoning failures that dominate our error analysis. This staged approach exploits the near-perfect single-value lookup accuracy we observe while avoiding both the cost explosion of per-cell queries and the reasoning failures of single-call QA on complex questions. It also produces an auditable intermediate artifact (the extracted table) that supports human review and regulatory transparency. Evaluating such pipeline architectures is a key direction for future work. Given the error rates observed, human review remains essential for high-stakes decisions. Automated extraction can reduce mechanical effort, freeing analysts for interpretation, but cannot replace verification. 
+
+# 7 Limitations 
+
+Our study has several limitations: 
+
+• All results reflect LLM performance on text-serialized spreadsheets (comma-separated text), not on native Excel files. The serialization discards merged cells, cross-sheet refer-ences, and visual formatting cues (bold text, cell colors, table borders) that carry seman-tic meaning in financial spreadsheets (see Section 4.5.1). While text serialization is the industry-standard approach, results with alternative input modalities (rendered images, structured JSON, tabular HTML) could differ materially. Vision-capable models could potentially recover spatial cues, though they face their own challenges with dense numeric tables at scale. 21 • The benchmark uses synthetic data modeled on real structural templates, which may not capture all real-world complexity (e.g., embedded charts or data split in multiple sheets). 
+
+• The benchmark focuses on private equity; other financial domains may present different challenges. 
+
+• With sample_size=3 for parameterized templates, per-file and per-category sample sizes are small. 
+
+# 8 Conclusion 
+
+We have introduced FinSheet-Bench, a benchmark for evaluating LLM performance on financial spreadsheet comprehension, and through evaluation of ten model configurations we demonstrate that no standalone LLM achieves error rates low enough for unsupervised use in professional finance. Progress has been rapid: tasks that seemed entirely out of reach two years ago, when GPT-3.5-Turbo was the state of the art and achieved just 33.6% accuracy on processable ques-tions, are now at the edge of feasibility, with the best models approaching 82%. However, the consistent accuracy degradation we observe across all models, from ∼89% on simple lookups to 
+
+∼20% on complex aggregations, shows a clear limitation: LLMs handle content retrieval well but struggle with multi-step numerical reasoning on tabular data. Reliable financial spreadsheet extraction will likely require architectural approaches that separate document understanding from deterministic computation, rather than relying on ever-more-powerful standalone mod-els. For the alternative investment industry, where due diligence requires processing hundreds of non-standardized spreadsheets per year, the benchmark provides a standardized evaluation framework to measure progress toward production-ready extraction. 
+
+## 8.1 Future Work 
+
+We plan to extend this work in several directions: 
+
+• Expanded benchmark : Adding additional structural variations (merged cells, multiple sheets, embedded charts) to further stress-test extraction capabilities. All eight A-version, eight B-version, and eight C-version files have been benchmarked. 
+
+• Format sensitivity and multimodal input : Converting FinSheet-Bench files to alter-native representations (structured JSON, tabular HTML, rendered images) to analyze how data presentation affects accuracy across providers. In particular, evaluating vision-capable models on rendered spreadsheet images could recover visual formatting cues (bold text, underlines, cell borders, background colors) that text serialization destroys, potentially reducing parsing errors, though we expect the core numerical reasoning failures (sorting, complex aggregation) to persist regardless of input modality. 
+
+• Parsing vs. calculation decomposition : Controlled experiments to disentangle parsing failures (wrong column/row selection due to serialization) from calculation failures (incor-rect arithmetic on correctly identified values), enabling more targeted improvements to both serialization methods and model capabilities. 
+
+• Agentic and pipeline-based approaches : Evaluating agentic architectures (tool-augmented agents, code execution approaches, multi-stage extraction pipelines) that decompose doc-ument understanding from numerical computation, motivated by the gap our results ex-pose between content retrieval (where LLMs already work well) and multi-step calculation (where they do not). 22 Author Contributions 
+
+Jan Ravnik designed and ran the benchmarking experiments, developed the benchmarking framework, and wrote the paper. Matjaž Ličen prepared the synthetic portfolio datasets used in FinSheet-Bench and assisted in writing the paper. Felix Bührmann contributed to experiment design. Bithiah Yuan contributed to the research design and methodology. Felix Stinson contributed financial domain expertise, helped design financially relevant benchmark questions, and confirmed the validity of the synthetic financial data. Tanvi Singh supervised the project, contributed to experiment design and ideation, and assisted in writing the paper. 
+
+# Acknowledgments 
+
+We thank the anonymous reviewers for their feedback. This work was partially supported by an Innosuisse Innovation Cheque ( https://www.innosuisse.admin.ch/en/innovation-cheque ). Jan Ravnik acknowledges the use of AI-based writing aids to assist with language and phras-ing during the preparation of this manuscript. 
+
+# References 
+
+Anthropic. Introducing Claude Opus 4.6. Anthropic Blog , February 2026. https://www. anthropic.com/news/claude-opus-4-6 .Dogu Araci. Finbert: Financial sentiment analysis with pre-trained language models. arXiv preprint arXiv:1908.10063 , 2019. Wenhu Chen, Hongmin Wang, Jianshu Chen, Yunkai Zhang, Hong Wang, Shiyang Li, Xiyou Zhou, and William Yang Wang. Tabfact: A large-scale dataset for table-based fact verification. 
+
+ICLR , 2020. Zhiyu Chen, Wenhu Chen, Charese Smiley, Sameena Shah, Iana Borova, Dylan Langdon, Reema Moussa, Matt Beane, Ting-Hao Huang, Bryan Routledge, and William Yang Wang. FinQA: A dataset of numerical reasoning over financial data. EMNLP , 2021. Haoyu Dong, Jianbo Zhao, Yuzhang Tian, Junyu Xiong, Shiyu Xia, Mengyu Zhou, Yun Lin, José Cambronero, Yeye He, Shi Han, and Dongmei Zhang. SpreadsheetLLM: Encoding spread-sheets for large language models. arXiv preprint arXiv:2407.09025 , 2024. Google DeepMind. Gemini 3 Pro Model Card. Technical Report , November 2025. https: //deepmind.google/models/model-cards/gemini-3-pro .Google DeepMind. Gemini 3.1 Pro Model Card. Technical Report , February 2026. https: //deepmind.google/models/model-cards/gemini-3-1-pro .Wenjun Ke, Yifan Zheng, Yining Li, Hengyuan Xu, Dong Nie, Peng Wang, and Yao He. Large language models in document intelligence: A comprehensive survey, recent advances, challenges, and future trends. ACM Transactions on Information Systems , 2025. https: //doi.org/10.1145/3768156 .Jean Lee, Nicholas Stevens, Soyeon Caren Han, and Minseok Song. A survey of large language models in finance (FinLLMs). Neural Computing and Applications , 2025. https://doi.org/ 10.1007/s00521-024-10495-6 .Hongxin Li, Jingran Su, Yuntao Chen, Qing Li, and Zhaoxiang Zhang. SheetCopilot: Bringing software productivity to the next level through large language models. NeurIPS , 2023. 23 Hanwen Li, Hong Gao, and Chi Wu. Extracting financial data from unstructured sources: Leveraging large language models. Journal of Information Systems , 39(1):135–155, 2025. Alejandro Lopez-Lira, Jihoon Kwon, Sangwoong Yoon, Jy-yong Sohn, and Chanyeol Choi. Bridg-ing language models and financial analysis. arXiv preprint arXiv:2503.22693 , 2025. Lefteris Loukas, Manos Fergadiotis, Ilias Chalkidis, Eirini Spyropoulou, Prodromos Malakasiotis, Ion Androutsopoulos, and Georgios Paliouras. FiNER: Financial numeric entity recognition for XBRL tagging. ACL , 2022. McKinsey & Company. Global Private Markets Report 2026: Private equity— clearer view, tougher terrain. https://www.mckinsey.com/industries/private-capital/ our-insights/global-private-markets-report , February 2026. OpenAI. Introducing GPT-5. OpenAI Blog , August 2025. https://openai.com/index/ introducing-gpt-5/ .Jorge Osés Grijalba, L. Alfonso Ureña-López, Eugenio Martínez Cámara, and Jose Camacho-Collados. SemEval-2025 Task 8: Question answering over tabular data. Proceedings of SemEval-2025 , 2025. Panupong Pasupat and Percy Liang. Compositional semantic parsing on semi-structured tables. 
+
+ACL , 2015. Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. ICLR , 2023. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. 
+
+NeurIPS , 2022. Shijie Wu, Ozan Irsoy, Steven Lu, Vadim Dabravolski, Mark Dredze, Sebastian Gehrmann, Prab-hanjan Kambadur, David Rosenberg, and Gideon Mann. BloombergGPT: A large language model for finance. arXiv preprint arXiv:2303.17564 , 2023. Xianjie Wu, Jian Yang, Linzheng Chai, Ge Zhang, Jiaheng Liu, Xinrun Du, Di Liang, Daixin Shu, Xianfu Cheng, Tianzhen Sun, Guanglin Niu, Tongshuang Wu, and Kun Kuang. TableBench: A comprehensive and complex benchmark for table question answering. AAAI ,2025. Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. 
+
+NeurIPS , 2023. Tao Yu, Rui Zhang, Kai Yang, Michihiro Yasunaga, Dongxu Wang, Zifan Li, James Ma, Irene Li, Qingning Yao, Shanelle Roman, et al. Spider: A large-scale human-labeled dataset for complex and cross-domain semantic parsing and text-to-sql task. EMNLP , 2018. Xuanhe Zhang, Shuo Luo, Bing Zhang, Zhiyu Ma, and Jian Zhang. TableLLM: Enabling tabular data manipulation by LLMs in real office usage scenarios. Findings of ACL , 2025. Fengbin Zhu, Wenqiang Lei, Youcheng Huang, Chao Wang, Shuo Zhang, Jiancheng Lv, Fuli Feng, and Tat-Seng Chua. TAT-QA: A question answering benchmark on a hybrid of tabular and textual content in finance. ACL , 2021. 24 A Version B and C Modifications 
+
+Each of the 8 base files (version A) was used to derive two structural variants (versions B and C). While the underlying data remained mostly intact, approximately one-third of rows were removed at random and various structural modifications were applied. The specific changes for each file are listed below. 
+
+## A.1 Synthetic 1 
+
+Version B: 
+
+• Split city and state into two columns 
+
+• Fund listed in a separate column 
+
+• Added separate columns for Exit and Current (split from Exit/Current) 
+
+• Removed empty columns between categories 
+
+Version C: 
+
+• Added average and median rows below each fund 
+
+• Added Net Debt/EBITDA columns 
+
+• Merged various header cells 
+
+• Deleted Net Multiple and IRR columns 
+
+## A.2 Synthetic 2 
+
+Version B: 
+
+• Removed Fund column and moved fund information to separator rows 
+
+• Removed Exit and Current columns (kept only Exit/Current columns) 
+
+• Deal Team Members separated by commas instead of semicolons 
+
+• Removed average rows at the bottom 
+
+Version C: 
+
+• Removed Fund column and moved fund information to separator rows 
+
+• Added average values under each fund 
+
+• Added blank columns between column categories 
+
+## A.3 Synthetic 3 
+
+Version B: 
+
+• Merged and centered header across multiple rows 
+
+• Removed a significant number of columns; currency now denoted as DKK at the top of the sheet 
+
+• Exit / 2024 / 2025 statistics now denoted in the header 25 • Fund denoted as watermark text behind respective cells 
+
+• Added blank rows between funds 
+
+• Deleted Gross MOIC column 
+
+Version C: 
+
+• Moved fund information from column to separator rows 
+
+• Fund rows now contain averages and other summary statistics 
+
+• Replaced semicolons with commas as list separators 
+
+• Merged header across multiple rows 
+
+## A.4 Synthetic 4 
+
+Version B: 
+
+• Dropped a significant portion of columns 
+
+• Moved all entry and exit values so that they are grouped together 
+
+• Added blank rows between funds (but kept fund column) 
+
+• Added blank columns between column categories 
+
+Version C: 
+
+• Removed Fund column and moved fund information to separator rows 
+
+• Added Average, Median, Max, and Min summary rows for every fund 
+
+• Exit date: replaced blank values with current date 
+
+• Split city and state into two columns 
+
+## A.5 Synthetic 5 
+
+Version B: 
+
+• Board representatives separated by commas instead of semicolons 
+
+• Funds denoted in a vertically merged cell (spanning multiple rows) and separated by different cell fill colors 
+
+• “Exit date” moved under Exit category and renamed to “Date” 
+
+• “Entry date” moved under Entry category and renamed to “Date” 
+
+Version C: 
+
+• Data ordered by sector with blank rows between sectors 
+
+• Deselected the “Filter” option (Excel feature only) 
+
+• Added “Current/At Exit” category 
+
+• Added blank columns between categories 26 A.6 Synthetic 6 
+
+Version B: 
+
+• Removed average rows under each fund 
+
+• Added an intentional typo: “Fund II” → “Fdund II” (the label appears only once in the sheet) 
+
+• Merged some columns in the header 
+
+Version C: 
+
+• Replaced enumerated fund names with descriptive words: Fund I → Equity, Fund II →
+
+Diversify, Fund III → Income, Fund IV → Growth, Fund V → Stability 
+
+• Added blank columns between categories 
+
+## A.7 Synthetic 7 
+
+Version B: 
+
+• Replaced enumerated fund names with descriptive words: Fund I → Income, Fund II →
+
+Growth, Fund III → Stability 
+
+• Added blank rows, removed blank columns 
+
+Version C: 
+
+• Randomly shuffled rows within each fund so they are no longer ordered by date 
+
+• Removed Fund column and replaced it with fund annotation rows 
+
+## A.8 Synthetic 8 
+
+Version B: 
+
+• Replaced semicolons with commas as list separators 
+
+• Added “City”, “State”, “Country”, and “Currency” columns 
+
+• Added “Average”, “Median”, “Max”, and “Min” summary rows at the bottom of all entries 
+
+• Added blank rows between funds (skipped for Fund I and Fund II as they have mixed entries labelled “Fund I & II”) 
+
+Version C: 
+
+• Shuffled column order 
+
+• Merged and centered headers 
+
+• Exit and entry dates split into three columns: year, month, day 
+
+• Removed notes column and notes 27

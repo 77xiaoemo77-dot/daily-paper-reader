@@ -1,0 +1,857 @@
+Title: TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction
+
+URL Source: https://arxiv.org/pdf/2603.12500v1
+
+Published Time: Mon, 16 Mar 2026 00:20:42 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction 
+
+## Qianggang Ding 1,2 , Haochen Shi 1,2 , Luis Castejón Lozano 3, Miguel Conner 3, Juan Abia 3, Luis Gallego-Ledesma 3, Joshua Fellowes 3, Gerard Conangla Planes 3, Adam Elwood 4, Bang Liu 1,2,5 1 DIRO & Institut Courtois, Université de Montréal, Montreal, QC, Canada 
+
+2 Mila – Québec AI Institute, Montreal, QC, Canada 
+
+3 Aily Labs, Madrid, Spain 
+
+4 Aily Labs, Milan, Italy 
+
+5 Canada CIFAR AI Chair 
+
+{qianggang.ding, haochen.shi, bang.liu}@umontreal.ca {luis.castejon, miguel.conner, juan.abia, luis.gallego, joshua.fellowes, gerard.conangla, adam.elwood}@ailylabs.com 
+
+## Abstract 
+
+We present a Temporal Rule-Anchored Chain-of-Evidence (TRACE) on knowledge graphs for interpretable stock movement predic-tion that unifies symbolic relational priors, dynamic graph explo-ration, and LLM-guided decision making in a single end-to-end pipeline. The approach performs rule-guided multi-hop exploration restricted to admissible relation sequences, grounds candidate rea-soning chains in contemporaneous news, and aggregates fully grounded evidence into auditable UP /DOWN verdicts with human-readable paths connecting text and structure. On an S&P 500 bench-mark, the method achieves 55.1% accuracy, 55.7% precision, 71.5% recall, and 60.8% F1, surpassing strong baselines and improving re-call and F1 over the best graph baseline under identical evaluation. The gains stem from (i) rule-guided exploration that focuses search on economically meaningful motifs rather than arbitrary walks, and (ii) text-grounded consolidation that selectively aggregates high-confidence, fully grounded hypotheses instead of uniformly pooling weak signals. Together, these choices yield higher sensi-tivity without sacrificing selectivity, delivering predictive lift with faithful, auditably interpretable explanations. 
+
+## CCS Concepts 
+
+• Information systems → Data mining ; Information extraction ;Retrieval models and ranking; • Computing methodologies →
+
+Machine learning ; Artificial intelligence .
+
+## Keywords 
+
+temporal knowledge graph, stock movement prediction, rule min-ing, multi-hop reasoning, Large Language Models 
+
+## 1 Introduction 
+
+Predicting stock price movements has long been a central problem in computational finance and data mining. Classical approaches [ 8,11 , 25 , 29 , 48 ] rely on time-series modeling of historical prices and macroeconomic indicators, while more recent methods [ 9, 30 , 44 ]incorporate textual sentiment extracted from financial news and social media. Despite significant progress, existing models remain limited in two key dimensions. First, they typically treat hetero-geneous information sources independently, aggregating features without modeling the relational dependencies among companies, events, and products. Second, large language model (LLM)-based approaches, while powerful in natural language understanding, of-ten hallucinate unsupported facts and lack interpretability, posing risks in high-stakes financial domains. Financial markets are inherently relational: the behavior of a single stock rarely depends only on its own fundamentals or sen-timent, but rather on a complex web of interactions. Corporate actions such as mergers, acquisitions, partnerships, supply chain disruptions, management changes, or regulatory rulings propagate across industries and geographies, influencing not only the directly involved companies but also competitors, suppliers, and customers. For instance, an acquisition in the artificial intelligence sector may boost the acquiring company, benefit upstream hardware suppliers, and exert competitive pressure on rival firms. Similarly, a regula-tory investigation into a pharmaceutical company can negatively affect its partners and contract manufacturers. Knowledge graphs have been extensively studied in Web re-search [ 15 , 22 , 33 ], particularly in the domains of question an-swering, link prediction, and multi-hop reasoning. Existing finan-cial forecasting models rarely integrate explicit graph reasoning, thereby missing an opportunity to connect unstructured text (e.g., news) with structured relations (e.g., investments, partnerships) in a unified framework. By bringing knowledge graph reasoning into financial prediction, we aim to bridge this gap and capture the inherently relational dynamics of markets. In this paper, to the best of our knowledge, we introduce the 
+
+first temporal knowledge graph enhanced framework with LLMs for stock movement prediction . Our approach is not a simple combination of existing reasoning paradigms, but a unified methodology that integrates symbolic priors, dynamic graph explo-ration, and LLM-guided decision making into a coherent prediction pipeline. At the heart of our framework are the following two compo-nents: (1) Rule-guided relational priors. We extract relational motifs from historical knowledge graph snapshots that capture re-curring financial interactions (e.g., investment activities anchored in news, partnerships linked to causal events). These mined pat-terns are not treated as standalone rules, but instead define the 
+
+search space and structural biases for subsequent exploration. By 
+
+> arXiv:2603.12500v1 [cs.CE] 12 Mar 2026 Ding et al.
+
+shaping which relation sequences are admissible, they ensure that reasoning paths reflect financially meaningful dependencies. (2) Graph-based reasoning with textual grounding. Building on these priors, we design a guided exploration procedure that tra-verses the financial knowledge graph from each S&P 500 stock at date 𝑡 , following only temporally valid relations. Candidate reason-ing paths connect stocks to events, counterparties, and ultimately to TextSource nodes such as news or filings. Each path is scored using a multi-factor function that combines rule coverage, temporal recency, structural diversity, and feedback from an LLM relation selector. This process yields evidence chains that are both semanti-cally relevant and anchored in explicit textual evidence. The integration of these components produces more than the sum of its parts. Rule-guided priors reduce noise and prevent ar-bitrary exploration, while graph reasoning operationalizes these priors to discover diverse, news-grounded evidence chains. The final prediction stage aggregates path-level signals into binary UP/DOWN forecasts, each supported by explicit reasoning paths. This unified design enables both predictive accuracy and inter-pretability, addressing the long-standing trade-off in financial fore-casting between performance and transparency. This work makes three main contributions: (1) We propose a unified framework named TRACE that em-beds interpretable stock movement prediction within a fi-nancial temporal knowledge graph, integrating symbolic path mining, LLM-guided graph exploration, and LLM-validated decision making. (2) We design a rule-guided and text-grounded reasoning pro-cedure where mined relational motifs constrain admissible paths and candidate reasoning chains are anchored in news articles, ensuring both economic relevance and temporal validity. (3) We construct a large-scale financial knowledge graph from 2022–2023 S&P 500 data (42K nodes, 174K edges) and con-duct extensive experiments on it, demonstrating that our framework outperforms strong baselines while providing interpretable UP/DOWN predictions supported by explicit reasoning paths. 
+
+## 2 Related Work 
+
+Graph-based Reasoning in Financial Forecasting. Traditional time-series or text-based financial forecasting models generally treat each stock independently, ignoring the web of inter-firm de-pendencies that propagate risk and information across sectors [ 1 , 2,5 , 10 , 13 , 47 , 53 ]. While graph-based modeling provides a remedy by explicitly capturing relational dependencies among entities such as companies, products, and events [ 1, 2, 5, 10 , 13 , 47 , 53 ]. Early financial graph models, such as HATS [ 19 ] and RSR [ 12 ], introduced multi-relational graphs built from co-occurrence or textual correla-tions between firms and news. In contrast, later works, including MDGNN [ 31 ] and FEEKG [ 24 ], explicitly modeled temporal layers of events to predict stock trends. On the other hand, inter-firm depen-dencies and macro events in financial markets evolve continuously, which naturally aligns with the temporal knowledge graph (TKG) based modeling [ 7, 17 , 37 ]. More recently, large language models have been employed to enhance the construction and reasoning ca-pacity of financial graphs. For example, FinDKG [ 20 ] leverages LLM-based extraction to build dynamic financial KGs, and FinGPT [ 40 ]or BloombergGPT [ 41 ] provide strong language priors for finan-cial text understanding. However, these approaches largely rely on latent embedding fusion or text-based representation learning. In contrast, our framework performs explicit temporal reasoning on a financial knowledge graph. Rule Learning and Neuro-symbolic Reasoning. While graph-based modeling captures temporal de-pendences, it still heavily relies on implicit relational embeddings. These kinds of methods offer limited interpretability into how re-lations drive predictions. To enhance structural interpretability, another line of work focuses on explicit rule learning and neuro-symbolic reasoning. Traditional inductive rule learning framework such as AMIE [ 14 ], AnyBURL [ 28 ] focuses on mining frequent re-lational patterns from knowledge graphs to provide transparent logical rules for inference. However, differentiable methodologies integrate rule learning with gradient-based optimization, bridging symbolic and neural paradigms [ 32 , 46 ]. More recent work explores hybrid systems by marrying rule induction with pre-trained lan-guage models to enhance reasoning over KGs [ 34 ]. Different from these works, our framework treats mined relational rules as dy-namic search priors within a temporal financial knowledge graph. Instead of applying static rules or fusing embeddings, we employ rules to constrain admissible reasoning paths under as-of temporal constraints, ensuring causal validity. 
+
+LLM-KG Hybrid Reasoning. Building upon advances in rule-based and neuro-symbolic reasoning, a growing line of work ex-plores combining LLMs with structured KGs to enhance factual grounding and reasoning interpretability [ 4, 16 , 26 , 27 , 36 , 39 , 43 ]. For instance, Think-on-Graph (ToG) [27, 36] deploys LLMs as rea-soning agents that iteratively traverse a KG through beam search [ 3,18 , 23 , 35 ] and construct explicit relational chains to reduce hal-lucination. Graph-Constrained Reasoning (GCR) [ 26 ] further im-proves structural faithfulness by constraining LLM decoding via a KG-guided trie. Another line of work extends this paradigm by integrating LLM reasoning with KG-derived knowledge adaptation. For example, Chain-of-Knowledge (CoK) [ 52 ] aligns LLM reasoning with KG paths by training the model to reason via structured paths on the dataset of mined rules. GenTKG [ 21 ] extends this idea to temporal domains, coupling retrieval-augmented generation with time-aware relational reasoning to enable generative forecasting over evolving KGs. Based on this idea, RAG-KG-IL [ 49 ] integrates retrieval-augmented generation with incremental KG learning in a multi-agent framework to facilitate continual knowledge updating and adaptive reasoning across heterogeneous sources. In contrast, our framework unifies symbolic priors, dynamic graph exploration, and LLM-guided decision making on a temporal financial KG. 
+
+## 3 Methodology 3.1 Problem Formulation 
+
+We study the task of stock movement prediction using dynamic knowledge graphs (KGs). Let G𝑡 = (E 𝑡 , R𝑡 , F𝑡 ) denote a temporal knowledge graph snapshot at trading day 𝑡 , where: 
+
+• E 𝑡 is the set of entities, including TextSource , Event , Product ,
+
+Financial , Company , and Person nodes; TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction 2023 -12 -27    
+
+> 2023 -12 -20
+> Dow Inc. Cristina
+> Serrat
+> 2799d0d… Olefins
+> Union
+> Carbide
+> The
+> Vanguard
+> Group
+> Company
+> Company Person
+> Product
+> Company
+> TextSource
+
+Figure 1: Structure of the temporal financial knowledge graph showing entity types, relation categories, and tem-poral validity intervals. 
+
+• R 𝑡 is the set of relation types, including EXTRACTED_FROM ,
+
+SELLS , INVESTED_IN , PARTNERED , SUED , etc; 
+
+• F 𝑡 ⊆ E 𝑡 × R 𝑡 × E 𝑡 is the set of temporal triples (𝑒 ℎ, 𝑟, 𝑒 𝑡 )
+
+valid at time 𝑡 .Each stock 𝑠 ∈ S (where S is the set of S&P 500 stocks) is represented by a Company node and linked to its ticker symbol through a mapping function 
+
+𝜋 : E𝑡 → T , 𝜋 (𝑠 ) = ticker of stock 𝑠. 
+
+Text sources and as-of constraint. We denote by X the set of 
+
+TextSource nodes (financial news, filings, reports). Each 𝑥 ∈ X 
+
+has an associated publication date 𝜏 (𝑥 ). To avoid future leakage, only edges and facts with timestamps ≤ 𝑡 are accessible when constructing G𝑡 . Formally, a triple (𝑒 ℎ, 𝑟, 𝑒 𝑡 ) ∈ F 𝑡 is valid iff 
+
+valid_from (𝑒 ℎ, 𝑟, 𝑒 𝑡 ) ≤ 𝑡 ∧  valid_to (𝑒 ℎ, 𝑟, 𝑒 𝑡 ) ≥ 𝑡 or valid_to = ∅.
+
+Rules. We assume a pre-mined rule bank R∗ = {𝜌 1, . . . , 𝜌 𝑀 }
+
+obtained via automated rule mining methodology. Each rule 𝜌 is defined with both a body pattern and a predictive head: 
+
+𝜌 : 𝑟 1 (𝑋, 𝑍 1) ∧ 𝑟 2 (𝑍 1, 𝑍 2) ∧ · · · ∧ 𝑟 𝐿 (𝑍 𝐿 −1, 𝑌 )
+
+| {z }
+
+> body
+
+⇒ predict_direction (𝑋, ℓ )
+
+| {z }
+
+> head
+
+,
+
+where each 𝑟 𝑖 ∈ R 𝑡 and ℓ ∈ { UP , DOWN }. These rules act as label-predictive priors for efficient path exploration and scoring, with explicit confidence values from historical validation. 
+
+Prediction task. For each trading day 𝑡 within the evaluation window [𝑡 start , 𝑡 end ], and for each stock 𝑠 ∈ S , the model predicts whether the stock will go up or down in the next trading day. Let 𝑝 𝑠,𝑡, 1 denote the forward return of stock 𝑠 from day 𝑡 to day 
+
+𝑡 + 1 (next trading day), computed from adjusted close prices: 
+
+𝑝 𝑠,𝑡, 1 = adj_close 𝑠,𝑡 +1 − adj_close 𝑠,𝑡 
+
+adj_close 𝑠,𝑡 
+
+.
+
+The ground-truth label is then defined as: 
+
+𝑦 𝑠,𝑡, 1 =
+
+(
+
+UP , if 𝑝 𝑠,𝑡, 1 > 0,
+
+DOWN , if 𝑝 𝑠,𝑡, 1 ≤ 0.
+
+Objective. The goal of our knowledge graph reasoning frame-work is to learn a reasoning function 
+
+𝑓 : (G 𝑡 , 𝑠, R∗, ℎ ) ↦ → ˆ𝑦 𝑠,𝑡,ℎ ,
+
+that outputs a prediction ˆ𝑦 𝑠,𝑡,ℎ ∈ { UP , DOWN } along with a set of interpretable reasoning paths P𝑠,𝑡,ℎ extracted from G𝑡 .
+
+## 3.2 Knowledge Graph Construction 
+
+Our methodology relies on a dynamic financial knowledge graph (see Figure 1) that integrates heterogeneous data sources into a uni-fied temporal graph. The KG is designed to capture both structured corporate relations and unstructured textual signals (e.g., news, filings), while preserving temporal validity. 
+
+Entity types. The KG contains multiple categories of entities, each uniquely identified by a uid :
+
+• TextSource (10 ,685 nodes): financial news articles, earn-ings reports, and filings, each associated with a publication timestamp. 
+
+• Event (9,174 nodes): discrete corporate or market events such as mergers, lawsuits, or regulatory actions. 
+
+• Product (8,973 nodes): company products, technologies, and services. 
+
+• Financial (5,991 nodes): financial instruments, indicators, or assets other than S&P 500 stocks. 
+
+• Company (4,865 nodes): corporate entities, including S&P 500 constituents and their counterparties. 
+
+• Person (2,500 nodes): key executives, founders, and indi-viduals relevant to market events. 
+
+Relations. Edges represent typed relations between entities. Each relation is stored as a temporal triple (𝑒 ℎ, 𝑟, 𝑒 𝑡 , 𝑡 from , 𝑡 to ), where 
+
+𝑒 ℎ, 𝑒 𝑡 ∈ E , 𝑟 ∈ R , and [𝑡 from , 𝑡 to ] is the validity interval. The relation set includes: 
+
+• EXTRACTED_FROM (125 ,276 edges): anchors entities (e.g., Com-panies, Events, Products) to their originating TextSource ,thereby grounding structured nodes in textual evidence. 
+
+• SELLS (13 ,003 ) and INVESTED_IN (11 ,706 ): capture product sales relations and investment activities. 
+
+• CAUSED_INCREASE (8,250 ) and CAUSED_DECLINE (3,891 ): en-code causal event-to-financial effects extracted from text. 
+
+• PARTNERED (3,933 ), DIVESTED (3,694 ), and ACQUIRED (1,004 ): represent corporate restructuring and partnerships. 
+
+• WORKS_FOR (3,012 ): links Person nodes to their affiliated companies. 
+
+• LICENSED (415 ), SETTLED (153 ), and SUED (78 ): describe le-gal, contractual, and licensing relations. 
+
+Anchoring to text. Each TextSource node 𝑥 has metadata in-cluding title, publisher, URL, and publication date 𝜏 (𝑥 ). Entities mentioned in 𝑥 are connected via EXTRACTED_FROM edges, allowing reasoning paths to be grounded in explicit textual evidence. Ding et al. News & Event      
+
+> (356,046 articles from 2022 to 2023)
+> 1. Entity recognition
+> 2. Relation extraction
+> 3. Merge similar entities
+
+Temporal Knowledge Graph   
+
+> (42,188 entities with 174,415 relations)
+> Entities: {TextSource , Event, Product, Financial,
+> Company, Person}
+> Relations: {EXTRACTED_FROM, SELLS, INVESTED,
+> CAUSED_INCREASE …}
+
+Rule Mining 
+
+> (2 -4 hops with confidence & scores)
+
+Rule Library                          
+
+> (25,085 rules with reasoning chains)
+> EXTRACTED_FROM(X,Z) ∧CAUSED_INCREASE(Z,Y)
+> ⇒predict_direction (X,UP), conf=0.74
+> INVESTED(X,Z) ∧IN_SECTOR(Z,“AI”)
+> ⇒predict_direction (X,UP), conf=0.68
+> 1. Path Sampling
+> 2. Rule instantiation
+> 3. Support and confidence filtering Matched Rule EXTRACTED_FROM ∧ACQUIRED ∧CAUSED_INCREASE
+> Confidence 0.78
+> Evidence Path Microsoft → ACQUIRED → Activision Blizzard → CAUSED_INCREASE
+> Text Evidence News (2022 -01 -18 ): Positive sentiment for both MSFT and ATVI
+> Prediction UP
+> Interpretation
+> The news reports that “Microsoft acquired Blizzard” ; Blizzard’s stock
+> price rose and news sentiment was positive, leading our reasoner to
+> infer that Microsoft’s stock price is also likely to increase.
+> Event:
+> Microsoft -Activision
+> Acquisition
+> Announcement
+> TextSource :
+> Bloomberg News
+> (2022 -01 -18)
+> Company:
+> Microsoft (MSFT)
+> Company:
+> Activision (ATVI)
+> ACQUIRED
+> CAUSED_INCREASE EXTRACTED_FROM
+
+(a) Knowledge Graph Construction  (b) Automated Rule Mining  (c) Example of Mined Rule 
+
+Figure 2: Overview of our knowledge graph reasoning framework showing the integration of automated rule mining and temporal graph reasoning. 
+
+Rule integration. A rule bank R∗ mined via automated rule extraction is integrated into the KG reasoning process. While rules are not embedded directly in G𝑡 , their relational patterns constrain search trajectories and guide scoring during exploration. 
+
+## 3.3 Automated Rule Mining 
+
+To guide efficient reasoning in our framework, we integrate a rule bank mined from the financial knowledge graph using automated pattern extraction methodology (see Figure 2). The purpose of rule mining is to extract recurring relational patterns that serve as priors 
+
+for our knowledge graph reasoning framework, improving both efficiency and interpretability. 
+
+Rule definition. A rule is defined as a sequence of relational atoms (body) connecting entities, with an explicit head that maps to stock movement prediction. Please refer to 3.1 for rule definition. 
+
+Mining procedure. Following an automated mining framework, we employ a breadth-first enumeration of paths in the KG to con-struct candidate rules: (1) Path sampling. From all triples (𝑒 ℎ, 𝑟, 𝑒 𝑡 ) in the KG, we construct 2-hop paths, which are recursively combined into 3-hop and 4-hop paths. (2) Rule instantiation. Each path pattern is generalized into a rule body by replacing entities with variables. For each body pattern, we create both UP and DOWN head variants. (3) Support and confidence filtering. For a rule candidate 𝜌 
+
+with head predict_direction (𝑋, ℓ ), let 𝑥 denote the number of stock-day instances where the body pattern is satisfied, and let 𝑦 denote the number of such instances where the actual stock movement matches the predicted direction ℓ.The confidence is defined as: conf (𝜌 ) = 𝑦 𝑥 .
+
+Rules with support below a frequency threshold or with conf (𝜌 ) < 𝜏 mine are discarded, where 𝜏 mine = 0.60 is our mining threshold. (4) Pruning. Rules that are redundant (subsumed by shorter rules) or overly specific (support too small) are removed to avoid sparsity. 
+
+Examples. Illustrative mined rules include: 
+
+INVESTED_IN (𝑋, 𝑍 ) ∧ IN_SECTOR (𝑍, “AI” )⇒ signal for positive movement of 𝑋, 
+
+Automated rule mining transforms raw KG structure into a com-pact library of relational patterns that guide our knowledge graph reasoning framework. This synergy between symbolic rules and neural reasoning reduces search space, mitigates hallucination, and grounds predictions in financially meaningful causal chains. 
+
+## 3.4 Graph-Based Exploration 
+
+Our framework centers on graph-based exploration, which is an iterative, rule- and LLM-guided traversals of the financial KG that surface interpretable reasoning paths for stock movement predic-tion. An example of interpretable reasoning paths is shown in Figure 3 and the algorithm framework is illustrated in Alg. 1. 
+
+Search initialization. For each trading day 𝑡 ∈ [ 𝑡 start , 𝑡 end ] and each stock 𝑠 ∈ S , we initialize exploration at the corresponding 
+
+TextSource node. The as-of constraint enforces that only edges and TextSource nodes with timestamps ≤ 𝑡 are accessible. Thus, every reasoning path P𝑠,𝑡 is grounded in information available at the prediction time. 
+
+Beam search. We employ beam search to explore the KG while controlling combinatorial explosion. At depth 𝑑 , each partial path 
+
+𝑃 = (𝑒 0
+
+> 𝑟 1
+
+−→ 𝑒 1
+
+> 𝑟 2
+
+−→ · · · 𝑟 𝑑 
+
+−−→ 𝑒 𝑑 ) can be extended by candidate relations {𝑟 𝑑 +1 } leading to neighbors of 𝑒 𝑑 . The beam maintains the top-𝐾 paths ranked by a scoring function (see below). Search proceeds until either (i) a TextSource node is reached, or (ii) the maximum depth 𝐷 max is reached. 
+
+Rule-Grounded Path Expansion. A key innovation of our methodology is the integration of rule-grounded reasoning during TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction 
+
+Figure 3: Example of interpretable reasoning paths showing how our knowledge graph reasoning framework connects stocks to textual evidence. 
+
+graph exploration. For each partial path 𝑃 during expansion, we attempt to match it against the body of known label-predictive rules in R∗:(1) Rule Matching: Given current partial path 𝑃 = (𝑒 0
+
+> 𝑟 1
+
+−→
+
+𝑒 1
+
+> 𝑟 2
+
+−→ · · · 𝑟 𝑑 
+
+−−→ 𝑒 𝑑 ), we find all rules 𝜌 ∈ R ∗ whose body sequences match the relation pattern {𝑟 1, 𝑟 2, . . . , 𝑟 𝑑 }.(2) Hypothesis Generation: When a rule’s body is fully grounded and the rule confidence exceeds our hypothesis threshold (conf (𝜌 ) > 𝜏 hyp where 𝜏 hyp = 0.60 ), we treat this as a label-predictive hypothesis. The hypothesis consists of: 
+
+• The grounded rule 𝜌 with confidence conf (𝜌 ) > 𝜏 hyp 
+
+and predicted direction ℓ
+
+• The complete evidence path 𝑃 supporting the rule body 
+
+• Associated TextSource nodes providing textual evi-dence This rule-grounded approach ensures that exploration is not merely traversing the graph structure, but actively seeking evidence that validates high-confidence predictive patterns discovered during rule mining. 
+
+Relation selection. Given the current path prefix {𝑟 1, . . . , 𝑟 𝑑 }
+
+and the set of candidate relations from 𝑒 𝑑 , we apply a two-stage filter: (1) Rule-based admissibility: the relation sequence must be a prefix of at least one rule body 𝜌 ∈ R ∗;(2) LLM-based pruning: if enabled, an LLM relation selector evaluates candidate relations in context (node type, as-of date, neighbor statistics) and returns a subset with scores 
+
+{0, 1, 2} indicating relevance. If the LLM selector is disabled, a heuristic scorer based on neighbor frequency and recency is used. 
+
+Path scoring. We use per-depth lexicographic ranking. A path 𝑃 
+
+is admissible iff (i) its relation sequence is a prefix of some rule in 
+
+R∗, (ii) all edges are valid as of 𝑡 , and (iii) len (𝑃 ) ≤ 𝐷 max .At depth 𝑑 , compute four signals for each admissible 𝑃 , each scaled to its percentile among candidates at depth 𝑑 : hyp 𝜏 (𝑃 ) ∈ {0, 1} (completes a mined rule with confidence ≥ 𝜏 ), cov (𝑃 ) ∈ [ 0, 1]
+
+(best rule-body coverage), rec (𝑃 ) ∈ [ 0, 1] (freshest timestamp on 
+
+𝑃 ), ahub (𝑃 ) ∈ [ 0, 1] (penalizes high-degree nodes; higher is less hub-biased). Rank by the lexicographic key 
+
+𝐾 (𝑃 ) =  −hyp 𝜏 (𝑃 ), −cov (𝑃 ), −rec (𝑃 ), −ahub (𝑃 ), len (𝑃 ), hash (𝑃 ),
+
+ascending, where minus signs mean “higher is better” and hash (𝑃 )
+
+is a deterministic node-sequence hash for stable tie-breaking. This scheme prioritizes completion of high-confidence rules, then favors paths that best align with rule bodies, are temporally recent, and avoid hubs. 
+
+Early stopping and hypothesis validation. Search halts early when a path reaches a TextSource node and forms a complete label-predictive hypothesis. This occurs when: 
+
+• A rule’s body is fully grounded in the current graph snap-shot 
+
+• The rule has high confidence (conf (𝜌 ) > 0.6)
+
+• TextSource evidence supports the complete reasoning chain When such a hypothesis is formed, it is added to the set of can-didate explanations for the stock prediction. If an extension lacks Ding et al. 
+
+supporting facts or cannot complete any high-confidence rule, the trial-and-error mechanism discards the branch and backtracks to alternative candidates. 
+
+## 3.5 Verdict Prediction 
+
+After graph exploration, we obtain for each stock 𝑠 on day 𝑡 a set of candidate reasoning paths P𝑠,𝑡, 1 for our primary 1-day predic-tion horizon (with support for other horizons P𝑠,𝑡,ℎ where ℎ ∈{3, 5, 10 , 30 }). Each path terminates at one or more TextSource 
+
+nodes and is aligned with a subset of rules from the mined rule bank R∗. The objective of this stage is to consolidate these candi-date paths into a binary verdict ˆ𝑦 𝑠,𝑡, 1 ∈ { UP , DOWN } together with a confidence score for our primary focus. 
+
+Primary verdict generation. The final prediction is determined by aggregating confidence scores from high-confidence rule-based hypotheses H𝑠,𝑡,ℎ = {( 𝑃 𝑖 , 𝜌 𝑖 , conf (𝜌 𝑖 ))} generated during graph exploration. Each hypothesis consists of a grounded rule 𝜌 𝑖 with confidence conf (𝜌 𝑖 ) > 𝜏 hyp and predicted direction ℓ𝑖 . We aggregate as follows: conf UP (𝑠, 𝑡, ℎ ) = max    
+
+> (𝑃 𝑖 ,𝜌 𝑖 ) ∈ H 𝑠,𝑡,ℎ
+> ℓ𝑖 =UP
+
+conf (𝜌 𝑖 ),
+
+conf DOWN (𝑠, 𝑡, ℎ ) = max    
+
+> (𝑃 𝑖 ,𝜌 𝑖 ) ∈ H 𝑠,𝑡,ℎ
+> ℓ𝑖 =DOWN
+
+conf (𝜌 𝑖 ).
+
+The final prediction is chosen as the label with higher aggregated confidence: 
+
+ˆ𝑦 𝑠,𝑡,ℎ =
+
+(
+
+UP , if conf UP ≥ conf DOWN ,
+
+DOWN , otherwise .
+
+Path evaluation. Each candidate path 𝑃 ∈ P 𝑠,𝑡, 1 is examined by a large language model (LLM) under strict prompting constraints, producing a binary label and confidence (𝑦 𝑃 , 𝑝 𝑃 ). This evaluation serves for explanation ranking and interpretability scoring. 
+
+Interpretability of verdicts. Each final decision is accompanied by the top-𝑀 supporting reasoning paths that contributed to the outcome. For instance, a verdict of “UP” may be supported by: 
+
+Company A–INVESTED_IN–>Startup Z–EXTRACTED_FROM–>News Article ,
+
+which aligns with the rule pattern 𝜌 : INVESTED_IN (𝑋, 𝑍 ) ∧
+
+EXTRACTED_FROM (𝑍,𝑇 ). This explicit linkage between the verdict, the underlying rule, and the textual anchor enables transparent, human-auditable financial forecasts. 
+
+## 4 Experiments 
+
+We conduct comprehensive experiments to evaluate our temporal knowledge graph reasoning approach on real-world financial pre-diction tasks. Our evaluation demonstrates both superior predictive performance and high-quality interpretable explanations compared to state-of-the-art baselines. 
+
+## 4.1 Experimental Setup and Datasets 
+
+Financial Knowledge Graph Construction. We construct a temporal financial knowledge graph for S&P 500 companies (2022 Jan to 2023 Jan), containing 42,188 entities and 174,415 timestamped edges. Refer to Sec. 3.2. We use daily OHLCV data for all 487 S&P 500 stocks (187,452 observations), with split/dividend adjustments and outlier filtering. Binary labels are defined from forward returns: 
+
+𝑦 𝑠,𝑡, 1 = I[𝑃 𝑠,𝑡 +1 > 𝑃 𝑠,𝑡 ], yielding balanced UP/DOWN distributions (51.2%/48.8%). We enforce strict as-of-date constraints and use walk-forward validation with daily predictions. 
+
+## 4.2 Evaluation Metrics 
+
+We evaluate using standard classification metrics: Accuracy, Pre-cision, Recall, and F1-Score. For interpretability, we measure Path Coverage, Rule Utilization, Evidence Grounding, and Path Diversity. 
+
+## 4.3 Baseline Methods 
+
+We evaluate representative baselines under the same as-of-date protocol: 
+
+• Historical Momentum : Predicts next-day direction from recent price trend using a standard momentum signal. The lookback window is selected on validation and applied out-of-sample. 
+
+• XGBoost [38 ]: Gradient-boosted trees trained on daily OHLCV features with lightweight technical indicators. Class weighting and all hyperparameters are tuned on validation without look-ahead. 
+
+• News Sentiment (Qwen QwQ-32B) [ 30 , 45 ]: A news-only model that uses Qwen to score per-stock daily sentiment from contemporaneous articles; scores are aggregated per day and thresholded into UP/DOWN. 
+
+• T-GNN [ 42 ]: A temporal graph neural network over our financial knowledge graph, performing message passing across time under identical splits and temporal constraints. 
+
+• Agent frameworks : Mars [6 ], StockAgent [ 51 ], and Fin-Mem [ 50 ] are self-implemented to conform to our classifi-cation harness. Their outputs are standardized rule-based proxies for agent-style pipelines and are included for com-pleteness; the reported numbers should not be interpreted as the original systems’ official results. 
+
+• Ours : The proposed temporal KG reasoning model with rule-guided multi-hop exploration and path aggregation. All methods use identical data splits, features restricted by infor-mation dates, and the same evaluation protocol. For backtesting evaluation, we construct Top-10 buy-and-hold baskets per method (equal-weight, no rebalancing) and report an equal-weight all-stocks benchmark. Unless noted otherwise, the training window is 2022-01-01 to 2023-01-01 and the evaluation window is 2023-01-01 to 2024-01-01. All LLM experiments use the Qwen QwQ-32B model [45]. 
+
+## 4.4 Main Experimental Results 
+
+Table 1 presents performance comparison across baseline methods for 1-day horizon stock movement prediction. 
+
+Predictive Performance Analysis. Table 1 shows that our method attains the best one day performance with 55.1% accuracy, 55.7% precision, 71.5% recall, and 60.8% F1. This corresponds to gains of 2.2 accuracy points over XGBoost at 52.9% and 0.7 points over FinMem at 54.4%. The improvement aligns with the methodology. First, rule-guided exploration restricts each expansion to prefixes of TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction 
+
+Table 1: Performance comparison for 1-day stock movement prediction. Best results in bold. 
+
+Method Accuracy Precision Recall F1-Score Historical Momentum 0.517 0.524 0.709 0.603 XGBoost 0.529 0.535 0.678 0.598 News Sentiment (Qwen) 0.524 0.529 0.636 0.594 T-GNN 0.528 0.534 0.685 0.600 Mars 0.539 0.544 0.664 0.598 StockAgent 0.539 0.545 0.648 0.592 FinMem 0.544 0.550 0.647 0.594 
+
+TRACE (Ours) 0.551 0.557 0.715 0.608 Table 2: Detailed ablation study showing the contribution of individual components to overall performance. 
+
+Configuration Performance Metrics Accuracy Precision Recall Full Model 0.551 0.557 0.715 
+
+- Temporal Constraints 0.539 0.544 0.534 - Rule Mining 0.542 0.547 0.537 - Multi-hop Reasoning 0.532 0.537 0.527 - Path Aggregation 0.548 0.553 0.543 - LLM Relation Selection 0.545 0.550 0.540 Random Classifier 0.502 0.501 0.500 mined rule bodies and promotes hypothesis formation only when a high confidence rule is fully grounded with supporting TextSource evidence, which concentrates search on economically meaningful chains rather than arbitrary multi hop traversals. Second, the per depth lexicographic ranking prioritizes completion of high confi-dence rules, then body coverage, penalizes hubs, and uses stable tie breaking, which elevates paths that instantiate strong priors over high degree shortcuts. Third, the verdict stage aggregates high confidence grounded hypotheses into a single label and confidence, providing a selective fusion of heterogeneous evidence rather than uniform pooling. Together, these components yield higher sensi-tivity without a loss in selectivity, reflected by a recall gain of 3.0 points and an F1 gain of 0.8 points over T-GNN, alongside the overall accuracy improvement under the same evaluation protocol. 
+
+## 5 Analysis 
+
+This section demonstrates experiments and results for our frame-work’s interpretability quality, human expert analysis, ablation studies, backtesting analysis, and counterfactual analysis. 
+
+## 5.1 Interpretability Quality Analysis 
+
+A key advantage of our approach is the generation of interpretable reasoning paths that support each prediction. 
+
+Path Quality Analysis. Our framework generates an average of 2.8 reasoning paths per stock prediction, with 85% of predictions supported by at least one complete path from the target stock to a textual source. Among the discovered paths, 72% match at least one rule pattern from the mined rule bank, demonstrating that the exploration successfully leverages learned relational patterns. The paths exhibit good diversity, with an average of 2.1 distinct relation types per path and 1.8 unique rule patterns per predic-tion. This variety suggests that the framework captures multiple complementary signals rather than relying on a single reasoning pattern. 
+
+Evidence Grounding. Examining the temporal relevance of ev-idence, we find that 65% of reasoning paths terminate at textual sources published within 7 days of the prediction date, and 86% within 30 days, ensuring that the supporting evidence is contem-porary and particularly relevant for 1-day predictions. The paths connect to diverse information sources including financial news articles, corporate filings, and market reports, providing a broad foundation for predictions. 
+
+## 5.2 Ablation Studies 
+
+We systematically evaluate the contribution of key components through controlled ablation experiments (see Table 2). 
+
+Component Impact Analysis. Multi-hop reasoning provides the largest performance contribution (2.1% improvement), confirm-ing that complex financial relationships require multi-step graph traversal. Rule mining contributes 1.1% improvement, demonstrat-ing that learned relational patterns enhance prediction quality be-yond basic graph structure. Temporal constraints yield 1.4% improvement, highlighting the importance of respecting information availability dates in financial prediction. Path aggregation provides 0.5% improvement, show-ing that combining multiple reasoning paths creates more robust predictions than relying on single paths. Each component contributes positively to overall performance, validating the design choices in our knowledge graph reasoning framework. 
+
+## 5.3 Human Expert Analysis 
+
+Path Quality Metrics. We evaluate reasoning path quality us-ing multiple dimensions: 
+
+• Semantic Coherence : 83% of paths exhibit logical financial relationships 
+
+• Temporal Consistency : 91% respect chronological order-ing of events 
+
+• Rule Alignment : 74% match at least one mined rule pat-tern 
+
+• Source Diversity : Average 2.3 distinct news sources per prediction 
+
+Human Evaluation Protocol. We conducted expert evaluation with financial analyst on 100 randomly selected predictions. Inter-rater reliability (Fleiss’ 𝜅 = 0.68 ) indicates good agreement on path quality. Experts rated 73% of reasoning paths as “financially meaningful” and 64% as “actionable for investment decisions.” Ding et al. 
+
+Table 3: Top-10 buy&hold portfolio metrics (2023-01-01 to 2024-01-01). Each method forms a long-only, equal-weight basket of its Top-10 tickers without rebalancing. Best values in bold. 
+
+Method Total Return Sharpe Ann. Vol Max DD Win Rate Equal-Weight All 16.7% 1.17 14.1% -12.9% 52.8% Historical Momentum 8.7% 0.62 15.4% -17.3% 54.4% XGBoost 27.0% 1.31 19.9% -14.8% 53.2% News Sentiment (Qwen) 9.2% 0.67 14.8% -12.2% 52.8% T-GNN 3.5% 0.33 13.3% -12.5% 51.2% Mars 14.2% 0.98 14.7% -17.3% 54.8% StockAgent 26.4% 1.43 17.7% -15.0% 52.4% FinMem 13.1% 0.88 15.5% -15.7% 55.2% 
+
+Ours 41.7% 2.00 18.5% -11.7% 56.0% 2023-01 2023-03 2023-05 2023-07 2023-09 2023-11 2024-01 
+
+> Date
+> 8%
+> 0%
+> 8%
+> 16%
+> 24%
+> 32%
+> 40%
+> 48%
+> Cumulative return
+> Cumulative Returns
+> Ours
+> XGBoost
+> StockAgent
+> Equal-Weight All
+> Mars
+> FinMem
+> News Sentiment
+> Historical Momentum
+> T-GNN
+
+Figure 4: Cumulative returns of Top-10 buy&hold portfolios for all methods (2023-01-01 to 2024-01-01). Our approach dominates over the full horizon and exceeds the equal-weight benchmark. 
+
+## 5.4 Comparative Methodology Enhancement 
+
+Ensemble Methods Analysis. Combining our knowledge graph reasoning framework with top market data-based baseline (XG-Boost) yields 56.1% accuracy, suggesting complementary signal sources. However, the marginal improvement (0.8 %) comes with significant complexity costs, supporting our standalone framework design. 
+
+## 5.5 Backtesting Analysis 
+
+Setup. We evaluate Top-10 buy&hold baskets (equal-weight, no rebalancing) formed per method over 2023-01-01 to 2024-01-01, alongside an equal-weight all-stocks benchmark. Prices are split and dividend-adjusted and all as-of constraints are enforced. 
+
+Results. See Table 3 and Figure 4, our method achieves 41.7% to-tal return with Sharpe 2.00, 18.5% annualized volatility, −11 .7% max-imum drawdown, and 56% win rate. The equal-weight benchmark yields 16.7% total return (Sharpe 1.17). Strong baselines perform lower: XGBoost 27.0% (1.31), StockAgent 26.4% (1.43), Mars 14.2% (0.98), FinMem 13.1% (0.88), Historical Momentum 8.7% (0.62), News Sentiment 9.2% (0.67), and T-GNN 3.5% (0.33). These results indicate that gains in classification accuracy translate into economically meaningful improvements under identical as-of-date evaluation. 0 20 40 60 80 100       
+
+> Mask ratio (%)
+> 0.48
+> 0.50
+> 0.52
+> 0.54
+> Accuracy
+> (a) Accuracy
+> 020 40 60 80 100
+> Mask ratio (%)
+> 0.52
+> 0.54
+> 0.56
+> 0.58
+> 0.60
+> F1-score
+> (b) F1-score
+> Mask-Text Mask-Edge
+
+Figure 5: Counterfactual Analysis with different deletion ratios for Mask-Tex and Mask-Edge strategies, respectively. 
+
+## 5.6 Counterfactual Analysis 
+
+Setup. This analysis is to verify our predicted verdicts rely on the surfaced evidence paths rather than spurious correlations. For each evaluated stock-day, our framework returns a top supporting path P★ = ⟨𝑒 1
+
+> 𝑟 1
+
+−→ · · · 𝑟 𝑘 −1
+
+−−−→ 𝑒 𝑘 ⟩ and a confidence score 𝑠 ∈ [ 0, 1]
+
+for the verdict 𝑦 ∈ { UP , DOWN }. We perform two counterfactual deletions: (i) Mask-Text : remove the terminal TextSource node and its incident edge ( EXTRACTED_FROM ), thereby stripping the news evidence tied to the path; (ii) Mask-Edge : remove the first critical relation on the path (e.g., ACQUIRED , PARTNERED , CAUSED_INCREASE )that completes the matched rule. We then recompute the verdict and confidence on the modified graph snapshot. We ensure at most one perturbation per instance, keep search hyperparameters fixed, and recompute predictions on the perturbed snapshot 𝐺 𝑡 . We report Accuracy and F1; values at 𝑟 =0 equal the unperturbed evaluation. 
+
+Findings. Figure 5 shows a monotone decline in both metrics with higher mask ratios for both strategies, which validate the effectiveness of evidence paths in our verdicts. Mask-Text degrades faster than Mask-Edge , indicating that news grounding at the terminal node contributes to the decision. Note that at 𝑟 =100% for 
+
+Mask-Text , it means that only the news content while no path is used to make the prediction. TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction 
+
+## 6 Conclusion 
+
+We presented a temporal knowledge-graph reasoning framework named TRACE that unifies rule-guided multi-hop exploration with text-grounded evidence to produce next-day stock movement pre-diction. On the S&P 500 task, our method achieves 55.1% accu-racy, 55.7% precision, 71.5% recall, and 60.8% F1, surpassing strong machine-learning, text, graph, and agent-style baselines. In Top-10 buy&hold backtests over 2023-01-01 to 2024-01-01, it delivers 41.7% total return with 2.00 Sharpe ratio, outperforming an equal-weight benchmark and competitive baselines. The framework yields path-level explanations while remaining subject to KG coverage and drift; future work will extend to multi-horizon forecasting, calibration, and cross-market validation. Ding et al. 
+
+## A Reproducibility Details A.1 Data, Splits, and As-Of Constraints 
+
+We study next-day stock movement (close-to-close) for S&P 500 constituents in an as-of setting. Unless otherwise noted, the default split is: train = 2022-01-01 – 2023-01-01; test = 2023-01-01 – 2024-01-01. For any day 𝑡 , the snapshot 𝐺 𝑡 and all features include only facts and documents with timestamps ≤ 𝑡 . Financial texts (news, filings, transcripts) are deduplicated within a 24h window via ticker-date hashing and text embedding distancing calculation. Feature normalization is fit on train only and applied to test for market data-based baselines. 
+
+## A.2 Model and Search Settings 
+
+We run a rule-guided search over the as-of snapshot 𝐺 𝑡 with beam width 𝐾 =8, max depth 𝐷 max =3, hypothesis threshold 𝜏 hyp =0.60 , and at most 10 scored paths per instance (top-𝑀 evidence budget 𝑀 =5
+
+by default). Textual relevance is computed with Qwen3-Embedding-8B for dense representations of TextSource nodes and query snip-pets. We employ Qwen QwQ-32B as a frozen controller in two places: (1) LLMRelationSelector : given a set of candidate one-hop extensions from the current frontier, the LLM filters expan-sions that are (i) semantically compatible with the news snippet and (ii) consistent with the partially matched rule prefix. LLMs reduce hub and semantic drift effectively. (2) LLMValidate : for each completed (path, rule) pair (𝑃, 𝜌 ),the LLM verifies label consistency with the news content and yields ( ˆℓ𝑃 , 𝑝 𝑃 ), where 𝑝 𝑃 ∈ [ 0, 1] is a calibrated plausi-bility score used in evidence fusion. 
+
+## A.3 Evaluation and Significance 
+
+This section defines the classification and backtesting metrics used in the paper. For each (ticker, day) instance 𝑖 ∈ { 1, . . . , 𝑁 } let 𝑦 𝑖 ∈{UP , DOWN } be the ground-truth next-day label (close-to-close), and 
+
+ˆ𝑦 𝑖 the model’s prediction. 
+
+Classification. We report the standard point metrics on the pooled (ticker, day) set: 
+
+Accuracy = TP + TN 
+
+𝑁 , Precision = TP TP + FP ,
+
+Recall = TP TP + FN , F1 = 2 · Precision · Recall Precision + Recall .
+
+Backtesting. Let B be the Top-10, equal-weight, long-only basket chosen at the start of the test window. For each trading day 𝑡 =
+
+1, . . . ,𝑇 let 𝑟 𝑗,𝑡 be the simple return of asset 𝑗 ∈ B from close 𝑡 −1 to close 𝑡 :
+
+𝑟 𝑗,𝑡 = 𝑃 𝑗,𝑡 − 𝑃 𝑗,𝑡 −1
+
+𝑃 𝑗,𝑡 −1
+
+.
+
+Daily portfolio return (equal weights 𝑤 𝑗 = 1/|B| ): 
+
+𝑟 𝑡 =∑︁  
+
+> 𝑗 ∈ B
+
+𝑤 𝑗 𝑟 𝑗,𝑡 with 𝑤 𝑗 = 110 .
+
+Denote the daily risk-free rate by 𝑟 (𝑓 ) 
+
+> 𝑡
+
+(set to 0 unless stated). 
+
+Total Return (cumulative). 
+
+TotRet =
+
+> 𝑇
+
+Ö
+
+> 𝑡 =1
+
+(1 + 𝑟 𝑡 ) − 1.
+
+Annualized Volatility. Let ¯𝑟 = 1
+
+> 𝑇
+
+Í𝑇 𝑡 =1 𝑟 𝑡 and 𝑠 =√︃ 1 
+
+> 𝑇 −1
+
+Í𝑇 𝑡 =1 (𝑟 𝑡 − ¯𝑟 )2
+
+be the sample std. of daily returns. Then 
+
+AnnVol = 𝑠 · √252 .
+
+Sharpe Ratio (annualized). Using daily excess returns ˜𝑟 𝑡 = 𝑟 𝑡 −
+
+𝑟 (𝑓 ) 
+
+> 𝑡
+
+, with sample mean ¯˜𝑟 and std. 𝑠 ˜𝑟 :
+
+Sharpe = ¯˜𝑟 · 252 
+
+𝑠 ˜𝑟 · √252 = √252 · ¯˜𝑟 𝑠 ˜𝑟 
+
+.
+
+Maximum Drawdown. Let the cumulative equity curve be 𝐶 𝑡 =
+
+Î𝑡 𝑢 =1 (1 + 𝑟 𝑢 ) and running peak 𝐻 𝑡 = max 𝑢 ≤𝑡 𝐶 𝑢 . Drawdown at 𝑡 is 
+
+𝐷𝐷 𝑡 = 𝐶 𝑡  
+
+> 𝐻 𝑡
+
+− 1. The reported statistic is 
+
+MaxDD = min    
+
+> 𝑡 ∈ { 1,...,𝑇 }
+
+𝐷𝐷 𝑡 (a non-positive number ).
+
+Win Rate. 
+
+WinRate = 1
+
+𝑇 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+I[𝑟 𝑡 > 0] .
+
+At the test window start, each method forms an equal-weight, long-only basket of its Top-10 tickers and holds (no rebalancing). Unless specified, dividends, fees, and slippage are excluded. 
+
+## A.4 Counterfactual and Mask-Ratio Studies 
+
+Counterfactual deletions. (Mask-Text ) remove the terminal TextSource ,which denotes news and event content, and its EXTRACTED_FROM 
+
+edge on the top path; ( Mask-Edge ) remove the first rule-completing relation (e.g., ACQUIRED , PARTNERED , CAUSED_INCREASE ). We then recompute verdicts with confidences on the perturbed 𝐺 𝑡 and report (i) Accuracy and (ii) F1-Score. 
+
+Mask-ratio sweeps. For 𝑟 ∈ { 0, 20 , 40 , 60 , 80 , 100 }%, perturb a ran-dom 𝑟 % of instances (one perturbation per instance) and re-evaluate. 
+
+## B Ethical and Use Considerations 
+
+We operate on public, time-stamped information and enforce strict as-of filtering to avoid look-ahead bias. Models are assistive and not financial advice. Interpretability is provided via rule and news paths. Backtesting is illustrative and sensitive to costs and slippage. 
+
+## C Algorithm Pipeline 
+
+We illustrate the end-to-end reasoning pipeline that underlies all results in Algorithm 1 for more technique details. TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction 
+
+Algorithm 1 Rule-Guided Temporal KG Reasoning 
+
+Require: News 𝑥 with time 𝜏 (𝑥 ); KG 𝐺 𝑡 = (𝐸 𝑡 , 𝑅 𝑡 , 𝐹 𝑡 ) with 𝑡 ≥𝜏 (𝑥 );rules 𝑅 ∗; beam 𝐾 ; max depth 𝐷 max ; threshold 𝜏 hyp ; evidence budget 𝑀 ; fusion weight 𝛼 ∈ [ 0, 1]
+
+Ensure: 𝑦 ∈ { UP , DOWN } with confidence conf and evidence P 
+
+> 1:
+
+𝑆 ← ExtractEntitiesAndRelations (𝑥 ); 𝐺 𝑡 ←
+
+GroundToKG (𝑆, 𝐺 𝑡 ) 
+
+> 2:
+
+Score (𝑃 ) = I[CompletesHighConfRule (𝑃, 𝑅 ∗, 𝜏 hyp )] , 
+
+> 3:
+
+BestRuleCoverage (𝑃, 𝑅 ∗), Recency (𝑃 ), AntiHubPenalty (𝑃 ), −| 𝑃 | 
+
+> 4:
+
+for 𝑑 =1 to 𝐷 max do  
+
+> 5:
+
+Cands ← ∅  
+
+> 6:
+
+for all 𝑃 ∈ Beam do  
+
+> 7:
+
+for all neighbors (Head (𝑃 ) 𝑟 
+
+−→ 𝑣 ) valid at 𝑡 do  
+
+> 8:
+
+if IsPrefixOfSomeRule (𝑃 · ( 𝑟, 𝑣 ), 𝑅 ∗) then  
+
+> 9:
+
+𝑃 ′ ←𝑃 · ( 𝑟, 𝑣 ); add 𝑃 ′ to Cands  
+
+> 10:
+
+if CompletesHighConfRule (𝑃 ′, 𝑅 ∗, 𝜏 hyp )
+
+then  
+
+> 11:
+
+(𝜌, ℓ, conf (𝜌 )) ← MatchedRule (𝑃 ′, 𝑅 ∗);add (𝑃 ′, 𝜌, conf (𝜌 ), ℓ ) to H 
+
+> 12:
+
+end if  
+
+> 13:
+
+end if  
+
+> 14:
+
+end for  
+
+> 15:
+
+end for  
+
+> 16:
+
+if Cands =∅ then break  
+
+> 17:
+
+end if  
+
+> 18:
+
+Cands ← LLMRelationSelector (Cands ); Beam ←
+
+TopK (Cands , 𝐾, lexi Score ) 
+
+> 19:
+
+end for  
+
+> 20:
+
+if H =∅ then  
+
+> 21:
+
+return (DOWN , 0, ∅)  
+
+> 22:
+
+end if  
+
+> 23:
+
+confUP ← max (𝑃,𝜌, ·,ℓ ) ∈ H , ℓ =UP conf (𝜌 ); confDOWN ←
+
+max (𝑃,𝜌, ·,ℓ ) ∈ H , ℓ =DOWN conf (𝜌 ) 
+
+> 24:
+
+if confUP ≥ confDOWN then  
+
+> 25:
+
+𝑦 ← UP ; conf ← confUP  
+
+> 26:
+
+else  
+
+> 27:
+
+𝑦 ← DOWN ; conf ← confDOWN  
+
+> 28:
+
+end if  
+
+> 29:
+
+E ← ∅ ; 
+
+> 30:
+
+for all (𝑃, 𝜌, conf (𝜌 ), ℓ ) ∈ H do  
+
+> 31:
+
+( ˆℓ𝑃 , 𝑝 𝑃 ) ← LLMValidate (𝑥, 𝑃, 𝜌 ); if ˆℓ𝑃 = ℓ then add 
+
+(𝑃, 𝜌, conf (𝜌 ), ℓ, 𝑝 𝑃 ) to E 
+
+> 32:
+
+end for  
+
+> 33:
+
+E𝑦 ← { 𝑒 ∈ E : ℓ = 𝑦 }; P ← TopMBy  E𝑦 , 𝑀, 𝛼 conf (𝜌 ) + ( 1 −
+
+𝛼 ) 𝑝 𝑃 
+
+ 
+
+> 34:
+
+return (𝑦, conf , P) Ding et al. 
+
+## References 
+
+[1] Dogu Araci. 2019. Finbert: Financial sentiment analysis with pre-trained language models. arXiv preprint arXiv:1908.10063 (2019). [2] Adebiyi A Ariyo, Adewumi O Adewumi, and Charles K Ayo. 2014. Stock price prediction using the ARIMA model. In 2014 UKSim-AMSS 16th international conference on computer modelling and simulation . IEEE, 106–112. [3] Farah Atif, Ola El Khatib, and Djellel Difallah. 2023. BeamQA: Multi-hop Knowledge Graph Question Answering with Sequence-to-Sequence Prediction and Beam Search. In Proceedings of the 46th International ACM SIGIR Confer-ence on Research and Development in Information Retrieval (Taipei, Taiwan) (SI-GIR ’23) . Association for Computing Machinery, New York, NY, USA, 781–790. doi:10.1145/3539618.3591698 [4] Jinheon Baek, Alham Fikri Aji, and Amir Saffari. 2023. Knowledge-augmented language model prompting for zero-shot knowledge graph question answering. 
+
+arXiv preprint arXiv:2306.04136 (2023). [5] Shaojie Bai, J Zico Kolter, and Vladlen Koltun. 2018. An empirical evaluation of generic convolutional and recurrent networks for sequence modeling. arXiv preprint arXiv:1803.01271 (2018). [6] Jiayi Chen, Jing Li, and Guiling Wang. 2025. MARS: A Meta-Adaptive Reinforce-ment Learning Framework for Risk-Aware Multi-Agent Portfolio Management. 
+
+arXiv preprint arXiv:2508.01173 (2025). [7] Shib Sankar Dasgupta, Swayambhu Nath Ray, and Partha Talukdar. 2018. Hyte: Hyperplane-based temporally aware knowledge graph embedding. In Proceedings of the 2018 conference on empirical methods in natural language processing . 2001– 2011. [8] Qianggang Ding, Haochen Shi, Jiadong Guo, and Bang Liu. 2024. Tradexpert: Rev-olutionizing trading with mixture of expert llms. arXiv preprint arXiv:2411.00782 
+
+(2024). [9] Qianggang Ding, Sifan Wu, Hao Sun, Jiadong Guo, and Jian Guo. 2020. Hierar-chical multi-scale Gaussian transformer for stock movement prediction.. In Ijcai .4640–4646. [10] Xiao Ding, Yue Zhang, Ting Liu, and Junwen Duan. 2015. Deep learning for event-driven stock prediction.. In Ijcai , Vol. 15. 2327–2333. [11] Fuli Feng, Huimin Chen, Xiangnan He, Ji Ding, Maosong Sun, and Tat-Seng Chua. 2018. Enhancing stock movement prediction with adversarial training. 
+
+arXiv preprint arXiv:1810.09936 (2018). [12] Fuli Feng, Xiangnan He, Xiang Wang, Cheng Luo, Yiqun Liu, and Tat-Seng Chua. 2019. Temporal relational ranking for stock prediction. ACM Transactions on Information Systems (TOIS) 37, 2 (2019), 1–30. [13] Thomas Fischer and Christopher Krauss. 2018. Deep learning with long short-term memory networks for financial market predictions. European journal of operational research 270, 2 (2018), 654–669. [14] Luis Galárraga, Christina Teflioudi, Katja Hose, and Fabian M Suchanek. 2015. Fast rule mining in ontological knowledge bases with AMIE 
+
++
+
+. The VLDB Journal 24, 6 (2015), 707–730. [15] Xiao Huang, Jingyuan Zhang, Dingcheng Li, and Ping Li. 2019. Knowledge graph embedding based question answering. In Proceedings of the twelfth ACM international conference on web search and data mining . 105–113. [16] Jinhao Jiang, Kun Zhou, Zican Dong, Keming Ye, Wayne Xin Zhao, and Ji-Rong Wen. 2023. Structgpt: A general framework for large language model to reason over structured data. arXiv preprint arXiv:2305.09645 (2023). [17] Woojeong Jin, Meng Qu, Xisen Jin, and Xiang Ren. 2019. Recurrent event network: Autoregressive structure inference over temporal knowledge graphs. 
+
+arXiv preprint arXiv:1904.05530 (2019). [18] Daniel Jurafsky and James H Martin. 2009. Speech and Language Processing : An Introduction to Natural Language Processing, Computational Linguistics, and Speech Recognition. 2 . Pearson Education International. [19] Raehyun Kim, Chan Ho So, Minbyul Jeong, Sanghoon Lee, Jinkyu Kim, and Jaewoo Kang. 2019. Hats: A hierarchical graph attention network for stock movement prediction. arXiv preprint arXiv:1908.07999 (2019). [20] Xiaohui Victor Li and Francesco Sanna Passino. 2024. Findkg: Dynamic knowl-edge graphs with large language models for detecting global trends in financial markets. In Proceedings of the 5th ACM international conference on AI in finance .573–581. [21] Ruotong Liao, Xu Jia, Yangzhe Li, Yunpu Ma, and Volker Tresp. 2023. Gentkg: Generative forecasting on temporal knowledge graph with large language models. 
+
+arXiv preprint arXiv:2310.07793 (2023). [22] Xi Victoria Lin, Richard Socher, and Caiming Xiong. 2018. Multi-hop knowledge graph reasoning with reward shaping. arXiv preprint arXiv:1808.10568 (2018). [23] Wei Liu, Weihao Zeng, Keqing He, Yong Jiang, and Junxian He. [n. d.]. What Makes Good Data for Alignment? A Comprehensive Study of Automatic Data Se-lection in Instruction Tuning. In The Twelfth International Conference on Learning Representations .[24] Zhenghao Liu, Zhijian Zhang, and Xi Zeng. 2024. Risk identification and man-agement through knowledge Association: A financial event evolution knowledge graph approach. Expert Systems with Applications 252 (2024), 123999. [25] Wen Long, Zhichen Lu, and Lingxiao Cui. 2019. Deep learning-based feature engineering for stock price movement prediction. Knowledge-Based Systems 164 (2019), 163–173. [26] Linhao Luo, Zicheng Zhao, Gholamreza Haffari, Yuan-Fang Li, Chen Gong, and Shirui Pan. 2024. Graph-constrained reasoning: Faithful reasoning on knowledge graphs with large language models. arXiv preprint arXiv:2410.13080 (2024). [27] Shengjie Ma, Chengjin Xu, Xuhui Jiang, Muzhi Li, Huaren Qu, Cehao Yang, Jiaxin Mao, and Jian Guo. 2024. Think-on-graph 2.0: Deep and faithful large language model reasoning with knowledge-guided retrieval augmented generation. arXiv preprint arXiv:2407.10805 (2024). [28] Christian Meilicke, Melisachew Wudage Chekol, Manuel Fink, and Heiner Stuck-enschmidt. 2020. Reinforced anytime bottom up rule learning for knowledge graph completion. arXiv preprint arXiv:2004.04412 (2020). [29] David MQ Nelson, Adriano CM Pereira, and Renato A De Oliveira. 2017. Stock market’s price movement prediction with LSTM neural networks. In 2017 Inter-national joint conference on neural networks (IJCNN) . Ieee, 1419–1426. [30] Thien Hai Nguyen, Kiyoaki Shirai, and Julien Velcin. 2015. Sentiment analysis on social media for stock movement prediction. Expert Systems with Applications 
+
+42, 24 (2015), 9603–9611. [31] Hao Qian, Hongting Zhou, Qian Zhao, Hao Chen, Hongxiang Yao, Jingwei Wang, Ziqi Liu, Fei Yu, Zhiqiang Zhang, and Jun Zhou. 2024. Mdgnn: Multi-relational dynamic graph neural network for comprehensive and dynamic stock investment prediction. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 38. 14642–14650. [32] Meng Qu, Junkun Chen, Louis-Pascal Xhonneux, Yoshua Bengio, and Jian Tang. 2020. Rnnlogic: Learning logic rules for reasoning on knowledge graphs. arXiv preprint arXiv:2010.04029 (2020). [33] Andrea Rossi, Denilson Barbosa, Donatella Firmani, Antonio Matinata, and Paolo Merialdo. 2021. Knowledge graph embedding for link prediction: A comparative analysis. ACM Transactions on Knowledge Discovery from Data (TKDD) 15, 2 (2021), 1–49. [34] Mohammed Saeed, Naser Ahmadi, Preslav Nakov, and Paolo Papotti. 2021. RuleBERT: Teaching soft rules to pre-trained language models. arXiv preprint arXiv:2109.13006 (2021). [35] Hao Sun, Xiao Liu, Yeyun Gong, Anlei Dong, Jingwen Lu, Yan Zhang, Daxin Jiang, Linjun Yang, Rangan Majumder, and Nan Duan. 2023. Beamsearchqa: Large language models are strong zero-shot qa solver. arXiv preprint arXiv:2305.14766 
+
+(2023). [36] Jiashuo Sun, Chengjin Xu, Lumingyuan Tang, Saizhuo Wang, Chen Lin, Yeyun Gong, Lionel M Ni, Heung-Yeung Shum, and Jian Guo. 2023. Think-on-graph: Deep and responsible reasoning of large language model on knowledge graph. 
+
+arXiv preprint arXiv:2307.07697 (2023). [37] Rakshit Trivedi, Hanjun Dai, Yichen Wang, and Le Song. 2017. Know-evolve: Deep temporal reasoning for dynamic knowledge graphs. In international con-ference on machine learning . PMLR, 3462–3471. [38] Pham Hoang Vuong, Trinh Tan Dat, Tieu Khoi Mai, Pham Hoang Uyen, et al .2022. Stock-price forecasting based on XGBoost and LSTM. Computer Systems Science & Engineering 40, 1 (2022). [39] Jianing Wang, Qiushi Sun, Xiang Li, and Ming Gao. 2023. Boosting lan-guage models reasoning with chain-of-knowledge prompting. arXiv preprint arXiv:2306.06427 (2023). [40] Neng Wang, Hongyang Yang, and Christina Dan Wang. 2023. Fingpt: Instruction tuning benchmark for open-source large language models in financial datasets. 
+
+arXiv preprint arXiv:2310.04793 (2023). [41] Shijie Wu, Ozan Irsoy, Steven Lu, Vadim Dabravolski, Mark Dredze, Sebas-tian Gehrmann, Prabhanjan Kambadur, David Rosenberg, and Gideon Mann. 2023. Bloomberggpt: A large language model for finance. arXiv preprint arXiv:2303.17564 (2023). [42] Sheng Xiang, Dawei Cheng, Chencheng Shang, Ying Zhang, and Yuqi Liang. 2022. Temporal and heterogeneous graph neural network for financial time series prediction. In Proceedings of the 31st ACM international conference on information & knowledge management . 3584–3593. [43] Tianbao Xie, Chen Henry Wu, Peng Shi, Ruiqi Zhong, Torsten Scholak, Michihiro Yasunaga, Chien-Sheng Wu, Ming Zhong, Pengcheng Yin, Sida I Wang, et al .2022. Unifiedskg: Unifying and multi-tasking structured knowledge grounding with text-to-text language models. arXiv preprint arXiv:2201.05966 (2022). [44] Yumo Xu and Shay B Cohen. 2018. Stock movement prediction from tweets and historical prices. In Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 1970–1979. [45] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al . 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 (2025). [46] Fan Yang, Zhilin Yang, and William W Cohen. 2017. Differentiable learning of logical rules for knowledge base reasoning. Advances in neural information processing systems 30 (2017). [47] Yi Yang, Mark Christopher Siy Uy, and Allen Huang. 2020. Finbert: A pretrained language model for financial communications. arXiv preprint arXiv:2006.08097 TRACE: Temporal Rule-Anchored Chain-of-Evidence on Knowledge Graphs for Interpretable Stock Movement Prediction 
+
+(2020). [48] Jaemin Yoo, Yejun Soun, Yong-chan Park, and U Kang. 2021. Accurate multivariate stock movement prediction via data-axis transformer with multi-level contexts. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining . 2037–2045. [49] Hong Qing Yu and Frank McQuade. 2025. Rag-kg-il: A multi-agent hybrid framework for reducing hallucinations and enhancing llm reasoning through rag and incremental knowledge graph learning integration. arXiv preprint arXiv:2503.13514 (2025). [50] Yangyang Yu, Haohang Li, Zhi Chen, Yuechen Jiang, Yang Li, Jordan W Suchow, Denghui Zhang, and Khaldoun Khashanah. 2025. Finmem: A performance-enhanced llm trading agent with layered memory and character design. IEEE Transactions on Big Data (2025). [51] Chong Zhang, Xinyi Liu, Zhongmou Zhang, Mingyu Jin, Lingyao Li, Zhenting Wang, Wenyue Hua, Dong Shu, Suiyuan Zhu, Xiaobo Jin, et al . 2024. When ai meets finance (stockagent): Large language model-based stock trading in simulated real-world environments. arXiv preprint arXiv:2407.18957 (2024). [52] Yifei Zhang, Xintao Wang, Jiaqing Liang, Sirui Xia, Lida Chen, and Yanghua Xiao. 2024. Chain-of-knowledge: Integrating knowledge reasoning into large language models by learning from knowledge graphs. arXiv preprint arXiv:2407.00653 
+
+(2024). [53] Haoyi Zhou, Shanghang Zhang, Jieqi Peng, Shuai Zhang, Jianxin Li, Hui Xiong, and Wancai Zhang. 2021. Informer: Beyond efficient transformer for long se-quence time-series forecasting. In Proceedings of the AAAI conference on artificial intelligence , Vol. 35. 11106–11115.
