@@ -1,0 +1,548 @@
+Title: STN-GPR: A Singularity Tensor Network Framework for Efficient Option Pricing
+
+URL Source: https://arxiv.org/pdf/2603.26318v1
+
+Published Time: Mon, 30 Mar 2026 01:02:54 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# STN-GPR: A Singularity Tensor Network Framework for Efficient Option Pricing 
+
+## March 30, 2026 
+
+Dominic Gribben 1,* , Carolina Allende 1, Alba Villarino 1,* ,Aser Cortines 2,* , Mazen Ali 1, Rom´ an Or´ us 1, 3, 4 
+
+> 1
+
+Multiverse Computing, Paseo de Miram´ on 170, 20014 San Sebasti´ an, Spain 
+
+> 2
+
+Multiverse Computing, rue de la Croix Martre, 91120 Palaiseau, France 
+
+> 3
+
+DIPC, Paseo Manuel de Lardizabal 4, E-20018 San Sebasti´ an, Spain 
+
+> 4
+
+Ikerbasque Foundation for Science, Maria Diaz de Haro 3, E-48013 Bilbao, Spain 
+
+> *
+
+{dominic.gribben, alba.villarino, aser.cortines }@multiversecomputing.com 
+
+Pascal Oswald 1,* , Noureddine Lehdili 1,* 
+
+> 1
+
+Natixis CIB 
+
+> *
+
+{pascal.oswald, noureddine.lehdili, }@natixis.com 
+
+Abstract 
+
+We develop a tensor-network surrogate for option pricing, targeting large-scale portfolio revaluation problems arising in market risk management (e.g., VaR and Expected Shortfall computations). The method involves represent-ing high-dimensional price surfaces in tensor-train (TT) form using TT-cross approximation, constructing the surrogate directly from black-box price eval-uations without materializing the full training tensor. For inference, we use a Laplacian kernel and derive TT representations of the kernel matrix and its closed-form inverse in the noise-free setting, enabling TT-based Gaussian process regression without dense matrix factorization or iterative linear solves. We found that hyperparameter optimization consistently favors a large ker-nel length-scale and show that in this regime the GPR predictor reduces to multilinear interpolation for off-grid inputs; we also derive a low-rank TT representation for this limit. We evaluate the approach on five-asset basket options over an eight-dimensional parameter space (asset spot levels, strike, interest rate, and time to maturity). For European geometric basket puts, the tensor surrogate achieves lower test error at shorter training times than stan-dard GPR by scaling to substantially larger effective training sets. For Amer-ican arithmetic basket puts trained on LSMC data, the surrogate exhibits more favorable scaling with training-set size while providing millisecond-level evaluation per query, with overall runtime dominated by data generation. 
+
+1
+
+> arXiv:2603.26318v1 [q-fin.PR] 27 Mar 2026
+
+# 1 Introduction 
+
+The price of an option, like that of any financial instrument, is ultimately deter-mined by supply and demand. There is, however, the notion of a “fair” option price, obtained by considering various market conditions and imposing a set of mod-elling assumptions. The most famous and widely used framework of this kind is the Black–Scholes model, which leads to the Black–Scholes partial differential equation. The tractability of this approach depends strongly on the type of option under con-sideration: for European options written on a single asset, or on a basket with a geometric payoff, closed-form solutions exist and prices can be computed at neg-ligible computational cost [1, 2, 3, 4]. For most other options, however, analytic solutions are unavailable and numerical methods are required [5, 6]. In many ap-plications, particularly in risk management, a large number of valuations is needed to forecast potential losses, which can lead to substantial computational costs de-pending on the option type [7, 8, 9, 10]. The goal of this paper is to present an alternative to existing numerical approaches, focusing specifically on the pricing of American options. In many practical applications, for example in risk management, the central computational task is to revalue large derivatives portfolios under thousands to millions of simulated market scenarios. These scenario-based portfolio revaluations are needed to compute tail risk measures such as Value at Risk (VaR) and Expected Shortfall (ES), as well as for stress testing and the determination of regulatory capital requirements. In this setting, the computational burden comes not from a single pricing call, but from repeatedly valuing an entire portfolio across a large number of scenarios with high dimensional risk factor shocks. American-style features introduce additional challenges: early exercise leads to an optimal stopping problem, path dependence can arise, and the relevant state space often spans many risk factors (e.g. spot, volatility, rates) and contract pa-rameters (e.g. strikes, maturities, barriers). Classical numerical techniques such as finite differences, lattice methods, and Monte Carlo with regression (e.g., LSMC), are effective but can become prohibitively expensive when many revaluations are needed for risk, calibration, or scenario analysis [6, 11, 12, 13, 8]. Surrogate models aim to amortize this cost by learning a mapping from inputs to prices through a limited number of calls to a trusted pricer [14]. Beyond reducing the marginal cost of individual valuations, surrogates also offer a portfolio-level benefit: under natural consistency assumptions on model parame-ters and risk factors, the pricing operator is linear in positions, so portfolio values can be obtained by applying the surrogate directly and exploiting linearity, rather than building and evaluating separate surrogates instrument-by-instrument and then aggregating. This is particularly relevant in large-scale risk and scenario analysis, where portfolios may contain thousands of contracts and repeated revaluation is the dominant computational bottleneck. One such surrogate is Gaussian Process Regression (GPR) [9, 10]. As a non-parametric method, it offers considerable flexibility while naturally quantifying pre-dictive uncertainty. However, deploying GPR at scale is hindered by the cubic computational cost of kernel matrix factorization and quadratic memory growth with the number of training points, as well as by difficulties in capturing high-dimensional interactions without large datasets [15, 16, 17]. Structured variants, such as sparse or inducing-point methods and separable kernels on grids, mitigate some of these issues but still struggle when the training set must grow to resolve 2complex, multi-asset American exercise boundaries [18, 19, 20, 21]. Beyond GPR, al-ternative approaches have included deep neural networks, which can learn expressive price surfaces but often require extensive hyperparameter tuning and large training datasets to generalize reliably [22, 23]. Tensor network approaches [24, 25] provide an efficient framework for represent-ing and processing high-dimensional data, addressing key scalability limitations of GPR. They allow high-dimensional datasets to be efficiently represented and pro-cessed. In this paper, we investigate the use of tensor train (TT) approaches to price options. First, we build a TT representation of the training set using the TT-cross approximation (TCA) [26] and then perform inference on the TT. To do so, we derive TT representations of a Laplacian kernel and its analytic (noise-free) inverse, enabling GP-style posteriors without iterative linear solves [27]. We further show that the L → ∞ limit recovers a practical TT-native multilinear interpolation scheme for off-grid evaluation. Empirically, on five-asset basket options, we observe substantially lower error at shorter training times than standard GPR for European options, enabled by scaling to much larger effective training sets. For American op-tions, we match GPR-level accuracy with inference times in the millisecond range, while data generation (e.g., LSMC with 10,000 paths and 30 timesteps) dominates the wall-clock cost. 
+
+Paper organization. Section 2 details TT-cross for learning surrogates from black-box option pricers. Section 3 develops the STN-GPR formulation, including the Laplacian kernel and its analytic inverse in TT as well as TT-native interpola-tion for off-grid queries. Section 4 reports results for five-asset baskets: European puts on the geometric average (Fig. 1) and American puts on the arithmetic average (Fig. 2), covering error, training time, and dataset scaling. Section 5 concludes. 
+
+# 2 TT-Cross approximation 
+
+Our first hurdle with the Tensor Train (TT) approach is to represent the training vector, y, as a TT. We found that decomposing y via consecutive singular value decompositions yielded an efficient representation, but, for large training sets, even storing the y temporarily as a full vector becomes intractable. Fortunately, for both the use cases considered here, we have access to black-boxes which can generate option prices for a given set of parameters. This allows us to employ the TT-cross approximation (TCA). Here we outline the derivation, loosely following Ref. [26]. First, the simpler matrix cross approximation applied to a matrix A consists of 
+
+A ≈ A[: , I]( A[I, J ]) −1A[J , :] = C bA−1R, (1) where I and J correspond to some subset of column and row indices respectively. Here we have introduced C, bA and R as the column matrix, intersection sub-matrix, and row matrix respectively. If the number of indices in I and J both equal the rank of A, then this becomes an equality. When this is not the case, the quality of the approximation comes down to how “good” the sub-matrix A[I, J ] is. It has been shown [28] that the “best” sub-matrix is the one with the maximum volume, i.e., bA = max  
+
+> I,J
+
+|det A[I, J ]| . (2) 3This is an NP-hard problem and so we resort to an approximation. In this case, we can make use of the maxvol algorithm which iteratively fixes one of I or J and maximizes the volume over the other. Generalizing this to TTs can be done in the following way. To begin, consider a d-dimensional tensor, Ti1,i 2,...,i d with ik = {1, n k}, whose entries correspond to a function, f , evaluated over a discrete grid: 
+
+Ti1,i 2,...,i d = f (i1, i 2, . . . , i d). (3) This is not necessarily a function whose domain is of dimension d, as one or more dimensions could be encoded over multiple tensor indices. The initial steps to introduce the TT-cross algorithm are purely analytical, in particular we will never actually store the full tensor. With this in mind, decom-posing the tensor, T , into a TT first involves reshaping it into a matrix of the form 
+
+Ti1,i 2i3...i d , where the concatenation of indices corresponds to combining them into a single multi-index of dimension Qdk=2 nk. Now, we wish to apply the decomposition of Eq. (1) to the reshaped matrix to arrive at 
+
+Ti1,i 2i3...i d = Ci1,α 1 bT −1 
+
+> α1,α 1
+
+Rα1,i 2i3...i d , (4) where we abuse notation to re-use C and R and we will denote the dimension of all 
+
+αi to ri. The sub-matrix, bT , is populated by the full tensor sampled at a left index set I1 = {i(α1)1 } and a right index set J1 = {j(α1)2 , j (α1)3 , . . . , j (α1) 
+
+> d
+
+}, i.e., 
+
+bTα1,α 1 = Ti(α1)1 ,j (α1)2 j(α1)3 ...j (α1)
+
+> d
+
+. (5) Again, as with the matrix cross approximation, will apply the maxvol algorithm to optimize one of these index sets while leaving the other fixed. It is an easy choice: we begin by fixing J1 as I1 corresponds to a far smaller space over which to optimize. Initially, the right set is fixed to random values, and we can optimize over sub-matrices of size r1 × r1 within the matrix Ci1,α 1 . Populating this matrix is the first numerical step of this algorithm, and each element is defined in the following way 
+
+Ci1,α 1 = f (i1, j (α1)2 , j (α1)3 , . . . , j (α1) 
+
+> d
+
+). (6) Once done, we can contract C bT −1 into a single tensor, which shall be the first core of the TT. To split off the next core from the remainder, R, we first reshape this into a matrix of the form Rα1i2,i 3i4...i d . Applying the cross decomposition now yields 
+
+Rα1i2,i 3i4...i d = Cα1i2,α 2 bT −1 
+
+> α2,α 2
+
+Rα2,i 3i4...i d . (7) We can then again find the maximum volume sub-matrix in Cα1i2,α 2 whose entries are given by 
+
+Cα1i2,α 2 = f (i(α1)1 , i 2, j (α2)2 , j (α2)3 , . . . , j (α2) 
+
+> d
+
+), (8) where the values of i1 are those found in the optimization of the previous step. Each of the r2 rows of the α1i2 multi-index identified by the optimization has an associated 
+
+i1 and i2 index, these index pairs form the new left index set: I2 = {i(α2)1 , i (α2)2 }.At the start of step n in the process we have the index sets 
+
+In = {i(αn−1)1 , i (αn−1)2 , . . . , i (αn−1) 
+
+> n−1
+
+}, Jn = {j(αn) 
+
+> n
+
+, j (αn) 
+
+> n+1
+
+, . . . , j (αn) 
+
+> d
+
+}. (9) 4After reaching and optimizing the final index, the process is repeated in the opposite direction. This proceeds identically to the previous sweep except the left and right index sets swap roles, and it is the right index set that is gradually grown with optimal indices added. The other main difference is that we now have a better initial guess for the indices in the left index set; we can simply use those found in the previous sweep. 
+
+# 3 TT inference 
+
+The TT representation of a function is inherently restricted to a discrete domain. This restriction is not ideal in a pricing context unless the grid can be made suf-ficiently fine; when this is not the case, some form of interpolation is required. Interpolation may be performed using a trained model such as Gaussian Process Regressor (GPR), or directly on the underlying TT representation. We begin by outlining the main bottleneck of GPR, before showing that the optimal choice of GPR hyperparameters in our particular setting leads to a simple multilinear inter-polation on the TT data points. 
+
+## 3.1 STN-GPR 
+
+Bayesian inference is usually hindered by an intractable marginal likelihood; this is not the case with Gaussian Process Regression (GPR). The posterior distribution can be expressed analytically, but computing it requires solving linear systems in-volving the dense kernel matrix. For a dataset of size n, this entails O(n3) time and O(n2) memory, which quickly becomes prohibitive as n grows. It is this com-putational bottleneck, rather than analytical intractability, that we seek to alleviate using tensor network methods. While it is possible to address this issue using numerical approximation schemes, by decomposing a general kernel matrix into a TT format and then applying an iterative algorithm [29, 30] to compute an approximate inverse, in this project we take a different approach. By choosing a specific kernel with an analytic inverse, we are able to directly construct a low-rank TT representation. The Laplacian kernel is defined as 
+
+K(x, x′) = exp( −| x − x′|1/L ) (10) where {x, x′} are feature arrays, | · | 1 is the Manhattan distance, and L is the sole hyperparameter of the kernel and corresponds to the length-scale. A key assumption we make is that the training data for N features lies on an N -dimensional hypercube lattice with uniform spacing and 2 n points along each dimension for some integer n,the lattice constant and value of n for each feature can differ. First, consider a single feature with lattice spacing ∆ and 2 n training points, the kernel matrix in this case can be expressed as 
+
+Kn =
+
+
+
+1 a a2 · · · a2n−1
+
+a 1 a · · · a2n−2
+
+a2 a 1 · · · a2n−3
+
+... ... ... . . . ...
+
+a2n−1 a2n−2 a2n−3 · · · 1
+
+
+
+, (11) 5where a = exp( −∆/L ). To find the TT representation of this matrix we first write 
+
+Kn =  I2 σ+ σ− ▷◁ 
+
+
+
+Kn−1
+
+Mn−1
+
+MTn−1
+
+ , (12) where have introduced the following matrices for convenience: 
+
+I2 =
+
+1 00 1
+
+
+
+, σ+ =
+
+0 10 0
+
+
+
+= ( σ−)T , Mn =
+
+
+
+a2n
+
+a2n+1 · · · a2n+1 −1
+
+a2n−1 a2n
+
+· · · a2n+1 −2
+
+... ... . . . ...
+
+a a2 · · · a2n
+
+.
+
+
+
+(13) Here the bowtie product ( ▷◁ ) corresponds to a matrix product along the outer index and a tensor product of the inner indices, i.e., we could also write Eq. (12) as 
+
+Kn = I2 ⊗ Kn−1 + σ+ ⊗ Mn−1 + σ− ⊗ MTn−1. (14) We can in turn decompose Mn as follows 
+
+Mn = ( a2n−1
+
+I2 + a2n
+
+σ+ + σ−) ⊗ Mn−1. (15) Iterating the above decompositions allow us to express the kernel as 
+
+Kn =  I2 σ+ σ− ▷◁ Cn−2 ▷◁ Cn−3 ▷◁ · · · ▷◁ C1 ▷◁ 
+
+
+
+K1
+
+M1
+
+MT
+
+> 1
+
+ , (16) where we have define the central cores Ci given by 
+
+Ci =
+
+
+
+I2 σ+ σ−
+
+0 a2i
+
+I2 + a2i+1 
+
+σ+ + σ− 00 0 a2i
+
+I2 + a2i+1 
+
+σ− + σ+
+
+ . (17) Hence Kn can be exactly represented by a rank-3 tensor train and, through abuse of notation, the 0 entries are 2 × 2 matrices of zeros. Without noise this kernel can be inverted analytically, considering a single feature with the same training grid as before we have 
+
+K−1 
+
+> n
+
+= 11 − a2
+
+
+
+1 −a
+
+−a 1 + a2 −a
+
+−a 1 + a2 . . .. . . . . . −a
+
+−a 1 + a2 −a
+
+−a 1
+
+
+
+. (18) Through a similar analysis as with the kernel itself, the inverse can be represented as a rank-5 TT. Extending all of the above to multiple features is trivial as the multi-dimensional Laplacian kernel permits a tensor product structure provided the training samples are suitably ordered. As an example, consider two features with lattice spacings ∆ 1
+
+6and ∆ 2 and just 2 points along each lattice. Then, defining a = exp( −∆1/L ) and 
+
+b = exp( −∆2/L ), we can write the kernel matrix as 
+
+K1 =
+
+
+
+1 b a ab b 1 ab aa ab 1 bab a b 1
+
+ =
+
+1 aa 1
+
+
+
+⊗
+
+1 bb 1
+
+
+
+= K(a)1 ⊗ K(b)1 . (19) This factorization is possible thanks to the Manhattan distance and means we can build a TT representation of the kernel and its inverse for each feature separately and connect them with tensor products. To infer the price at some points, X∗, not in the training grid we still require a TT representation for K(X∗, X). For simplicity, we will only consider inferring one point, x∗, i.e., we wish to compute K(x∗, X). This corresponds to a vector of length 2n. We can again construct a TT representation of this vector one core at a time and the resulting TT vector is rank-3. We haven’t accounted for noise in any of the above, doing so would require TT representations of K + σ2I and its inverse. The former is simple, as the identity is rank 1 and the addition of TTs is an established routine, however, we no longer have an analytical expression for the inverse. Therefore, if we wished to include noise, we would need to use a numerical approximation to compute the inverse. In practice, we found this to be too computationally expensive to achieve a reasonable error. Even in the absence of observation noise, the model retains a nontrivial hyper-parameter in the form of the kernel length-scale L. Empirically, in our experiments we optimized L by minimizing the negative log marginal likelihood and found that the optimizer consistently drifted toward increasingly large values of L. Within this model class, larger L corresponds to longer-range prior correlations and therefore favors slowly varying interpolants among all functions that exactly match the data. This observation motivates examining the large-L regime (with σ = 0), in which posterior inference simplifies substantially. In one dimension, the Gaussian process prior with the Laplacian kernel coincides with the covariance structure of a sta-tionary Ornstein-Uhlenbeck (OU) process [31]. Given this, conditioning on function values at two locations reduces inference on the interval between them to computing the conditional mean of an OU bridge. For x0 < x ∗ < x 1, this conditional mean admits the closed-form expression [32] 
+
+y∗ = y0
+
+sinh  x1−x∗
+
+> L
+
+
+
+sinh  x1−x0
+
+> L
+
+ + y1
+
+sinh  x∗−x0
+
+> L
+
+
+
+sinh  x1−x0
+
+> L
+
+ . (20) Taking L → ∞ and using sinh( z/L ) ∼ z/L yields 
+
+y∗ → y0
+
+x1 − x∗
+
+x1 − x0
+
++ y1
+
+x∗ − x0
+
+x1 − x0
+
+, (21) i.e., standard linear interpolation. While the prior covariance becomes degenerate in the strict L → ∞ limit (the constant-kernel limit), the limiting posterior mean obtained from finite L recovers linear interpolation. Given the tensor product structure of the Laplacian kernel, posterior computa-tions (mean, variance, and linear solves) inherit the same tensor-product algebra. In particular, when conditioning on values at the corners of an axis-aligned hy-perrectangle, the interpolation weights factorize into products of the corresponding one-dimensional bridge weights given in Eq. (20); taking the large-L limit then yields the standard multilinear interpolation rule. We will now cover how this permits an efficient representation in the TT representation. 73.2 STN-interpolation 
+
+Given two data points, ( x0, y 0) and ( x1, y 1), we can approximate the y-coordinate of a point ( x∗, y ∗) where x0 ≤ x∗ ≤ x1 using linear interpolation via 
+
+y∗ = y0
+
+x1 − x∗
+
+x1 − x0
+
+
+
++ y1
+
+x∗ − x0
+
+x1 − x0
+
+
+
+. (22) Now, assume we have a set of n = 2 m data points {(xi, y i)} with x0 ≤ x1 ≤ · · · ≤ xn
+
+and we store the y-values in a vector, y. Interpolating a point y∗ located at x∗,where x0 ≤ x∗ ≤ xn, can be expressed as 
+
+y∗ = vTx∗ y, (23) where vx∗ contains interpolation coefficients such as those in Eq. (22). If y is especially large it may be desirable to represent this as a TT and carry out Eq. (23) purely in terms of TTs. This requires finding a TT representation for 
+
+vx∗ as well, fortunately because this only has two non-zero elements it can’t have a rank larger than 2. The position of these two elements within the vector is key to determining the actual structure of the representation. For instance, if the first two elements of vx∗ are non-zero then it can be expressed as a rank-1 TT: 
+
+vx∗ =
+
+
+
+c0
+
+c1
+
+00...
+
+
+
+= e1 ⊗ e1 ⊗ · · · ⊗ e1 ⊗
+
+c0
+
+c1
+
+
+
+, (24) where we have introduced the local basis e1 =
+
+10
+
+
+
+(along with e0 =
+
+01
+
+
+
+). Com-pared to this, if the coefficients are located exactly in the centre then the ranks throughout are 2: 
+
+vx∗ =
+
+
+
+00...
+
+c0
+
+c1
+
+...00
+
+
+
+=  e1 e0
+
+ ▷◁ 
+
+e0 00 e1
+
+
+
+▷◁ 
+
+e0 00 e1
+
+
+
+▷◁ · · · ▷◁ 
+
+e0 00 e1
+
+
+
+▷◁ 
+
+c0e0
+
+c1e1
+
+
+
+.
+
+(25) Here the subscripts of the basis vectors are a binary string encoding the position of each coefficient. The first example is rank 1 because the two strings are identical down to the last bit, whereas in the second example every bit is different. For a generic pair of neighbouring strings the TT will be some mix of rank 1 and rank 2 cores. To build the TT for a generic vx∗ , first encode the index of each coefficient as a binary string, store these and record the output of applying an AND operation. As these are neighbouring strings, the resulting string of the AND operation will be some number (perhaps none) of 1’s followed by a region of purely 0’s. Where this crossover occurs determines where the TT rank will increase from 1 to 2. 8For multi-dimensional interpolation this is most simply extended by considering a multilinear/tensor product interpolation scheme. Here the coefficient TT is a tensor product of a coefficient TT for each dimension. Note that we haven’t specified the explicit form of c0 and c1, so while this applies for linear interpolation, it also could be used, for example, for the more general hyperbolic-sine interpolation of Eq. (20) 
+
+## 3.3 Direct Portfolio Valuation via Linearity 
+
+In practical risk management applications, valuation is typically performed at the portfolio level rather than instrument by instrument. Consider a portfolio composed of instruments with prices Pi(x) depending on a vector of market risk factors x ∈ Rd,and portfolio weights wi ∈ R. The portfolio value is given by 
+
+V (x) = 
+
+> M
+
+X
+
+> i=1
+
+wiPi(x). (26) Pricing is therefore linear in the instrument values. A key structural advantage of the tensor-train (TT) representation is that it is closed under linear combinations (up to controlled rank growth). If each Pi(x)admits a TT representation, 
+
+Pi(x) ≈ T i(x), (27) then the portfolio value can be represented as 
+
+V (x) ≈
+
+> M
+
+X
+
+> i=1
+
+wiTi(x), (28) which itself can be compressed back into TT form. Consequently, inference may be performed directly at the portfolio level without requiring option-by-option aggre-gation at evaluation time. Alternatively, when instruments share a consistent set of model parameters and risk-factor grids, one may construct a portfolio-level surrogate directly by applying TT-cross to the aggregate pricing functional 
+
+V (x) = 
+
+> M
+
+X
+
+> i=1
+
+wiPi(x), (29) using calls to a trusted portfolio pricer. This setting avoids duplicating surrogate models across trades and ensures that evaluation cost remains essentially indepen-dent of the number of instruments once the TT representation has been constructed. These properties are particularly relevant in large-scale market risk simulations, where the dominant computational burden arises from repeated portfolio revaluation under extensive scenario sets. 
+
+# 4 Results 
+
+In this section, we assess the performance of classical GPR and Singularity Tensor Network (STN) models for pricing put options written on the geometric average of a basket of five assets. Both models are trained on a dataset comprising eight input features, including spot prices, strike prices, interest rates, and time to maturity. These features are discretized on a high-dimensional grid to adequately capture the complex structure of the option pricing surface and the underlying market dynamics. The models are trained over the following feature ranges: 9• Spot prices for each asset in the range $5 to $150, 
+
+• Option strike prices ranging from $1 to $200, 
+
+• Interest rates between 0.5% and 8%, 
+
+• Times to maturity (TTM) spanning from 1 day to 3 years. Altogether, this yields an eight-dimensional input space. For the TT-based ap-proach, the discretization of each feature must be specified explicitly. We found the following grid configuration to provide a favorable trade-off between accuracy and computational efficiency: 32 × 32 × 32 × 32 × 32 
+
+| {z }
+
+> Spot prices
+
+× 64 |{z} 
+
+> Strike price
+
+× 8|{z} 
+
+> Interest rate
+
+× 8|{z} 
+
+> TTM
+
+, (30) which corresponds to a tensor train representation with 37 cores, each of local di-mension 2. The TCA is initialized using a state obtained via the TT-ANOVA algorithm [33] up to second order with rank 2. For brevity, the implementation details of this initialization procedure are omitted. Importantly, the reported TT results account for both the computational cost and the sample complexity associated with the TT-ANOVA step. As a high-fidelity benchmark, we employ Least Square Monte Carlo (LSMC) simulations. Model accuracy is evaluated using the Mean Absolute Error (MAE), computed on independent test sets of 1,000 samples uniformly drawn from the pre-scribed parameter space. For the TT results we made use of the torchTT [34] and 
+
+teneva [35] libraries, for the GPR results we made use of the scikit-learn [36] and for the LSMC simulations we used QuantLib [37]. While we report errors at the level of individual contracts, the intended applica-tion is portfolio revaluation, where such surrogates would be embedded in large-scale VaR or ES calculations. 
+
+## 4.1 European basket option 
+
+In this section we compare the performance of the GPR and STN approaches in modelling the price of a European put option on the geometric average of a basket of five assets. We plot the results of this comparison in Figure 1 where we see in the left-hand plot that the STN approach is able to achieve a much lower error than the GPR approach at significantly shorter training times. In the right-hand plot we see that this is possible due to the STN approach allowing access to much larger training set sizes. To be clear, in the STN approach the training set corresponds to those function evaluation used in building the TCA of the function evaluated over the grid defined in Eq. (30). So, in a sense, two interpolations are being per-formed: the TCA interpolates between the function evaluations and the subsequent TT-interpolation interpolates between the grid points. To highlight the power of this approach, note that the grid as a whole contains 137.5bn points, whereas the most function evaluations we use in the TCA of the function over these grid points is 500k. For completeness, we attempted to push the TT approach to larger train-ing sets but began to see instabilities in the TCA meaning we lost the monotonic increase in accuracy. We have omitted these results but believe that with suitable hyperparameter tuning of the TCA this could be resolved, we leave this for a future work. 10 10 −1 10 0 10 1 10 2 10 3   
+
+> Training time (s)
+> 10 0
+> Test MAE ( $)
+> TT GPR 10 210 310 410 5
+> Training set size
+> 10 0
+> Test MAE ( $)
+> TT GPR
+
+Figure 1: Error in pricing a European put geometric basket option. Comparison in test error of TT-interp and GPR approaches as a function of the training time for varying training set sizes. 
+
+## 4.2 American basket option 
+
+The price of a European option has a closed-form solution. This is not the case for American options; the potential for early exercise makes an analytical solution intractable and necessitates a numerical approach. Of these approaches, the two most prominent are the binomial tree (BT) and LSMC algorithms. Both methods can accurately approximate American option prices by explicitly accounting for the early exercise feature, but incur significant computational costs. These costs are exacerbated by the presence of multiple assets and/or the necessity to compute many prices for, e.g., a risk calculation [9, 10]. Here we seek to avoid this cost by training a model on the output of LSMC for an American put option on the arithmetic average of a basket of five assets. We compare two models, classical GPR and a quantum-inspired STN approach, and show that pricing via evaluation of the trained models is significantly cheaper than evaluating the LSMC algorithm. For the LSMC algorithm we used 10000 samples and 30 timesteps. In Figure 2 we compare the test error of the STN and GPR approaches as a function of training time for varying training set sizes. As in the European option case, the STN approach can be trained on larger datasets and thereby reach lower errors than exact GPR. In this American option experiment, however, the overall wall-clock time is dominated by data generation, since each LSMC run takes ∼ 1s, and therefore the measured training times for STN and GPR are similar over the range considered. We nevertheless cap exact GPR at N = 10 4 training samples because its computational and memory requirements scale unfavorably with dataset size (training O(N 3) and inference O(N 2)), so pushing to substantially larger N
+
+would quickly become impractical for the intended setting of repeated pricing. In contrast, once trained, STN evaluation is roughly independent of N and remains cheap per query. For the training set sizes considered here, inference takes around 10 −3s per sample for STN and 10 −4s for GPR, but STN can be scaled to larger training sets in this setting to further reduce the approximation error. 11 10 3 10 4  
+
+> Training time (s)
+> 10 0
+> 10 1
+> Test MAE ( $)
+> TT GPR 10 210 310 4
+> Training set size
+> 10 0
+> 10 1
+> Test MAE ( $)
+> TT GPR
+
+Figure 2: Error in pricing a American put arithmetic basket option. Comparison in test error of TT-interp and GPR approaches as a function of the training time for varying training set sizes. Here the training time includes both the time taken to generate the dataset and, for GPR, the time taken to tune hyperparameters. 
+
+# 5 Conclusions 
+
+We introduced a tensor network surrogate model for option pricing that combines TT-cross approximation, analytic TT kernels, and TT-native interpolation. Fo-cusing on American-style features, the proposed approach amortizes the cost of an expensive black-box pricer into a compact representation that can be evaluated ex-tremely rapidly for downstream tasks such as scenario analysis and repeated revalu-ation. By exploiting separability and low rank structure, the method scales to high dimensional input spaces and large training grids that are prohibitive for classi-cal GPR, while preserving a kernel-based interpretation and associated uncertainty quantification. Beyond pointwise accuracy and speed, an important advantage of the proposed approach lies in its suitability for repeated pricing contexts. In many risk manage-ment applications, the same instrument or portfolio must be revalued thousands to millions of times in order to compute tail risk measures such as Value-at-Risk (VaR), Expected Shortfall (ES), or to perform stress testing [9, 10]. In these settings, the computational burden is dominated by the cost of repeated pricing calls, making surrogate models particularly attractive. Recent work has demonstrated that Gaus-sian process based surrogates can significantly accelerate market risk calculations without compromising accuracy, especially in trading book applications. A natural direction for future work is therefore to embed the proposed STN-GPR framework directly into a market risk pipeline. In particular, it would be highly relevant to conduct a systematic performance comparison between STN-GPR, classical GPR, and direct pricing using standard numerical methods such as LSMC, finite difference or finite element PDE solvers, and tree-based methods. Such a study could be carried out within a VaR or ES computation, assessing both the accuracy of the resulting risk measures and the overall computational efficiency. This would provide a concrete demonstration of the operational benefits of tensor network surrogates in a realistic risk management setting. Several additional extensions are also of interest. These include the incorporation of observation noise into the STN framework, adaptive sampling strategies that focus training points in regions of high sensitivity such as near early exercise boundaries, and the use of richer kernel families beyond the Laplacian kernel considered here. 12 Finally, given recent advances in Gaussian process based acceleration of credit and counterparty risk calculations, it would be interesting to explore whether similar tensor network techniques could be applied to repeated valuation problems arising in XVA and related settings [38]. 
+
+# 6 Acknowledgement 
+
+The authors acknowledge the financial support of the ˆIle-de-France Region through the Pack Quantique programme, under Programme No. 23007011. 
+
+# References 
+
+[1] Fischer Black and Myron Scholes. The pricing of options and corporate liabili-ties. Journal of Political Economy , 81(3):637–654, 1973. [2] Robert C. Merton. Theory of rational option pricing. Bell Journal of Economics and Management Science , 4(1):141–183, 1973. [3] A. G. Z. Kemna and A. C. F. Vorst. A pricing method for options based on average asset values. Journal of Banking and Finance , 14(1):113–129, 1990. [4] Ren´ e M. Stulz. Options on the minimum or the maximum of two risky assets: Analysis and applications. Journal of Financial Economics , 10(2):161–185, 1982. [5] Paul Wilmott, Sam Howison, and Jeff Dewynne. The Mathematics of Financial Derivatives . Cambridge University Press, 1995. [6] Michael J. Brennan and Eduardo S. Schwartz. The valuation of American put options. Journal of Finance , 32(2):449–462, 1977. [7] Paul Glasserman. Monte Carlo Methods in Financial Engineering . Springer, 2004. [8] Mark Broadie and Paul Glasserman. A stochastic mesh method for pricing high-dimensional American options. Journal of Computational Finance , 7(4):35–72, 2004. [9] Noureddine Lehdili, Pascal Oswald, and Harold Gueneau. Market risk assess-ment of a trading book using statistical and machine learning. Technical report, ResearchGate, November 2019. Unpublished report on repeated derivative port-folio revaluation and Gaussian process regression for VaR and ES computation. [10] Noureddine Lehdili, Pascal Oswald, and H. D. Nguyen. Performance-enhancing market risk calculation through Gaussian process regression and multi-fidelity modeling. Computation , 13(6):134, 2025. [11] John C. Cox, Stephen A. Ross, and Mark Rubinstein. Option pricing: Asimplified approach. Journal of Financial Economics , 7(3):229–263, 1979. [12] Francis A. Longstaff and Eduardo S. Schwartz. Valuing American options by simulation: A simple least-squares approach. Review of Financial Studies ,14(1):113–147, 2001. 13 [13] Patrick Jaillet, Damien Lamberton, and Bernard Lapeyre. Variational inequal-ities and the pricing of American options. Acta Applicandae Mathematicae ,21:263–289, 1990. [14] Amandine Marrel and Bertrand Iooss. Probabilistic surrogate modeling by Gaussian process: A review on recent insights in estimation and validation. 
+
+Reliability Engineering & System Safety , 247:110094, 2024. [15] Carl Edward Rasmussen and Christopher K. I. Williams. Gaussian Processes for Machine Learning . MIT Press, 2005. [16] Sivaram Ambikasaran, Daniel Foreman-Mackey, Leslie Greengard, David W. Hogg, and Michael O’Neil. Fast direct methods for Gaussian processes. IEEE Transactions on Pattern Analysis and Machine Intelligence , 38(2):252–265, 2016. [17] Yarin Saatci. Scalable Inference for Structured Gaussian Process Models . PhD thesis, University of Cambridge, 2011. [18] Michalis K. Titsias. Variational learning of inducing variables in sparse Gaus-sian processes. In AISTATS , pages 567–574, 2009. [19] James Hensman, Nicol` o Fusi, and Neil D. Lawrence. Gaussian processes for big data. In UAI , 2013. [20] Andrew Gordon Wilson and Hannes Nickisch. Kernel interpolation for scalable structured Gaussian processes (KISS-GP). In ICML , 2015. [21] Seth Flaxman, Andrew Gordon Wilson, Daniel B. Neill, Hannes Nickisch, and Alex Smola. Fast Kronecker inference in Gaussian processes with non-Gaussian likelihoods. In AISTATS , 2015. [22] Sebastian Becker, Patrick Cheridito, and Arnulf Jentzen. Deep optimal stop-ping. Journal of Machine Learning Research , 20(74):1–25, 2019. [23] Ryan Ferguson and Andrew Green. Deeply learning derivatives. arXiv preprint arXiv:1809.02233 , 2018. [24] Rom´ an Or´ us. A practical introduction to tensor networks: Matrix product states and projected entangled pair states. Annals of Physics , 349:117–158, October 2014. [25] Ivan V. Oseledets. Tensor-train decomposition. SIAM Journal on Scientific Computing , 33(5):2295–2317, 2011. [26] Ivan Oseledets and Eugene Tyrtyshnikov. TT-cross approximation for multidi-mensional arrays. Linear Algebra Its Appl. , 432(1):70–88, 2010. [27] Magnus Kirstein, Martin Eigel, and Dirk Sommer. Tensor-train kernel learning for Gaussian processes. WIAS Preprint 2981 , 2022. [28] S. A. Goreinov, I. V. Oseledets, D. V. Savostyanov, E. E. Tyrtyshnikov, and N. L. Zamarashkin. How to Find a Good Submatrix , pages 247–256. World Scientific, 2010. 14 [29] I. V. Oseledets and S. V. Dolgov. Solution of linear systems and matrix inversion in the TT-format. SIAM J. Sci. Comput , 34(5):A2718–A2739, 2012. [30] Sergey V. Dolgov and Dmitry V. Savostyanov. Alternating minimal energy methods for linear systems in higher dimensions. SIAM J. Sci. Comput ,36(5):A2248–A2271, January 2014. [31] Simo S¨ arkk¨ a and Arno Solin. Applied stochastic differential equations , vol-ume 10. Cambridge University Press, 2019. [32] M´ aty´ as Barczy and Peter Kern. Representations of multidimensional linear process bridges. Random Oper. Stoch. Equ. , 21(2):159–189, 2013. [33] Andrei Chertkov, Gleb Ryzhakov, and Ivan Oseledets. Black box approximation in the tensor train format initialized by ANOVA decomposition. SIAM J. Sci. Comput. , 45(4):A2101–A2118, 2023. [34] Ion Gabriel Ion. torchTT: A PyTorch library for tensor-train methods. https: //github.com/ion-g-ion/torchTT , 2025. GitHub repository. [35] Andrei Chertkov. teneva: Tensor numerical methods in Python. https:// github.com/AndreiChertkov/teneva , 2025. GitHub repository. [36] Fabian Pedregosa, Ga¨ el Varoquaux, Alexandre Gramfort, Vincent Michel, Bertrand Thirion, Olivier Grisel, Mathieu Blondel, Peter Prettenhofer, Ron Weiss, Vincent Dubourg, Jake VanderPlas, Alexandre Passos, David Courna-peau, Matthieu Brucher, Matthieu Perrot, and ´Edouard Duchesnay. Scikit-learn: Machine learning in Python. Journal of Machine Learning Research ,12:2825–2830, 2011. [37] The QuantLib Contributors. QuantLib: A free/open-source library for quan-titative finance. https://www.quantlib.org/ , 2025. Zenodo. https://doi. org/10.5281/zenodo.17347020 .[38] Noureddine Lehdili, Pascal Oswald, and Othmane Mirinioui. Leveraging Bayesian quadrature for accurate and fast credit valuation adjustment calcula-tions. Mathematics , 12(23):3779, 2024. 15

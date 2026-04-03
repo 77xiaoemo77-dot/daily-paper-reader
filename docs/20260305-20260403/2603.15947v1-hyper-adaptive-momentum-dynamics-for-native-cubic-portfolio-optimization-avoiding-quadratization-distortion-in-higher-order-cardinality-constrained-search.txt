@@ -1,0 +1,496 @@
+Title: Hyper-Adaptive Momentum Dynamics for Native Cubic Portfolio Optimization: Avoiding Quadratization Distortion in Higher-Order Cardinality-Constrained Search
+
+URL Source: https://arxiv.org/pdf/2603.15947v1
+
+Published Time: Wed, 18 Mar 2026 00:22:23 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Hyper-Adaptive Momentum Dynamics for Native Cubic Portfolio Optimization: Avoiding Quadratization Distortion in Higher-Order Cardinality-Constrained Search 
+
+Greg Serbarinov Independent Researcher 
+
+grserb.research@gmail.com 
+
+March 18, 2026 
+
+Abstract 
+
+We study cubic cardinality-constrained portfolio optimization, a higher-order extension of the standard Markowitz formulation in which three-way sector co-movement terms aug-ment the usual quadratic risk-return objective. Classical binary heuristics such as simulated annealing and tabu search typically require Rosenberg quadratization of these cubic in-teractions, which inflates the variable count from n to 5n and introduces large penalty terms that can substantially reshape the augmented search landscape. In contrast, Hyper-Adaptive Momentum Dynamics (HAMD) operates directly on the native higher-order ob-jective via a hybrid pipeline that combines continuous Hamiltonian-style search, exact cardinality-preserving projection, and deterministic iterated local search (ILS), without any auxiliary-variable reduction. On a cubic portfolio benchmark with this 5 × quadratization overhead across tested sizes, HAMD achieves substantially lower decoded native cubic ob-jective values than simulated annealing (SA) and tabu search under matched 60-second CPU budgets, with single-seed relative improvements of 87.9%, 71.2%, 59.5%, and 46.9% at n = 200 , 300 , 500 , 1000 , respectively. On a detailed three-seed study at n = 200 , HAMD attains a median native objective of 195.65 with zero observed variance, while SA and tabu search each yield a median of 1208.07 with standard deviation 249.17. Decoded-feasibility analysis shows that SA satisfies the exact cardinality constraint and all 800 Rosenberg aux-iliary constraints, yet still decodes to a native objective approximately 80–88% worse than HAMD, indicating a surrogate-distortion effect rather than simple infeasibility. Exact cal-ibration on small instances ( n = 20 , 25 , 30 ) confirms that HAMD finds the provably global optimum in 9/9 trials. These results suggest that native higher-order search can offer a sub-stantial advantage over quadratized surrogate optimization on constrained cubic portfolio problems. 
+
+Keywords: higher-order binary optimization, PUBO, HUBO, portfolio optimization, cardinal-ity constraint, Rosenberg quadratization, Hamiltonian dynamics, simulated annealing, hybrid solver, iterated local search 
+
+# 1 Introduction 
+
+Portfolio optimization is often modeled in pairwise quadratic form, but many realistic financial dependencies are naturally higher-order. Sector-wide co-movement, regime-sensitive clustering, and three-way interaction effects among asset groups are not always well captured by pairwise covariance alone. This motivates portfolio models that extend the standard Markowitz objective with cubic interaction terms, while retaining a hard cardinality constraint on the number of selected assets. 1
+
+> arXiv:2603.15947v1 [q-fin.CP] 16 Mar 2026
+
+A standard route to solving higher-order binary objectives is Rosenberg quadratization [14]: each cubic monomial xixj xk is replaced by an auxiliary variable wij together with a quadratic penalty enforcing wij = xixj . This allows any QUBO or Ising solver to be applied without mod-ification, but at a cost. In the cubic portfolio family studied here, quadratization inflates the variable dimension from n to n+4 n = 5 n, while the cardinality-penalty scale grows as O(n2). As a result, the surrogate search landscape can become increasingly shaped by feasibility-restoration and auxiliary-consistency terms, reducing the practical alignment with native-objective improve-ment. This paper studies whether a native higher-order solver can exploit the representational ad-vantage of operating directly in the original n-dimensional space. We examine Hyper-Adaptive Momentum Dynamics (HAMD), a hybrid optimization pipeline that combines a continuous Hamiltonian-style search phase on the native cubic objective, exact projection onto the cardi-nality constraint surface, K-swap polishing, and deterministic iterated local search. The central empirical question is whether native search leads to better decoded native portfolio quality than quadratized surrogate optimization under matched wall-clock budgets. Our results indicate that, on the tested cubic portfolio benchmark family, HAMD consis-tently produces much better decoded native objectives than SA and tabu search applied to the Rosenberg-quadratized surrogate. The evidence comes from four complementary sources: a scaling study from n = 200 to n = 1000 , a multi-seed study at n = 200 , a decoded-feasibility analysis showing that surrogate feasibility is not sufficient for good native quality, and an exact small-size calibration confirming implementation correctness. The paper is organized as follows. Section 2 reviews related work. Section 3 defines the cubic portfolio problem and the Rosenberg quadratization. Section 4 describes the HAMD hybrid pipeline. Section 5 presents the experimental setup. Section 6 gives the main results. Section 7 discusses implications and limitations. Section 8 concludes. 
+
+# 2 Related Work 
+
+Cardinality-constrained portfolio optimization. The cardinality-constrained Markowitz problem has a long history in exact and heuristic optimization [4, 12]. Because adding a hard cardinality constraint makes the quadratic formulation NP-hard, a rich ecosystem of heuristic approaches has emerged, including genetic algorithms, simulated annealing, tabu search, and continuous-relaxation methods [5]. Our work extends this family to a cubic objective and studies the native-versus-surrogate search trade-off. 
+
+Higher-order binary optimization (PUBO/HUBO). Pseudo-Boolean and higher-order unconstrained binary optimization have been studied extensively in computer vision, constraint satisfaction, and quantum annealing contexts [2, 3, 10]. Degree reduction via Rosenberg or Ishikawa substitution is the most common reduction strategy. Alternative approaches include native PUBO solvers [3]. 
+
+Rosenberg quadratization. Quadratization of higher-order pseudo-Boolean functions was systematically studied by Rosenberg [14] and is a standard preprocessing step for quantum annealers, FPGA-based bifurcation machines, and digital annealers that operate only on QUBO or Ising models [1, 7, 8]. The variable overhead can range from O(M ) for sparse-monomial objectives [14] to O(N 2) in worst case, where M is the number of higher-order terms. In the benchmark family studied here, the overhead is exactly 4n auxiliary variables ( 5× inflation). 
+
+Physics-inspired and hybrid solvers. Simulated Bifurcation Machines (SBM) [7, 8] convert QUBO into a classical Hamiltonian and solve it via symplectic integration on GPUs. Coher-ent Ising Machines [9] and digital annealers [1] follow similar continuous-relaxation or physics-2inspired philosophies. Most widely used hardware-oriented and QUBO-centric heuristic pipelines are designed for pairwise quadratic objectives and therefore typically rely on quadratization when applied to higher-order terms. HAMD’s continuous phase is related to bifurcation-style dynamics but is embedded in a deliberate hybrid pipeline with deterministic post-processing. 
+
+Simulated annealing and tabu search. SA [11] and tabu search [6] are well-established general-purpose combinatorial heuristics. For portfolio optimization with cardinality constraints, both are typically applied to the penalized QUBO after reduction [5]. In this work, they serve as surrogate-space baselines, and we use decoded feasibility metrics to understand the mismatch between augmented-objective optimization and native-portfolio quality. 
+
+# 3 Cubic Portfolio Optimization 
+
+3.1 Quadratic Markowitz Component 
+
+Let x ∈ { 0, 1}n denote the binary portfolio vector with hard cardinality constraint Pni=1 xi =
+
+K. The quadratic component of the objective follows the standard Markowitz mean-variance formulation: 
+
+fquad (x) = x⊤Σ x − μ⊤x, (1) where Σ ∈ Rn×n is the factor-model covariance matrix and μ ∈ Rn is the expected-return vector. In the benchmark instances used here, Σ is generated from a factor model with 10 sector factors and μ from a return model correlated with sector membership. 
+
+3.2 Cubic Sector Co-movement Extension 
+
+We augment the quadratic objective with cubic interaction terms that model three-way sector co-movement. For each intra-sector asset pair (i, j ) within the same sector, we introduce a cubic term involving the pair and a sector anchor asset k (the asset with largest factor loading in that sector): 
+
+fcubic (x) = X
+
+> (i,j,k )∈T
+
+cijk xixj xk, (2) where T is the set of cubic triples and cijk controls the co-movement penalty magnitude. The coefficients cijk are drawn independently from an exponential distribution scaled by the quadratic coefficient scale and controlled by αcubic = 4 .0. The construction yields |T | = 4 n cubic terms per instance (four per asset on average), so m = 4 n.The full native objective is: 
+
+f (x) = fquad (x) + fcubic (x),
+
+> n
+
+X
+
+> i=1
+
+xi = K. (3) 
+
+3.3 Hard Cardinality Constraint 
+
+HAMD enforces the constraint P 
+
+> i
+
+xi = K exactly via projection onto the exact-K binary polytope (top-K rounding) followed by K-swap local search. This is the key structural difference from the quadratized baselines: cardinality is never relaxed into a soft penalty. 
+
+3.4 Rosenberg Quadratization of Cubic Terms 
+
+For the SA and tabu search baselines, the cubic terms xixj xk in (2) are quadratized via the Rosenberg procedure [14]. Each cubic monomial xixj xk is replaced by introducing an auxiliary binary variable wij intended to represent the product xixj , together with a quadratic penalty: 
+
+xixj xk ≈ wij xk subject to penalty λR
+
+ 3wij + xixj − 2xiwij − 2xj wij 
+
+, (4) 3where λR = 10 .0 is the Rosenberg penalty weight. This introduces one auxiliary variable per cubic term, so the augmented variable count is: 
+
+naug = n + m = n + 4 n = 5 n. (5) The total augmented QUBO objective for the baselines is: 
+
+Qaug (x, w) = fquad (x) + fcubic,approx (x, w) + λK
+
+X 
+
+> i
+
+xi − K
+
+2
+
++ λR
+
+X
+
+> (i,j )∈T
+
+Rosenberg penalty ij ,
+
+(6) where the cardinality penalty weight λK = max |Q| · n · 4 grows as O(n2).
+
+3.5 Augmentation Overhead 
+
+Table 1 summarizes the quadratization overhead across the instance sizes studied in this paper. Table 1: Cubic portfolio instance parameters and Rosenberg quadratization overhead. naug = 5 n
+
+at all sizes. λK grows as O(n2), making surrogate-space optimization increasingly susceptible to penalty-driven distortion at larger sizes. “Best random” is the best native objective found across 1,000 random K-feasible portfolios, evaluated on the native cubic objective only; it is not a time-matched solver baseline but a rough floor (lower is better). 
+
+n K mcubic naug Inflation λK Best random 200 40 800 1,000 5× 40,955 863.7 300 60 1,200 1,500 5× 93,551 4,068.7 500 100 2,000 2,500 5× 298,884 25,218.6 1,000 200 4,000 5,000 5× 1,112,258 168,326.8 The evaluation metric throughout this paper is the decoded native cubic objective f (x)
+
+computed using only the original n variables after decoding augmented solutions back to the native space. We do not compare augmented QUBO scores, because those scores include con-stant cardinality offsets of order 10 7–10 10 that obscure native portfolio quality. The random reference reported in Table 2 is the best native cubic objective found across 1,000 random exact-K feasible portfolios (i.e. random draws from {x : P 
+
+> i
+
+xi = K, x i ∈ { 0, 1}} ). It serves as a rough lower floor, not as a matched-budget solver comparison. 
+
+# 4 HAMD Hybrid Pipeline 
+
+4.1 Overview 
+
+HAMD is used here as a native higher-order hybrid solver, not as a standalone continuous method. The pipeline has four stages: 1. Native continuous search. A continuous relaxation x ∈ [0 , 1] n is maintained along with a momentum vector v ∈ Rn. The system evolves under Hamiltonian-style dynamics on the cubic portfolio objective f (x) extended with a bifurcation confinement potential, and augmented with a curvature-informed transverse steering force derived from a Hessian–vector product (HVP) [13]. No auxiliary variables are introduced at this stage. 2. Projection to exact-K binary states. When a restart event occurs, the continuous state is projected onto the cardinality constraint by selecting the top-K variables by their continuous values. 43. K-swap polish. The projected binary portfolio is improved by a vectorized exact-K local search: all K(n−K) swap moves are evaluated simultaneously using the incremental objective formula, and the best improving swap is accepted greedily. This runs until no improving single swap exists. The polish operates in the native cubic space, not in the augmented surrogate space. 4. Iterated local search (ILS). In the final 20% of the budget, a deterministic ILS phase applies 2-pair perturbation moves (swap two out-of-portfolio assets with two in-portfolio assets) followed by full K-swap re-polishing. The best solution seen across all ILS steps is tracked independently. This hybrid structure is intentional. As the ablation in Section 6.5 shows, neither continuous search alone nor random restarts without polish achieve the final result. The performance comes from the interaction of all four stages. Algorithm 1 gives a pseudocode summary of the full pipeline used in all experiments. The benchmark implementation also includes additional engineering components for restart schedul-ing, gradient clipping, archive-based best tracking, and deterministic warm-start for the ILS phase; the equations below describe the core continuous-phase update rules, while Algorithm 1 describes the complete hybrid pipeline operationally. The equations below summarize the na-tive continuous phase; the benchmarked solver is the full hybrid pipeline shown in Algorithm 1, including projection, K-swap polish, and late ILS refinement. 
+
+Algorithm 1 HAMD Hybrid for Native Cubic Portfolio Optimization 
+
+Require: Instance (Σ , μ, T , c, n, K ); budget T ; batch size B=32 ; ILS fraction ρ=0 .20 
+
+Ensure: Best native portfolio x∗ ∈ { 0, 1}n with P 
+
+> i
+
+x∗ 
+
+> i
+
+= K 
+
+> 1:
+
+Initialize B continuous states {xb} in [0 , 1] n; vb ← 0; x∗ ← top-K snap of best initial; 
+
+f ∗ ← f (x∗) 
+
+> 2:
+
+while elapsed time < (1 −ρ)T do  
+
+> 3:
+
+Compute gb ← ∇ xE(xb) and hb ← ∇ 2E(xb) · vb on native cubic + bifurcation potential  
+
+> 4:
+
+Update vb, xb via Eqs. (7)–(8) with transverse force (9) and DTR  
+
+> 5:
+
+if restart criterion met then  
+
+> 6:
+
+ˆxb ← top-K snap of xb {exact-K projection}  
+
+> 7:
+
+ˆxb ← KSwapPolish (ˆ xb, f, K ) {native cubic space}  
+
+> 8:
+
+if f (ˆ xb) < f ∗ then  
+
+> 9:
+
+x∗ ← ˆxb; f ∗ ← f (ˆ xb) 
+
+> 10:
+
+end if  
+
+> 11:
+
+Re-initialize xb near ˆxb or randomly  
+
+> 12:
+
+end if  
+
+> 13:
+
+end while  
+
+> 14:
+
+// ILS phase: final ρT of budget  
+
+> 15:
+
+while elapsed time < T do  
+
+> 16:
+
+x′ ← 2-pair perturbation of x∗ 
+
+> 17:
+
+x′ ← KSwapPolish (x′, f, K ) 
+
+> 18:
+
+if f (x′) < f ∗ then  
+
+> 19:
+
+x∗ ← x′; f ∗ ← f (x′) 
+
+> 20:
+
+end if  
+
+> 21:
+
+end while  
+
+> 22:
+
+return x∗
+
+54.2 Equations of Motion 
+
+The continuous phase uses the HAMD update equations. Let E(x) = f (x) + β(t) P 
+
+> i
+
+x2 
+
+> i
+
+(xi − 1) 2
+
+be the effective energy including a bifurcation potential with ramp β(t) : 0 → 1, and let g = ∇xE,
+
+h = ∇2E · v be the gradient and Hessian–vector product along the velocity. The dynamics are: 
+
+v(t+1) = (1 − γ)v(t) + ∆ t −g(t) + ζ F(t)
+
+> ⊥
+
+, (7) 
+
+x(t+1) = DTR  x(t) + ∆ t v(t+1) , (8) where γ is a damping coefficient, ∆t the step size, and DTR is a damped-elastic reflection at the domain boundaries [0 , 1] n. The transverse geometric force 
+
+F⊥ = α
+
+
+
+h − ⟨h, g⟩∥g∥2 + ϵ g
+
+
+
+, α = min 
+
+
+
+1, ∥g∥∥h∥ + ϵ
+
+
+
+, (9) projects the curvature information orthogonal to the gradient, redirecting trajectories without directly amplifying gradient descent. The domain center is c = 0 .5 1 and the adiabatic expansion force is disabled ( a(t) ≡ 0) for the PUBO domain [0 , 1] n.
+
+4.3 Gradient and HVP for Cubic Portfolio 
+
+Analytical gradient and HVP expressions are derived directly from (3). For the cubic part with terms cijk xixj xk:
+
+∂f cubic 
+
+∂x i
+
+= X
+
+> j,k : ( i,j,k )∈T
+
+cijk xj xk, (10) 
+
+[∇2fcubic · v]i = X
+
+> j,k : ( i,j,k )∈T
+
+cijk (xkvj + xj vk), (11) with symmetric terms for the quadratic Markowitz component. These are computed analytically without automatic differentiation. 
+
+4.4 How Baselines Are Run 
+
+SA and tabu search receive the Rosenberg-augmented QUBO Qaug from (6) and optimize over 
+
+{0, 1}naug using standard neighborhoods (single-bit flip for SA; tabu-restricted single-bit flip for tabu search). At the end of the run, the original n variables are extracted from the augmented solution, and the native cubic objective f (x) is evaluated using only those variables. 
+
+# 5 Experimental Setup 
+
+Hardware and budget. All experiments run on an AWS CPU instance with PyTorch (CPU, Python 3.12). Each solver receives a matched 60-second wall-clock budget per instance. HAMD allocates 80% of the budget to the continuous search and restart phase and 20% to the ILS phase. SA and tabu search use all 60 seconds on the augmented QUBO. 
+
+Instances. Four cubic portfolio instances are generated at n = 200 , 300 , 500 , 1000 with corre-sponding cardinalities K = 40 , 60 , 100 , 200 (cardinality ratio K/n = 0 .20 ). All instances use the construction described in Section 3 with αcubic = 4 .0, nsectors = 10 , and λR = 10 .0.
+
+Scaling study. Single-seed scaling results (seed 42) are reported for all four sizes to charac-terize how the native-vs-surrogate gap evolves with problem size. Results at n = 300 , 500 , 1000 
+
+are exploratory single-seed evidence; n = 200 is the principal statistically supported case study. 6Multi-seed study. A three-seed study at n = 200 (seeds 42, 1042, 2042) assesses solution stability and enables W/T/L comparisons. 
+
+Ablation. An ablation at n = 200 , seed 42 compares four HAMD configurations: HAMD-cont (single continuous trajectory, no restarts or ILS), HAMD-proj (restarts with top-K snap, no polish), HAMD-polish (restarts with K-swap polish, no ILS), and HAMD-full (restarts, K-swap polish, and ILS). 
+
+Exact small-size calibration. HAMD is evaluated on small instances at n = 20 , 25 , 30 (3 seeds each, 10s budget) where brute-force enumeration of all   nK
+
+ feasible portfolios is tractable. The gap to the proven global optimum is measured. 
+
+Decoded-feasibility package. For each SA and tabu search run, a 7-field decoded-feasibility record is computed from the returned augmented binary state: augmented QUBO objective, de-coded native objective, cardinality, cardinality violation, auxiliary inconsistency count, auxiliary inconsistency rate, and penalty fraction. Full definitions appear in Appendix B. 
+
+Cardinality penalty scaling for quadratized baselines. For the quadratized SA and tabu search baselines, the cardinality penalty was set to λK = 4 n max |Q|, where max |Q| is the largest absolute entry in the QUBO matrix. This intentionally places the surrogate in a strong feasibility-enforcement regime, ensuring that cardinality violations are heavily discouraged in the augmented QUBO. Because the present benchmark studies the distortion introduced by quadratization under such penalty-based formulations, this choice is part of the experimental design rather than an incidental tuning detail. We emphasize, however, that alternative penalty scales could change the surrogate-space behavior of the baselines, and therefore the reported results should be interpreted relative to this disclosed quadratization regime. A λK sensitivity study across a 4 × multiplier range ( 0.5×, 1.0×, 2.0×) is reported in Section 6.7. 
+
+Pilot cubic HUBO result. As a precursor companion experiment, HAMD is also evalu-ated on a degree-3 random HUBO with n = 150 variables and a planted-solution construction (Section 6.1). 
+
+Reproducibility. All experiments use CPU-only computation (no GPU). The multi-seed study uses seeds 42, 1042, and 2042 for all runs at n = 200 . Instances are generated deter-ministically from the seed using the cubic portfolio construction described in Section 3. HAMD uses an internal batch size of B = 32 and allocates 80% of the wall-clock budget to the continuous search and restart phase, with the remaining 20% for the ILS phase. A reference implementation and the benchmark instance files used in this study are publicly available; see Section E. 
+
+# 6 Results 
+
+We first present a brief native cubic HUBO pilot experiment as motivation, then turn to the main cubic portfolio benchmark. The portfolio study consists of a single-seed scaling experiment across four sizes ( n = 200 , 300 , 500 , 1000 ), a three-seed study at n = 200 , a decoded-feasibility analysis of the quadratized baselines, an ablation of the HAMD hybrid pipeline, a small-size exact calibration, and a cardinality penalty sensitivity study. 
+
+6.1 Pilot Native Cubic HUBO 
+
+On a degree-3 cubic HUBO benchmark with n = 150 variables, HAMD achieves native objective values in the range [−93 , −88] across multiple seeds, while both SA and tabu search return −9
+
+7on the decoded native objective when applied to a Rosenberg-quadratized surrogate. This is an orientation experiment only; the benchmark is a generic planted-solution cubic HUBO with less thorough baseline documentation. We present it solely as further motivation for the cubic portfolio study that follows. 
+
+6.2 Cubic Portfolio Scaling 
+
+Table 2 presents the main scaling result. HAMD is compared to SA and tabu search on the decoded native cubic objective under a matched 60-second CPU budget (single seed 42). Table 2: Decoded native cubic objective by solver and instance size (60s CPU budget, seed 42). Lower is better. Gap = ( vTabu − vHAMD )/v Tabu ; positive means HAMD achieves a lower (better) native objective. HAMD enforces exact cardinality K at all sizes. 
+
+n K Random ref HAMD SA Tabu Gap (HAMD vs Tabu) 200 40 863.7 195.65 1,621.60 1,621.60 +87 .9% 
+
+300 60 4,068.7 1,786.37 6,196.71 6,196.71 +71 .2% 
+
+500 100 25,218.6 13,949.80 34,454.01 34,454.01 +59 .5% 
+
+1,000 200 168,326.8 101,294.43 190,598.71 190,598.71 +46 .9% 
+
+Several observations are worth highlighting. First, SA and tabu search decode to effectively indistinguishable native objectives at every size, suggesting that both methods are constrained by the same surrogate-to-native mismatch on this benchmark family rather than by differences in their move strategies. Within this single-seed exploratory context, this consistency is notable but should not be over-interpreted. Second, at n = 200 and n = 500 , the baselines decode to objectives worse than the random reference (1,621.60 vs. 863.7 for n = 200 ; 34,454 vs. 25,219 for 
+
+n = 500 ), indicating that optimizing the 5 ×-augmented surrogate can actively steer away from good native portfolios. Third, the relative gap narrows with size ( 88% → 47% ) but the absolute advantage remains substantial throughout. Results at n ≥ 300 are single-seed and should be regarded as preliminary trend evidence rather than confidence-estimated performance. 
+
+6.3 Multi-Seed Study at n = 200 
+
+Table 3 summarizes three-seed aggregate statistics at n = 200 , K = 40 .Table 3: Multi-seed aggregate statistics ( n = 200 , K = 40 , 3 seeds: 42, 1042, 2042; 60s budget each). W/T/L is wins/ties/losses of HAMD relative to each baseline. Median gap 
+
+= ( vBaseline − vHAMD )/v Baseline .Solver Median Std W/T/L vs HAMD Median gap 
+
+HAMD 195.65 0.00 — —SA 1,208.07 249.17 0/0/3 +83 .8% 
+
+Tabu 1,208.07 249.17 0/0/3 +83 .8% 
+
+HAMD achieves the same native objective on all three seeds with zero observed variance, while SA and tabu each show standard deviation 249.17 (per-seed range: 1,026–1,621). HAMD wins all three pairwise seed comparisons against both baselines. The zero observed variance across the three tested seeds is consistent with stable hybrid refinement once the native search reaches a strong basin. 86.4 Decoded-Feasibility Analysis 
+
+The decoded-feasibility analysis in Table 4 is the central diagnostic of this paper. For each SA and tabu search run, we extract the full naug = 1 ,000 -dimensional augmented binary state and compute the 7-field decoded-feasibility record. Table 4: Decoded-feasibility diagnostics for SA and tabu search ( n = 200 , K = 40 , 3 seeds). Aux viol = Rosenberg auxiliary inconsistencies out of 800 total; pen. frac. = fraction of |Qaug |
+
+attributable to explicit cardinality and Rosenberg penalty terms (excluding constant offsets). Because HAMD operates directly in the native variable space with hard cardinality handling, augmented-objective and auxiliary-consistency metrics do not apply (shown as —). HAMD operates natively and has no augmented-space metrics. Seed Solver Qaug Native obj Card Card viol Aux viol Aux viol% Pen. frac 42 HAMD — 195.65 40 0 — — —42 SA −65 ,526 ,394 1,621.60 40 0 0/800 0.0% 0.0000% 42 Tabu −74 ,479 ,699 1,621.60 40 0 77/800 9.6% 0.0489% 1042 HAMD — 195.65 40 0 — — —1042 SA −65 ,526 ,989 1,026.08 40 0 0/800 0.0% 0.0000% 1042 Tabu −74 ,947 ,202 1,026.08 40 0 67/800 8.4% 0.0252% 2042 HAMD — 195.65 40 0 — — —2042 SA −65 ,526 ,807 1,208.07 40 0 0/800 0.0% 0.0000% 2042 Tabu −75 ,247 ,749 1,208.07 40 0 79/800 9.9% 0.0142% The most important finding is the SA row. SA satisfies the exact cardinality constraint (K = 40 ) and all 800 Rosenberg auxiliary constraints (0 violations, 0.00% penalty fraction) on all three seeds, yet still decodes to native objectives 80–88% worse than HAMD. Because neither the cardinality nor the auxiliary consistency constraints are violated, the inferiority of SA’s native objective cannot be attributed to feasibility failure. The results are consistent with a surrogate-distortion effect: the augmented-space search can converge to solutions that are feasible in the surrogate representation but still poor under the decoded native cubic objective. Tabu shows an auxiliary inconsistency rate of approximately 8–10% (false-positive domi-nated: wij = 1 but xixj = 0 ) and a penalty fraction ranging from 0.0142% to 0.0489% across the three seeds. Despite these violations, tabu search decodes to effectively indistinguishable native objectives as SA, indicating that both methods are constrained by the same surrogate-to-native mismatch on these instances despite differences in their augmented-space behavior. 
+
+6.5 Ablation of the HAMD Hybrid Pipeline 
+
+Table 5 shows the contribution of each stage in the HAMD pipeline at n = 200 , seed 42, 60s budget. The ablation reveals a notable pattern. HAMD-proj (random restarts with only top-K pro-jection, no polish) achieves 245.22, which is worse than HAMD-cont (single long continuous trajectory at 199.86). This shows that naive multi-start projection is harmful: the continuous state encodes soft-preference information that is damaged by aggressive restarts without de-terministic correction. The K-swap polish repairs this, and HAMD-polish recovers to 200.34. The ILS phase fires in the final 20% of the budget and delivers the decisive improvement from approximately 245 to 195.65. The winning method is a compound hybrid: no single stage alone accounts for the full improvement. 9Table 5: Ablation of the HAMD hybrid pipeline ( n = 200 , K = 40 , seed 42, 60s). TTT 
+
+[10% → 100%] gives the best native objective at 10% and 100% of elapsed budget. Mode Native obj Restarts ILS steps TTT [10% → 100%] 
+
+HAMD-cont (single traj, no restart) 199.86 0 0 214.8 → 199.9 HAMD-proj (restarts, no polish) 245.22 44 0 245.2 → 245.2 HAMD-polish (restarts + K-swap) 200.34 80 0 245.2 → 200.3 
+
+HAMD-full (all stages) 195.65 106 6,224 245.2 → 195.7 SA (quadratized baseline) 1,621.60 — — —Tabu (quadratized baseline) 1,621.60 — — —
+
+6.6 Exact Small-Size Calibration 
+
+Table 6 reports results on instances where brute-force enumeration is tractable. Table 6: Exact calibration: HAMD vs. brute-force global optimum ( n = 20 , 25 , 30 , 3 seeds each, 10s budget per seed). All 9 trials achieve 0.00% gap. 
+
+n K |F| Exact optimum HAMD exact Enum. time 20 4 4,845 −0.1789 3/3 0.14 s 25 5 53,130 −0.3307 3/3 2.37 s 30 6 593,775 −0.4355 3/3 28.93 s Across all 9 trials, HAMD finds the exact global optimum with 0.00% gap. This validates the correctness of the native cubic objective evaluation and the HAMD implementation. It does not imply exactness at scale. 
+
+6.7 Cardinality Penalty Sensitivity 
+
+To assess whether the reported performance gap is sensitive to the choice of cardinality penalty scale λK , we evaluated SA and tabu search on the n = 200 , K = 40 cubic portfolio instance across three seeds (42, 1042, 2042) and a 4 × multiplier range ( 0.5×, 1.0×, 2.0×) of the baseline penalty λK = 4 n max |Q|. Results are shown in Table 7. Table 7: λK sensitivity study ( n = 200 , K = 40 , 3 seeds, 60s CPU budget). Native obj is the median decoded native cubic objective across three seeds. Pen. frac.% = fraction of |Qaug |
+
+attributable to explicit penalty terms. HAMD result shown for reference. Solver λK mult λK Native obj Card viol Aux rate Pen. frac.% 
+
+HAMD — — 195.65 0 — —SA 0.5× 20,477 1,208.07 0 0.0% 0.0000% Tabu 0.5× 20,477 1,208.07 0 9.9% 0.0489% SA 1.0× 40,955 1,208.07 0 0.0% 0.0000% Tabu 1.0× 40,955 1,208.07 0 9.6% 0.0252% SA 2.0× 81,910 1,208.07 0 0.0% 0.0000% Tabu 2.0× 81,910 1,208.07 0 9.6% 0.0142% Across this entire 4 × range, SA and tabu show no observable change in decoded native objective (spread: 0.0000, or 0.0% of mean), while HAMD retains the same advantage. For Tabu, the explicit penalty fraction decreases from 0.0489% to 0.0142% as λK increases, yet the 10 decoded native objective remains unchanged. This indicates that the reported performance gap is not an artifact of a single penalty calibration and is robust within the tested quadratization regime. 
+
+# 7 Discussion 
+
+Surrogate distortion, not infeasibility. The decoded-feasibility analysis provides the most important interpretive finding of this study. SA satisfies all 800 Rosenberg auxiliary constraints and the exact cardinality constraint on all three tested seeds, yet consistently decodes to native objectives 80–88% worse than HAMD. This rules out infeasibility as the explanation and sup-ports a surrogate-distortion interpretation: the large cardinality penalty λK ∼ O(n2) and the Rosenberg auxiliary penalties appear to devote a substantial fraction of search effort to main-taining feasibility and auxiliary consistency in the augmented surrogate, reducing the practical alignment between surrogate optimization and native portfolio quality. 
+
+Augmentation overhead is not merely a constant. As shown in Table 1, λK grows from approximately 41,000 at n = 200 to over 1,100,000 at n = 1 ,000 . The relative weight of the native portfolio objective in the surrogate gradient therefore decreases substantially with size. The narrowing relative gap ( 88% → 47% ) is consistent with HAMD’s advantage being partially offset by the increasing difficulty of native-objective navigation as n grows. 
+
+The advantage is from the full pipeline. The ablation makes explicit that the final HAMD result requires all four stages. Continuous-phase-only HAMD reaches 199.86; the ILS phase reduces this to 195.65. The counterintuitive finding that random restarts without K-swap polish (245.22) are worse than single-trajectory HAMD (199.86) highlights that deterministic post-processing is not decorative. The reported gains should be attributed to the full HAMD hybrid, not to the continuous dynamics alone. 
+
+SA and tabu search decode to indistinguishable native solutions. SA and tabu search decode to effectively indistinguishable native objectives at every tested size and seed, suggesting that both methods are constrained by the same surrogate-to-native mismatch on this benchmark family rather than by differences in their respective move strategies. Notably, the quadratized baselines are effectively insensitive to λK over the tested 4 × range (Section 6.7), suggesting that the dominant limitation on these instances is not simple penalty miscalibration but broader surrogate-to-native mismatch. 
+
+Limitations. (i) Single-seed scaling. Results at n ≥ 300 use seed 42 only. (ii) Surrogate-space baselines only. SA and tabu are run on the quadratized surrogate by design; the paper studies representational mismatch, not native-space discrete local search quality. (iii) Hybrid contribution. Part of the advantage comes from the ILS stage; the claim is about the compound hybrid. (iv) Instance construction. Fixed αcubic = 4 .0, nsectors = 10 , λR = 10 .0; gap magnitude may vary under different constructions. (v) No native-space discrete higher-order baseline. We do not compare against a native-space discrete local search applied directly to the cubic objective 
+
+f (x). A well-designed native cubic local search might close part of the observed gap; this is an important open comparison for future work. 
+
+# 8 Conclusion 
+
+This paper studied cubic cardinality-constrained portfolio optimization as a testbed for native higher-order binary search. We showed that HAMD, operating as a native-space hybrid solver 11 with exact cardinality handling, produces substantially better decoded native objectives than simulated annealing and tabu search applied to a Rosenberg-quadratized surrogate across all tested instance sizes and in all three reported n = 200 seeds. The clearest evidence is the decoded-feasibility result: SA satisfies all augmented constraints yet produces portfolios 80–88% worse than HAMD in native quality, identifying surrogate-landscape distortion as the mecha-nism rather than infeasibility. Exact calibration on small instances confirms implementation correctness. The core takeaway is not that HAMD universally dominates discrete local search, but that native higher-order optimization can be substantially more effective than quadratized surrogate optimization on this class of cubic portfolio problems. Future work should extend the study to multi-seed campaigns at large scales, broader higher-order benchmark families, and systematic variation of the cubic coefficient structure. 
+
+# A Per-Seed Raw Results at n = 200 
+
+Table 8 gives the per-seed raw values underlying the aggregate statistics in Table 3. Table 8: Per-seed raw results ( n = 200 , K = 40 , 60s budget). SA aux viol is 0/800 on all three seeds. Seed HAMD obj SA obj SA aux viol Tabu obj Tabu aux viol Gap (HAMD vs SA) 42 195.65 1,621.60 0/800 (0.0%) 1,621.60 77/800 (9.6%) +87 .9% 
+
+1042 195.65 1,026.08 0/800 (0.0%) 1,026.08 67/800 (8.4%) +80 .9% 
+
+2042 195.65 1,208.07 0/800 (0.0%) 1,208.07 79/800 (9.9%) +83 .8% 
+
+# B Decoded-Feasibility: Definitions 
+
+The decoded-feasibility package for each baseline run reports 7 fields computed from the final returned augmented binary state (x, w) ∈ { 0, 1}naug .
+
+A. Native-variable feasibility. 
+
+cardinality = Pni=1 xi,
+
+card_violation = Pni=1 xi − K ,
+
+native feasible = [ card_violation = 0] .
+
+B. Auxiliary consistency. For each Rosenberg auxiliary wij intended to equal xixj :aux_viol_count = # {(i, j ) : wij ̸ = xixj },
+
+aux_viol_rate = aux_viol_count /|T | ,
+
+FP = # {(i, j ) : wij = 1 ∧ xixj = 0 },
+
+FN = # {(i, j ) : wij = 0 ∧ xixj = 1 }.
+
+C. Objective decomposition and penalty fraction. 
+
+Qaug (x, w) = fnative (x) + λK
+
+P 
+
+> i
+
+xi − K
+
+2
+
+| {z }
+
+> card. pen.
+
++ λR
+
+P 
+
+> ij
+
+Ros ij (xi, x j , w ij )
+
+| {z }
+
+> Rosenberg pen.
+
+(12) 12 penalty_fraction = |card. pen. | + |Rosenberg pen. ||Qaug | . (13) For SA in this benchmark, the measured cardinality and Rosenberg penalty terms are zero at all three seeds (penalty_fraction = 0 .00% ), yet the decoded native objective remains far worse than HAMD. This indicates that poor native quality cannot be attributed solely to explicit penalty violations. 
+
+# C Ablation Time-to-Target Curves 
+
+Table 9: Full ablation TTT curves ( n = 200 , K = 40 , seed 42, 60s budget). Numbers are the best native objective at 10/25/50/75/100% of elapsed budget. Mode Obj t10% t25% t50% t75% t100% 
+
+HAMD-cont 199.86 214.8 206.0 204.3 199.9 199.9 HAMD-proj 245.22 245.2 245.2 245.2 245.2 245.2 HAMD-polish 200.34 245.2 245.2 245.2 245.2 200.3 HAMD-full 195.65 245.2 245.2 245.2 245.2 195.7 
+
+# D Exact Small-Size Calibration Details 
+
+Table 10: Exact calibration details ( n = 20 , 25 , 30 ; 3 seeds × 10s each). All 9 HAMD trials find the exact global optimum. 
+
+n K |F| |T | Exact opt HAMD exact Enum. time 20 4 4,845 29 −0.178866 3/3 0.14 s 25 5 53,130 35 −0.330690 3/3 2.37 s 30 6 593,775 41 −0.435526 3/3 28.93 s 
+
+# E Limitations Summary 
+
+1. Single-seed scaling. Results at n ≥ 300 use seed 42 only. Multi-seed campaigns at larger sizes are needed for confidence intervals. 2. Surrogate-space baselines only. SA and tabu are run on the Rosenberg-quadratized surrogate. We do not compare against a native-space discrete higher-order local search applied directly to the cubic objective f (x). Such a baseline might close part of the observed gap and is an important open comparison for future work. 3. ILS contribution. The ablation shows the ILS post-processing stage is necessary. Claims should attribute the result to the full hybrid, not to continuous dynamics alone. 4. Instance construction parameters. Fixed αcubic = 4 .0, nsectors = 10 , λR = 10 .0. Gap magnitude may vary under different instance constructions. 5. Baseline engineering. SA and tabu use standard single-bit-flip neighborhoods on the augmented QUBO. More engineered baselines might narrow the gap. 13 Code Availability 
+
+A reference implementation of the HAMD solver, benchmark instance files, and reproduction scripts for the community-accessible experiments reported in this paper are available at: 
+
+https://github.com/symplectic-opt/hamd-community 
+
+The repository includes the NativeCubicHAMD solver, baseline solvers (SA and Tabu on Rosenberg-quadratized QUBO), cubic HUBO and portfolio instance generators, and exact small-size val-idation (Section D). Instances at n = 200 , K = 40 used in the three-seed study are included directly. Noncommercial use only; see the repository license [15]. 
+
+# References 
+
+[1] Maliheh Aramon, Gili Rosenberg, Elisabetta Valiante, Toshiyuki Miyazawa, Hirotaka Tamura, and Helmut G. Katzgraber. Physics-inspired optimization for quadratic uncon-strained problems using a digital annealer. Frontiers in Physics , 7:48, 2019. [2] Endre Boros and Peter L. Hammer. Pseudo-Boolean optimization. Discrete Applied Math-ematics , 123(1–3):155–225, 2002. [3] Nicholas Chancellor. Domain wall encoding of discrete variables for quantum annealing and QAOA. Quantum Science and Technology , 4:045004, 2019. [4] Tun-Jen Chang, Nigel Meade, John E. Beasley, and Yazid M. Sharaiha. Heuristics for cardi-nality constrained portfolio optimisation. Computers & Operations Research , 27(13):1271– 1302, 2000. [5] Manfred Gilli, Dietmar Maringer, and Enrico Schumann. Numerical Methods and Opti-mization in Finance . Academic Press, Waltham, MA, 2011. [6] Fred Glover. Tabu search—Part I. ORSA Journal on Computing , 1(3):190–206, 1989. [7] Hayato Goto, Kotaro Endo, Masaru Suzuki, Yoshisato Sakai, Taro Kanao, Yuki Hamakawa, Ryo Hidaka, Masaya Yamasaki, and Kosuke Tatsumura. High-performance combinatorial optimization based on classical mechanics. Science Advances , 7:eabe7953, 2021. [8] Hayato Goto, Kosuke Tatsumura, and Alexander R. Dixon. Combinatorial optimization by simulating adiabatic bifurcations in nonlinear hamiltonian systems. Science Advances ,5(4):eaav2372, 2019. [9] Takahiro Inagaki, Yoshitaka Haribara, Koji Imai, et al. A coherent Ising machine for 2000-node optimization problems. Science , 354:603–606, 2016. [10] Hiroshi Ishikawa. Transformation of general binary MRF minimization to the first-order case. IEEE Transactions on Pattern Analysis and Machine Intelligence , 33(6):1234–1249, 2011. [11] Scott Kirkpatrick, C. Daniel Gelatt, and Mario P. Vecchi. Optimization by simulated annealing. Science , 220:671–680, 1983. [12] Harry Markowitz. Portfolio selection. The Journal of Finance , 7(1):77–91, 1952. [13] Barak A. Pearlmutter. Fast exact multiplication by the Hessian. Neural Computation ,6:147–160, 1994. 14 [14] Ivo G. Rosenberg. Reduction of bivalent maximization to the quadratic case. Technical report, Cahiers du Centre d’Études de Recherche Opérationnelle, 1975. [15] Greg Serbarinov. HAMD Community Edition: Reference implementation of hyper-adaptive momentum dynamics for native higher-order binary optimization. https://github. com/symplectic-opt/hamd-community , 2026. Noncommercial research/evaluation release, v1.0.0. 15

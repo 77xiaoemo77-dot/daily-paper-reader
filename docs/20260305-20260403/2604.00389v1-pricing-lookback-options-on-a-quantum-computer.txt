@@ -1,0 +1,868 @@
+Title: Pricing Lookback Options on a Quantum Computer
+
+URL Source: https://arxiv.org/pdf/2604.00389v1
+
+Published Time: Thu, 02 Apr 2026 00:26:16 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER ∗
+
+TANIA BELABBAS † , EMMANUEL HAMEL ‡ , ANNE MACKAY § , AND FLORENCE PAQUETTE §
+
+Abstract. We develop a quantum algorithm to price discretely monitored lookback options in the Black–Scholes framework using imaginary time evolution. By rewriting the pricing PDE as a Schr¨ odinger-type equation, the problem becomes the imaginary time evolution of a quantum state under a non-Hermitian Hamiltonian. This evolution is approximated with the Variational Quan-tum imaginary time evolution (VarQITE) method, which replaces the exact non-unitary dynamics with a parameterized, hardware-efficient quantum circuit. A central challenge arises from jump conditions caused by the discrete updating of the running maximum. This feature is not present in standard quantum treatments of European or Asian options. To address this, we propose two quantum-compatible formulations: (i) a sequential approach that models jumps via dedicated jump Hamiltonians applied at monitoring dates, and (ii) a simultaneous multi-function evolution that removes explicit jumps at the expense of an increased number of dimensions. We compare both approaches in terms of qubit resources, circuit complexity and numerical accuracy, and benchmark them against Monte Carlo simulations. Our results show that discretely monitored, path-dependent options with jump conditions can be handled within a variational quantum framework, paving the way toward the quantum pricing of more complex derivatives with non-smooth dynamics. 
+
+Key words. Quantum computing, option pricing, partial differential equations, Schr¨ odinger’s equation. 
+
+MSC codes. 65K05, 65M06, 65M99, 91B28 
+
+1. Introduction. Quantum computing takes advantage of the quantum prop-erties of matter to encode and process information [17]. While this idea remained theoretical for many years, recent technological advances make quantum computers a reality today. Although its capacity is still limited, quantum computing technology is improving at a tremendous rate and is expected to revolutionize a wide range of sectors, from material science to cybersecurity [6]. The past decade has seen remark-able progress and milestones include the demonstration of quantum utility in specific computational tasks and the continuous scaling of qubit counts and quality across various hardware modalities. The future promises fault-tolerant quantum computers, which are expected to unlock the full potential of algorithms like Shor’s and Grover’s. However, current research, including this work, focuses heavily on using variational quantum algorithms (VQAs) that can extract utility from today’s hardware [15, 24], with an outlook on future possibilities. The current generation of devices, referred to as Noisy Intermediate-Scale Quantum (NISQ) machines, is characterized by a limited number of qubits and short coherence times. Quantum computing is proposed as a potential solution to increasingly complex computations in quantitative finance [11, 18]. For instance, quantum algorithms have 
+
+> ∗
+
+Submitted to the editors DATE. 
+
+Funding: The authors acknowledge financial support from l’Autorit´ e des March´ es Financiers, from the Pˆ ole de recherche en finance quantique de l’Universit´ e de Sherbrooke, from the Minist` ere de l’ ´Economie, de l’Innovation et de l’ ´Energie du Qu´ ebec and from the Canada First Research Excellence Fund. Anne MacKay also acknowledges support from the Natural Science and Engineering Research Council of Canada (Grant number RGPIN-2024-05794). 
+
+> †
+
+Quantum AlgoLab, Institut quantique, University of Sherbrooke, Sherbrooke, Quebec, Canada (tania.belabbas@usherbrooke.ca). 
+
+> ‡
+
+Autorit´ e des march´ es financiers, Quebec, Canada (emmanuel.hamel@lautorite.qc.ca). 
+
+> §
+
+Department of Mathematics, University of Sherbrooke, Sherbrooke, Quebec, Canada (anne.mackay@usherbrooke.ca). 1
+
+> arXiv:2604.00389v1 [q-fin.CP] 1 Apr 2026
+
+2 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+been proposed to solve combinatorial or convex optimization problems, which have the potential to provide novel methods for efficient portfolio selection [5, 4, 14]. Quantum-enhanced machine learning methods have also found applications in finance [2, 20, 9]. The focus of this work is on option pricing. The pricing algorithms proposed in the quantum computing literature broadly divide into two main categories: quantum amplitude estimation (QAE) methods (sometimes called quantum Monte Carlo) and approaches based on solving pricing partial differential equations [16, 7]. QAE-based algorithms show great potential for option pricing, but they are not adapted to the quantum machines that are currently available, as they generally call for deep circuits and a large number of qubits [22, 25, 7]. An additional challenge for these methods rests in the preparation of the state, that is, the loading of the probability distribution on the quantum computer [22, 25]. Although there exist different quantum methods to solve partial differential equa-tions (PDEs), quantum time-evolution algorithms are a natural candidate for this task. The main idea is to map the pricing PDE to Schr¨ odinger’s equation and to evolve the state of the computer’s qubit register using the resulting Hamiltonian. Pric-ing PDEs generally yield non-Hermitian Hamiltonians, which represent an additional challenge as they prescribe non-unitary transformations. To solve this problem, [8] suggest extending the Hilbert space with additionnal qubits to embed its propagator, while others suggest the use of the Schr¨ odingerization technique [13]. An alternative solution, which we use in this paper, is to apply a change of variable and to consider imaginary time evolution instead, using the VarQITE algorithm [15, 7]. This algorithm prescribes the use of a parametrized circuit, whose parameters are updated following the pricing Hamiltonian. Herein, we consider the pricing of a discretely monitored lookback option; this problem is motivated by the valuation of variable annuity contracts (see [1, 19]). In certain cases, the financial guarantee embedded in those hybrid life insurance products can be expressed as a lookback option. In that sense, this paper constitutes a first step towards a fully fledged quantum framework for the valuation of those products. Our work is an extension of [7], in which imaginary time evolution is used to price European and Asian options in the Black-Scholes model. While the value functions they consider are continuous, the PDE that we solve has jump conditions stemming from the discrete monitoring of the maximum. This requires careful consideration in the design of the Hamiltonians used in the VarQITE algorithm. We suggest two approaches; the first one makes use of a “jump Hamiltonian” at each jump time, while the second one relies on the simultaneous evolution of a large number of continuous functions. While the implementation of the first approach requires fewer qubits for the space discretization, the second approach yields better results, even with a limited number of qubits. We demonstrate this phenomenon in an extensive numerical illustration in Section 5. The paper is organized as follows. In Section 2, the financial problem and basic notions of quantum computing are introduced. Hamiltonian time evolution is de-scribed in Section 3; this is where both methods for integrating jump conditions in the evolution are laid out. Section 4 presents our methodology and Section 5 contains a numerical performance analysis. 
+
+2. Problem setup. In the following section, we first define the financial market dynamics and formulate the pricing problem. We also introduce essential quantum computing notions, with an emphasis on the quantum simulation of physical systems, and establish a correspondence between the option pricing PDE and the Schr¨ odinger PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 3equation, recasting the pricing problem into an adequate form for quantum simulation. This section sets the stage for the subsequent development of our methodology. 
+
+2.1. Financial market. On a probability space (Ω , F, Q), we define a standard Brownian motion W = ( Wη )η⩾0 and fix a finite time horizon T ∈ R+. We let 
+
+F = ( Fη )η⩾0 denote the augmented filtration generated by W . The financial market contains a risky asset, whose price process S = ( Sη )0⩽η⩽T satisfies dSη = Sη (r dη + σ dWη ), S0 = s0,
+
+with r ⩾ 0 and σ, s 0 > 0, as well as a risk-free bond accruing interest at the continuous rate r, i.e., Bη = erη for 0 ⩽ η ⩽ T .Readers will recognize the Black-Scholes model, one of the simplest in the financial literature [3, 23], which has been generalized in various directions over the years. Our goal in this paper is to explore how quantum computing can be used to price a discretely monitored lookback option, which involves solving a PDE with jump conditions. Following [7], we restrict ourselves to a simple market, but we extend their work by considering a payoff that leads to a discontinuous pricing equation. 
+
+2.2. Pricing the lookback option. Let T = {eη0, . . . , eηN } be a uniform parti-tion of [0 , T ], and for 0 ⩽ η ⩽ T , define the running maximum 
+
+Yη = max  
+
+> s∈T ∩ [0 ,η ]
+
+Ss.
+
+The time-T payoff of the lookback option is ( YT − ST )+, where ( x)+ = max(0 , x ). The option price at time η, for an underlying price x and running maximum y, is 
+
+v(η, x, y ) = E
+
+h
+
+e−r(T −η)(YT − ST )+ | Sη = x, Y η = y
+
+i
+
+.
+
+Remark 2.1. For notational simplicity, we include Sη in the computation of the maximum at time η. This choice does not affect the payoff: including ST in YT only impacts cases where ST exceeds the previous maximum, in which case the payoff is unchanged. Thus, ST may be omitted from YT in numerical implementations. Following [23], we apply the transformation v(η, x, y ) = y u (ξ, z ) with z = x/y 
+
+and ξ = T − η, using time to maturity ξ rather than elapsed time η. We define 
+
+eξj = T − eηj , so that T = {eη0, . . . , eηN } = {eξ0, . . . , eξN }.Then, u(ξ, z ) solves 
+
+− ∂u (ξ, z )
+
+∂ξ = ru (ξ, z ) − rz ∂u (ξ, z )
+
+∂z − 12 σ2z2 ∂2u(ξ, z )
+
+∂z 2 ,(2.1) for ( ξ, z ) ∈ ([0 , T ] × (0 , 1)) ∪ ([0 , T ] \ T × [1 , ∞)), with boundary conditions 
+
+u(0 , z ) = (1 − z)+,(2.2) 
+
+u(ξ, 0) = e−rξ ,(2.3) lim 
+
+> z→∞
+
+zu(ξ, z )
+
+∂u (ξ, z )
+
+∂z = 1 , ξ ∈ [0 , T ) \ T .(2.4) The jump condition at monitoring dates is (2.5) u(ξ+, z ) = z u (ξ−, 1) , (ξ, z ) ∈ T × [1 , ∞),4 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+where T = T \ { eξ0, eξN } = T \ { 0, T }.We note that (2.1) holds everywhere except for z ⩾ 1 on T , reflecting the fact that at a monitoring date, if Seη−
+
+> i
+
+> Y eη−
+
+> i
+
+, the running maximum resets: Yeη+
+
+> i
+
+= Seη+
+
+> i
+
+.This jump condition poses a challenge for quantum implementation, distinguishing this problem from those considered in [7]. 
+
+2.3. Review of quantum computing notions. Our approach to solving the PDE consists in reformulating it as a Schr¨ odinger-type equation, where the price function is encoded as a quantum state and evolved in (imaginary) time under a suitably defined Hamiltonian using variational quantum algorithms. For complete-ness, we briefly recall a minimal set of notions from quantum mechanics and quantum computing. A more comprehensive introduction can be found in [17]. The fundamental unit of quantum information is the qubit, the quantum analogue of the classical bit. An n-qubit system is described by a state vector |ψ⟩ belonging to a complex Hilbert space of dimension 2 n. In the computational basis, such state can be written as |ψ⟩ = P2n−1 
+
+> j=0
+
+αj |j⟩, where the complex amplitudes αj satisfy the normalization condition P 
+
+> j
+
+|αj |2 = 1. In our framework, these amplitudes are used to encode discretized values of the pricing function. Quantum algorithms manipulate the state |ψ⟩ through unitary transformations, implemented as sequences of quantum gates. Observable quantities are extracted via measurements yielding probabilistic outcomes governed by the amplitudes of the state. Despite this intrinsic randomness, repeated measurements (shots) allow one to estimate relevant quantities with controlled statistical error. Additional details on quantum states, measurements, and quantum gates are provided in [17]. 
+
+2.4. Schr¨ odinger equation. We use the state of a quantum register to repre-sent a vector of option prices. The initial state of the vector corresponds to the value of the function u, described by (2.1)-(2.5), at ξ = 0 and for different values z. To solve the pricing PDE, we translate it into the Schr¨ odinger equation, which describes the time-evolution of a quantum system, namely the qubit register in our case. This is akin to the idea proposed by [7]. Let ξ = −it , so that (2.1) becomes 
+
+−i ∂u (t, z )
+
+∂t = ru (t, z ) − rz ∂u (t, z )
+
+∂z − 12 σ2z2 ∂2u(t, z )
+
+∂z 2 .(2.6) The Schr¨ odinger equation describing the time-evolution of a given time-dependent quantum state |ψ(t)⟩ is 
+
+i ∂ |ψ(t)⟩
+
+∂t = ˆH(t) |ψ(t)⟩ ,(2.7) where ˆH is the Hamiltonian operator associated with the system. In quantum me-chanics, this operator is used to describe how the system evolves in time. The PDE operator in (2.6) can be rewritten as a Hamiltonian-like operator. Solving the PDE is then equivalent to evolving an initial state u(0 , z ) under the dynamics generated by ˆH.The solution to (2.7) is given by |ψ(t)⟩ = exp 
+
+
+
+−i R t 
+
+> 0
+
+ˆH(s)d s
+
+
+
+|ψ(0) ⟩, and the Hamiltonian associated with the pricing of the lookback option is thus given by the right-hand side of (2.6). 
+
+3. Hamiltonian Time Evolution. The Hamiltonian derived in Section 2.4 can be used within a time-evolution framework. As discussed previously, the operator PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 5appearing in the pricing PDE can be interpreted as a Hamiltonian-like operator gen-erating the dynamics of the system. After spatial discretization, the pricing PDE’s evolution can be written in operator form using ˆH(t). Solving the discretized PDE is therefore equivalent to evolving an initial state under the action of this Hamiltonian. Quantum time-evolution algorithms may then be used to approximate this evolution, and suitable measurements of the resulting quantum state provide information re-lated to the option price. Specifically, imaginary time evolution is well suited for this purpose because it leads to exponential propagators analogous to those appearing in the formal solution of the pricing PDE [15, 7, 13]. 
+
+3.1. Imaginary Time Evolution. Consider a Wick rotation t = −iτ , where 
+
+τ ∈ R. Under this transformation, the Schr¨ odinger equation becomes 
+
+∂ |ψ(τ )⟩
+
+∂τ = −( ˆH(τ ) − Eτ ) |ψ(τ )⟩ ,(3.1) where Eτ = ⟨ψ(τ )| ˆH(τ )|ψ(τ )⟩ ensures normalization of the evolving state [21]. The corresponding formal solution can be written as (3.2) |ψ(τ )⟩ = γ(τ ) exp 
+
+
+
+−
+
+Z τ
+
+> 0
+
+ˆH(s) d s
+
+
+
+|ψ(0) ⟩ ,
+
+where γ(τ ) is a normalization factor for the state |ψ(τ )⟩ [15]. The exponential operator is non-unitary and generates imaginary time propagation. Because this exponential operator has the same structure as the propagator ap-pearing in the pricing PDE, imaginary time evolution provides a natural framework for implementing the propagation of the option value on quantum hardware. Moreover, imaginary time evolution can be implemented variationally, allowing the dynamics of 
+
+|ψ(τ )⟩ to be approximated through differential equations governing the parameters of a parameterized quantum circuit [24, 15]. 
+
+3.2. Application to the lookback option. The pricing PDE of the lookback option given by (2.1) - (2.5) describes a piecewise continuous function with jumps occurring at times eτj , j = 1 , . . . , N − 1. When solving the equation classically using finite difference methods, the jump condition can be treated separately by pausing the continuous evolution and adjusting the function value at each jump time. With imaginary time evolution, the Hamiltonian describing the dynamics of the price must be carefully designed. We have identified two ways to do so. Our first method consists in alternating between two operators: a Hamiltonian describing the continuous evolution, used between jump times, and another one simulating the jump dynamics, applied at jump times, see Section 3.2.1. Second, we consider a system of N PDEs in which every equation is continuous. N −1PDEs are linked to the value of the function u(τ, z ) for z ⩾ 1 after each of the jumps, at times eτN −1, . . . , eτ1. Details of this second method can be found in section 3.2.2. 
+
+3.2.1. Method 1: Jump Hamiltonian. To implement the time-evolution on a quantum computer, we choose a uniform discretization of the half-line [0 , ∞) on 
+
+n points, ⃗z = {z 0, . . . , z n−1}, with z0 = 0, zn−1 = zmax and ∆ z = zi − zi−1, i =1, . . . , n − 1. The state of the qubit register encodes the solution of the pricing PDE (up to the normalization term γ(τ )) at each discretization point zi, i = 0 , . . . , n − 1; the amplitude of each basis state gives the solution for that specific zi, so that 
+
+|ψ(τ )⟩ = γ(τ )u(τ,⃗ z),6 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+for τ ∈ [0 , T ], where γ(τ ) represents the normalization term induced by imaginary time evolution (see the algorithms in Section 4 for more details on its computation). To evolve the initial state, we define two different time-evolution matrix operators, ˆHC and ˆHJ using the right-hand side of (2.6) and the jump condition (2.5). ˆHC
+
+reflects the continuous evolutions of |ψ(τ )⟩ for τ ∈ [0 , eτ1−h]∪(eτ1, eτ2−h]∪. . . ∪(eτN −1, T ], and ˆHJ includes the jump condition and describes the evolution of |ψ(τ )⟩ when τ ∈
+
+(eτ1 − h, eτ1] ∪ . . . ∪ (eτN −1 − h, eτN −1], with h > 0 small. Thus, the general Hamiltonian ˆHM 1 : [0 , T ] 7 → Rn×n is time-dependent and given by ˆHM 1(τ ) = 
+
+( ˆHJ , τ ∈ (eτ1 − h, eτ1] ∪ . . . ∪ (eτN −1 − h, eτN −1]ˆHC , otherwise. ˆHC is obtained directly by discretizing the right-hand side of (2.6) via second-order finite differences, yielding 
+
+∂u (τ, z i)
+
+∂τ = αiu(τ, z i−1) + βiu(τ, z i) + γiu(τ, z i+1 ),(3.3) with 
+
+αi = − rz i
+
+2∆ z
+
++ σ2z2
+
+> i
+
+2∆ z 2 , βi = −r − σ2z2
+
+> i
+
+∆2
+
+> z
+
+, γi = rz i
+
+2∆ z
+
++ σ2z2
+
+> i
+
+2∆ z 2 .(3.4) The upper and lower boundary conditions are also discretized and expressed in Hamiltonian form, so that from (2.3), we have 
+
+∂u (τ, z 0)
+
+∂τ = −ru (τ, z 0).(3.5) Discretizing the upper boundary condition (2.4) using a backward finite difference in 
+
+z gives u(τ, z n−1) = zn−1 
+
+> zn−2
+
+u(τ, z n−2), from which we get 
+
+∂u (τ, z n−1)
+
+∂τ = zn−1
+
+zn−2
+
+(αn−2u(τ, z n−3) + βn−2u(τ, z n−2) + γn−2u(τ, z n−1)) .(3.6) From (3.3), (3.5) and (3.6), we write ˆHC as (3.7) ˆHC =
+
+
+
+r 0 0 0 . . . 0 0 0
+
+α1 β1 γ1 0 . . . 0 0 00 α2 β2 γ2 . . . 0 0 0... ... ... ... . . . ... ... ...0 0 0 0 . . . αn−2 βn−2 γn−2
+
+0 0 0 0 . . . zn−1 
+
+> zn−2
+
+αn−2 zn−1 
+
+> zn−2
+
+βn−2 zn−1 
+
+> zn−2
+
+γn−2
+
+
+
+.
+
+The matrix operator ˆHJ describes the evolution of the function u from eτj −h to eτ + 
+
+> j
+
+,
+
+j = 1 , . . . , N − 1. For the discussion below, we fix j ∈ { 1, . . . , N − 1}. Here, u(eτ + 
+
+> j
+
+, z )denotes the value of the function after the jump. Because of the jump condition (2.5), the time-derivative of u does not exist at eτj for zi > 1, so instead we use the finite difference 1 
+
+> h
+
+(u(eτ + 
+
+> j
+
+, z i) − u(eτj − h, z i)) to define ˆHJ . Going forward, to simplify the notation, we implicitly define λ by zλ = 1. PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 7To derive the correct form for ˆHJ , we express the finite difference 1 
+
+> h
+
+(u(eτ + 
+
+> j
+
+, z i) −
+
+u(eτj − h, z i)) in terms of the vector ( u(eτj − h, z 0), . . . , u (eτj − h, z n−1)) ⊤. For j =1, . . . , λ , the function u is continuous at eτj , and thus (3.3) holds. For i = λ+1 , . . . , n +1, using the jump condition (2.5), we observe that 
+
+u(eτ + 
+
+> j
+
+, z i) − u(eτj − h, z i)
+
+h = ziu(eτ − 
+
+> j
+
+, z λ) − u(eτj − h, z i)
+
+h .(3.8) Since u is continuous on [ eτj − h, eτj ), we use a first-order approximation of the time derivative in (2.1) to write 
+
+u(eτ − 
+
+> j
+
+, z λ) ≈ u(eτj − h, z λ)+ h
+
+
+
+ru (eτj − h, z λ) − r ∂u (eτj − h, z λ)
+
+∂z − σ2
+
+2
+
+∂2u(eτj − h, z λ)
+
+∂z 2
+
+
+
+.
+
+(3.9) Approximating the derivatives in (3.9) with central finite differences and using the resulting expression in (3.8) yields 
+
+u(eτ + 
+
+> j
+
+, z i) − u(eτj − h, z i)
+
+h = aiu(eτj − h, z λ−1) + biu(eτj − h, z λ−1)+ ciu(eτj − h, z λ+1 ) − 1
+
+h u(eτj − h, z i),
+
+where 
+
+ai = zi
+
+2∆ z
+
+
+
+r − σ2
+
+∆z
+
+
+
+, bi = zi
+
+ 1
+
+h + r + σ2
+
+∆2
+
+> z
+
+
+
+ci = − zi
+
+2∆ z
+
+
+
+r + σ2
+
+∆z
+
+
+
+.
+
+The resulting time-evolution operator ˆHJ is given by ˆHJ =
+
+
+
+r 0 0 0 . . . 0 0 0 0 . . . 0
+
+α1 β1 γ1 0 . . . 0 0 0 0 . . . 00 α2 β2 γ2 . . . 0 0 0 0 . . . 0... ... ... ... . . . ... ... ... ... ...0 0 0 0 . . . αλ βλ γλ 0 . . . 00 0 0 0 . . . aλ+1 bλ+1 cλ+1 + 1 
+
+> h
+
+0 . . . 00 0 0 0 . . . aλ+2 bλ+2 cλ+2 1 
+
+> h
+
+. . . 0... ... ... ... ... ... ... ... . . . ...0 0 0 0 . . . an−1 bn−1 cn−1 0 . . . 1
+
+> h
+
+
+
+.
+
+We remark that ˆHJ depends on h, the size of the time-step on which we apply the operator. This will affect the quantum algorithm we develop for its implementation. 
+
+3.2.2. Method 2: Continuous functions. In this second method, we consider a system of T continuous PDEs. 
+
+Case N = 2. To facilitate the presentation of this method, we first give an ex-ample when N = 2, that is, when the maximum is computed over 2 points only. To simplify the presentation, we assume w.l.o.g. that T = 2 and T = {1}; the jump condition only applies at one time point. The jump condition, defined in (2.5), can be written in this case as 
+
+u(1 +, z ) = 
+
+(
+
+u(1 −, z ), z < 1
+
+zu (1 −, 1) , z ⩾ 1.8 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+Heuristically, the idea of this method is to “evolve the jump value” zu (1 , 1) from τ = 0 to τ = 1 and to incorporate this value in the function u at τ = 1 for z ⩾ 1. To do so, we consider two functions, ui : [0 , 1] × (0 , ∞) 7 → R+, i = 1 , 2, with u1 defined by (2.1) to (2.4), and 
+
+u2(τ, z ) = zu 1(τ, 1) ,
+
+That is, for τ ∈ [0 , 1], u2 satisfies 
+
+− ∂u 2(τ, z )
+
+∂τ = rzu (τ, 1) − rz ∂u (τ, z )
+
+∂z z=1 
+
+− 12 σ2z ∂2u(τ, z )
+
+∂z 2 z=1 
+
+,(3.10) with boundary conditions u2(0 , z ) = 0 and u2(τ, 0) = 0. Then, on [0 , 1), u(τ, z ) = u1(τ, z ) for z > 0. At τ = 1 + (after the jump), following (2.5), we have u(1 +, z ) = u1(1 , z ) for z ∈ (0 , 1) and u(1 +, z ) = u2(1 , z ) for z ∈ [1 , ∞), and for τ ∈ (1 , 2], u solves (2.1), (2.3) and (2.4). Using functions u1 and u2 for 
+
+τ ∈ [0 , 1] allows us to express u without explicitly using the jump condition. With this representation, it is possible to implement the time-evolution of u on a quantum computer without the need for jump operators. However, encoding both functions u1 and u2 requires an additional qubit to double the size of the state vector. We use the same discretization ( zi)n−1 
+
+> i=0
+
+as in Method 1, which means that ( m + 1) qubits are needed to obtain a system with 2 m+1 = 2 n basis states. Initially, the amplitudes of the first n states encode the values of u1 and those of the last n states, 
+
+u2. In other words, the state |φ(τ )⟩ represents 
+
+|φ(τ )⟩ = γ(τ )( u1(τ, z 0), . . . , u 1(τ, z n−1), u 2(τ, z 0), . . . , u 2(τ, z n−1)) ⊤,
+
+for τ ∈ (0 , 1). We also recall that λ is implicitly defined by zλ = 1. The resulting Hamiltonian ˆHM 2 is time-dependent. For τ ∈ [0 , 1), ˆHM 2 represents the continuous evolution of u1 and u2 separately and is given by ˆHM 2(τ ) = 
+
+ ˆHC 0n×n
+
+ˆHU 0n×n
+
+
+
+,
+
+where ˆHC , defined in (3.7), describes the continuous evolution of u1, 0 n×n is a n × n
+
+null matrix. ˆHU comes from a first-order discretization of the z-derivatives in (3.10). It is a n×n matrix in which columns λ−1, λ and λ+1 are the only non-zero columns. We write ˆHU = ˆHU W + ˆHU E , with ˆHU W =
+
+
+
+0 . . . 0 z0αλ z0βλ 0 . . . 00 . . . 0 z1αλ z1βλ 0 . . . 0... ... ... ... ... ...0 . . . 0 zn−1αλ zn−1βλ 0 . . . 0
+
+ ,
+
+where the non-zero columns are columns λ − 1 and λ, and (3.11) ˆHU E =
+
+
+
+0 . . . 0 z0γλ 0 . . . 00 . . . 0 z1γλ 0 . . . 0... ... ... ... ... ...0 . . . 0 zn−1γλ 0 . . . 0
+
+PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 9where the only non-zero column is column λ + 1. In the above, αλ, βλ and γλ are defined by (3.4). The reason for the decomposition of ˆHU into ˆHU W and ˆHU E will be clear when we consider a general maturity T .For τ ∈ [1 , 2], ˆHM 2 represents the evolution of u, whose values are encoded in the first λ and the last n − λ elements of |φ(τ )⟩. Thus, the Hamiltonian needs to act on these specific states only and represents the same evolution as ˆHC does. The resulting operator for τ ∈ [1 , 2] is given by (3.12) ˆHM 2(τ ) = 
+
+ ˆHCN W ˆHCN E 
+
+ˆHCSW ˆHCSE 
+
+
+
+,
+
+where ˆHCN W , ˆHCSE , ˆHCN E , and ˆHCSW are the block matrices of size n×n described below. We remark that the index notation “NW”, “SE”, “NE” and “SW” describes their position in the matrix ˆHM 2 using cardinal directions. ˆHCN W governs the con-tinuous evolution of the first λ + 1 entries of |φ(τ )⟩, representing the (normalized) value of u for zi ⩽ 1. It is given by the first λ + 1 rows of the matrix ˆHC , with the element in position ( λ + 1 , λ + 2) replaced by 0, that is ˆHCN W =
+
+
+
+r 0 0 0 . . . 0 0 0 . . . 0
+
+α1 β1 γ1 0 . . . 0 0 0 . . . 00 α2 β2 γ2 . . . 0 0 0 . . . 0... . . . . . . . . . ... ... ... . . . ...0 0 0 0 . . . αλ βλ 0 . . . 00 0 0 0 . . . 0 0 0 . . . 0... ... ... ... . . . ... ... ... . . . ...0 0 0 0 . . . 0 0 0 . . . 0
+
+
+
+.
+
+ˆHCSE represents the evolution of the last n − λ − 1 elements of |φ(τ )⟩, reflecting the values of u for z > 1. It is given by the last n − λ − 1 rows of matrix ˆHC , with the element in position ( λ + 2 , λ ) replaced by 0, so that ˆHCSE =
+
+
+
+0 . . . 0 0 0 0 . . . 0 0 0... . . . ... ... ... ... ... ... ...0 . . . 0 0 0 0 . . . 0 0 00 . . . 0 βλ+1 γλ+1 0 . . . 0 0 00 . . . 0 αλ+2 βλ+2 γλ+2 . . . 0 0 0... . . . ... . . . . . . . . . ... ... ...0 . . . 0 0 0 0 . . . αn−2 βn−2 γn−2
+
+0 . . . 0 0 0 0 . . . zn−1 
+
+> zn−2
+
+αn−2 zn−1 
+
+> zn−2
+
+βn−2 zn−1 
+
+> zn−2
+
+γn−2
+
+
+
+Matrices ˆHCSW and ˆHCN E represent the interactions between the first n and the last 
+
+n elements of the state vector. They are filled with zero, except for one element each; the element in position ( λ + 2 , λ ) of matrix ˆHCSW is equal to αλ+1 , and the element in position ( λ + 1 , λ + 2) of matrix ˆHCN E is γλ. Note that ˆHC = ˆHCN W + ˆHCSE + ˆHCN E + ˆHCSW ,
+
+which reflects the fact that together, matrices ˆHCN W , ˆHCSE , ˆHCN E and ˆHCSW 
+
+evolve specific elements of |φ(τ )⟩ according to ˆHC .10 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+General case. We generalize this idea to the case N ∈ N, N ⩾ 2, that is, T =
+
+{eτ1, . . . , eτN −1}; the maximum is computed over more than two points. To simplify the presentation, we assume that T ∈ N. We still consider functions u1 and u2,which we defined previously, and define functions uj : [0 , eτj−1] × (0 , ∞) 7 → R+ for 
+
+j ∈ { 3, . . . , N }. As before, for τ ∈ [0 , eτ1), u(τ, z ) = u1(τ, z ), and 
+
+u(eτ +1 , z ) = 
+
+(
+
+u1(eτ1, z ), z ∈ (0 , 1) 
+
+u2(eτ1, z ), z ∈ [1 , ∞).
+
+In general, for τ ∈ (1 , T ] \ T , u satisfies (2.1), (2.3) and (2.4), and 
+
+uj (τ, z ) = 
+
+(
+
+zu 1(τ, 1) , τ ∈ [0 , eτ1]
+
+zu (τ, 1) , τ ∈ (eτ1, eτj−1]The jump condition is reflected by 
+
+u(eτ + 
+
+> j
+
+, z ) = 
+
+(
+
+u(eτj , z ), z ∈ (0 , e1) 
+
+uj+1 (eτj , z ), z ∈ [1 , ∞).
+
+The definition is recursive: u is defined on [0 , 2] using u1 and u2, which allows the definition of u3 on [0 , 2]. Then, u3 is used to specify u(τ +2 , z ), and (2.1), (2.3) and (2.4) specify u up to eτ3, and so on. To implement this method on a quantum computer, we need a vector |φ(τ )⟩
+
+of size nN . For τ ∈ [0 , 1), the first n entries represent u1(τ, z 0), . . . , u 1(τ, z n−1), and entries ( k − 1) n + 1 to kn represent the values uk(τ, z 0), . . . , u k(τ, z n−1), k ∈{2, . . . , N }. Thereafter, for τ ∈ [eτj , eτj+1 ), the first λ elements of |φ(τ )⟩ are associated with u(τ, z 0), . . . , u (τ, z λ), and the elements ( j − 1) n + λ + 2 to jn represent values 
+
+u(τ, z λ+1 ), . . . , u (τ, z n−1). The resulting Hamiltonian is a matrix of size nN × nN and is time-dependent. For τ ∈ [0 , eτ1), ˆHM 2 has its first n columns filled with matrices ˆHC and ˆHU . That is, ˆHM 2(τ ) = 
+
+
+
+ˆHC 0n×n . . . 0n×n
+
+ˆHU 0n×n . . . 0n×n
+
+... ... ...ˆHU 0n×n . . . 0n×n
+
+ .
+
+For τ ∈ [eτj , eτj+1 ), j ∈ { 1, . . . , N −1}, the first ( j+1) n rows represent the evolution of the function u via the decomposition of ˆHC into matrices ˆHCSE , ˆHCN W , ˆHCSW 
+
+and ˆHCN E . The last ( N − j − 1) n rows govern the evolution of functions uj+2 , . . . , u N
+
+through matrices ˆHU W and ˆHU E . Then, for τ ∈ [eτj , eτj+1 ), the Hamiltonian is given by (3.13) ˆHM 2(τ ) = 
+
+
+
+ˆHCN W 0n×n . . . 0n×n ˆHCN E 0n×n . . . 0n×n
+
+0n×n 0n×n . . . 0n×n 0n×n 0n×n . . . 0n×n
+
+... ... ... ... ... ...0n×n 0n×n . . . 0n×n 0n×n 0n×n . . . 0n×n
+
+ˆHCSW 0n×n . . . 0n×n ˆHCSE 0n×n . . . 0n×n
+
+ˆHU W 0n×n . . . 0n×n ˆHU E 0n×n . . . 0n×n
+
+... ... ... ... ... ...ˆHU W 0n×n . . . 0n×n ˆHU E 0n×n . . . 0n×n
+
+
+
+,PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 11 where ˆCH starts at column j × n + 1, and at row j × n + 1. For τ ∈ [eτN −1, eτN ], the Hamiltonian is given by ˆHM 2(τ ) = 
+
+
+
+ˆHCN W 0n×n . . . 0n×n ˆHCN E 
+
+0n×n 0n×n . . . 0n×n 0n×n
+
+... ... ... ...0n×n 0n×n . . . 0n×n 0n×n
+
+ˆHCSW 0n×n . . . 0n×n ˆCH
+
+
+
+.
+
+This second method requires more qubits than method 1, and computational resources increase with the number of monitoring dates N . For N monitoring dates and n discretization points in space, a state vector of size nN is needed. If n = 2 m,then ⌈log 2 N ⌉ + m qubits are needed to implement this method. Then, as N grows, the number of qubits increases at the rate log 2 N . However, we note that for N → ∞ ,the maximum is continuously monitored and the function u becomes continuous, and the implementation of the algorithm is simplified (see [7]). We also remark that when log 2 N /∈ N, only the first nN elements of the state vector will be used for method 2. The remaining elements should simply be set to 0. The Hamiltonian that governs the entire state vector has size n × 2⌈log 2 N ⌉. In each dimension, the first nN elements are represented by matrix ˆHM 2; the rest of the matrix is filled with zeros. 
+
+4. Methodology. As mentioned in Section 3, pricing a financial derivative re-quires calculating the evolution of a quantum state |ψ⟩ under a specific, often non-unitary propagation. The problem of option pricing can be mapped to finding the state after imaginary time evolution and the formal evolution from an initial state 
+
+|ψ(0) ⟩ to a state at imaginary time τ , |ψ(τ )⟩, is given by: 
+
+|ψ(τ )⟩ = γ(τ ) exp 
+
+
+
+−
+
+Z τ
+
+> 0
+
+ˆH(s) d s
+
+
+
+|ψ(0) ⟩ .(4.1) We have developed two algorithms to solve this problem. The non-unitary nature of the exponential operator implies that its direct, exact simulation is incompatible with the unitary operations native to quantum hardware. To address this, we employ the Variational Quantum imaginary time evolution ( VarQITE ) method. In both algo-rithms, the Hamiltonians ˆHC , ˆHJ (in Algorithm 4.1), and ( ˆHj )Nj=1 (in Algorithm 4.2) are treated as time-independent within each evolution step. 
+
+4.1. Algorithm 4.1: Jump Hamiltonian. The first algorithm proposed, Al-gorithm 4.1, incorporates discrete revaluation jumps as fixed-interval perturbations within the imaginary time evolution. This approach naturally reflects the sequential, period-by-period structure of the segregated fund with annual revaluation. Algo-rithm 4.1 evolves under ˆHC for continuous dynamics and ˆHJ for jumps. 
+
+4.2. Algorithm 4.2: Effective Time-Period Hamiltonians. Algorithm 4.2 implies pre-calculating a distinct Hamiltonian ˆHj = ˆHM 2(τ ), τ ∈ [eτj−1, eτj ) for each period j ∈ { 1, . . . , N − 1} following (3.13). This approach consolidates the effects of both the continuous dynamics and the boundary conditions into a single imaginary time evolution process for each interval. Algorithm 4.2 evolves under ˆHj for each revaluation period j ∈ { 1, . . . , N }.
+
+4.3. Variational Approach for Imaginary Time Evolution. We previously mentioned that the direct implementation of the evolution under ˆH(τ ) is generally not 12 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+Algorithm 4.1 Sequential Imaginary Time Evolution with Periodic Jumps 
+
+Require: Rate r, Volatility σ, Maturity T , Discretization ⃗z, Revaluation epochs eτ j ,Jump period size h, T = {1, . . . , N − 1}
+
+Ensure: Option price u(0 ,⃗ z)Construct Evolution Hamiltonian ˆHM 1(τ ) with ˆHC and jump Hamiltonian ˆHJ
+
+Prepare initial state |ψ(τ )⟩ ← u(0 ,⃗ z)Set current time τ ← 0 (Imaginary time) 
+
+for j ∈ T do 
+
+Evolve |ψ(τ )⟩ to |ψ(eτj − h)⟩ using ˆHC via chosen method (here: VarQITE )Evolve |ψ(eτj − h)⟩ to |ψ(eτj )⟩ using ˆHJ via chosen method (here: VarQITE ). 
+
+|ψ(τ )⟩ ← | ψ(eτj )⟩
+
+τ ← eτi
+
+end for 
+
+Evolve |ψ(τ )⟩ to |ψ(τN )⟩ using ˆHC via chosen method (here: VarQITE )Extract and adjust price from final state: u(τN ,⃗ z) ← e−rT   
+
+> ⟨0|ψ(τN)⟩
+
+· | ψ(τN )⟩
+
+return u(τN ,⃗ z)
+
+Algorithm 4.2 Imaginary Time Evolution with Continuous Evolutions 
+
+Require: Rate r, Volatility σ, Maturity T , Discretization ⃗z, Revaluation epochs eτ j ,with N number of epochs 
+
+Ensure: Option price u(0 ,⃗ z)Prepare initial state |ψ(τ )⟩ ← u(0 ,⃗ z)Set current time τ ← 0 (Imaginary time) 
+
+for j = 1 , 2, . . . , N do 
+
+Construct Evolution Hamiltonian ˆHj from (3.13) Evolve |ψ(τ )⟩ to |ψ(eτj )⟩ using ˆHj via chosen method (here: VarQITE )
+
+|ψ(τ )⟩ ← | ψ(eτj )⟩
+
+τ ← eτj
+
+end for 
+
+Extract and adjust price from final state: u(τN ,⃗ z) ← e−rT   
+
+> ⟨0|ψ(τN)⟩
+
+· | ψ(τN )⟩
+
+return u(τN ,⃗ z)feasible due to the non-unitary nature of the exponential operator. To address this, we employ a variational approach, specifically the Variational Quantum imaginary time evolution ( VarQITE ) algorithm [15]. The central idea of VarQITE is to replace the exact, non-unitary evolution with a purely unitary, hardware-compatible parameterized circuit, known as a Variational Quantum Circuit (VQC). The target state |ψ(τ )⟩ is approximated by the parame-terized state ϕ(⃗ θ(τ )) 
+
+E
+
+, where ⃗ θ(τ ) is a vector of trainable circuit parameters. Con-sequently, the problem of quantum state evolution is transformed into a classical optimization task: determining the optimal evolution of the parameters ⃗ θ(τ ). This optimization is achieved by minimizing the distance between the exact time derivative of the quantum state and the time derivative generated by the ansatz. McLachlan’s Variational Principle (MVP) is typically employed for this minimization, ensuring that the approximate state ϕ(⃗θ(τ )) 
+
+E
+
+closely tracks the true evolutionary path. Ap-plication of the MVP leads to a system of linear equations, P 
+
+> j
+
+Ai,j ˙θj = −Ci, where PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 13 
+
+Ai,j = Re 
+
+ ∂⟨ϕ(⃗ θ(τ )) |
+
+> ∂θ i
+> ∂
+
+|ϕ(⃗ θ(τ )) ⟩
+
+> ∂θ j
+
+
+
+, and Ci = Re 
+
+ ∂⟨ϕ(⃗θ(τ )) |
+
+> ∂θ i
+
+ˆH ϕ(⃗θ(τ )) 
+
+E
+
+.More details on the VarQITE method can be found in McArdle et al. [15]. The Variational Quantum imaginary time evolution method, being inherently variational, requires a critical choice of ansatz, namely the trainable parameterized quantum circuit used for the evolution, for its success and efficiency. We rigorously tested multiple ansatz structures to optimize performance for our problem. We de-cided to exclusively employ the Ry and CRy gates in our final ansatz designs. The primary motivation for this selection is the requirement that the computed quantum state’s amplitudes remain real for the extraction of the normalized evolution vec-tor. Using only these gates (and no gates that can introduce complex phases) helps ensure this condition is met. We explored several ansatz constructions during our optimization phase. The construction of the ansatz model used in this work is found in Algorithm 4.3. 
+
+Algorithm 4.3 Construction of a layered ansatz 
+
+Require: n qubits, p parameters ⃗ θ = ( θ1, . . . , θ p), k = 0, control qubit qc = 0  
+
+> 1:
+
+Prepare U (⃗ θ) = |0⟩⊗n and apply H on all qubits  
+
+> 2:
+
+while k < p do  
+
+> 3:
+
+Add CR y gate to U (⃗θ) parameterized by θk, with control qc and target 
+
+qt = ( qc + 1) mod n; update k ← k + 1, qc ← qt 
+
+> 4:
+
+IF qt = 0, apply a layer of Ry gates to all n qubits, parameterized by (θk, . . . , θ max( k+n−1,p −1) ) ; update k ← k + n 
+
+> 5:
+
+end while  
+
+> 6:
+
+return U (⃗ θ)
+
+Initial State Preparation and Parameter Initialization. To effectively train the variational circuit used in the imaginary time evolution, we first require a high-quality reference state, uinitial ≡ | ψinitial ⟩. This state is prepared using the generic quantum state preparation algorithm of Iten et al. [12], which is implemented in the Qiskit quantum computing framework. The routine produces a circuit that prepares |ψinitial ⟩ from the computational basis state |0⟩⊗n.The prepared state serves as the training target for the chosen Ry /CR y varia-tional ansatz. The objective of this pre–training stage is to determine a set of param-eters θinitial such that the ansatz reproduces the target state, U (θinitial )|0⟩ ≈ | ψinitial ⟩.
+
+We quantify the quality of the approximation through the quantum state fidelity 
+
+F (θ)|⟨ 0|U †(θ)|ψinitial ⟩| 2. The training uses measurement-based overlap estimation in-stead of directly comparing state vectors. We minimize C(θ) = 1 − P0n (θ) where 
+
+P0n (θ) = |⟨ 0|U †(θ)|ψinitial ⟩| 2. P0n (θ) is estimated by repeated quantum measure-ments, and a classical optimizer (here, Scipy’s BFGS) finds θinitial = arg min θ C(θ)(Algorithm 4.4). The optimized parameters θinitial are used as the starting point for the imaginary time evolution optimization loop (VarQITE). 
+
+5. Results. This section presents a numerical comparison of Algorithm 4.1, in-cluding an exact simulation of the time evolution, and Algorithm 4.2 against a highly resolved Monte Carlo (MC) simulation benchmark. The analysis focuses on the fi-delity of the calculated option price u(0 , z ) as a function of maturity time ( T ) and the level of domain discretization (qubit count). Specifically, the variable z ranges from 
+
+zmin = 0 to zmax = 2 .5, defining a spatial domain discretized into 2 N elements, where 14 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+Algorithm 4.4 Optimization of Initial Ansatz Parameters 
+
+Require: Variational ansatz U (θ), prepared state |ψinitial ⟩, optional initial parame-ters θ0
+
+Ensure: Optimized parameters θinitial and final cost C(θinitial ) 
+
+> 1:
+
+Construct an n-qubit quantum circuit  
+
+> 2:
+
+Prepare the state |ψinitial ⟩ [12]  
+
+> 3:
+
+Apply the inverse ansatz U †(θ) 
+
+> 4:
+
+Measure all qubits in the computational basis  
+
+> 5:
+
+if θ0 not provided then  
+
+> 6:
+
+Initialize θ0 randomly  
+
+> 7:
+
+end if  
+
+> 8:
+
+Define the cost function C(θ) = 1 − P0n (θ) 
+
+> 9:
+
+Estimate P0n (θ) using repeated circuit sampling  
+
+> 10:
+
+Use a classical minimization routine to compute θinitial = arg min θ C(θ) 
+
+> 11:
+
+return θinitial , C (θinitial )
+
+Fig. 1: Algorithm 4.1 compared to MC for T = 2 years using 4 qubits (left) and 8 qubits (right). A clear difference in the first plot indicates discretization error; finer discretization improves agreement with the benchmark. 
+
+N is the number of qubits used. Although multiple ans¨ atze have been tested, the results showcased here are using the configuration as described in Algorithm 4.3, with 100 parameters for both 4 and 8 qubits configuration. All ans¨ atze’s initial parameters have been trained using the routine described in Algorithm 4.4, with a distance to the true initial state of order less than 10 −6. For tests on quantum simulators, we have used 10000 shots per execution. 
+
+5.1. Algorithm 4.1 Performance Analysis. The initial application of Algo-rithm 4.1 at a short-term maturity of T = 2 years reveals a strong dependence of solution fidelity on the level of computational domain discretization. Using a mini-mal 4-qubit configuration, corresponding to 2 4 = 16 basis states, the resulting option price exhibits a noticeable divergence from the reference MC benchmark, as depicted in Figure 1a. This discrepancy is indicative of a substantial discretization error. Upon increasing the system size to 8 qubits, the spatial resolution is refined exponentially. This enhancement leads to a significant improvement in the method’s fidelity, achiev-ing closer agreement with the MC reference across the entire asset price domain, as confirmed by the data presented in Figure 1b. Extending the time horizon to a maturity of T = 4 years introduces increased PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 15 
+
+Fig. 2: Algorithm 4.1 compared to MC for T = 4 years using 4 qubits (left) and 8 qubits (right). Error seems to accumulate through the years. computational challenges, primarily due to the accentuation of accumulated errors stemming from the sequential, iterative application of the continuous Evolution Hamil-tonian ( ˆHC ) and the Jump Hamiltonian ( ˆHJ ) in Algorithm 4.1. The 4-qubit simu-lation manifests a significant discrepancy relative to the MC benchmark (Figure 2a), highlighting the instability of the sequential evolution over prolonged evolution pe-riods. While scaling to 8 qubits mitigates the error, yielding a result demonstrably superior to the 4-qubit configuration, a non-negligible residual divergence from the MC price is still observed (Figure 2b). A key contributing factor identified is the volatility ( σ). Elevated volatility increases the spectral spread of the Hamiltonian, consequently complicating the landscape of the evolved quantum state. This increased complexity makes convergence more difficult for the fixed-depth ansatz, particularly when integrated with the noise induced by the repeated jump operations. 
+
+5.2. Algorithm 4.2 Performance Analysis. Algorithm 4.2, which fundamen-tally restructures the problem by leveraging pre-calculated effective Hamiltonians ˆHj ,
+
+j ∈ { 1, . . . , N − 1} for each discrete period, demonstrates markedly superior compu-tational stability and accuracy than Algorithm 4.1 when benchmarked against MC simulation. Here again, we look at an exact simulation of the time evolution. This enhancement in the results is achieved by consolidating the complex dynamics, in-cluding the jump effects, into a single, period-specific operator, thereby minimizing the cumulative errors associated with repeated sequential operations. It is important to note, however, that the implementation of the complex, effective operators within ˆHi necessarily mandated the utilization of auxiliary qubits, which impacts the total quantum resource overhead. 
+
+5.2.1. Comparison to Monte Carlo for 2 Years Maturity. For the T = 2 year maturity, Algorithm 4.2 exhibits high fidelity across both discretization levels. The 4-qubit configuration, augmented by the required auxiliary qubits, yields results in strong quantitative agreement with the MC benchmark (Figure 3a). Using the 8-qubit configuration (Figure 3b), the method performs exceptionally well, with the calculated option price maintaining high fidelity to the MC reference across the en-tirety of the underlying asset price domain. 
+
+5.2.2. Comparison to Monte Carlo for 4 Years Maturity. The robustness of Algorithm 4.2 is further validated when extending the maturity to T = 4 years. The 4-qubit result, while highly accurate, begins to manifest a small deviation from the MC reference (Figure 4a). This minor divergence is hypothesized to be a consequence 16 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+Fig. 3: Algorithm 4.2 compared to MC for T = 2 years using 4 qubits (left) and 8 qubits (right). A clear difference in the first plot indicates discretization error; finer discretization improves agreement with the benchmark. 
+
+Fig. 4: Algorithm 4.2 compared to MC for T = 4 years using 4 qubits (left) and 8 qubits (right). of the variational ansatz’s limited expressivity over the extended imaginary time path, necessitating an even deeper circuit to fully capture the complexity introduced by the four time periods. Crucially, the 8-qubit simulation maintains its highly accurate and robust performance (Figure 4b), demonstrating that Algorithm 4.2’s approach could scale successfully with increased time horizons and problem complexity. 
+
+5.3. Discussion. The quantitative findings underscore the central role of spatial discretization in the quantum pricing model. The resolution of the underlying asset price domain is determined by the number of qubits ( N ), resulting in an exponential scaling of the grid size (∆ x ∝ 2−N ). A clear bifurcation in performance is observed: while increasing N from 4 to 8 qubits yielded substantial improvements in accuracy for both algorithms, especially Algorithm 4.2, the realization of performance gains is not a function of qubit count alone. For highly complex or long-term dynamic regimes, such as the T = 4 case under elevated volatility, the fidelity is intrinsically linked to the ansatz expressibility. The variational circuit must possess sufficient depth and parameterization to effectively leverage the refined computational grid; otherwise, the high resolution remains computationally underutilized. When looking at a variational implementation of the imaginary time evolution, we can see in Figure 5 that using VarQITE also yields satisfying results. The complex-ity of the financial product, particularly the revaluation jumps, imposes significant constraints on scaling. Specifically, Algorithm 4.2’s design, which relies on the Hamil-tonians ˆHi, necessitates the use of auxiliary quantum registers (auxiliary qubits) to PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 17 
+
+Fig. 5: Algorithm 4.2 compared to MC for T = 4 years using VarQITE to implement Variational imaginary time evolution. implement the required operators. Consequently, while the Q computational qubits govern the financial resolution, the auxiliary qubits directly increase the total required quantum resource overhead, which is an important consideration for near-term hard-ware deployment. However, as mentioned earlier, the scaling of the number of qubits follows log 2 N , where N is the number of time-periods between revaluations. Fur-thermore, while the pursuit of higher precision naturally leads to increasing Q, future scaling efforts are likely to encounter the intrinsic theoretical limits of variational quan-tum algorithms, notably the phenomenon of barren plateaus , where the optimization gradient vanishes exponentially, thus yielding results of diminishing quality. 
+
+5.3.1. Hamiltonian Complexity Analysis. The computational efficiency of both algorithms is predicated on the sparsity and tractability of the Hamiltonian decomposition. As we can see in previous sections, the constructed Hamiltonians are quite sparse. The tensorized Pauli decomposition [10] was utilized to transform the matrix Hamiltonians into a sum of Pauli operators that could be used on quantum hardware. The resulting number of Pauli terms (operators) significantly dictates the necessary depth and overall execution time of the VarQITE circuit. We can see in Table 1 that due to the construction of our Hamiltonians in both methods, the number of Pauli terms are greater for method 4.2. However, since the results of said method are significantly better than those of method 4.1, we consider this increase of number of Pauli terms as a necessary trade-off. Table 1: Number of Pauli Operators in Hamiltonian Decomposition for 4 computa-tional qubits system 
+
+Method T = 2 T = 4 Algorithm 4.1 ˆHC 208 208 Algorithm 4.1 ˆHJ 192 192 Algorithm 4.2 ˆHj (mean) 456 2180 While VarQITE is a pragmatic solution for NISQ devices, it is subject to the general limitations of variational quantum algorithms. The classical optimization landscape often contains numerous local minima, hindering convergence to the global optimum, particularly with increasing circuit parameter count. Gradient computation 18 T. BELABBAS, E. HAMEL, A. MACKAY, F. PAQUETTE 
+
+can become exponentially vanishing with respect to the number of qubits and circuit depth, severely impeding optimization efficiency. Also, the algorithm remains vulner-able to errors from gate implementation and measurement, necessitating further error mitigation techniques. 
+
+6. Conclusion. In this work, we developed and analyzed two quantum algo-rithms to price discretely monitored lookback options within the Black-Scholes frame-work using imaginary time evolution. Our study demonstrates that the challenges posed by jump conditions in the option pricing PDE, absent in standard European or Asian options, can be effectively addressed within a quantum computational frame-work. The sequential evolution approach (Algorithm 4.1) provides a conceptually straightforward method for incorporating jump dynamics, but its performance is sen-sitive to spatial discretization and suffers from cumulative errors over extended time horizons. In contrast, the effective Hamiltonian approach (Algorithm 4.2) consol-idates jump effects into period-specific operators, achieving higher fidelity and ro-bustness, albeit at the cost of additional auxiliary qubits and increased Hamiltonian complexity. Numerical simulations show that both methods approach the Monte Carlo benchmarks as the number of qubits and circuit expressibility increase, with Algorithm 4.2 consistently providing superior accuracy across different maturities and volatility regimes. Our results highlight key considerations for near-term implemen-tations on NISQ devices, including the trade-off between quantum resource overhead and solution accuracy, as well as limitations inherent to variational algorithms such as barren plateaus and local minima in classical optimization. Looking forward, the transition to fault-tolerant quantum computing could enable non-variational methods that leverage mathematically rigorous error bounds and potentially offer exponential speedups. More broadly, this work establishes a concrete framework for the quantum valuation of path-dependent derivatives with discontinuous value functions, hopefully leading toward the pricing of increasingly complex financial products. 
+
+Acknowledgments. Financial support and in-kind contribution from the Au-torit´ e des march´ es financiers (AMF Qu´ ebec) is gratefully acknowledged. The authors bear full responsibility for the information contained therein. The views and opin-ions expressed in this paper are those of the authors and do not necessarily reflect the official policy or position of the AMF Qu´ ebec. The support of the Algolab of the Quantum Institute of the University of Sherbrooke is also acknowledged. This research was enabled in part by support provided by Calcul Qu´ ebec (calculquebec.ca) and the Digital Research Alliance of Canada (alliancecan.ca). The authors acknowledge the use of AI to edit the written text for spelling, grammar, and general style.         
+
+> REFERENCES [1] A. R. Bacinello, P. Millossovich, A. Olivieri, and R. Potenza ,Variable annuities: Aunifying valuation approach , Insurance: Mathematics and Economics, 49 (2011), pp. 285– 297, https://doi.org/10.1016/j.insmatheco.2011.05.003. [2] N. K. Bhasin, S. Kadyan, K. Santosh, H. P. Ramya, R. Changala, and B. K. Bala ,
+> Enhancing quantum machine learning algorithms for optimized financial portfolio man-agement , in Proceedings of the 2024 Third International Conference on Intelligent Tech-niques in Control, Optimization and Signal Processing (INCOS), IEEE, 2024, pp. 1–7, https://doi.org/10.1109/INCOS59338.2024.10527612. [3] T. Bjork ,Arbitrage Theory in Continuous Time , Oxford University Press, Oxford, UK, 4 ed., 2019, https://doi.org/10.1093/oso/9780198851615.001.0001. [4] A. G. Cadavid, I. Montalban, A. Dalal, E. Solano, and N. N. Hegade ,Efficient digitized counterdiabatic quantum optimization algorithm within the impulse regime for portfolio
+
+PRICING LOOKBACK OPTIONS ON A QUANTUM COMPUTER 19 
+
+optimization , Physical Review Applied, 22 (2024), p. 054037, https://doi.org/10.1103/ PhysRevApplied.22.054037. [5] F. Catalano, L. Nasello, and D. Guterding , Quantum computing approach to realistic esg-friendly stock portfolios , Risks, 12 (2024), p. 66, https://doi.org/10.3390/risks12040066. [6] A. M. Dalzell, S. McArdle, M. Berta, P. Bienias, C.-F. Chen, A. Gilyen, C. T. Hann, M. J. Kastoryano, E. T. Khabiboulline, A. Kubica, G. Salton, S. Wang, and F. G. S. L. Brandao , Quantum Algorithms: A Survey of Applications and End-to-end Complexities , Cambridge University Press, Cambridge, UK, 1 ed., 2025, https: //doi.org/10.1017/9781009639651. [7] F. Fontanela, A. Jacquier, and M. Oumgari , Short communication: A quantum algorithm for linear pdes arising in finance , SIAM Journal on Financial Mathematics, 12 (2021), pp. SC98–SC114, https://doi.org/10.1137/21M1397878. [8] J. Gonzalez-Conde, A. Rodriguez-Rozas, E. Solano, and M. Sanz , Efficient hamilton-ian simulation for solving option price dynamics , Physical Review Research, 5 (2023), p. 043220, https://doi.org/10.1103/PhysRevResearch.5.043220. [9] Y. Gujju, A. Matsuo, and R. Raymond , Quantum machine learning on near-term quan-tum devices: Current state of supervised and unsupervised techniques for real-world applications , Physical Review Applied, 21 (2024), p. 067001, https://doi.org/10.1103/ PhysRevApplied.21.067001. [10] L. Hantzko, L. Binkowski, and S. Gupta , Tensorized pauli decomposition algorithm , Physica Scripta, 99 (2024), p. 085128, https://doi.org/10.1088/1402-4896/ad6499. [11] D. Herman, C. Googin, X. Liu, Y. Sun, A. Galda, I. Safro, M. Pistoia, and Y. Alexeev ,
+
+Quantum computing for finance , Nature Reviews Physics, 5 (2023), pp. 450–465, https: //doi.org/10.1038/s42254-023-00603-1. [12] R. Iten, R. Colbeck, I. Kukuljan, J. Home, and M. Christandl , Quantum circuits for isometries , Physical Review A, 93 (2016), p. 032318, https://doi.org/10.1103/PhysRevA. 93.032318, https://doi.org/10.1103/PhysRevA.93.032318. [13] S. Kumar and C. M. Wilmott , Simulating the non-hermitian dynamics of financial option pricing with quantum computers , Scientific Reports, 15 (2025), p. 13268, https://doi.org/ 10.1038/s41598-025-97245-3. [14] W. Liu, Y. Ma, Y. Gu, J. Cheng, and Q. Wu , Quantum alternating operator ansatz with pso optimizer for portfolio optimization problem , Applied Soft Computing Journal, 181 (2025), p. 113419, https://doi.org/10.1016/j.asoc.2025.113419. [15] S. McArdle, T. Jones, S. Endo, Y. Li, S. C. Benjamin, and X. Yuan , Variational ansatz-based quantum simulation of imaginary time evolution , npj Quantum Information, 5 (2019), p. 75, https://doi.org/10.1038/s41534-019-0187-2. [16] K. Miyamoto , Bermudan option pricing by quantum amplitude estimation and chebyshev interpolation , EPJ Quantum Technology, 9 (2022), p. 3, https://doi.org/10.1140/epjqt/ s40507-022-00124-3. [17] M. A. Nielsen and I. L. Chuang , Quantum Computation and Quantum Information , Cam-bridge University Press, Cambridge, 10th anniversary edition ed., 2010. [18] R. Orus, S. Mugel, and E. Lizaso , Quantum computing for finance: Overview and prospects ,Reviews in Physics, 4 (2019), p. 100028, https://doi.org/10.1016/j.revip.2019.100028. [19] P. V. Shevchenko and X. Luo , A unified pricing of variable annuity guarantees under the optimal stochastic control framework , Risks, 4 (2016), p. 22, https://doi.org/10.3390/ risks4030022. [20] S. Thakkar, S. Kazdaghli, N. Mathur, I. Kerenidis, A. J. Ferreira-Martins, and S. Brito , Improved financial forecasting via quantum machine learning , Quantum Ma-chine Intelligence, 6 (2024), p. 27, https://doi.org/10.1007/s42484-024-00157-0. [21] G.-C. Wick , Properties of bethe–salpeter wave functions , Physical Review, 96 (1954), pp. 1124– 1134, https://doi.org/10.1103/PhysRev.96.1124. [22] S. Wilkens and J. Moorhouse , Quantum computing for financial risk measure-ment , Quantum Information Processing, 22 (2023), p. 51, https://doi.org/10.1007/ s11128-022-03777-2. [23] P. Wilmott, J. Dewynne, and S. Howison , Option Pricing: Mathematical Models and Com-putation , Oxford Financial Press, Oxford, UK, 1994. [24] X. Yuan, S. Endo, Q. Zhao, Y. Li, and S. C. Benjamin , Theory of variational quantum simulation , Quantum, 3 (2019), p. 191, https://doi.org/10.22331/q-2019-10-07-191. [25] J. Zhou , Quantum finance: Exploring the implications of quantum computing on finan-cial models , Computational Economics, 64 (2025), pp. 1–25, https://doi.org/10.1007/ s10614-025-10894-4.
