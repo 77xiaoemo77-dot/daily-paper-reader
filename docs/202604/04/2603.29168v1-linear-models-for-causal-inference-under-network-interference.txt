@@ -1,0 +1,440 @@
+Title: Linear models for causal inference under network interference
+
+URL Source: https://arxiv.org/pdf/2603.29168v1
+
+Published Time: Wed, 01 Apr 2026 00:24:26 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# LINEAR MODELS FOR CAUSAL INFERENCE UNDER NETWORK INTERFERENCE 
+
+Eric Tong 
+
+Department of Statistics, Harvard College, 
+
+erictong@college.harvard.edu 
+
+Salvador V. Balkus 
+
+Department of Biostatistics, Harvard Chan School of Public Health, 
+
+sbalkus@g.harvard.edu 
+
+April 1, 2026 
+
+# ABSTRACT 
+
+In causal inference, interference occurs when the treatment of one unit may affect the outcomes of other units. The goal of this work is to serve as a guide to the use of linear outcome modeling for estimating causal effects in settings where interference may pose a challenge to identification and estimation, such as spatial and network data. We demonstrate that, under a linear model, causal effects of binary and continuous treatments can be identified in terms of regression coefficients un-der totally and partially known interference structures. Our work constructs unbiased and consistent point and variance estimators for these effects under one or more possible fixed or random interfer-ence networks. A chief advantage is that this approach can be implemented using standard linear regression software, and is easily augmented with random effects and heteroscedastic or autocorre-lation consistent standard errors. Numerical experiments and an example data analysis demonstrate the efficacy of this approach in eliminating interference bias. 
+
+# 1 Introduction 
+
+Linear regression is one of the main workhorses of modern-day statistics. One place it finds frequent application is in the field of causal inference. Under linearity and standard identification assumptions, estimating the regression coefficient for a treatment Ai in a model for outcome Yi given confounders Li is equivalent to estimating the average treatment effect (Hern´ an & Robins, 2024), a strategy known as outcome regression . While far from the most sophisti-cated approach (van der Laan et al., 2011), its ubiquity and familiarity renders it one of the simplest ways to estimate causal effects (L¨ ubke et al., 2020). A key assumption underlying this strategy is that each unit’s outcome Yi depends only on its own treatment Ai and confounders Li, not those of other units. The violation of this assumption, when Yi may also depend on Aj or Lj
+
+for j̸ = i, is called interference , or “spillover” (Hudgens & Halloran, 2008; Tchetgen & VanderWeele, 2010). When the interfering units are encoded in an adjacency matrix G, this is known as network interference (Aronow & Samii, 2017). Figure 1 illustrates the causal structure. Interference commonly arises in spatial, network, and clustered data. For instance, in studies of air pollution and disease (Wu et al., 2020) or social mobility (Lee et al., 2024), the population of one geographic unit may commute to other units, exposing individuals to pollution beyond their home geography. Ignoring this can cause the effect of air pollution on a desired outcome to be underestimated (Shin et al., 2023). Long recognized as an obstacle to causal identification (Cox, 1958), interference was first formalized as a component of the stable-unit treatment value assumption in causal inference by Rubin (1980). Initial attempts to rectify the issue focused on design-based strategies and propensity score methods (Kempton, 1997; Sobel, 2006; Hong & Raudenbush, 2006). Hudgens & Halloran (2008) and Tchetgen & VanderWeele (2010) introduced estimands decomposing the total effect into within-unit (“direct”) and spillover (“indirect”) effects under the assumption of partial interference : that units can be partitioned such that only units within the same partition interfere with each other. Later, Aronow & Samii (2017) formalized the notion of exposure mappings , dimension-reducing summaries of neighboring treatments, 
+
+> arXiv:2603.29168v1 [stat.ME] 31 Mar 2026
+
+APRIL 1, 2026 
+
+# Li Ai Yi
+
+# Lj Aj Yj
+
+Figure 1: Directed acyclic graph of causal relationships for “interfering” units i and j.in order to handle network (or “general”) interference, in which units may be interfere with each other according to their ties in a network. These dimension-reducing summaries lent themselves natural to model-based approaches, including machine-learning-based semiparametric methods for observational spatial data introduced by van der Laan (2014) and further developed by Sofrygin & van der Laan (2017); Ogburn et al. (2022); Zivich et al. (2022); Emmenegger et al. (2025) and Balkus et al. (2026). Modern competing approaches decompose the joint treatment probability via the network structure (Tchetgen Tchetgen et al., 2021; Liu et al., 2025; Clark & Handcock, 2024; Forastiere et al., 2020; Fritz et al., 2025), or employ experimental and quasi-experimental approaches (Aronow, 2012; Sinclair et al., 2012; Baird et al., 2018; Jiang et al., 2022; Vazquez-Bare, 2023; Xu, 2023; Torrione et al., 2024); see Bhadra & Schweinberger (2025) for a recent review. Despite this rich literature, many existing methods pose a challenge to use in practice because they require bespoke estimation strategies or designs unavailable or unfamiliar to practitioners who may be more accustomed to standard regression workflows. For example, in spatial and clustered settings, analysts are often more familiar with linear mixed-effects models or generalized least squares (Gelman & Hill, 2007), or in econometrics, the spatial Durbin model (Anselin, 1988). Though such models can account for spatial autocorrelation or adjust for neighboring covariates, neither directly targets the effect of a causal intervention on neighbors’ treatments. A couple works attempt to remedy this. LeSage & Dominguez (2010) measure spillover via partial derivatives of spatial linear models, but connections to modern causal frameworks remains unclear, while Verbitsky-Savitz & Raudenbush (2012) use a hierarchical linear model to target treatment effects under spillover in an observational study of community policing. Our goal is to build on the work of Verbitsky-Savitz & Raudenbush (2012) to provide general, software-friendly tools for causal inference with linear models under interference. 
+
+Contributions. The purpose of this manuscript is to present a framework for linear outcome modeling in the presence of network interference. We argue that, under a linear model, treatment effect identification under interference reduces to an issue of model specification. Consequently, one can account for interference easily and naturally via slight modifications to estimation routines in existing statistical software like R (R Core Team, 2025). To this end, our work derives unbiased and consistent point and variance estimators for two common treatment effects of interest under totally and partially known interference structures, where the interference network may be fixed or random. Our results extend easily to complex cases where multiple possible interference networks may be considered. This work will guide general practitioners in using linear models to estimate causal effects in settings like spatial data where interference often lurks. 
+
+Outline . After a brief problem set-up (Section 2.1), we present identification results and estimation methods (Sec-tions 2.2–2.5), numerical simulations (Section 3), a real-data illustration (Section 4), and a discussion of limitations and future directions (Section 5). 
+
+2APRIL 1, 2026 
+
+# 2 Methods: Linear models with interference 
+
+2.1 Data and Problem Set-up 
+
+Consider n exchangeable units (Li, A i, Y i), i = 1 , . . . , n , where Li is a vector of baseline covariates, Ai a treatment or exposure, and Yi an outcome. By “exchangeable”, we mean the joint distribution of the data is invariant to permutation of indices. We denote Y = [ Yi]ni=1 as the outcome vector, with analogous notation for A and L. The data are supplemented by an adjacency matrix G, where Gij = 0 indicates no interference between i and j, and Gij ̸ = 0 
+
+indicates that the treatment of unit i may affect the outcome of unit j. G may be binary or weighted (in which case 
+
+Gij denotes the magnitude of interference), as well as directed or undirected. We define the neighborhood of unit i as 
+
+N (i) = {j : Gij ̸ = 0 }, and write AN (i) and LN (i) for the subvectors of treatments and covariates of i’s neighbors. Assume the outcome follows the main-terms linear model 
+
+Yi = β0 + βaAi + X 
+
+> j∈N (i)
+
+βas,j Gij Aj + βlLi + X 
+
+> j∈N (i)
+
+βls,j Gij Lj + εi (1) where E(ε) = 0 and Var (ε) = σ2In + ρS for some covariance matrix S capturing spatial or network correlation; when ρ = 0 the errors are i.i.d. This is a classical linear model augmented by the weighted treatments and covariates of each unit’s neighbors. 
+
+2.2 Identification 
+
+This work will examine two estimands. For binary A, the average treatment effect (ATE) is E[Y (1) − Y (0)] (Hern´ an & Robins, 2024); for continuous or count A, the 1-unit modified treatment effect (MTE) is E[Y (A + 1) − Y (A)] , also known as the population intervention effect of a 1-unit additive modified treatment policy (D´ ıaz & van der Laan, 2012; Haneuse & Rotnitzky, 2013). Under standard causal assumptions and the standard linear model Yi = βaA + βlL + εi,these can both be identified as equal to the regression coefficient βa.However, when interference is present as in Equation (1), βa alone no longer identifies either estimand: Yi may be affected by an intervention that modifies its neighbors’ treatments even if its own is unchanged. This violates causal consistency. Interestingly, this can also be seen as a form of model misspecification, as the terms of Equation (1) indexed by coefficients βas,j and βls,j have been excluded from the model (and thus, the identification formula). When the outcome Yi depends on both i’s own treatment and its neighbors’, the potential outcomes become 
+
+Yi(ai, a N (i)). In this case, we can attempt identification using natural extensions of the standard causal assumptions: 
+
+A1 (Consistency) If Ai = ai and AN (i) = aN (i), then Yi(ai, a N (i)) = Yi.
+
+A2 (No unmeasured confounding) Yi(ai, a N (i)) ⊥⊥ (Ai, A N (i)) | (Li, L N (i)).
+
+A3 (Positivity for ATE) P (Ai = ai, A N (i) = aN (i) | Li = li, L N (i) = lN (i)) > 0 for all (ai, l i, a N (i), l N (i))
+
+in the support. 
+
+A4 (Positivity for MTE) (ai + 1 , l i, a N (i) + 1 , l N (i)) ∈ support (A, L ) for all (ai, l i, a N (i), l N (i)) ∈
+
+support (A, L ).The dependence of Yi on potentially many neighboring covariates can pose a challenge due to the high-dimensionality of the parameters. Fortunately, the assumptions of linearity and exchangeability together reduce the problem to a low-dimensional one. Permutation-invariance of the joint distribution implies that all neighbor-specific coefficients must be equal; formally (βas,j , β ls,j ) = ( βas , β ls ) for all j ∈ N (i), otherwise exchangeability would not hold. Hence, Equation (1) collapses to 
+
+Yi = β0 + βaAi + βas Asi + βlLi + βls Lsi + εi (2) where Asi = P  
+
+> j∈N (i)
+
+Gij Aj and Lsi = P  
+
+> j∈N (i)
+
+Gij Lj . In the language of Aronow & Samii (2017), linearity automatically enforces a known exposure mapping . Yi can be thought of as a linear model of “summary” functions As
+
+and Ls that represent weighted sums of interfering neighbors. With the parameter space reduced, identification in terms of regression coefficients can proceed. Let Fi =P  
+
+> j∈N (i)
+
+Gij denote the weighted degree of unit i. By linearity of expectation, 
+
+E(Yi | Ai = 1 , L i, A N (i) = 1) = β0 + βa + βas Fi + βlLi + βls Lsi
+
+Subtracting the analogous expression at Ai = 0 and averaging over units gives 
+
+ψATE = E(βa + βas Fi) = βa + βas E(Fi)
+
+3APRIL 1, 2026 
+
+with an identical result for the MTE. Thus βa is the within-unit effect —the direct impact of a unit’s own treatment— while βas E(Fi) is the spillover effect from neighbors, which grows with network density. Ignoring interference yields a total-effect bias of βas E(Fi) even if βa is estimated correctly. We refer to ψATE and ψMTE (henceforth, just ψ)collectively as the “total effect”, and to βa and βas as the within-unit and spillover effects. 
+
+2.3 Estimation under totally known interference structures 
+
+In this section, we consider the case where a sample of G is fully available to the investigator. Thus, treatment and confounder summaries are easily calculated by performing matrix-vector or matrix-matrix multiplications GA and 
+
+GL . We present how to estimate the ATE and MTE using these quantities. 
+
+Point estimation . Our previously identified treatment effects can be estimated using the following procedure: 1. Compute GA and GL and construct the augmented design matrix [A L GA GL ].2. Fit E(Y | A, L ) = βaA + βlL + βas GA + βls GL using standard software (e.g. lm in R (R Core Team, 2025)) to obtain ˆβa and ˆβas .3. Compute the empirical mean weighted degree ¯F = 1
+
+> n
+
+Pni=1 Fi.4. Form the plug-in estimate ˆψ = ˆβa + ˆβas ¯F .Since ˆβa, ˆβas , and ¯F are all unbiased conditional on G, by linearity of expectation and the law of total expectation, 
+
+E( ˆψ) = E
+
+h
+
+E( ˆβa | G) + ¯F E ( ˆβas | G)
+
+i
+
+= βa + βas E(Fi) (3) and consistency follows by the continuous mapping theorem. 
+
+Statistical inference . Conditioning on the observed G (so ¯F is fixed), the variance of ˆψ can be derived by applying Bienayme’s identity to obtain the following: Var ( ˆψ | G) = Var ( ˆβa | G) + ¯F 2Var ( ˆβas | G) + 2 ¯F Cov ( ˆβa, ˆβas | G) (4) Estimates of Var ( ˆβa | G), Var ( ˆβas | G), and Cov ( ˆβa, ˆβas | G) are returned by standard regression software (e.g. via 
+
+vcov() in R) and can be plugged directly into Equation (4). Unbiasedness and consistency of this plug-in estimate follows if its components are each estimated unbiasedly and consistently. Wald-style (1 − α) confidence intervals follow from the standard construction ˆψ ± Φ−1(α/ 2) 
+
+qcVar ( ˆψ | G).Even though typically only a single observation of G is observed, in some cases it may be sensible to treat G as random. In this case, the plug-in variance estimator is anti-conservative but can still achieve consistency. To show this, we can first apply the law of total variance: 
+
+E( cVar ( ˆψ|G)) = E
+
+h cVar ( ˆβa | G) + cVar ( ¯F ˆβas | G) + 2 dCov ( ˆβa, ¯F ˆβas | G)
+
+i
+
+=E
+
+
+
+E
+
+h cVar ( ˆβa | G) | G
+
+i
+
++ E
+
+h cVar ( ¯F ˆβas | G) | G
+
+i
+
++ 2 E
+
+h dCov ( ˆβa, ¯F ˆβas | G) | G
+
+i 
+
+=E
+
+h
+
+Var ( ˆβa | G) + Var ( ¯F ˆβas | G) + 2 Cov ( ˆβa, ¯F ˆβas | G)
+
+i 
+
+=
+
+
+
+Var ( ˆβa) − Var (E( ˆβa | G)) 
+
+
+
++
+
+
+
+Var ( ¯F ˆβas ) − Var [E( ¯F ˆβas | G)] 
+
+
+
++ 2 
+
+
+
+Cov ( ˆβa, ¯F ˆβas ) − Cov [E( ˆβa | G), E ( ¯F ˆβas | G)] 
+
+
+
+Recall E( ˆβa | G) = βa; since the variance or covariance of a constant is 0, the first and third subtrahends are equal to 0. Then, since E( ˆβas | G) = βas , by variance properties and the definition of ¯F , Var (E( ¯F ˆβas | G)) simplifies so that that 
+
+E( cVar ( ˆψ|G)) = Var ( ˆψ) − β2
+
+> as
+
+n2 Var (W ) (5) where W = P 
+
+> i,j
+
+Gij is the total edge weight of G. When W is fixed, as in the models of Albert & Barab´ asi (2002) and Watts & Strogatz (1998), where each node has a fixed degree, or when the weights of the network are normalized to sum to a particular value, Var (W ) = 0 , yielding unbiasedness. But even if W may vary, consistency can still be 
+
+4APRIL 1, 2026 
+
+achieved provided its variance does not grow too rapidly. For example, in an Erd˝ os-R´ enyi graph with edge probability 
+
+p, Var (W ) = n(n − 1) p(1 − p); the bias is O(1) for fixed p but shrinks to o(1 /n ) when p = o(1 /n ), yielding asymptotically valid inference. 
+
+Handling correlated errors . In general, a fixed-effect linear regression estimate for ˆβ will always be unbiased under correct specification. However, unless ε’s entries are i.i.d. (unlikely in the types of spatial or network settings where interference might arise) obtaining unbiased and consistent estimates of the components of Var ( ˆψ) will require accounting for possible heteroscedasticity or autocorrelation in ε.Since all standard linear model theory applies to Equation (2), correlated errors pose no special difficulty. If ε exhibits spatial autocorrelation, clustering, or repeated measures correlation, one can employ general least squares (GLS) or a linear mixed-effects model (LMM) with an appropriate random effect structure—including, in the undirected network setting, a covariance of the form ˆσ2I + ˆ ρG to model network-correlated errors. Under a correctly-specified correlation structure, necessary plug-in components of cVar ( ˆβ) can be extracted from any standard GLS or LMM fit (e.g. via 
+
+vcov() in R) and plugged directly into Equation (4) to obtain valid inference for the total effect. Note, however, that in longitudinal settings these adjustments do not correct for time-varying confounding, which requires further structural assumptions (Robins, 1986; Hern´ an & Robins, 2024, see also Section 2.5). 
+
+2.4 Estimation under partially known interference structures 
+
+When the full graph G is unavailable but the weighted degree Fi = P  
+
+> j∈N (i)
+
+Gij is observed for each unit, causal effects can still be identified under two additional assumptions: 
+
+A5 (Treatment independence) Ai ⊥⊥ LN (i) for all i; i.e. treatment is independent of neighbors’ covariates. 
+
+A6 (Equal effects) βa = βas ; the within-unit and spillover coefficients are equal. A5 can hold under randomized designs or when treatment assignment does not depend on network position, ensuring 
+
+LN (i) does not confound estimation of βa. A6 may be appropriate when treatment has the same magnitude of effect regardless of network location. This might be appropriate in a study of, for instance, air pollution, where a toxin might plausibly cause the same harm no matter its physical location of exposure. However, it may be inappropriate for a treatment such as a vaccine, where an individual’s own treatment strengthens their immune system but their neighbor’s treatment only reduces the probability of transmission. Under A5–A6, the total effect simplifies to 
+
+ψ = βa
+
+h
+
+1 + E(Fi)
+
+i
+
+(6) and βa can be estimated by fitting regressions with either of the following formulae: 
+
+Y ∼ A + L + F (Fixed Effects) 
+
+Y ∼ A + L + (1 | F ) (Mixed Effects) The plug-in estimator ˆψ = ˆβa(1 + ¯F ) is unbiased by the same arguments as Equation (3), and its variance can be estimated by the plug-in estimator 
+
+cVar ( ˆψ | G) = (1 + ¯F )2 cVar ( ˆβa | G) (7) When G is random, the bias in this variance estimator mirrors Equation (5): it is zero for networks with a fixed sum of edges, and is asymptotically negligible for sparse graphs with Var (W ) ≲ n2.
+
+2.5 Models that adapt to multiple possible interference structures 
+
+The additive structure of linear models naturally accommodates interference from multiple sources. Given networks 
+
+G1, . . . , G K representing distinct interference mechanisms, the outcome model becomes 
+
+Y = β0 + βaA + βlL +
+
+> K
+
+X
+
+> k=1
+
+βask GkA +
+
+> K
+
+X
+
+> k=1
+
+βlsk GkL + ε (8) and the total effect is identified as ψ = βa + PKk=1 βask E(Fk,i ), where Fk,i = P  
+
+> j∈N k(i)
+
+Gk,ij is the weighted degree of unit i in network Gk. As in Section 2.3, plug-in estimates of this parameter with components obtained from fitting the linear regression in Equation (8) will be unbiased and consistent. The variance of this estimator will be Var ( ˆψ | G1, . . . , G K ) = Var ( ˆβa) + 
+
+> K
+
+X
+
+> k=1
+
+¯F 2 
+
+> k
+
+Var ( ˆβask ) + 2 
+
+> K
+
+X
+
+> k=1
+
+¯FkCov ( ˆβa, ˆβask ) + 2 X
+
+> k<m
+
+¯Fk ¯FmCov ( ˆβask , ˆβasm )
+
+5APRIL 1, 2026 
+
+which has an unbiased plug-in estimate for fixed networks. For random networks, by the same arguments as Sec-tion 2.3, the plug-in variance estimator satisfies 
+
+E( cVar ( ˆψ)) = Var ( ˆψ) − 1
+
+n2
+
+> K
+
+X
+
+> k=1
+
+β2 
+
+> ask
+
+Var (Wk) − 2
+
+n2
+
+X
+
+> k<m
+
+βask βasm Cov (Wk, W m) (9) where Wk is the total edge weight of Gk. Since Cov (Wk, W m) ≤ pVar (Wk)Var (Wm), a plug-in variance estimate is (asymptotically) unbiased provided Var (Wk) grows slowly. We briefly highlight three useful applications of the multi-network framework. 
+
+Higher-order neighbors . If outcomes depend on “neighbors’ neighbors” in addition to immediate neighbors, one can include Gk (the kth matrix power of G) as an additional network in Equation (8) to capture interference froom 
+
+kth-order neighbors. All preceding theory applies, though care is needed when treating Gk as random: the variance of its total edge count may grow faster than that of G itself, depending on the network structure. 
+
+Time-varying interference . When interference evolves over time, one can incorporate a sequence of networks 
+
+G1, . . . , G T , one per time period, into a wide-format model summarizing each time period’s covariates by the cor-responding Gt. For causal inference under treatment-confounder feedback, such a model must be combined with parametric g-computation (Naimi et al., 2016; Hern´ an & Robins, 2024); the main modification is that treatments and confounders at each time point are summarized by the time-varying Gt.
+
+Network uncertainty and model selection . When the correct interference structure is uncertain, standard model selection tools— R2, AIC (Akaike, 1973), cross-validated MSE—apply directly, since the model in Equation (8) is an ordinary linear regression conditional on G. One can fit separate models for each candidate network and select the model achieving the best criteria; though, one must bear in mind that metrics like cross-validation may require modification to estimate in the presence of correlated errors (Rabinowicz & Rosset, 2020). One could also include summaries from each network within a single model and apply Lasso penalization (Tibshirani, 1996) to select relevant terms, applying corrections to perform post-selection inference (Lee et al., 2016). 
+
+# 3 Simulation Experiments 
+
+We evaluate the estimators from Section 2 via simulation in R (R Core Team, 2025), drawing from the data-generating process 
+
+L1 ∼ Gamma (3 , 1) , L2 ∼ Pois (1) , L3 ∼ Beta (2 , 5) , L4 ∼ Bern (0 .6) 
+
+A ∼ L1 + 2 L2 + 3 L3 + 4 L4 + εA, Y ∼ A + L1 + 2 L2 + 3 L3 + 4 L4 + GA + εY
+
+with εA, ε Y ∼ N (0 , Σ) . We ran two experiments: a homoscedastic setting ( Σ = In) and a correlated setting ( Σ = 3In + 1 .5G). Interference graphs were generated using igraph (Cs´ ardi et al., 2025): Erd˝ os-R´ enyi ( sample gnp ,
+
+p = 0 .01 ), Barab´ asi-Albert ( sample pa , power = 0 .05 ), and Watts-Strogatz ( sample smallworld , dim = 1 , nei 
+
+= 10 , p = 0 .05 ). The target parameter is MTE = 1 + n−1 P 
+
+> i
+
+Fi. Each combination of graph type and error structure was evaluated at n ∈ { 100 , 400 , 900 , 1600 } over 100 replicates. In the homoscedastic setting we compared three estimators: totally-known interference (Section 2.3), partially-known interference (Section 2.4), and a misspecified estimator ignoring interference. In the correlated setting we compared two totally-known estimators: one accounting for correlated errors and one ignoring them. Results are shown in Figures 2 and 3. As expected, the misspecified model yields biased estimates with poor coverage. Both interference-aware estimators achieve unbiased estimates and approximately nominal 95% coverage, with variance shrinking with n; the variance bias in the Erd˝ os-R´ enyi setting was negligible in practice. The totally-known estimator attained substantially lower variance than the partially-known estimator by exploiting full network structure. In the correlated setting, the estimator accounting for error correlation maintained near-nominal coverage, while the one ignoring it did not. 
+
+# 4 Example Data Analysis 
+
+We illustrate the impact of interference correction on a regression of county-level poverty rates on PM 2.5 across n = 58 
+
+California counties—a small-sample spatial setting with known low but meaningful effect sizes (Verbeek et al., 2021). County-level PM 2.5 data were obtained from National Institute on Minority Health and Health Disparities (2025), while poverty rates and confounders (population density, education, age, race, and share of workers in production or 
+
+6APRIL 1, 2026 
+
+Figure 2: Operating characteristics of homoscedastic linear models under interference. transportation) were extracted from the American Community Survey via tidycensus (Walker & Herman, 2024). The interference graph was constructed from LEHD Origin-Destination Employment Statistics (U.S. Census Bureau, 2024), which tracks home-work commuting patterns and has been used as a mobility proxy in air pollution research (de Souza et al., 2023); edge weights represent the fraction of each county’s population commuting into each other county. Summary statistics are given in Table 1. Table 1: Summary statistics of data used in PM 2.5 -poverty regression analysis. Statistic Mean St. Dev. Min Max Poverty rate 9.0 3.4 3.8 18.1 PM 2.5 (μg/m 3) 13.9 5.0 7.9 39.1 Population density (/km 2) 272.1 947.2 0.7 7,030.7 % in production or transportation jobs 4.9 1.6 2.1 9.2 Education (% bachelor’s degree or higher) 29.2 12.3 12.1 61.1 Median age 40.1 6.2 31.5 54.9 % White 62.9 15.7 34.0 89.2 % Hispanic/Latino 19.6 11.8 3.1 53.9 Sum of interference weights 0.2 0.1 0.1 0.5 We fit two models. First, we fit the interference-aware model Poverty ∼ 1 + PM 2.5 + density + prod. jobs + edu. + age + % white + % hisp./latino 
+
++G⊤(1 + PM 2.5 + density + prod. jobs + edu. + age + % white + % hisp./latino )
+
+7APRIL 1, 2026 
+
+Figure 3: Operating characteristics of correlated-error linear models under interference. and applied the formulas from Section 2.3 with HC5 heteroscedasticity-consistent variance estimates (Cribari-Neto et al., 2007) from the sandwich package (Zeileis, 2004) to estimate the MTE and confidence interval. For comparison, we also fit a misspecified model dropping all G⊤(·) terms, taking its PM 2.5 coefficient directly as the MTE. Ignoring interference, the estimated MTE of a 1-μg/m 3 increase in PM 2.5 on poverty was 0.11 percentage points (95% CI: −0.05, 0.27). Accounting for interference tripled the estimate to 0.32 percentage points (95% CI: 0.06, 0.58); see Figure 4. An analysis ignoring interference would have yielded an inconclusive result, while accounting for interference reveals a small but statistically significant effect. 
+
+# 5 Discussion and Conclusions 
+
+We have shown that under exchangeability and linearity, network interference reduces to a model misspecification problem: the neighbor-summed treatment and covariate terms Asi and Lsi are simply omitted regressors, and correct-ing for them requires only including them as covariates in a standard linear regression. The resulting plug-in estimators for the total effect are unbiased and consistent, with variance estimates that are exact for fixed networks and asymptot-ically valid for well-behaved random ones. Extensions to partially known networks, multiple interference structures, correlated errors, and time-varying networks follow naturally from our framework. The methods as presented apply to main-terms linear models, but extend straightforwardly to models with A-L inter-actions. By simply adding coefficients for interaction terms (scaled by the mean of the covariate being interacted) to the causal identification result, unbiased and consistent estimates for ψ can be constructed using the same strategies as presented in Section 2. However, extending these results to generalized linear models with nonlinear link func-tions is not straightforward: our identification arguments rely on the ability to marginalize over confounder coefficient uncertainty, which fails under nonlinearity for the same reason that the odds ratio is non-collapsible (Whitcomb & Naimi, 2020). To circumvent this problem, one could instead treat the parametric regressoin as a predictive model and applying nonparametric techniques for interference (Balkus et al., 2026), but doing so sacrifices the efficiency and 
+
+8APRIL 1, 2026 
+
+Figure 4: Estimated increase in average poverty rate per 1 μg/m 3 increase in PM 2.5 , with and without interference correction. interpretability of the parametric approach. Developing native GLM corrections, perhaps via the delta method applied to maximum likelihood estimates, is a priority for future work, especially for count outcomes where log- or logit-link models are typically preferable to log-transforming the response directly (O’Hara & Kotze, 2010). Other directions for future work include extension of our framework to quasi-experimental designs such as difference-in-differences (Xu, 2023) or regression discontinuity (Torrione et al., 2024), where the identifying assumptions are weaker than those required for the observational ATE and MTE, as well as to scenarios with unknown interference networks (Hoshino & Yanagi, 2023; Ohnishi et al., 2025) or networks that may depend on L or A. Despite their limita-tions, the linear models we present offer practitioners a simple, fast, and interpretable entry point for causal inference under interference. Just as ordinary least squares fostered a broad ecosystem of extensions in the independent-units setting, we hope this framework provides a foundation for richer developments in the interference setting. 
+
+# 6 Supplementary Materials 
+
+Code and data to reproduce the simulation studies and data analysis can be found at https://github.com/ salbalkus/pub-code-linear-model-interference .
+
+# 7 Acknowledgments 
+
+The authors thank the National Science Foundation (award no. DGE 2140743) and the Harvard College and Harvard Data Science Initiative’s SPUDS program for financially supporting this work, as well as Sophie Woodward for helpful feedback during the project’s initiation. 
+
+Conflicts of Interest : The authors report there are no competing interests to declare. 
+
+Generative AI Statement : During research, the authors acknowledge use of GPT4.1 for minimal coding assistance, as well as Gemini 3 and Claude Sonnet 4.6 for stylistic line-editing and typesetting improvements to the written manuscript. 
+
+# References 
+
+AKAIKE , H. (1973). Information theory and an extension of the maximum likelihood principle. In 2nd international symposium on information theory , N. Petrov & F. Cs´ aki, eds. Budapest, Hungary: Akad´ emia Kiad´ o. ALBERT , R. & B ARAB ´ASI , A.-L. (2002). Statistical mechanics of complex networks. Reviews of modern physics 74 ,47. ANSELIN , L. (1988). Spatial econometrics: methods and models , vol. 4. Springer Science I& Business Media. 
+
+9APRIL 1, 2026 
+
+ARONOW , P. M. (2012). A general method for detecting interference between units in randomized experiments. 
+
+Sociological Methods & Research 41 , 3–16. ARONOW , P. M. & S AMII , C. (2017). Estimating average causal effects under general interference, with application to a social network experiment. The Annals of Applied Statistics 11 , 1912–1947. Publisher: Institute of Mathematical Statistics. BAIRD , S., B OHREN , J. A., M CINTOSH , C. & ¨ OZLER , B. (2018). Optimal design of experiments in the presence of interference. The Review of Economics and Statistics 100 , 844–860. BALKUS , S. V., D ELANEY , S. W. & H EJAZI , N. S. (2026). The causal effects of modified treatment policies under network interference. Journal of the Royal Statistical Society Series B: Statistical Methodology .BHADRA , S. & S CHWEINBERGER , M. (2025). Causal inference under network interference. arXiv:2508.06808 .CLARK , D. A. & H ANDCOCK , M. S. (2024). Causal inference over stochastic networks. Journal of the Royal Statistical Society Series A: Statistics in Society 187 , 772–795. COX , D. R. (1958). Planning of experiments . New York, Wiley. CRIBARI -N ETO , F., S OUZA , T. C. & V ASCONCELLOS , K. L. P. (2007). Inference under heteroskedasticity and leveraged data. Communications in Statistics - Theory and Methods 36 , 1877–1888. CS ´ARDI , G., N EPUSZ , T., T RAAG , V., H ORV ´AT , S., Z ANINI , F., N OOM , D., M ¨ ULLER , K., S CHOCH , D. & SALMON , M. (2025). igraph: Network Analysis and Visualization in R . R package version 2.2.1.9013.  
+
+> DE
+
+SOUZA , P., A NENBERG , S., M AKAREWICZ , C., S HIRGAOKAR , M., D UARTE , F., R ATTI , C., D URANT , J. L., KINNEY , P. L. & N IEMEIER , D. (2023). Quantifying disparities in air pollution exposures across the United States using home and work addresses. Environmental Science and Technology 58 , 280–290. D´ IAZ , I. & VAN DER LAAN , M. (2012). Population intervention causal effects based on stochastic interventions. 
+
+Biometrics 68 , 541–549. EMMENEGGER , C., S POHN , M.-L., E LMER , T. & B ¨ UHLMANN , P. (2025). Treatment effect estimation with obser-vational network data using machine learning. Journal of Causal Inference 13 .FORASTIERE , L., A IROLDI , E. M. & M EALLI , F. (2020). Identification and estimation of treatment and interference effects in observational studies on networks. Journal of the American Statistical Association 116 , 901–918. FRITZ , C., S CHWEINBERGER , M., B HADRA , S. & H UNTER , D. R. (2025). A regression framework for studying relationships among attributes under network interference. Journal of the American Statistical Association , 1–22. GELMAN , A. & H ILL , J. (2007). Data analysis using regression and multilevel/hierarchical models . Cambridge University Press. HANEUSE , S. & R OTNITZKY , A. (2013). Estimation of the effect of interventions that modify the received treatment. 
+
+Statistics in Medicine 32 , 5260–5277. HERN ´AN , M. & R OBINS , J. (2024). Causal Inference: What If. Boca Raton, Florida: Chapman & Hall/CRC. HONG , G. & R AUDENBUSH , S. W. (2006). Evaluating kindergarten retention policy: A case study of causal inference for multilevel observational data. Journal of the American Statistical Association 101 , 901–910. HOSHINO , T. & Y ANAGI , T. (2023). Causal inference with noncompliance and unknown interference. Journal of the American Statistical Association , 1–12. HUDGENS , M. G. & H ALLORAN , M. E. (2008). Toward causal inference with interference. Journal of the American Statistical Association 103 , 832–842. JIANG , Z., I MAI , K. & M ALANI , A. (2022). Statistical inference and power analysis for direct and spillover effects in two-stage randomized experiments. Biometrics 79 , 2370–2381. KEMPTON , R. (1997). Interference between plots. In Statistical methods for plant variety evaluation . Springer, pp. 101–116. LEE , J. D., S UN , D. L., S UN , Y. & T AYLOR , J. E. (2016). Exact post-selection inference, with application to the lasso. The Annals of Statistics 44 .LEE , S.-A. K., M ERLO , L. & D OMINICI , F. (2024). Childhood pm 2.5 exposure and upward mobility in the united states. Proceedings of the National Academy of Sciences 121 .LESAGE , J. P. & D OMINGUEZ , M. (2010). The importance of modeling spatial spillovers in public choice analysis. 
+
+Public Choice 150 , 525–545. LIU , J., Z HANG , D. & T CHETGEN TCHETGEN , E. J. (2025). Auto-doubly robust estimation of causal effects on a network. arXiv:2506.23332 .
+
+10 APRIL 1, 2026 
+
+L ¨ UBKE , K., G EHRKE , M., H ORST , J. & S ZEPANNEK , G. (2020). Why we should teach causal inference: Examples in linear regression with simulated data. Journal of Statistics Education 28 , 133–139. NAIMI , A. I., C OLE , S. R. & K ENNEDY , E. H. (2016). An introduction to g methods. International Journal of Epidemiology , dyw323. NATIONAL INSTITUTE ON MINORITY HEALTH AND HEALTH DISPARITIES (2025). HDPulse: An Ecosystem of Minority Health and Health Disparities Resources. OGBURN , E. L., S OFRYGIN , O., D´ IAZ , I. & VAN DER LAAN , M. J. (2022). Causal inference for social network data. Journal of the American Statistical Association 119 , 597–611. OHNISHI , Y., K ARMAKAR , B. & S ABBAGHI , A. (2025). Degree of interference: A general framework for causal inference under interference. Journal of Machine Learning Research 26 , 1–37. O’H ARA , R. B. & K OTZE , D. J. (2010). Do not log-transform count data. Methods in Ecology and Evolution 1,118–122. R C ORE TEAM (2025). R: A Language and Environment for Statistical Computing . R Foundation for Statistical Computing, Vienna, Austria. RABINOWICZ , A. & R OSSET , S. (2020). Cross-validation for correlated data. Journal of the American Statistical Association 117 , 718–731. ROBINS , J. (1986). A new approach to causal inference in mortality studies with a sustained exposure pe-riod—application to control of the healthy worker survivor effect. Mathematical Modelling 7, 1393–1512. RUBIN , D. B. (1980). Randomization analysis of experimental data: The fisher randomization test comment. Journal of the American Statistical Association 75 , 591–593. SHIN , H., B RAUN , D., I RENE , K., A UDIRAC , M. & A NTONELLI , J. (2023). A spatial interference approach to account for mobility in air pollution studies with multivariate continuous treatments. arXiv:2305.14194 .SINCLAIR , B., M CCONNELL , M. & G REEN , D. P. (2012). Detecting spillover effects: Design and analysis of multilevel experiments. American Journal of Political Science 56 , 1055–1069. SOBEL , M. E. (2006). What do randomized studies of housing mobility demonstrate? Causal inference in the face of interference. Journal of the American Statistical Association 101 , 1398–1407. SOFRYGIN , O. & VAN DER LAAN , M. J. (2017). Semi-parametric estimation and inference for the mean outcome of the single time-point intervention in a causally connected population. Journal of Causal Inference 5, 20160003. TCHETGEN , E. J. T. & V ANDER WEELE , T. J. (2010). On causal inference in the presence of interference. Statistical Methods in Medical Research 21 , 55–75. TCHETGEN TCHETGEN , E. J., F ULCHER , I. R. & S HPITSER , I. (2021). Auto-G-Computation of causal effects on a network. Journal of the American Statistical Association 116 , 833–844. TIBSHIRANI , R. (1996). Regression shrinkage and selection via the lasso. Journal of the Royal Statistical Society Series B: Statistical Methodology 58 , 267–288. TORRIONE , E. D., A RDUINI , T. & F ORASTIERE , L. (2024). Regression discontinuity designs under interference. 
+
+arXiv:2410.02727 .U.S. C ENSUS BUREAU (2024). LEHD origin-destination employment statistics data (2002-2021). https://lehd. ces.census.gov/data/#lodes . 
+
+> VAN DER
+
+LAAN , M. J. (2014). Causal inference for a population of causally connected units. Journal of Causal Inference 2, 13–74.  
+
+> VAN DER
+
+LAAN , M. J., R OSE , S. et al. (2011). Targeted learning: causal inference for observational and experimen-tal data , vol. 4. Springer. VAZQUEZ -B ARE , G. (2023). Identification and estimation of spillover effects in randomized experiments. Journal of Econometrics 237 , 105237. VERBEEK , J., H OVING , J., B OSCHMAN , J., C HONG , L.-Y., L IVINGSTONE -B ANKS , J. & B ERO , L. (2021). Sys-tematic reviews should consider effects from both the population and the individual perspective. American Journal of Public Health 111 , 820–825. VERBITSKY -S AVITZ , N. & R AUDENBUSH , S. W. (2012). Causal inference under interference in spatial settings: A case study evaluating community policing program in chicago. Epidemiologic Methods 1.WALKER , K. & H ERMAN , M. (2024). tidycensus: Load US Census Boundary and Attribute Data as ’tidyverse’ and ’sf’-Ready Data Frames . R package version 1.6.3. 
+
+11 APRIL 1, 2026 
+
+WATTS , D. J. & S TROGATZ , S. H. (1998). Collective dynamics of ‘small-world’networks. nature 393 , 440–442. WHITCOMB , B. W. & N AIMI , A. I. (2020). Defining, quantifying, and interpreting “noncollapsibility” in epidemio-logic studies of measures of “effect”. American Journal of Epidemiology 190 , 697–700. WU, X., N ETHERY , R. C., S ABATH , M. B., B RAUN , D. & D OMINICI , F. (2020). Air pollution and covid-19 mortality in the united states: Strengths and limitations of an ecological regression analysis. Science Advances 6.XU, R. (2023). Difference-in-differences with interference. arXiv:2306.12003 .ZEILEIS , A. (2004). Econometric computing with HC and HAC covariance matrix estimators. Journal of Statistical Software 11 .ZIVICH , P. N., H UDGENS , M. G., B ROOKHART , M. A., M OODY , J., W EBER , D. J. & A IELLO , A. E. (2022). Targeted maximum likelihood estimation of causal effects with interference: A simulation study. Statistics in Medicine 41 , 4554–4577. 
+
+12
