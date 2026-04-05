@@ -1,0 +1,906 @@
+Title: Q-BIOLAT: Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization
+
+URL Source: https://arxiv.org/pdf/2603.27526v1
+
+Published Time: Tue, 31 Mar 2026 01:12:26 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+## Truong-Son Hy 
+
+University of Alabama at Birmingham Birmingham, Alabama, USA 
+
+thy@uab.edu 
+
+## Abstract 
+
+Protein fitness optimization is inherently a discrete combi-natorial problem, yet most learning-based approaches rely on continuous representations and are primarily evaluated through predictive accuracy. We introduce Q-BioLat , a frame-work for modeling and optimizing protein fitness landscapes in compact binary latent spaces. Starting from pretrained protein language model embeddings, we construct binary latent representations and learn a quadratic unconstrained binary optimization (QUBO) surrogate that captures unary and pairwise interactions. Beyond its formulation, Q-BioLat provides a representation-centric perspective on protein fitness modeling. We show that representations with similar predictive performance can induce fundamentally different optimization landscapes. In particular, learned autoencoder-based representations col-lapse after binarization, producing degenerate latent spaces that fail to support combinatorial search, whereas simple structured representations such as PCA yield high-entropy, decodable, and optimization-friendly latent spaces. Across multiple datasets and data regimes, we demon-strate that classical combinatorial optimization methods, in-cluding simulated annealing, genetic algorithms, and greedy hill climbing, are highly effective in structured binary latent spaces. By expressing the objective in QUBO form, our ap-proach connects modern machine learning with discrete and quantum-inspired optimization. Our implementation and dataset are publicly available at: 
+
+https://github.com/HySonLab/Q-BIOLAT-Extended .
+
+Keywords: Protein Fitness Landscapes, Protein Language Models, Binary Latent Representations, QUBO Optimization, Combinatorial Optimization, Simulated Annealing, Quan-tum Annealing, Protein Engineering, Bioinformatics. 
+
+## 1 Introduction 
+
+Understanding and optimizing protein fitness landscapes is a central challenge in computational biology, with ap-plications spanning enzyme engineering, drug discovery, and synthetic biology. Protein fitness landscapes are typ-ically high-dimensional, rugged, and shaped by complex interactions between residues, making efficient exploration of sequence space difficult [ 1 – 3]. Recent advances in pro-tein language models (PLMs), such as ESM-2 [ 4 ] and ESM-3 [ 5], have enabled powerful representations of protein se-quences by learning from large-scale unlabeled data. These representations have significantly improved performance on downstream tasks, including mutation effect prediction [6, 7] and protein design [8–10]. Despite these advances, most existing approaches rely on continuous neural predictors and gradient-based [ 9] or sampling-based optimization strategies [ 10 ], which are not naturally suited for discrete combinatorial search. In partic-ular, protein sequences are inherently discrete objects, and many biologically relevant optimization problems are funda-mentally combinatorial in nature. Classical approaches such as evolutionary algorithms [ 10 , 11 ] and Bayesian optimiza-tion [ 12 , 13 ] have been widely applied to protein engineer-ing, but they often struggle with scalability or require large numbers of evaluations. More importantly, existing methods primarily emphasize predictive accuracy, while the role of the underlying representation in shaping the optimization landscape remains underexplored. In this work, we introduce Q-BioLat , a framework that maps protein sequences into binary latent spaces where fit-ness landscapes can be explicitly modeled and optimized (see Figure 1). Starting from pretrained protein language model embeddings, we construct compact binary representations that enable the formulation of protein fitness as a quadratic unconstrained binary optimization (QUBO) [ 14 – 16 ] prob-lem. This formulation transforms protein fitness modeling into a structured energy landscape over binary variables, allowing us to leverage a wide range of combinatorial op-timization techniques, including simulated annealing and genetic algorithms, for efficient exploration of protein fitness landscapes. Beyond its algorithmic formulation, Q-BioLat provides a representation-centric perspective on protein fitness mod-eling through the lens of induced optimization landscapes. We show that representations with similar predictive perfor-mance can exhibit markedly different optimization behavior, as determined by the geometry of the latent space and the structure of the corresponding QUBO interactions. In par-ticular, we observe a clear distinction between prediction quality and optimization effectiveness : learned autoencoder-based representations collapse after binarization, producing degenerate latent codes that fail to support combinatorial search, whereas simple structured representations such as 
+
+> arXiv:2603.27526v1 [cs.LG] 29 Mar 2026 Truong-Son Hy
+
+Figure 1. Overview of the Q-BioLat framework. Protein sequences are first encoded using a pretrained protein language model (ESM) to obtain continuous embeddings. These embeddings are transformed into binary latent representations through projection and binarization, enabling protein fitness to be modeled as a quadratic unconstrained binary optimization (QUBO) problem. The resulting latent fitness landscape can be explored using combinatorial optimization methods and is directly compatible with quantum annealing hardware. Optimized latent codes are mapped back to high-fitness protein sequences. PCA yield high-entropy and optimization-friendly latent spaces. Empirically, we demonstrate that PCA-based binary latent representations consistently outperform both random pro-jections and learned AE/VAE representations in decoding quality and end-to-end protein design performance across multiple datasets and data regimes. Furthermore, classical combinatorial optimization methods, including simulated annealing, genetic algorithms, and greedy hill climbing, are highly effective when applied to these structured latent land-scapes, reliably identifying high-fitness regions even in data-scarce settings. We also observe that optimization perfor-mance depends on latent dimensionality, revealing a trade-off between expressivity, generalization, and searchability. Overall, Q-BioLat bridges protein language modeling, discrete latent representation learning, and combinatorial optimization by reframing protein fitness modeling as the construction of an optimization-aware energy landscape. By expressing protein fitness landscapes as QUBO problems, our framework provides a natural interface between modern machine learning models and discrete optimization meth-ods, while also offering a pathway toward integration with quantum and quantum-inspired optimization paradigms. 
+
+## 2 Related Work 
+
+Protein language models and sequence representations. 
+
+Recent advances in protein language models (PLMs) have significantly improved the representation of biological se-quences by leveraging large-scale unlabeled protein data. Models such as ESM-2 [ 4 ] and its successor ESM-3 [ 5 ] learn contextual embeddings that capture structural and func-tional properties of proteins directly from sequence data. More recently, multimodal protein language models have been developed to integrate sequence information with ad-ditional modalities such as structure, function, and evolu-tionary context, further enhancing representation quality and downstream performance [ 17 , 18 ]. These models have demonstrated strong performance across a wide range of tasks, including structure prediction, mutation effect predic-tion, and protein design [ 19 , 20 ]. In this work, we build upon PLM embeddings as a foundation, but transform them into binary latent representations to enable discrete optimization. 
+
+Protein fitness prediction and engineering. Predicting protein fitness landscapes is a fundamental problem in com-putational biology, with applications in enzyme optimization, therapeutic design, and synthetic biology. Recent approaches combine machine learning models with experimental data, particularly from deep mutational scanning (DMS) exper-iments, to predict the effects of mutations [ 21 , 22 ]. Large-scale benchmarks such as ProteinGym have been introduced to systematically evaluate fitness prediction models across diverse proteins and mutation regimes [ 3 ]. While these meth-ods achieve strong predictive performance, they typically rely on continuous representations and do not directly ad-dress the combinatorial nature of sequence optimization. Furthermore, these approaches primarily focus on predic-tion rather than explicitly enabling structured optimization over discrete sequence spaces. 
+
+Optimization methods for protein design. A variety of optimization strategies have been applied to protein engi-neering, including evolutionary algorithms [ 9 –11 , 13 ], Bayesian optimization [ 12 , 13 ], and reinforcement learning [ 23 , 24 ]. Evolutionary methods such as genetic algorithms are widely used due to their ability to explore large discrete search spaces, while Bayesian optimization offers sample-efficient search under expensive evaluation settings. Classical opti-mization techniques such as simulated annealing have also been applied to combinatorial problems with rugged energy landscapes [ 25 , 26 ]. However, many of these approaches op-erate directly in sequence space or continuous embedding spaces, rather than explicitly modeling protein fitness as a structured combinatorial optimization problem. In contrast, our approach explicitly models protein fitness as a structured Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+combinatorial optimization problem in a learned binary la-tent space. 
+
+QUBO formulations and quantum annealing. Quadratic unconstrained binary optimization (QUBO) [ 14 –16 ] provides a unified framework for expressing a wide range of combi-natorial problems in terms of binary variables and pairwise interactions. QUBO formulations are closely related to the Ising model and form the basis of many optimization tech-niques, including quantum annealing [ 15 ]. Quantum anneal-ing hardware, such as that developed by D-Wave Systems, has demonstrated the ability to solve certain classes of opti-mization problems by exploiting quantum effects [ 27 ]. While applications of quantum optimization in computational bi-ology remain limited, recent work has begun to explore its potential for tasks such as molecular design and protein fold-ing. In this work, we formulate protein fitness landscapes as QUBO problems in a binary latent space, enabling di-rect compatibility with both classical combinatorial solvers and emerging quantum annealing hardware, and providing a unified perspective on protein design as discrete energy landscape optimization. 
+
+Latent space optimization and discrete representations. 
+
+Optimizing in learned latent spaces has become a common strategy in machine learning, particularly for generative modeling and design tasks [ 28 , 29 ]. Continuous latent spaces have been widely used for molecule and protein generation [ 9, 30 , 31 ], but they often require gradient-based optimization or sampling methods that do not naturally handle discrete constraints. More recently, discrete and binary latent repre-sentations have been explored for enabling combinatorial search and efficient optimization [ 32 , 33 ]. Our work builds on this idea by constructing binary latent representations de-rived from protein language models and explicitly modeling the resulting fitness landscape as a QUBO problem, bridging representation learning and combinatorial optimization. 
+
+Energy landscapes and combinatorial optimization. 
+
+Many combinatorial optimization problems can be inter-preted through the lens of energy landscapes, where the objective function defines a surface over discrete configura-tions and optimization corresponds to navigating this land-scape toward low-energy (or high-fitness) regions [ 34 , 35 ]. In particular, QUBO formulations are closely related to Ising models and have been widely studied in statistical physics as models of interacting binary systems [ 15 ]. The structure of the interaction matrix determines key properties of the land-scape, such as smoothness, ruggedness, and the distribution of local optima, which in turn strongly influence optimiza-tion difficulty [ 36 , 37 ]. Such energy landscape perspectives have also been explored in machine learning, particularly in the analysis of non-convex optimization and neural net-work loss surfaces [ 37 , 38 ]. While these ideas are well es-tablished in physics and optimization, their role in modern representation learning pipelines for biological sequence design remains underexplored. In this work, we adopt an energy landscape view of protein fitness modeling in binary latent spaces and study how representation-induced struc-ture affects combinatorial search. 
+
+Representation learning for optimization. Most existing representation learning approaches in protein modeling and related domains focus on improving predictive performance on downstream tasks, such as regression or classification [ 6, 7 , 19 ]. However, in design and optimization settings, the learned representation implicitly defines a search space and induces an optimization landscape. Recent work in latent space optimization has explored how learned embeddings can facilitate search in applications such as molecule design, protein engineering, and combinatorial optimization [ 39 –42 ]. These approaches typically leverage continuous latent spaces learned by variational autoencoders or related generative models, enabling gradient-based or sampling-based search. In protein design, similar ideas have been explored through latent generative models and language-model-guided opti-mization [ 8 – 10 ], where representations are used to guide exploration of sequence space. However, these approaches are primarily evaluated through predictive metrics, likeli-hood, or sample quality, rather than explicit analysis of the induced optimization landscape. More broadly, recent work in machine learning has begun to study how representations influence optimization and search behavior [ 43 , 44 ], but this perspective remains underdeveloped in the context of bio-logical sequence design. In contrast, our work emphasizes that representation quality should also be assessed based on the properties of the induced optimization landscape, and demonstrates that different representations with sim-ilar predictive accuracy can lead to substantially different optimization outcomes. 
+
+## 3 Method 
+
+3.1 Overview 
+
+We propose Q-BioLat , a framework for modeling and op-timizing protein fitness landscapes in a binary latent space. Given a protein sequence, Q-BioLat first computes a pre-trained protein language model embedding, then transforms this continuous representation into a compact binary latent code. In this binary space, the fitness landscape is approx-imated by a quadratic unconstrained binary optimization (QUBO) surrogate, which models both unary and pairwise effects among latent variables. The learned surrogate is then optimized using combinatorial search methods such as sim-ulated annealing and genetic algorithms. Because the final Truong-Son Hy 
+
+objective is expressed in QUBO form, the framework is nat-urally compatible with both classical combinatorial solvers and quantum annealing hardware. Formally, the overall pipeline is 
+
+𝑠 → 𝑒 (𝑠 ) ∈ R𝑑 → 𝑧 (𝑠 ) ∈ R𝑚 → 𝑥 (𝑠 ) ∈ { 0, 1}𝑚 → ˆ𝑓 (𝑥 ),
+
+where 𝑠 is a protein sequence, 𝑒 (𝑠 ) is the protein language model embedding, 𝑧 (𝑠 ) is a reduced continuous latent repre-sentation, 𝑥 (𝑠 ) is the binarized latent code, and ˆ𝑓 (𝑥 ) is the QUBO surrogate of protein fitness. 
+
+3.2 Problem Setup 
+
+Let D = {( 𝑠 𝑖 , 𝑦 𝑖 )} 𝑁 𝑖 =1 denote a protein fitness dataset, where 
+
+𝑠 𝑖 is a protein sequence and 𝑦 𝑖 ∈ R is its experimentally measured fitness. Our goal is to learn a surrogate model that maps each sequence to a compact binary latent represen-tation and predicts its fitness, while also enabling efficient combinatorial optimization over the latent space. Unlike conventional approaches that optimize directly in sequence space or in continuous embedding space, we aim to transform protein fitness prediction into a discrete optimiza-tion problem. This is motivated by two observations: first, protein sequences are inherently discrete objects; second, binary latent spaces admit efficient combinatorial search and can be directly mapped to QUBO and Ising formulations. 
+
+3.3 Protein Language Model Embeddings 
+
+For each protein sequence 𝑠 𝑖 , we obtain a continuous embed-ding using a pretrained protein language model. In our exper-iments, we use ESM-based sequence embeddings [ 4 , 5] due to their strong empirical performance and broad adoption in protein representation learning. Given a sequence 𝑠 𝑖 of length 
+
+𝐿 𝑖 , the language model produces contextualized residue-level representations 𝐻 𝑖 ∈ R𝐿 𝑖 ×𝑑 , where 𝑑 is the hidden dimension of the model. To obtain a fixed-length sequence representa-tion, we apply mean pooling across residues: 
+
+𝑒 𝑖 = 1
+
+𝐿 𝑖 𝐿 𝑖 ∑︁ 
+
+> 𝑗 =1
+
+𝐻 ( 𝑗 ) 
+
+> 𝑖
+
+∈ R𝑑 .
+
+This yields one dense embedding vector per sequence. The role of the protein language model in Q-BioLat is not to directly predict fitness, but rather to provide a biologically informed continuous representation that can later be com-pressed into a discrete latent code suitable for combinatorial optimization. 
+
+3.4 Continuous-to-Binary Latent Mapping 
+
+A key component of Q-BioLat is the transformation of con-tinuous protein embeddings into compact binary latent rep-resentations. While simple projection and thresholding pro-vide a lightweight baseline, more expressive representations can be obtained by learning the latent mapping in a data-driven manner. In this work, we consider a unified family of approaches for constructing binary latent codes, ranging from linear projections to learned autoencoding models. 
+
+Linear projection and binarization. Given a protein embedding 𝑒 ∈ R𝑑 , we first consider linear dimensionality reduction methods such as random projection or principal component analysis (PCA): 
+
+𝑧 = 𝑊 𝑒, 𝑊 ∈ R𝑚 ×𝑑 , (1) where 𝑚 ≪ 𝑑 is the latent dimension. The resulting continu-ous latent vector 𝑧 ∈ R𝑚 is then binarized using a threshold-ing function: 
+
+𝑥 𝑘 = I(𝑧 𝑘 > 𝜏 𝑘 ), (2) where 𝜏 𝑘 is typically chosen as the median of the 𝑘 -th compo-nent over the training set. This approach provides a simple and efficient baseline for constructing binary latent repre-sentations. 
+
+Deterministic binary autoencoder. To learn a more struc-tured latent representation, we introduce a deterministic autoencoder [ 45 , 46 ] that maps protein embeddings into a low-dimensional latent space and reconstructs them: 
+
+𝑧 = 𝑓 𝜃 (𝑒 ), ˆ𝑒 = 𝑔 𝜙 (𝑧 ), (3) where 𝑓 𝜃 and 𝑔 𝜙 denote the encoder and decoder networks, respectively. To obtain binary latent codes, we apply a bina-rization function: 
+
+𝑥 = bin (𝑧 ), (4) where bin (·) may be implemented using thresholding or a sign function. The model is trained to minimize reconstruc-tion loss: 
+
+LAE = ∥𝑒 − ˆ𝑒 ∥22. (5) This formulation allows the latent space to adapt to the structure of protein embeddings, potentially leading to more meaningful and optimization-friendly representations. 
+
+Variational latent representations. We further consider a probabilistic formulation based on variational autoencoders (VAEs) [ 47 ], which model a distribution over latent variables: 
+
+𝑧 ∼ 𝑞 𝜃 (𝑧 | 𝑒 ), ˆ𝑒 ∼ 𝑝 𝜙 (𝑒 | 𝑧 ). (6) The model is trained by maximizing the evidence lower bound (ELBO): 
+
+LVAE = E𝑞 𝜃 (𝑧 |𝑒 ) [log 𝑝 𝜙 (𝑒 | 𝑧 )] − KL (𝑞 𝜃 (𝑧 | 𝑒 ) ∥ 𝑝 (𝑧 )) . (7) Binary latent codes can be obtained by applying a threshold or sampling from a Bernoulli distribution parameterized by the latent variables: 
+
+𝑥 𝑘 ∼ Bernoulli (𝜎 (𝑧 𝑘 )) . (8) This probabilistic formulation enables modeling uncertainty in the latent representation and provides a principled way to explore the latent space. Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Discussion. These approaches define different ways of constructing binary latent spaces, ranging from simple lin-ear projections to learned deterministic and probabilistic mappings. Importantly, the choice of latent representation directly affects the structure of the induced QUBO model and, consequently, the geometry of the resulting optimiza-tion landscape. In Section 4, we empirically investigate how these different constructions influence both predictive per-formance and optimization behavior. 
+
+3.5 QUBO Surrogate for Protein Fitness 
+
+We model protein fitness in binary latent space with a QUBO surrogate. Given a binary latent code 𝑥 ∈ { 0, 1}𝑚 , the pre-dicted fitness is: 
+
+ˆ𝑓 (𝑥 ) =
+
+> 𝑚
+
+∑︁ 
+
+> 𝑘 =1
+
+ℎ𝑘 𝑥 𝑘 +∑︁  
+
+> 1≤𝑘 <ℓ≤𝑚
+
+𝐽 𝑘ℓ 𝑥 𝑘 𝑥 ℓ ,
+
+where ℎ𝑘 ∈ R captures the unary contribution of latent bit 𝑘 ,and 𝐽 𝑘ℓ ∈ R captures the pairwise interaction between bits 𝑘 
+
+and ℓ. Equivalently, the model can be written in matrix form as: 
+
+ˆ𝑓 (𝑥 ) = ℎ⊤𝑥 + 12𝑥 ⊤ 𝐽𝑥, 
+
+where 𝐽 ∈ R𝑚 ×𝑚 is the symmetric Hamiltonian (i.e. pairwise interaction matrix) with zero diagonal, and ℎ ∈ R𝑚 corre-sponds to the bias term. This representation connects the latent fitness model to the classical QUBO formulation. 
+
+Feature construction. For each binary code 𝑥 𝑖 , we con-struct a feature vector consisting of: 
+
+• all linear terms {𝑥 𝑖𝑘 }𝑚 𝑘 =1,
+
+• all pairwise interaction terms {𝑥 𝑖𝑘 𝑥 𝑖ℓ }1≤𝑘 <ℓ ≤𝑚 .The total number of features is therefore: 
+
+𝑚 + 𝑚 (𝑚 − 1)
+
+2 .
+
+Parameter estimation. We fit the QUBO surrogate using ridge regression. Let Φ(𝑋 ) denote the design matrix formed by the linear and pairwise features of the training binary codes, and let 𝑦 denote the corresponding fitness vector. We solve: 
+
+𝑤 ★ = arg min  
+
+> 𝑤
+
+∥Φ(𝑋 )𝑤 − 𝑦 ∥22 + 𝜆 ∥𝑤 ∥22,
+
+where 𝜆 > 0 is an ℓ2 regularization coefficient. The learned parameter vector 𝑤 ★ is then unpacked into the unary coeffi-cients ℎ and pairwise coefficients 𝐽 .This surrogate is attractive for three reasons. First, it is interpretable, since each term corresponds to a unary or pairwise latent effect. Second, it is computationally efficient to fit and evaluate for moderate latent dimensions. Third, it directly yields a QUBO objective suitable for classical and quantum combinatorial optimization. 
+
+3.6 Latent Space Optimization 
+
+Once the QUBO surrogate has been fitted, we seek binary latent codes that maximize the predicted fitness: 
+
+𝑥 ★ = arg max  
+
+> 𝑥 ∈ { 0,1}𝑚
+
+ˆ𝑓 (𝑥 ).
+
+Because this is a discrete combinatorial problem, we employ search strategies that operate directly in the binary latent space. 
+
+Simulated annealing [ 25 ]. Simulated annealing starts from an initial latent code and iteratively proposes single-bit flips. Moves that improve the objective are accepted, while worse moves may be accepted with a temperature-dependent probability, enabling escape from local optima. The temper-ature is gradually reduced during the search. 
+
+Genetic algorithm [ 26 ]. The genetic algorithm main-tains a population of binary latent codes and evolves them through selection, crossover, and mutation. This allows broader exploration of the latent space and is particularly useful in higher-dimensional settings where multiple promising re-gions may exist. 
+
+Baselines. To contextualize performance, we also com-pare against greedy hill climbing, random search, and a light-weight latent Bayesian-style search baseline. Greedy hill climbing iteratively flips the single bit that most improves the objective until convergence. Random search samples bi-nary codes uniformly and retains the best candidate. The latent Bayesian-style method uses a kernel-based uncertainty heuristic over binary latent codes. 
+
+3.7 Decoding of Optimized Latent Representations 
+
+A key step in Q-BioLat is mapping optimized binary latent codes back to valid protein sequences. Since optimization is performed in latent space, decoding provides the connection between combinatorial search and biologically meaningful sequences. Retrieval-based decoding. As a conservative baseline, we first use nearest-neighbor retrieval in Hamming space. Given an optimized latent code, we identify the closest latent codes from the training set and return their associated sequences. This ensures that decoded sequences remain within the sup-port of the observed data distribution. Neural decoding. To enable sequence generation beyond the observed dataset, we introduce a latent-conditioned mu-tation decoder. Instead of generating sequences autoregres-sively, the decoder predicts mutation patterns relative to a wild-type sequence. For each position, the model predicts (i) whether a mutation occurs and (ii) the identity of the mu-tated amino acid. This formulation leverages the structure of deep mutational scanning datasets, where sequences differ from a common backbone. Truong-Son Hy 
+
+Discussion. We find that decoding performance strongly depends on the structure of the latent space. In particu-lar, PCA-based binary representations produce significantly more decodable latent codes than both random projections and AE/VAE representations. These results emphasize that representation learning must be aligned with both optimiza-tion and decoding objectives. 
+
+3.8 Quantum Annealing Compatibility 
+
+An important property of Q-BioLat is that its optimization objective is already expressed in QUBO form. This means the learned latent fitness landscape can be optimized not only with classical combinatorial solvers, but also with quantum annealing hardware or other Ising/QUBO solvers without changing the model formulation. In this sense, Q-BioLat 
+
+provides a quantum-compatible interface between protein representation learning and discrete optimization. In the present work, we focus on classical solvers to es-tablish the feasibility of the framework and to analyze the optimization behavior in binary latent space. Nevertheless, the QUBO formulation opens a clear pathway toward future quantum-assisted protein engineering, where learned latent fitness landscapes could be deployed on quantum annealers or related specialized optimization hardware. 
+
+3.9 Computational Complexity 
+
+Let 𝑚 denote the binary latent dimension. The QUBO surro-gate uses 𝑚 + 𝑚 (𝑚 −1) 
+
+> 2
+
+= O( 𝑚 2) features. Therefore, increas-ing latent dimensionality increases expressive power but also increases both the number of surrogate parameters and the difficulty of combinatorial search. This trade-off motivates our experimental study over multiple latent dimensions. By separating the dense protein language model embed-ding stage from the binary optimization stage, Q-BioLat 
+
+keeps the most expensive neural computation fixed while enabling fast repeated optimization in the compact binary latent space. This makes the framework computationally attractive for studying representation–optimization trade-offs. 
+
+## 4 Experiments 
+
+Our experimental study is designed to answer three ques-tions: 1. First, can an external sequence-level oracle trained from protein language model embeddings provide a reliable black-box fitness signal, especially in data-scarce settings? 2. Second, how do learned latent representations such as AE and VAE compare with simple projection-based binary codes for downstream optimization and decod-ing? 3. Third, does the full Q-BioLat pipeline—from sequence embedding to latent optimization and decoding—produce high-fitness candidate proteins under a fixed design budget? Consistent with the scope of this work, we place the main emphasis on end-to-end protein design performance, while using the landscape analysis as a secondary interpretive layer. 
+
+4.1 Datasets and Data-Scarce Regimes 
+
+We evaluate Q-BioLat on protein fitness landscapes from the ProteinGym benchmark [ 3 ]. Our primary experiments focus on two representative tasks: GFP and AAV. These two datasets provide complementary settings for studying both mutation-effect prediction and optimization over rugged protein fitness landscapes. For each dataset, we construct subset sizes of {1000 , 2000 , 5000 , 10000 } variants (see Table 1). We treat the 1000 and 2000 settings as data-scarce regimes ,and the 5000 and 10000 settings as moderate-data regimes .Unless otherwise specified, each subset is split into training, validation, and test sets using a stratified split based on fitness quantiles, with the validation split used for model selection and the test split reserved for final reporting. All reported results are averaged over multiple random seeds. 
+
+4.2 External Sequence-Level Fitness Oracle 
+
+A central component of this work is an external oracle that maps a protein sequence directly to a scalar fitness esti-mate. This oracle is conceptually distinct from the internal 
+
+Q-BioLat QUBO surrogate. The external oracle serves two purposes: (i) it provides a standardized black-box evaluator for comparing protein design methods that output sequences, and (ii) it enables evaluation of generated sequences that do not exactly match an experimentally observed variant. For each protein sequence, we compute an ESM-based sequence embedding by mean pooling residue-level repre-sentations. On top of these embeddings, we train a family of classical regression models, including ridge regression, gradient-boosted decision trees (XGBoost), and Gaussian process regression. All models are trained on the same em-bedding space to isolate the effect of the regression model rather than the upstream representation. Model selection is performed using a validation split, and the best-performing oracle for each dataset-size regime is used in the downstream sequence-level optimization experiments. We evaluate the external oracle using standard regression metrics, including Spearman correlation, Pearson correlation, root mean squared error (RMSE), and mean absolute error (MAE). Table 2 summarizes the results across both GFP and AAV datasets, and Figure 2 visualizes the scaling behavior. Across both datasets, we observe a consistent and sys-tematic dependence of oracle performance on the amount of available data. In both low-data regimes (1000–2000 samples) and moderate-data regimes (5000–10000 samples), Gaussian Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Table 1. ProteinGym datasets used in the experiments. We consider two representative protein fitness landscapes: GFP for fluorescence-based fitness and AAV capsid for viral fitness. For each dataset, we construct multiple subset sizes to study data-scarce and moderate-data regimes. Dataset Task WT length Full library size Subset sizes GFP Fluorescence / fitness 238 51,714 1000, 2000, 5000, 10000 AAV Capsid / fitness 735 42,328 1000, 2000, 5000, 10000 process regression achieves the strongest performance, re-flecting its ability to model uncertainty and adapt to limited supervision. As the dataset size increases, ridge regression becomes increasingly competitive and often achieves near the best performance, suggesting that the fitness signal is largely captured by a linear model in the ESM embedding space when sufficient data is available. In contrast, XGBoost underperforms in the smallest-data regime, indicating over-fitting, but improves steadily with increasing dataset size. Based on these results, we use Gaussian process oracles in data-scarce settings when computationally feasible, and rely on ridge regression and XGBoost as scalable sequence-level evaluators in larger regimes. 
+
+4.3 Latent Representation Learning and Decoder Analysis 
+
+We compare four families of latent representations: (i) ran-dom projection with thresholding, (ii) PCA with threshold-ing, (iii) deterministic autoencoder (AE), and (iv) variational autoencoder (VAE). All methods operate on the same ESM embeddings to isolate the effect of latent representation. 
+
+Latent quality and collapse of learned representations. 
+
+We first examine whether learned latent models produce usable binary codes after binarization. Table 3 reports recon-struction error, bit entropy, and the number of active latent dimensions. Although AE and VAE achieve very low recon-struction error, their binarized latent codes exhibit near-zero entropy and essentially no active dimensions. This indicates a collapse of the binary latent space, where most bits become constant across samples and fail to encode meaningful varia-tion. As a result, these representations do not provide a useful combinatorial search space for downstream optimization. 
+
+Decoding performance of projection-based represen-tations. We next evaluate the decodability of binary la-tent codes using a mutation-conditioned decoder. Table 4 shows that projection-based representations, particularly PCA, significantly outperform random projections in both mutation F1 and mutated-residue accuracy. For example, on AAV with 10000 training samples, PCA with 64 latent di-mensions achieves substantially higher decoding accuracy than random projection at the same dimensionality. Similar trends hold in the data-scarce regime on GFP. 
+
+Scaling behavior with data and latent dimension. Fig-ure 3 further illustrates how decoding performance scales with the number of training samples at a fixed latent dimen-sion of 64 bits. Across both GFP and AAV datasets, PCA consistently achieves higher mutation F1 than random pro-jection, and performance improves as more data becomes available. This indicates that PCA not only preserves mean-ingful structure but also benefits from additional supervision. 
+
+Discussion. Taken together, these results reveal a clear mismatch between reconstruction quality and optimization readiness. While AE and VAE reconstruct embeddings ac-curately, their binarized latent spaces collapse and fail to support decoding or combinatorial search. In contrast, sim-ple structured representations such as PCA maintain both variability and decodability, leading to substantially better downstream performance. These findings motivate our focus on PCA-based binary latent representations in the end-to-end design benchmark. These observations also suggest that latent representations for protein design should be evalu-ated not only by reconstruction or predictive accuracy, but by their ability to support both decoding and combinatorial optimization. 
+
+4.4 Internal QUBO Surrogate Performance 
+
+Given a binary latent representation, Q-BioLat fits a qua-dratic surrogate over unary and pairwise latent features. This surrogate defines the QUBO objective used for combinatorial optimization. In this section, we evaluate how well different latent representations support the construction of such a surrogate. Table 5 reports predictive performance of the learned QUBO models using Spearman correlation on held-out test data. Importantly, this evaluation is not intended to estab-lish state-of-the-art fitness prediction, but rather to assess whether the latent representation induces a meaningful op-timization landscape. Across representations, we observe that PCA, random pro-jection, and even AE/VAE can achieve comparable predictive performance under the QUBO surrogate. In particular, differ-ences in Spearman correlation are often modest, indicating that multiple representations are capable of fitting observed fitness values to a similar degree. However, when considered together with the results from Section 4.3 and the end-to-end benchmark in Section 4.6, Truong-Son Hy 
+
+Table 2. Performance of external sequence-level fitness oracles built on top of ESM embeddings across GFP and AAV datasets. Results are reported on the test set. The best Spearman correlation for each dataset and training size is highlighted in bold. Dataset Train size Oracle model Spearman ↑ Pearson ↑ RMSE ↓ MAE ↓
+
+GFP 1000 Gaussian Process 0.657 0.682 0.759 0.612 
+
+Ridge Regression 0.637 0.665 0.859 0.652 XGBoost 0.520 0.557 0.863 0.711 2000 Gaussian Process 0.714 0.729 0.742 0.586 
+
+Ridge Regression 0.660 0.669 0.817 0.637 XGBoost 0.650 0.675 0.802 0.624 5000 Gaussian Process 0.729 0.754 0.699 0.542 
+
+Ridge Regression 0.702 0.697 0.772 0.607 XGBoost 0.635 0.685 0.772 0.596 10000 Gaussian Process 0.783 0.796 0.646 0.495 
+
+Ridge Regression 0.735 0.730 0.730 0.580 XGBoost 0.693 0.729 0.731 0.568 AAV 1000 Gaussian Process 0.671 0.650 2.390 1.906 
+
+Ridge Regression 0.706 0.656 2.618 2.058 XGBoost 0.611 0.607 2.501 2.005 2000 Gaussian Process 0.792 0.762 2.048 1.629 
+
+Ridge Regression 0.779 0.751 2.155 1.690 XGBoost 0.694 0.694 2.255 1.813 5000 Gaussian Process 0.806 0.782 1.898 1.505 
+
+Ridge Regression 0.796 0.763 1.962 1.547 XGBoost 0.729 0.724 2.094 1.659 10000 Gaussian Process 0.838 0.821 1.712 1.346 
+
+Ridge Regression 0.808 0.781 1.874 1.489 XGBoost 0.777 0.772 1.914 1.499 
+
+Table 3. Collapse of learned latent representations after binarization on GFP with 1000 training samples. Although AE and VAE achieve low reconstruction error, their binarized latent codes exhibit zero entropy and no active dimensions. Representation Latent dim Bit entropy ↑ Active dims ↑ Recon. MSE ↓
+
+AE 8 0.000 0.00 0.000125 64 0.000 0.00 0.000124 VAE 8 0.149 0.25 0.000126 64 0.002 0.00 0.000164 a clear discrepancy emerges between predictive accuracy and optimization effectiveness. Although AE and VAE can achieve reasonable surrogate fits, their collapsed binary struc-ture prevents effective decoding and downstream optimiza-tion. Similarly, random projection yields acceptable predic-tive performance but weaker decoding and design results compared to PCA. These findings highlight a key distinction: predictive per-formance alone does not determine the usefulness of a repre-sentation for combinatorial optimization. Instead, the geom-etry of the latent space and its compatibility with decoding and search play a central role. This observation is consistent with the theoretical analysis in Section A, which shows that different representations can induce substantially different optimization landscapes even when predictive accuracy is similar. Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Figure 2. Test-set performance of external sequence-level fitness oracles across data regimes on GFP and AAV. Each panel shows the Spearman correlation between predicted and ground-truth fitness as a function of the number of training samples. Across both datasets, Gaussian process regression often achieves the strongest performance in both low-data and moderate-data regimes, reflecting its ability to model uncertainty under limited supervision. As the dataset size increases, ridge regression becomes increasingly competitive and often achieves near the best performance, indicating that the fitness signal is largely captured by a linear model in the ESM embedding space. In contrast, XGBoost underperforms in the smallest-data regime, suggesting overfitting, but improves steadily with additional data. These results establish a reliable sequence-level oracle for evaluating generated protein sequences and highlight the importance of selecting appropriate models under different data regimes. 
+
+Table 4. Decoding quality of projection-based binary latent representations. PCA consistently achieves higher mutation F1 and mutated-residue accuracy than random projection, and both metrics improve with increasing latent dimensionality. The better performance between two latent dimensions (i.e. bits) of 16 and 64 is highlighted in bold across different settings. The higher latent dimension (i.e. 64) consistently outperforms the lower latent dimension (i.e. 16) in decoding quality. Dataset Train size Representation Latent dim Mutation F1 ↑ AA accuracy ↑
+
+GFP 1000 PCA 16 0.110 0.551 PCA 64 0.273 0.595 
+
+Random 16 0.102 0.510 Random 64 0.168 0.553 
+
+AAV 10000 PCA 16 0.369 0.367 PCA 64 0.603 0.602 
+
+Random 16 0.338 0.316 Random 64 0.469 0.475 
+
+Overall, these results demonstrate that while the QUBO surrogate can be fitted across a range of representations, only structured latent spaces such as PCA lead to effective end-to-end protein design. 
+
+4.5 Conservative Retrieval-Based Optimization Benchmark 
+
+We evaluate Q-BioLat in a conservative setting where opti-mized latent codes are mapped back to observed sequences via nearest-neighbor retrieval in Hamming space. This bench-mark isolates the quality of the induced latent fitness land-scape without confounding effects from neural decoding. Truong-Son Hy 
+
+Figure 3. Scaling of decoding performance with dataset size for PCA-based and random-projection binary latent representations at 64 bits. The x-axis shows the number of training samples and the y-axis shows mutation F1. Across both GFP and AAV datasets, PCA consistently achieves higher decoding accuracy than random projection, and performance improves with increasing data. 
+
+Table 5. Predictive performance of the internal QUBO surrogate across latent representations, training data sizes, and latent dimensions. We report held-out test Spearman correlation. Although predictive differences are often modest, downstream optimization behavior differs substantially across representations. The better performance between the two binary-latent representations (i.e. PCA and random projection) is highlighted in bold. PCA outperforms random projection consistently in predictive quality of the internal QUBO surrogate across different settings. Dataset Train size Latent dim Representation Spearman ↑
+
+GFP 1000 16 Random 0.291 
+
+PCA 0.147 64 Random 0.196 PCA 0.277 
+
+10000 16 Random 0.302 PCA 0.303 
+
+64 Random 0.413 PCA 0.532 
+
+AAV 1000 16 Random 0.417 
+
+PCA 0.393 64 Random 0.407 PCA 0.511 
+
+10000 16 Random 0.366 PCA 0.422 
+
+64 Random 0.534 PCA 0.564 
+
+To ensure a fair comparison across optimization methods, all results are reported using PCA-based latent representa-tions with a fixed latent dimension of 64 bits. Tables 6 and 7 summarize the mean retrieval-based optimization perfor-mance across multiseed runs on GFP and AAV, respectively. Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Across both datasets and all data regimes, Simulated An-nealing (SA), Genetic Algorithms (GA), and Greedy Hill Climb (GHC) consistently achieve strong performance, indi-cating that the induced QUBO landscape is well-structured for combinatorial search. In particular, these methods reli-ably identify high-fitness regions of the observed sequence manifold even in data-scarce settings, while latent Bayesian-style optimization (LBO) is generally less competitive. These results demonstrate that PCA-based binary latent representations produce optimization-friendly landscapes that can be effectively explored by classical combinatorial solvers, providing a strong foundation for the full end-to-end design pipeline. 
+
+4.6 End-to-End Sequence Design Benchmark 
+
+We evaluate Q-BioLat in an end-to-end protein design set-ting where optimized binary latent codes are decoded into protein sequences and scored using the external oracle. This benchmark directly measures whether optimization in bi-nary latent space leads to improved sequence-level fitness. Figure 4 summarizes the best end-to-end performance achieved by PCA-based and random-projection binary latent representations across training regimes on GFP and AAV. For each dataset and train size, we report the strongest con-figuration after jointly selecting the optimizer and latent dimension. Across most settings, PCA-based binary latent representa-tions achieve the strongest performance. This advantage is especially pronounced at moderate and larger data regimes, where higher-dimensional PCA latents (32 and 64 bits) con-sistently produce the highest oracle scores. These findings are consistent with the decoder analysis in Section 4.3, where PCA was shown to be substantially more decodable than both random projections and learned AE/VAE latent spaces. We also observe that larger latent dimensions generally improve end-to-end performance, particularly for PCA, in-dicating that structured latent spaces can benefit from in-creased capacity without sacrificing decodability. In contrast, random projections are less reliable and usually underper-form PCA, although a few low-data settings exhibit isolated exceptions. Among the optimizers, Greedy Hill Climb (GHC), Ge-netic Algorithm (GA), and Simulated Annealing (SA) are consistently competitive, while latent Bayesian-style search (LBO) is generally weaker. Overall, these results show that 
+
+Q-BioLat provides an effective framework for end-to-end protein design, where binary latent optimization combined with structured representations enables the discovery of high-fitness protein sequences under a fixed oracle evalua-tion budget. 
+
+4.7 Data-Scarcity and Scaling Analysis 
+
+We next analyze how the performance of Q-BioLat evolves as the amount of available fitness data increases. This exper-iment is particularly important because one of the primary motivations for using compact binary latent representations is to enable robust optimization under limited supervision. Table 9 summarizes the best-performing oracle, latent representation, and design method across data regimes on both GFP and AAV. Several consistent patterns emerge. 
+
+Oracle behavior across data regimes. Across all datasets and training sizes, Gaussian process regression consistently provides the strongest sequence-level oracle. This highlights its ability to capture nonlinear structure in protein fitness landscapes and remain robust even as the dataset size in-creases. In contrast, simpler models such as ridge regression and XGBoost remain competitive but do not surpass Gauss-ian processes in our experiments. 
+
+Latent representation. Across all datasets and data regimes, PCA-based binary latent representations consistently pro-vide the strongest performance. This observation aligns with the findings in Section 4.3, where PCA was shown to main-tain high entropy, active latent dimensions, and strong de-coding performance, while AE/VAE representations collapse after binarization. 
+
+Optimization methods. The best-performing design method varies with both dataset and data regime. In low-data set-tings, simpler methods such as Random Search (RS) and Greedy Hill Climbing (GHC) are often competitive, reflect-ing the relatively limited structure of the learned landscape. As the dataset size increases, more sophisticated combinato-rial methods such as Genetic Algorithm (GA) and Simulated Annealing (SA) become increasingly effective, suggesting that the learned QUBO landscape becomes more informative and structured. 
+
+Scaling trends. We observe a clear transition from less stable behavior in the low-data regime (1000–2000 samples) to more consistent and high-performing optimization in the moderate-data regime (5000–10000 samples). In particu-lar, PCA-based latent representations combined with higher latent dimensionality enable improved end-to-end perfor-mance, indicating that structured latent spaces can effec-tively leverage additional data without sacrificing decodabil-ity or optimization stability. 
+
+Summary. Overall, these results demonstrate that Q-BioLat 
+
+provides a robust framework for protein design across data regimes. The combination of a strong Gaussian process ora-cle, structured PCA-based latent representations, and com-binatorial optimization enables effective identification of high-fitness sequences, particularly in data-scarce settings, while continuing to improve as more data becomes available. Truong-Son Hy 
+
+Table 6. Retrieval-based optimization results on GFP using PCA latent representations with 64 bits. Each row reports the mean performance across multiseed runs for one optimizer. Optimizers include Simulated Annealing (SA), Genetic Algorithm (GA), Random Search (RS), Greedy Hill Climb (GHC), and Latent Bayesian Optimization (LBO). In each data size, the best performance in each metric is highlighted in bold. Train size Optimizer Improvement ↑ NN fitness ↑ Percentile ↑
+
+1000 SA 4.978 3.568 73.200 GA 5.044 3.440 60.925 RS 1.750 3.443 58.650 GHC 4.918 3.616 74.825 
+
+LBO -1.509 2.766 58.050 2000 SA 11.529 3.558 70.700 GA 11.103 2.908 62.025 RS 4.770 2.593 43.175 GHC 10.230 3.580 75.013 
+
+LBO -1.119 2.953 47.700 5000 SA 6.757 3.479 63.410 GA 6.628 3.689 83.330 
+
+RS 2.617 3.078 61.640 GHC 6.083 3.761 80.605 LBO -1.005 2.775 54.085 10000 SA 4.162 3.220 69.740 GA 3.938 3.607 74.595 
+
+RS 1.609 3.590 71.938 GHC 3.688 3.175 64.562 LBO -1.253 1.836 28.780 
+
+Figure 4. End-to-end sequence design performance after optimization, decoding, and oracle scoring. For each dataset and training size, we plot the best-performing PCA-based and random-projection configuration. Each point is annotated with the corresponding latent dimension and optimizer. Across most settings, PCA-based binary latent representations achieve the strongest sequence-level performance, particularly at moderate and larger data regimes. 
+
+4.8 Implementation Details and Reporting Protocol 
+
+Unless otherwise specified, all methods use the same up-stream ESM embedding extractor in order to isolate the effect Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Table 7. Retrieval-based optimization results on AAV using PCA latent representations with 64 bits. Each row reports the mean performance across multiseed runs for one optimizer. Optimizers include Simulated Annealing (SA), Genetic Algorithm (GA), Random Search (RS), Greedy Hill Climb (GHC), and Latent Bayesian Optimization (LBO). In each data size, the best performance in each metric is highlighted in bold. Train size Optimizer Improvement ↑ NN fitness ↑ Percentile ↑
+
+1000 SA 11.364 3.303 88.225 GA 10.342 3.949 90.000 RS 1.224 1.945 77.550 GHC 9.362 3.902 91.400 
+
+LBO -9.071 -0.606 53.200 2000 SA 28.756 1.794 72.275 GA 27.108 -1.256 47.325 RS 8.523 0.343 66.050 GHC 26.511 1.856 74.388 
+
+LBO -11.177 -0.116 61.725 5000 SA 14.627 -0.654 50.165 GA 13.636 3.869 95.325 
+
+RS 4.153 1.477 77.715 GHC 13.162 6.643 94.975 LBO -5.378 -1.871 44.250 10000 SA 12.575 3.038 86.198 GA 12.321 3.720 92.948 
+
+RS 4.115 2.278 78.420 GHC 11.545 3.262 91.380 LBO -3.503 0.003 61.045 of latent representation and optimization strategy. Hyperpa-rameters are selected on the validation split, and final results are reported on the held-out test split or on oracle-evaluated generated candidates, depending on the experiment. For de-sign methods, we use a fixed candidate budget and report both the best returned sequence and the average perfor-mance of the top-𝐾 returned candidates. All reported means and standard deviations are computed over multiple random seeds. For this work, we publicly release code, exact hyper-parameter settings, and scripts for reproducing all tables and figures at: 
+
+https://github.com/HySonLab/Q-BIOLAT-Extended 
+
+## 5 Conclusion 
+
+In this work, we introduced Q-BioLat , a framework for modeling and optimizing protein fitness landscapes in com-pact binary latent spaces. By transforming protein sequence representations into binary codes and learning a quadratic unconstrained binary optimization (QUBO) surrogate, Q-BioLat enables direct application of combinatorial optimiza-tion methods to protein design. Beyond its algorithmic formulation, our central contribu-tion is a representation-centric perspective on protein fitness modeling. We show both theoretically and empirically that predictive accuracy alone is insufficient for effective opti-mization. Instead, the geometry of the latent space—captured through its induced QUBO interactions—plays a decisive role in determining search behavior, landscape smoothness, and the ability to identify high-fitness sequences. Our experiments demonstrate three key findings. First, learned autoencoder-based representations collapse under bi-narization and fail to support optimization, despite achieving low reconstruction error. Second, simple structured represen-tations such as PCA consistently produce more informative and decodable latent spaces, leading to better optimization performance. Third, combinatorial optimization methods such as simulated annealing, genetic algorithms, and greedy hill climbing are highly effective when applied to these struc-tured binary latent landscapes, especially when combined with a strong sequence-level oracle. We further show that Q-BioLat performs robustly across data regimes, including data-scarce settings where tradi-tional methods often struggle. As more data becomes avail-able, both oracle quality and latent structure improve, leading to increasingly effective end-to-end protein design. Truong-Son Hy 
+
+Table 8. End-to-end protein design benchmark under a fixed external-oracle evaluation budget. For each dataset and train size, we report the best-performing random-projection and PCA-based Q-BioLat configuration after optimization, decoding, and oracle scoring. Optimizers include Simulated Annealing (SA), Genetic Algorithm (GA), Random Search (RS), Greedy Hill Climb (GHC), and Latent Bayesian Optimization (LBO). The better performance between PCA and random projection is highlighted in bold. Dataset Train size Representation Optimizer Latent dim Best score ↑ Top-10 mean ↑
+
+GFP 1000 PCA RS 64 4.119 3.903 Random GA 64 4.170 3.312 
+
+2000 PCA GA 64 4.027 3.549 
+
+Random GHC 32 3.448 2.693 5000 PCA GHC 64 4.270 3.972 
+
+Random GHC 32 3.815 2.228 10000 PCA GHC 64 5.554 5.042 
+
+Random GHC 32 4.806 3.829 AAV 1000 PCA GHC 64 5.232 2.962 
+
+Random GHC 64 4.066 -1.557 2000 PCA RS 32 2.866 0.349 Random GHC 32 4.184 -2.674 
+
+5000 PCA SA 64 3.999 2.249 
+
+Random GA 64 2.548 -1.150 10000 PCA GA 64 4.541 2.091 
+
+Random LBO 16 1.197 -4.205 
+
+Table 9. Scaling summary across data regimes. We report the best-performing oracle, latent representation, and design method as a function of available training data. Dataset Train size Best oracle Best latent representation Best design method GFP 1000 Gaussian Process PCA Random Search (RS) 2000 Gaussian Process PCA Genetic Algorithm (GA) 5000 Gaussian Process PCA Greedy Hill Climb (GHC) 10000 Gaussian Process PCA Greedy Hill Climb (GHC) AAV 1000 Gaussian Process PCA Greedy Hill Climb (GHC) 2000 Gaussian Process PCA Random Search (RS) 5000 Gaussian Process PCA Simulated Annealing (SA) 10000 Gaussian Process PCA Genetic Algorithm (GA) Overall, Q-BioLat bridges protein language modeling, dis-crete representation learning, and combinatorial optimiza-tion, providing a principled framework for optimization-aware protein fitness modeling. By explicitly modeling the latent fitness landscape as a QUBO problem, our approach naturally connects modern machine learning with classi-cal and quantum optimization paradigms. This opens sev-eral promising directions for future work, including inte-gration with quantum annealing hardware, development of optimization-aware representation learning methods, and extension to multi-objective and constrained protein design. 
+
+## References       
+
+> [1] Philip A Romero and Frances H Arnold. Exploring protein fitness landscapes by directed evolution. Nature reviews Molecular cell biology ,10(12):866–876, 2009. [2] Lin Chen, Zehong Zhang, Zhenghao Li, Rui Li, Ruifeng Huo, Lifan Chen, Dingyan Wang, Xiaomin Luo, Kaixian Chen, Cangsong Liao, and Mingyue Zheng. Learning protein fitness landscapes with deep mutational scanning data from multiple sources. Cell Systems , 14(8): 706–721.e5, 2023. ISSN 2405-4712. doi: https://doi.org/10.1016/j.cels. 2023.07.003. URL https://www.sciencedirect.com/science/article/pii/ S2405471223002107 .[3] Pascal Notin, Aaron Kollasch, Daniel Ritter, Lood van Niekerk, Stef-fanie Paul, Han Spinner, Nathan Rollins, Ada Shaw, Rose Orenbuch,
+
+Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Ruben Weitzman, Jonathan Frazer, Mafalda Dias, Dinko Franceschi, Yarin Gal, and Debora Marks. Proteingym: Large-scale benchmarks for protein fitness prediction and design. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 64331–64379. Curran Associates, Inc., 2023. URL https://proceedings.neurips. cc/paper_files/paper/2023/file/cac723e5ff29f65e3fcbb0739ae91bee-Paper-Datasets_and_Benchmarks.pdf .[4] Zeming Lin, Halil Akin, Roshan Rao, Brian Hie, Zhongkai Zhu, Went-ing Lu, Nikita Smetanin, Robert Verkuil, Ori Kabeli, Yaniv Shmueli, Allan dos Santos Costa, Maryam Fazel-Zarandi, Tom Sercu, Sal-vatore Candido, and Alexander Rives. Evolutionary-scale predic-tion of atomic-level protein structure with a language model. Sci-ence , 379(6637):1123–1130, 2023. doi: 10.1126/science.ade2574. URL 
+
+https://www.science.org/doi/abs/10.1126/science.ade2574 .[5] Thomas Hayes, Roshan Rao, Halil Akin, Nicholas J. Sofroniew, Deniz Oktay, Zeming Lin, Robert Verkuil, Vincent Q. Tran, Jonathan Deaton, Marius Wiggert, Rohil Badkundri, Irhum Shafkat, Jun Gong, Alexander Derry, Raul S. Molina, Neil Thomas, Yousuf A. Khan, Chetan Mishra, Carolyn Kim, Liam J. Bartie, Matthew Nemeth, Patrick D. Hsu, Tom Sercu, Salvatore Candido, and Alexander Rives. Simulating 500 million years of evolution with a language model. Science , 387(6736):850–858, 2025. doi: 10.1126/science.ads0018. URL https://www.science.org/doi/ abs/10.1126/science.ads0018 .[6] Céline Marquet, Julius Schlensok, Marina Abakarova, Burkhard Rost, and Elodie Laine. Expert-guided protein language models enable accurate and blazingly fast fitness prediction. Bioinformatics , 40(11): btae621, 11 2024. ISSN 1367-4811. doi: 10.1093/bioinformatics/btae621. URL https://doi.org/10.1093/bioinformatics/btae621 .[7] Dan Liu, Francesca Young, Kieran D Lamb, Adalberto Claudio Quiros, Alexandrina Pancheva, Crispin J Miller, Craig Macdonald, David L Robertson, and Ke Yuan. Plm-interact: extending protein language models to predict protein-protein interactions. Nature Communica-tions , 16(1):9012, 2025. [8] Joseph L Watson, David Juergens, Nathaniel R Bennett, Brian L Trippe, Jason Yim, Helen E Eisenach, Woody Ahern, Andrew J Borst, Robert J Ragotte, Lukas F Milles, et al. De novo design of protein structure and function with rfdiffusion. Nature , 620(7976):1089–1100, 2023. [9] Thanh V T Tran, Nhat Khang Ngo, Viet Thanh Duy Nguyen, and Truong-Son Hy. Latentde: latent-based directed evolution for protein sequence design. Machine Learning: Science and Technology , 6(1): 015070, mar 2025. doi: 10.1088/2632-2153/adc2e2. URL https://doi.org/ 10.1088/2632-2153/adc2e2 .[10] Thanh V. T. Tran and Truong Son Hy. Protein design by directed evolution guided by large language models. IEEE Transactions on Evolutionary Computation , 29(2):418–428, 2025. doi: 10.1109/TEVC. 2024.3439690. [11] Hiroki Ozawa, Ibuki Unno, Ryohei Sekine, Taichi Chisuga, Sohei Ito, and Shogo Nakano. Development of evolutionary algorithm-based protein redesign method. Cell Reports Physical Science , 5(1): 101758, 2024. ISSN 2666-3864. doi: https://doi.org/10.1016/j.xcrp. 2023.101758. URL https://www.sciencedirect.com/science/article/pii/ S2666386423006033 .[12] Timothy Atkinson, Thomas D Barrett, Scott Cameron, Bora Guloglu, Matthew Greenig, Charlie B Tan, Louis Robinson, Alex Graves, Liviu Copoiu, and Alexandre Laterre. Protein sequence modelling with bayesian flow networks. Nature Communications , 16(1):3197, 2025. [13] Ruyun Hu, Lihao Fu, Yongcan Chen, Junyu Chen, Yu Qiao, and Tong Si. Protein engineering via bayesian optimization-guided evolutionary algorithm and robotic experiments. Briefings in Bioinformatics , 24(1): bbac570, 12 2022. ISSN 1477-4054. doi: 10.1093/bib/bbac570. URL 
+
+https://doi.org/10.1093/bib/bbac570 .[14] Gary Kochenberger, Jin-Kao Hao, Fred Glover, Mark Lewis, Zhipeng Lü, Haibo Wang, and Yang Wang. The unconstrained binary quadratic programming problem: a survey. Journal of combinatorial optimization ,28(1):58–81, 2014. [15] Andrew Lucas. Ising formulations of many np problems. Frontiers in Physics , Volume 2 - 2014, 2014. ISSN 2296-424X. doi: 10.3389/fphy.2014. 00005. URL https://www.frontiersin.org/journals/physics/articles/10. 3389/fphy.2014.00005 .[16] Seongmin Kim, Sang-Woo Ahn, In-Saeng Suh, Alexander W Dowling, Eungkyu Lee, and Tengfei Luo. Quantum annealing for combinatorial optimization: a benchmarking study. npj Quantum Information , 11(1): 77, 2025. [17] Viet Thanh Duy Nguyen and Truong Son Hy. Multimodal pretrain-ing for unsupervised protein representation learning. Biology Meth-ods and Protocols , 9(1):bpae043, 06 2024. ISSN 2396-8923. doi: 10. 1093/biomethods/bpae043. URL https://doi.org/10.1093/biomethods/ bpae043 .[18] Nhat Khang Ngo and Truong Son Hy. Multimodal protein repre-sentation learning and target-aware variational auto-encoders for protein-binding ligand generation. Machine Learning: Science and Technology , 5(2):025021, apr 2024. doi: 10.1088/2632-2153/ad3ee4. URL 
+
+https://doi.org/10.1088/2632-2153/ad3ee4 .[19] Alexander Rives, Joshua Meier, Tom Sercu, Siddharth Goyal, Zeming Lin, Jason Liu, Demi Guo, Myle Ott, C. Lawrence Zitnick, Jerry Ma, and Rob Fergus. Biological structure and function emerge from scaling unsupervised learning to 250 million protein sequences. Proceedings of the National Academy of Sciences , 118(15):e2016239118, 2021. doi: 10.1073/pnas.2016239118. URL https://www.pnas.org/doi/abs/10.1073/ pnas.2016239118 .[20] Zeming Lin, Halil Akin, Roshan Rao, Brian Hie, Zhongkai Zhu, Went-ing Lu, Nikita Smetanin, Robert Verkuil, Ori Kabeli, Yaniv Shmueli, et al. Evolutionary-scale prediction of atomic-level protein structure with a language model. Science , 379(6637):1123–1130, 2023. [21] Kevin K Yang, Zachary Wu, and Frances H Arnold. Machine-learning-guided directed evolution for protein engineering. Nature methods , 16 (8):687–694, 2019. [22] Surojit Biswas, Grigory Khimulya, Ethan C Alley, Kevin M Esvelt, and George M Church. Low-n protein engineering with data-efficient deep learning. Nature methods , 18(4):389–396, 2021. [23] Fanhao Wang, Tiantian Zhang, Jintao Zhu, Xiaoling Zhang, Chang-sheng Zhang, and Luhua Lai. Reinforcement learning-based target-specific de novo design of cyclic peptide binders. Journal of Medicinal Chemistry , 68(16):17287–17302, 2025. [24] Haoran Sun, Liang He, Pan Deng, Guoqing Liu, Zhiyu Zhao, Yuliang Jiang, Chuan Cao, Fusong Ju, Lijun Wu, Haiguang Liu, et al. Ac-celerating protein engineering with fitness landscape modelling and reinforcement learning. Nature Machine Intelligence , 7(9):1446–1460, 2025. [25] Optimization by simulated annealing. science , 220(4598):671–680, 1983. [26] John H. Holland. Adaptation in Natural and Artificial Systems: An Introductory Analysis with Applications to Biology, Control, and Artifi-cial Intelligence . The MIT Press, 04 1992. ISBN 9780262275552. doi: 10.7551/mitpress/1090.001.0001. URL https://doi.org/10.7551/mitpress/ 1090.001.0001 .[27] Mark W. Johnson, Mohammad H. S. Amin, Gildert Suzanne, Trevor Lanting, Firas Hamze, Neil G. Dickson, Richard G. Harris, Andrew J. Berkley, J. Johansson, Paul I. Bunyk, E. M. Chapple, Colin Enderud, Jeremy P. Hilton, Kamran Karimi, Eric Ladizinsky, Nicolas Ladizinsky, Travis Oh, I. G. Perminov, Chris Rich, Murray C. Thom, Elena Tolka-cheva, C. J. S. Truncik, Sergey Uchaikin, J. Wang, Blake A. Wilson, and Geordie Rose. Quantum annealing with manufactured spins. Nature ,473:194–198, 2011. URL https://api.semanticscholar.org/CorpusID: 205224761 .[28] André Hottung, Bhanu Bhandari, and Kevin Tierney. Learning a latent search space for routing problems using variational autoencoders. In International Conference on Learning Representations , 2021. URL Truong-Son Hy https://openreview.net/forum?id=90JprVrJBO .[29] Peter J. Bentley, Soo Ling Lim, Adam Gaier, and Linh Tran. Coil: Constrained optimization in learned latent space: learning repre-sentations for valid solutions. In Proceedings of the Genetic and Evolutionary Computation Conference Companion , GECCO ’22, page 1870–1877, New York, NY, USA, 2022. Association for Computing Machinery. ISBN 9781450392686. doi: 10.1145/3520304.3533993. URL 
+
+https://doi.org/10.1145/3520304.3533993 .[30] Dhruv Menon and Raghavan Ranganathan. A generative approach to materials discovery, design, and optimization. ACS Omega , 7(30): 25958–25973, 2022. doi: 10.1021/acsomega.2c03264. URL https://doi. org/10.1021/acsomega.2c03264 .[31] Truong Son Hy and Risi Kondor. Multiresolution equivariant graph variational autoencoder. Machine Learning: Science and Technology ,4(1):015031, mar 2023. doi: 10.1088/2632-2153/acc0d8. URL https: //doi.org/10.1088/2632-2153/acc0d8 .[32] Mingrui Jiang, Keyi Shan, Chengping He, and Can Li. Efficient com-binatorial optimization by quantum-inspired parallel annealing in analogue memristor crossbar. Nature Communications , 14(1):5927, 2023. [33] Tetsuro Abe, Masashi Yamashita, and Shu Tanaka. Effectiveness of binary autoencoders for qubo-based optimization problems. arXiv preprint arXiv:2602.10037 , 2026. [34] Marc Mézard and Andrea Montanari. Information, Physics, and Com-putation . Oxford University Press, 01 2009. ISBN 9780198570837. doi: 10.1093/acprof:oso/9780198570837.001.0001. URL https://doi.org/10. 1093/acprof:oso/9780198570837.001.0001 .[35] David Wales. Energy Landscapes: Applications to Clusters, Biomolecules and Glasses . Cambridge Molecular Science. Cambridge University Press, 2004. [36] Antonio Auffinger, Gérard Ben Arous, and Jiří Černý. Random matrices and complexity of spin glasses. Communications on Pure and Applied Mathematics , 66(2):165–201, 2013. doi: https://doi.org/10.1002/cpa. 21422. URL https://onlinelibrary.wiley.com/doi/abs/10.1002/cpa.21422 .[37] Anna Choromanska, MIkael Henaff, Michael Mathieu, Gerard Ben Arous, and Yann LeCun. The Loss Surfaces of Multilayer Net-works. In Guy Lebanon and S. V. N. Vishwanathan, editors, Proceedings of the Eighteenth International Conference on Artificial Intelligence and Statistics , volume 38 of Proceedings of Machine Learning Research , pages 192–204, San Diego, California, USA, 09–12 May 2015. PMLR. URL 
+
+https://proceedings.mlr.press/v38/choromanska15.html .[38] Ian Goodfellow, Oriol Vinyals, and Andrew Saxe. Qualitatively char-acterizing neural network optimization problems. In International Conference on Learning Representations , 2015. URL http://arxiv.org/ abs/1412.6544 .[39] Rafael Gómez-Bombarelli, Jennifer N. Wei, David Duvenaud, José Miguel Hernández-Lobato, Benjamín Sánchez-Lengeling, Den-nis Sheberla, Jorge Aguilera-Iparraguirre, Timothy D. Hirzel, Ryan P. Adams, and Alán Aspuru-Guzik. Automatic chemical design using a data-driven continuous representation of molecules. ACS Central Science , 4(2):268–276, 2018. doi: 10.1021/acscentsci.7b00572. URL 
+
+https://doi.org/10.1021/acscentsci.7b00572 . PMID: 29532027. [40] Wengong Jin, Regina Barzilay, and Tommi Jaakkola. Junction tree variational autoencoder for molecular graph generation. In Jennifer Dy and Andreas Krause, editors, Proceedings of the 35th International Conference on Machine Learning , volume 80 of Proceedings of Machine Learning Research , pages 2323–2332. PMLR, 10–15 Jul 2018. URL 
+
+https://proceedings.mlr.press/v80/jin18a.html .[41] Ryan-Rhys Griffiths and José Miguel Hernández-Lobato. Constrained bayesian optimization for automatic chemical design using variational autoencoders. Chem. Sci. , 11:577–586, 2020. doi: 10.1039/C9SC04026A. URL http://dx.doi.org/10.1039/C9SC04026A .[42] ANM Nafiz Abeer, Nathan M Urban, M Ryan Weil, Francis J Alexander, and Byung-Jun Yoon. Multi-objective latent space optimization of generative molecular design models. Patterns , 5(10), 2024. [43] Yoshua Bengio, Aaron Courville, and Pascal Vincent. Representation learning: A review and new perspectives. IEEE Trans. Pattern Anal. Mach. Intell. , 35(8):1798–1828, August 2013. ISSN 0162-8828. doi: 10.1109/TPAMI.2013.50. URL https://doi.org/10.1109/TPAMI.2013.50 .[44] Piotr Bojanowski, Armand Joulin, David Lopez-Pas, and Arthur Szlam. Optimizing the latent space of generative networks. In Jennifer Dy and Andreas Krause, editors, Proceedings of the 35th International Conference on Machine Learning , volume 80 of Proceedings of Machine Learning Research , pages 600–609. PMLR, 10–15 Jul 2018. URL https: //proceedings.mlr.press/v80/bojanowski18a.html .[45] G. E. Hinton and R. R. Salakhutdinov. Reducing the dimensionality of data with neural networks. Science , 313(5786):504–507, 2006. doi: 10.1126/science.1127647. URL https://www.science.org/doi/abs/10. 1126/science.1127647 .[46] Pascal Vincent, Hugo Larochelle, Isabelle Lajoie, Yoshua Bengio, and Pierre-Antoine Manzagol. Stacked denoising autoencoders: Learn-ing useful representations in a deep network with a local denoising criterion. J. Mach. Learn. Res. , 11:3371–3408, December 2010. ISSN 1532-4435. [47] Diederik P Kingma and Max Welling. Auto-encoding variational bayes. 
+
+arXiv preprint arXiv:1312.6114 , 2013. Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+## A Theoretical Insights into Binary Latent Fitness Landscapes 
+
+In this section, we provide a theoretical perspective on how binary latent representations induce structured optimization landscapes, and how their geometry affects combinatorial search. 
+
+A.1 QUBO as an Energy Landscape 
+
+Recall that the QUBO surrogate defines the predicted fitness of a binary latent code 𝑥 ∈ { 0, 1}𝑚 as: 
+
+ˆ𝑓 (𝑥 ) = ℎ⊤𝑥 + 12𝑥 ⊤ 𝐽𝑥, (9) where ℎ ∈ R𝑚 and 𝐽 ∈ R𝑚 ×𝑚 is a symmetric interaction matrix. This formulation can be equivalently interpreted as an energy-based model: 
+
+𝐸 (𝑥 ) = − ˆ𝑓 (𝑥 ), (10) where optimization corresponds to finding low-energy con-figurations. Under this view, the binary latent space {0, 1}𝑚 forms a discrete configuration space (a Boolean hypercube), and the QUBO defines an energy landscape over its vertices. The structure of this landscape is fully determined by the parameters (ℎ, 𝐽 ), which in turn depend on the choice of latent representation. 
+
+A.2 Local Geometry and Bit-Flip Dynamics 
+
+A fundamental operation in combinatorial optimization is a single-bit flip. Let 𝑥 (𝑘 ) denote the vector obtained by flipping the 𝑘 -th bit of 𝑥 . The change in predicted fitness is: 
+
+Δ𝑘 (𝑥 ) = ˆ𝑓 (𝑥 (𝑘 ) ) − ˆ𝑓 (𝑥 ). (11) For the QUBO model, this quantity can be expressed ex-plicitly as: 
+
+Δ𝑘 (𝑥 ) = (1 − 2𝑥 𝑘 ) ℎ𝑘 +∑︁ 
+
+> ℓ≠𝑘
+
+𝐽 𝑘ℓ 𝑥 ℓ
+
+!
+
+. (12) This expression shows that local search behavior is gov-erned by the interaction structure of 𝐽 . In particular: 
+
+• The term ℎ𝑘 captures the intrinsic contribution of the 
+
+𝑘 -th latent dimension. 
+
+• The sum Íℓ 𝐽 𝑘ℓ 𝑥 ℓ captures how other latent variables influence the effect of flipping bit 𝑘 .Thus, optimization trajectories depend not only on the current state 𝑥 , but also on the global interaction structure encoded in 𝐽 .
+
+A.3 Landscape Smoothness and Ruggedness 
+
+The difficulty of optimization is closely related to the smooth-ness of the energy landscape. We characterize local variabil-ity using the variance of Δ𝑘 (𝑥 ) over the latent space: 
+
+Var [Δ𝑘 (𝑥 )] ≈ ∑︁ 
+
+> ℓ
+
+𝐽 2 
+
+> 𝑘ℓ
+
+. (13) This suggests that the norm of the interaction coefficients controls the ruggedness of the landscape: 
+
+• Small ∥𝐽 𝑘 · ∥ leads to smoother landscapes with more predictable local improvements. 
+
+• Large ∥𝐽 𝑘 · ∥ leads to highly variable local changes and a proliferation of local optima. Consequently, the structure of 𝐽 plays a central role in determining optimization difficulty. 
+
+A.4 Spectral Structure of the Interaction Matrix 
+
+Further insight can be obtained by analyzing the spectrum of the interaction matrix 𝐽 . Let {𝜆 𝑖 } denote its eigenvalues. Then: 
+
+• Low-rank or structured 𝐽 (few dominant eigenvalues) corresponds to landscapes with coherent global direc-tions, facilitating optimization. 
+
+• Random or full-rank 𝐽 with dispersed eigenvalues cor-responds to more irregular, spin-glass-like landscapes with many local minima. Since 𝐽 is learned from latent representations, its spectral properties are directly influenced by the choice of represen-tation (e.g., PCA vs random projection vs learned encoders). 
+
+A.5 Representation–Optimization Decoupling 
+
+A key implication of this analysis is that predictive perfor-mance alone does not determine optimization behavior. Two representations may yield similar surrogate accuracy (e.g., similar Spearman correlation), yet induce different interac-tion matrices 𝐽 with distinct geometric properties. 
+
+Observation: Representations with similar pre-dictive accuracy can induce fundamentally dif-ferent optimization landscapes. This phenomenon arises because predictive metrics eval-uate pointwise accuracy, whereas optimization depends on the global structure of the energy landscape. As a result, rep-resentation learning for protein design should account not only for prediction quality, but also for the induced landscape geometry. 
+
+A.6 Implications for Latent Representation Design 
+
+The above analysis suggests several principles for designing effective latent representations: 
+
+• Structured representations (e.g., PCA or learned en-coders) tend to produce smoother and more optimization-friendly landscapes. Truong-Son Hy 
+
+• Overly high-dimensional latent spaces can increase model expressivity but also introduce ruggedness, making optimization more difficult. 
+
+• Learned representations can potentially balance ex-pressivity and smoothness by aligning latent dimen-sions with fitness-relevant directions. These insights provide a theoretical foundation for under-standing the empirical observations in Section 4 and moti-vate the development of optimization-aware representation learning methods. Here, we formalize how the learned binary representation determines the geometry, smoothness, and identifiability of the induced QUBO landscape. Our goal is not to solve the global QUBO exactly, but to characterize the quantities that govern local search, global variation, and the stability of the learned surrogate. 
+
+A.7 Energy Landscape and Local Fields 
+
+Recall that the QUBO surrogate defines the predicted fitness of a binary latent code 𝑥 ∈ { 0, 1}𝑚 as: 
+
+ˆ𝑓 (𝑥 ) = ℎ⊤𝑥 + 12𝑥 ⊤ 𝐽𝑥, (14) where ℎ ∈ R𝑚 and 𝐽 ∈ R𝑚 ×𝑚 is a symmetric interaction matrix with zero diagonal. Equivalently, we may define the energy: 
+
+𝐸 (𝑥 ) = − ˆ𝑓 (𝑥 ), (15) so that maximizing predicted fitness is equivalent to mini-mizing energy over the Boolean hypercube. A useful quantity for analyzing this landscape is the local field :
+
+𝑔 𝑘 (𝑥 ) = ℎ𝑘 +∑︁ 
+
+> ℓ≠𝑘
+
+𝐽 𝑘ℓ 𝑥 ℓ , (16) which measures the effective force acting on the 𝑘 -th bit given the remaining coordinates. 
+
+Proposition (Bit-flip gain and local optimality). Let 
+
+𝑥 (𝑘 ) denote the binary code obtained by flipping the 𝑘 -th bit of 𝑥 . Then the change in predicted fitness induced by a single-bit flip is: 
+
+Δ𝑘 (𝑥 ) = ˆ𝑓 (𝑥 (𝑘 ) ) − ˆ𝑓 (𝑥 ) = (1 − 2𝑥 𝑘 ) 𝑔 𝑘 (𝑥 ). (17) Consequently, a binary code 𝑥 ★ is a local maximizer with respect to single-bit flips if and only if: 
+
+Δ𝑘 (𝑥 ★) ≤ 0 for all 𝑘, (18) or equivalently, 
+
+𝑥 ★ 
+
+> 𝑘
+
+=
+
+(
+
+1, 𝑔 𝑘 (𝑥 ★) ≥ 0,
+
+0, 𝑔 𝑘 (𝑥 ★) ≤ 0, (19) with either value allowed when 𝑔 𝑘 (𝑥 ★) = 0.
+
+Proof. Write 𝑥 (𝑘 ) = 𝑥 + ( 1 − 2𝑥 𝑘 )𝑒 𝑘 , where 𝑒 𝑘 is the 𝑘 -th standard basis vector. Substituting into the QUBO objective and using the symmetry of 𝐽 together with 𝐽 𝑘𝑘 = 0 gives: 
+
+ˆ𝑓 (𝑥 (𝑘 ) ) − ˆ𝑓 (𝑥 ) = (1 − 2𝑥 𝑘 ) ℎ𝑘 +∑︁ 
+
+> ℓ≠𝑘
+
+𝐽 𝑘ℓ 𝑥 ℓ
+
+!
+
+.
+
+The local-optimality condition follows immediately by re-quiring that no single-bit flip improves the objective. □
+
+This proposition shows that local search in Q-BioLat 
+
+is governed by the collection of local fields {𝑔 𝑘 (𝑥 )} 𝑚 𝑘 =1. In particular, the interaction matrix 𝐽 determines how strongly each latent dimension depends on the current configuration of the others. 
+
+A.8 Hamming Smoothness and Spectral Control 
+
+We next quantify how much the QUBO objective can change between two latent codes. 
+
+Proposition (Hamming–Lipschitz continuity). For any 
+
+𝑥, 𝑦 ∈ { 0, 1}𝑚 ,
+
+| ˆ𝑓 (𝑥 ) − ˆ𝑓 (𝑦 )| ≤ (∥ ℎ∥∞ + ∥ 𝐽 ∥∞) 𝑑 𝐻 (𝑥, 𝑦 ), (20) where 𝑑 𝐻 (𝑥, 𝑦 ) is the Hamming distance and ∥𝐽 ∥∞ = max 𝑘 
+
+Í𝑚 ℓ=1 |𝐽 𝑘ℓ |
+
+is the matrix infinity norm. 
+
+Proof. Let 𝛿 = 𝑥 − 𝑦 . Then ∥𝛿 ∥1 = 𝑑 𝐻 (𝑥, 𝑦 ) and 
+
+ˆ𝑓 (𝑥 ) − ˆ𝑓 (𝑦 ) = ℎ⊤𝛿 + 12𝛿 ⊤ 𝐽 (𝑥 + 𝑦 ). (21) Therefore, 
+
+| ˆ𝑓 (𝑥 ) − ˆ𝑓 (𝑦 )| ≤ ∥ ℎ∥∞ ∥𝛿 ∥1 + 12 ∥𝛿 ∥1 ∥𝐽 ∥∞ ∥𝑥 + 𝑦 ∥∞.
+
+Since 𝑥, 𝑦 ∈ { 0, 1}𝑚 , we have ∥𝑥 + 𝑦 ∥∞ ≤ 2, which yields the result. □
+
+This result shows that the quantity 
+
+𝐿 𝐻 := ∥ℎ∥∞ + ∥ 𝐽 ∥∞ (22) acts as a global smoothness constant of the landscape in Hamming space. 
+
+Corollary (Spectral control of landscape variation). 
+
+For any 𝑥, 𝑦 ∈ { 0, 1}𝑚 ,
+
+| ˆ𝑓 (𝑥 ) − ˆ𝑓 (𝑦 )| ≤ √︁ 𝑑 𝐻 (𝑥, 𝑦 )
+
+
+
+∥ℎ∥2 + √𝑚 ∥𝐽 ∥2
+
+
+
+, (23) where ∥𝐽 ∥2 denotes the spectral norm of 𝐽 .
+
+Proof. Using the same decomposition with 𝛿 = 𝑥 − 𝑦 ,
+
+| ˆ𝑓 (𝑥 ) − ˆ𝑓 (𝑦 )| ≤ ∥ ℎ∥2 ∥𝛿 ∥2 + 12 ∥𝛿 ∥2 ∥𝐽 ∥2 ∥𝑥 + 𝑦 ∥2.
+
+Now ∥𝛿 ∥2 ≤√︁ 𝑑 𝐻 (𝑥, 𝑦 ) and ∥𝑥 + 𝑦 ∥2 ≤ 2√𝑚 , which implies the bound. □
+
+This corollary directly motivates the spectral norm of 𝐽 
+
+as a global diagnostic of landscape roughness. In particular, smaller ∥𝐽 ∥2 implies smaller worst-case variation across the hypercube. Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+A.9 Ruggedness via Bit-Flip Variability 
+
+To study local ruggedness, we analyze the variability of single-bit moves over the hypercube. 
+
+Proposition (Exact second moment of bit-flip gains). 
+
+Assume 𝑥 is drawn uniformly from {0, 1}𝑚 . Then for each bit 𝑘 ,
+
+E[Δ𝑘 (𝑥 )] = 0, (24) and 
+
+E[Δ𝑘 (𝑥 )2] = ℎ𝑘 + 12∑︁ ℓ≠𝑘 
+
+𝐽 𝑘ℓ 
+
+!2
+
++ 14∑︁ ℓ≠𝑘 
+
+𝐽 2 
+
+> 𝑘ℓ
+
+. (25) 
+
+Proof. Using Δ𝑘 (𝑥 ) = (1 − 2𝑥 𝑘 )𝑔 𝑘 (𝑥 ), note that (1 − 2𝑥 𝑘 )
+
+is independent of 𝑔 𝑘 (𝑥 ) and has mean zero and squared value one under the uniform measure. Hence, 
+
+E[Δ𝑘 (𝑥 )] = E[1 − 2𝑥 𝑘 ] E[𝑔 𝑘 (𝑥 )] = 0,
+
+and, 
+
+E[Δ𝑘 (𝑥 )2] = E[𝑔 𝑘 (𝑥 )2].
+
+Since the coordinates {𝑥 ℓ }ℓ≠𝑘 are independent Bernoulli (1/2)
+
+variables, 
+
+E[𝑔 𝑘 (𝑥 )] = ℎ𝑘 + 12∑︁ ℓ≠𝑘 
+
+𝐽 𝑘ℓ , Var (𝑔 𝑘 (𝑥 )) = 14∑︁ ℓ≠𝑘 
+
+𝐽 2 
+
+> 𝑘ℓ
+
+.
+
+The result follows from E[𝑔 𝑘 (𝑥 )2] = Var (𝑔 𝑘 (𝑥 )) + E[𝑔 𝑘 (𝑥 )] 2.
+
+□
+
+This proposition yields an exact measure of local rugged-ness. We define the average ruggedness: 
+
+R ( 𝐽, ℎ ) = 1
+
+𝑚 
+
+> 𝑚
+
+∑︁ 
+
+> 𝑘 =1
+
+E[Δ𝑘 (𝑥 )2]. (26) When the latent bits are approximately balanced and the local fields are centered, the dominant contribution is: 
+
+R ( 𝐽, ℎ ) ≈ 14𝑚 ∥𝐽 ∥2 
+
+> 𝐹
+
+, (27) showing that interaction energy directly drives local variabil-ity. Thus, both ∥𝐽 ∥𝐹 and ∥𝐽 ∥2 are theoretically meaningful diagnostics of ruggedness. 
+
+A.10 Low-Rank Structure and Effective Optimization Dimension 
+
+The spectral structure of 𝐽 determines whether the land-scape is effectively governed by a small number of collective directions. Let 
+
+𝐽 =
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+𝜆 𝑖 𝑢 𝑖 𝑢 ⊤ 
+
+> 𝑖
+
+(28) be the spectral decomposition of 𝐽 , with eigenvalues ordered by decreasing magnitude: 
+
+|𝜆 1 | ≥ | 𝜆 2 | ≥ · · · ≥ | 𝜆 𝑚 |.
+
+For a given rank 𝑟 , we define the truncated interaction ma-trix: 
+
+𝐽 𝑟 =
+
+> 𝑟
+
+∑︁ 
+
+> 𝑖 =1
+
+𝜆 𝑖 𝑢 𝑖 𝑢 ⊤ 
+
+> 𝑖
+
+, (29) and the corresponding truncated objective: 
+
+ˆ𝑓 𝑟 (𝑥 ) = ℎ⊤𝑥 + 12𝑥 ⊤ 𝐽 𝑟 𝑥 . (30) 
+
+Proposition (Pointwise low-rank approximation). For every 𝑥 ∈ { 0, 1}𝑚 ,
+
+| ˆ𝑓 (𝑥 ) − ˆ𝑓 𝑟 (𝑥 )| ≤ 𝑚 
+
+2 ∥𝐽 − 𝐽 𝑟 ∥2. (31) 
+
+Proof. We have: 
+
+ˆ𝑓 (𝑥 ) − ˆ𝑓 𝑟 (𝑥 ) = 12𝑥 ⊤ (𝐽 − 𝐽 𝑟 )𝑥 . 
+
+Therefore, 
+
+| ˆ𝑓 (𝑥 ) − ˆ𝑓 𝑟 (𝑥 )| ≤ 12 ∥𝐽 − 𝐽 𝑟 ∥2 ∥𝑥 ∥22.
+
+Since 𝑥 ∈ { 0, 1}𝑚 , we have ∥𝑥 ∥22 ≤ 𝑚 , which proves the result. □
+
+Corollary (Optimization gap under low-rank trun-cation). Let 𝑥 ★ ∈ arg max 𝑥 ˆ𝑓 (𝑥 ) and 𝑥 ★ 
+
+> 𝑟
+
+∈ arg max 𝑥 ˆ𝑓 𝑟 (𝑥 ).Then, 
+
+ˆ𝑓 (𝑥 ★) − ˆ𝑓 (𝑥 ★ 
+
+> 𝑟
+
+) ≤ 𝑚 ∥𝐽 − 𝐽 𝑟 ∥2. (32) 
+
+Proof. From the previous proposition, | ˆ𝑓 (𝑥 ) − ˆ𝑓 𝑟 (𝑥 )| ≤ 𝜀 
+
+for all 𝑥 , where 𝜀 = 𝑚  
+
+> 2
+
+∥𝐽 − 𝐽 𝑟 ∥2. Hence, 
+
+ˆ𝑓 (𝑥 ★) ≤ ˆ𝑓 𝑟 (𝑥 ★) + 𝜀 ≤ ˆ𝑓 𝑟 (𝑥 ★ 
+
+> 𝑟
+
+) + 𝜀 ≤ ˆ𝑓 (𝑥 ★ 
+
+> 𝑟
+
+) + 2𝜀. 
+
+Substituting the value of 𝜀 yields the claim. □
+
+This corollary provides a concrete guarantee: if the spec-tral tail of 𝐽 is small, then the optimization landscape is effectively low-dimensional, and the dominant eigenmodes of 𝐽 capture most of the optimization-relevant structure. A useful scalar summary of this concentration is the effec-tive rank :
+
+𝑟 eff (𝐽 ) = ∥𝐽 ∥2
+
+> 𝐹
+
+∥𝐽 ∥22
+
+, (33) which is small when interaction energy is concentrated in a few dominant modes. 
+
+A.11 Identifiability of the Learned QUBO Landscape 
+
+Let 𝜙 (𝑥 ) ∈ R𝑝 denote the QUBO feature map containing all linear and pairwise terms, where 
+
+𝑝 = 𝑚 + 𝑚 (𝑚 − 1)
+
+2 . (34) Let Φ(𝑋 ) ∈ R𝑁 ×𝑝 be the design matrix formed from the observed latent codes in the training set. Truong-Son Hy 
+
+Proposition (Non-identifiability under rank deficiency). 
+
+If rank (Φ(𝑋 )) < 𝑝 , then the QUBO parameters are not uniquely identifiable from the observed data. In particular, there exists a nonzero vector 𝑢 ∈ R𝑝 such that: 
+
+Φ(𝑋 )𝑢 = 0. (35) Therefore, for any parameter vector 𝑤 , both 𝑤 and 𝑤 + 𝑢 
+
+induce identical predictions on all observed training codes, but can differ on unseen binary codes. 
+
+Proof. If rank (Φ(𝑋 )) < 𝑝 , then the null space of Φ(𝑋 ) is nontrivial, so there exists 𝑢 ≠ 0 with Φ(𝑋 )𝑢 = 0. Hence, 
+
+Φ(𝑋 )( 𝑤 + 𝑢 ) = Φ(𝑋 )𝑤, 
+
+so the two parameterizations agree on all observed codes. For an unseen code 𝑥 with 𝜙 (𝑥 )⊤𝑢 ≠ 0, the predicted fitness differs: 
+
+𝜙 (𝑥 )⊤ (𝑤 + 𝑢 ) ≠ 𝜙 (𝑥 )⊤𝑤 . 
+
+□
+
+Corollary (Dimension–sample trade-off). Since 𝑝 =
+
+O( 𝑚 2), increasing the latent dimension rapidly enlarges the number of QUBO parameters. When the number of observed sequences is not sufficiently large relative to 𝑝 , the landscape away from the observed codes is only weakly constrained. This result provides a formal explanation for the trade-off between latent dimensionality, surrogate generalization, and optimization stability. Ridge regularization selects one stable solution among many possibilities, but the induced landscape remains strongly dependent on the representation through the feature map Φ(𝑋 ).
+
+A.12 Why Prediction and Optimization Can Decouple 
+
+The previous results formalize why predictive accuracy alone does not determine optimization behavior. First, predictive metrics such as Spearman correlation eval-uate surrogate quality on a finite observed set, whereas opti-mization depends on the geometry of the entire hypercube. Second, our propositions show that when the QUBO fea-ture map is rank-deficient or weakly constrained, multiple interaction structures can be consistent with essentially the same observed fit while differing away from the observed manifold. Together, these observations imply that two latent repre-sentations can achieve similar predictive accuracy while in-ducing substantially different optimization landscapes. This representation–optimization decoupling is not an anomaly, but rather a structural consequence of learning a surrogate over a large discrete latent space. 
+
+A.13 Practical Consequences 
+
+The theory above yields several experimentally testable pre-dictions. Landscapes with smaller ∥𝐽 ∥2, faster spectral decay, and smaller ruggedness R ( 𝐽, ℎ ) should be easier to optimize. Likewise, increasing latent dimensionality without sufficient data should increase ambiguity in the learned landscape and make optimization less stable. These further empirical analysis of the theory will be included in follow-up future works. 
+
+## B Additional Experimental Details 
+
+B.1 Protein Sequence Embeddings (ESM) 
+
+We represent protein sequences using pretrained protein language models from the ESM family. In particular, we use the facebook/esm2_t6_8M_UR50D checkpoint from the Hugging Face Transformers library. Given a protein sequence, we first convert it to uppercase and remove non-alphabetic characters. The cleaned sequence is then tokenized using the corresponding ESM tokenizer. We apply padding and truncation with a maximum sequence length of 1024. The tokenized sequence is passed through the pretrained transformer model in evaluation mode without gradient com-putation. The model produces contextualized residue-level representations, from which we obtain a fixed-length se-quence embedding by mean pooling over the sequence di-mension using the attention mask: 
+
+𝑒 =
+
+Í𝐿 𝑖 =1 𝑚 𝑖 𝐻 𝑖 
+
+Í𝐿 𝑖 =1 𝑚 𝑖 
+
+, (36) where 𝐻 𝑖 denotes the hidden representation of the 𝑖 -th residue and 𝑚 𝑖 is the corresponding attention mask. Embeddings are computed in mini-batches of size 8 and stored as dense vectors in float32 format. These embed-dings are used as inputs to downstream components, in-cluding the external fitness oracle and latent representation learning. 
+
+B.2 External Sequence-Level Fitness Oracle 
+
+For sequence-level fitness evaluation, we trained an external oracle on dense protein sequence embeddings. Each dataset was stored as a NumPy archive containing (i) dense em-beddings, (ii) scalar fitness labels, and (iii) the correspond-ing protein sequences. The embeddings were represented in 
+
+float32 , while fitness targets were stored in float64 .
+
+Data splitting. We partitioned each dataset into training, validation, and test sets using a two-stage random split. First, we split the data into a training + validation set and a held-out test set with a test ratio of 0.2. Then, we further split the training + validation set into training and validation subsets using a validation ratio of 0.1 relative to the full dataset. This results in an effective split of 70% /10% /20% for training, validation, and test sets, respectively. All splits were performed with a fixed random seed of 42 for reproducibility. Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Evaluation metrics. We evaluated model performance using four standard regression metrics: Spearman correla-tion, Pearson correlation, root mean squared error (RMSE), and mean absolute error (MAE). Metrics were reported on the training, validation, and test sets. 
+
+Models. We considered three regression models on top of the same embedding representation: Ridge Regression, XGBoost, and Gaussian Process Regression. 
+
+Ridge Regression. We used a pipeline consisting of fea-ture standardization via StandardScaler followed by Ridge regression. The regularization strength was set to 𝛼 = 1.0,and the svd solver was used. 
+
+XGBoost. We used the XGBRegressor implementation with the following hyperparameters: number of trees = 300 ,maximum tree depth = 6, learning rate = 0.05 , subsampling ratio = 0.9, column subsampling ratio = 0.9, ℓ1 regularization coefficient = 0.0, and ℓ2 regularization coefficient = 1.0. The objective function was squared error regression. Training was performed using 4 CPU threads, and the random seed was fixed to 42. 
+
+Gaussian Process Regression. We used a pipeline con-sisting of feature standardization followed by Gaussian Pro-cess Regression (GPR). The kernel was defined as: 
+
+𝑘 (𝑥, 𝑥 ′) = 𝐶 · RBF (𝑥, 𝑥 ′) + WhiteKernel , (37) where the constant kernel 𝐶 was initialized to 1.0 with bounds 
+
+[10 −3, 10 3], the RBF kernel had an initial length scale of 1.0
+
+with bounds [10 −3, 10 3], and the white noise level was ini-tialized to 10 −3 with bounds [10 −6, 10 1]. The GPR model used normalize_y=True and performed 2 restarts of the optimizer. 
+
+Training protocol. All models were trained on both GFP and AAV datasets under four data regimes with training set sizes of {1000 , 2000 , 5000 , 10000 }. For each dataset and data regime, the same fixed hyperparameters and random seed were used. No additional hyperparameter search was performed. Models were trained on the training split and evaluated on validation and test splits. 
+
+Outputs. For each trained model, we stored (i) the se-rialized model parameters, (ii) evaluation metrics in JSON format, and (iii) test-set predictions including sequences, ground-truth fitness values, and predicted fitness values. 
+
+B.3 Latent Representation Learning and Decoder Implementation 
+
+We construct binary latent representations from dense ESM embeddings using four approaches: PCA, random projection, deterministic autoencoder (AE), and variational autoencoder (VAE). For all methods, we evaluate latent dimensions of 8, 16, 32, and 64. For PCA, we apply principal component analysis to the dense embeddings and retain the top components corre-sponding to the target latent dimension. The resulting con-tinuous representations are binarized using per-dimension median thresholding computed over the dataset. PCA-based binary representations are precomputed and reused across experiments. For random projection, we project embeddings using a Gaussian random matrix with variance scaled by the input dimension, followed by the same median-based binariza-tion. This provides a lightweight baseline without learned structure. For AE and VAE, we use simple fully connected neural networks. The autoencoder consists of a two-layer encoder and decoder with a hidden dimension of 256 and ReLU ac-tivations. The encoder maps the input embedding to the latent space, and the decoder reconstructs the original em-bedding. The VAE uses a similar architecture with a shared encoder backbone and separate linear heads for the mean and log-variance. Both models are trained using mean squared reconstruction loss, with an additional KL divergence term for the VAE weighted by 𝛽 = 10 −3. Latent representations are binarized by thresholding at zero. Both AE and VAE are trained using the Adam optimizer with learning rate 10 −3, weight decay 10 −5, batch size 32, and 200 training epochs. All models are trained with a fixed random seed of 42 on CPU. For decoding, we train a mutation-conditioned neural de-coder that maps latent codes back to protein sequences. The decoder consists of two fully connected layers with hidden dimension 256 and ReLU activations, followed by two output heads: one for predicting mutation positions and one for predicting amino acid identities at mutated positions. The mutation prediction head outputs a vector of length equal to the sequence length, while the amino acid head outputs logits over 20 amino acids per position. The decoder is trained using a combination of binary cross-entropy loss for mutation prediction and cross-entropy loss for amino acid prediction, with a higher weight assigned to the mutation loss to account for class imbalance. Training is performed using Adam with learning rate 10 −3, batch size 32, and 100 epochs. The best model is selected based on validation performance. All latent models and decoders are trained across both GFP and AAV datasets and all data regimes using consistent hyperparameters. 
+
+B.4 Internal QUBO Surrogate Implementation 
+
+The internal surrogate operates directly on binary latent representations of dimension 𝑚 ∈ { 8, 16 , 32 , 64 } and models the fitness function as a combination of linear and pairwise interaction terms. Given a binary latent vector, the surrogate Truong-Son Hy 
+
+includes all 𝑚 linear terms and all 𝑚 (𝑚 −1) 
+
+> 2
+
+pairwise inter-action terms. These features are constructed explicitly by concatenating the original binary variables with all pairwise products between distinct latent dimensions. The model parameters are fitted using ridge regression with ℓ2 regularization. Specifically, the surrogate is trained by solving a linear system involving the feature matrix and the target fitness values, with a regularization coefficient set to 10 −3. This closed-form solution enables efficient training even when the number of pairwise features grows quadrati-cally with the latent dimension. After training, the learned parameters are decomposed into a vector of linear coefficients and a symmetric matrix of pairwise interaction coefficients. The diagonal entries of the interaction matrix are set to zero, and symmetry is enforced by assigning equal weights to (𝑖, 𝑗 ) and ( 𝑗, 𝑖 ). Predictions are computed by combining the linear contributions and pairwise interactions over the binary latent variables. We evaluate the surrogate using standard regression met-rics including RMSE, 𝑅 2, and Spearman correlation on both training and held-out test sets. The model is trained using a fixed random seed of 42 and a train/test split ratio of 80/20. For comparison, the implementation also includes a small multilayer perceptron (MLP) baseline trained using mini-batch gradient descent with ReLU activations. The MLP uses two hidden layers with dimensions 64 and 32, learning rate 
+
+10 −3, weight decay 10 −5, batch size 64, and 400 training epochs. However, this baseline is used only for reference, while all optimization experiments in the main paper rely on the QUBO surrogate. The surrogate is trained across all dataset sizes and latent dimensions and serves as the objective function for down-stream combinatorial optimization methods. 
+
+B.5 Combinatorial Optimization Methods 
+
+We optimize the learned QUBO surrogate in the binary latent space using five methods: Simulated Annealing (SA), Genetic Algorithm (GA), Random Search (RS), Greedy Hill Climbing (GHC), and a lightweight latent Bayesian optimization (LBO) baseline. All methods operate directly on binary vectors of dimension 𝑚 ∈ { 8, 16 , 32 , 64 }.Simulated Annealing (SA) starts from an initial binary code and iteratively proposes single-bit flips. At each step, a bit index is selected uniformly at random, and the energy change induced by flipping that bit is computed efficiently using the learned QUBO parameters. Moves that improve the objective are always accepted, while worse moves are accepted with a temperature-dependent probability. The tem-perature follows an exponential decay schedule with initial temperature 𝑇 0 = 1.0, minimum temperature 10 −4, and decay factor 0.999 . The algorithm runs for 20,000 steps and keeps track of the best solution encountered during the trajectory. The Genetic Algorithm (GA) maintains a population of candidate binary solutions and evolves them over multiple generations. We use a population size of 64 and run the al-gorithm for 150 generations. At each generation, a subset of top-performing individuals (elite size 4) is preserved. New individuals are generated using tournament selection with tournament size 3, followed by single-point crossover ap-plied with probability 0.9. Offspring are further perturbed using independent bit-flip mutation with mutation rate 0.02. The population is updated at each generation, and the best solution across all generations is returned. Random Search (RS) samples binary latent codes indepen-dently and uniformly at random. We evaluate 10,000 candi-date solutions and return the one with the highest objective value. Greedy Hill Climbing (GHC) starts from an initial binary code and iteratively improves it by exhaustively evaluating all single-bit flips. At each iteration, the algorithm selects the bit flip that yields the largest improvement in the objective and updates the current solution accordingly. The process is repeated until no improving move exists or until a maximum of 100 passes over all bits is reached. The Latent Bayesian Optimization (LBO) baseline uses a kernel-based uncertainty heuristic over binary latent codes. Given a set of seed solutions, the method samples 5,000 candidate binary vectors uniformly at random and evaluates an acquisition function based on an upper confidence bound. The predictive mean is computed using a kernel-weighted average over seed points, where the kernel is defined using an RBF function over Hamming distance with length scale 4.0. The acquisition function is given by the sum of the predictive mean and an exploration term weighted by 𝛽 = 1.0. The candidate with the highest acquisition value is selected. All optimization methods are applied consistently across datasets, latent dimensions, and data regimes using fixed hyperparameters. 
+
+B.6 Additional Experimental Results 
+
+We provide detailed end-to-end design results across all dataset sizes and latent dimensions in Figures 5 and 6, as well as Tables 10–17. Figure 5 presents the performance trends on the GFP dataset across different training regimes, while Figure 6 shows the corresponding results for the AAV dataset. These figures illustrate how performance varies with latent dimensionality and optimization method. Tables 10– 13 report detailed results for the GFP dataset at training sizes of 1000, 2000, 5000, and 10000 samples, respectively, while Tables 14–17 present the corresponding results for the AAV dataset across all data regimes. Each table includes both the best achieved score and the average performance of the top-10 candidates for each configuration, enabling a more fine-grained comparison across latent representations, optimization methods, and data regimes. Overall, these addi-tional results further corroborate the trends observed in the main text, including the consistent advantage of PCA-based Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+latent representations and the strong performance of combi-natorial optimization methods such as greedy hill climbing, genetic algorithms, and simulated annealing. Truong-Son Hy       
+
+> (a) GFP with 1000 training samples. (b) GFP with 2000 training samples.
+> (c) GFP with 5000 training samples. (d) GFP with 10000 training samples.
+
+Figure 5. End-to-end design performance on GFP across different training sizes. The x-axis shows the number of bits and the y-axis shows the best oracle score. Each line corresponds to an optimizer-representation pair, including simulated annealing (SA), genetic algorithm (GA), random search (RS), and greedy hill climbing (GHC), combined with either PCA-based or random-projection binary latent representations. 
+
+Table 10. Detailed end-to-end design results on GFP with 1000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA LBO 2.616 2.524 Random LBO 2.612 2.531 16 PCA RS 3.950 3.247 Random RS 3.598 2.488 32 PCA GHC 4.032 3.017 Random GA 3.690 2.525 64 PCA RS 4.119 3.903 Random GA 4.170 3.312 Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization       
+
+> (a) AAV with 1000 training samples. (b) AAV with 2000 training samples.
+> (c) AAV with 5000 training samples. (d) AAV with 10000 training samples.
+
+Figure 6. End-to-end design performance on AAV across different training sizes. The x-axis shows the number of bits and the y-axis shows the best oracle score. Each line corresponds to an optimizer-representation pair, including simulated annealing (SA), genetic algorithm (GA), random search (RS), and greedy hill climbing (GHC), combined with either PCA-based or random-projection binary latent representations. 
+
+Table 11. Detailed end-to-end design results on GFP with 2000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA GA 2.669 2.669 Random LBO 2.669 2.267 16 PCA GA 3.503 3.212 Random LBO 3.002 2.358 32 PCA GA 3.909 3.449 Random GHC 3.448 2.693 64 PCA GA 4.027 3.549 Random LBO 3.316 1.900 Truong-Son Hy 
+
+Table 12. Detailed end-to-end design results on GFP with 5000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA GA 2.653 2.653 Random LBO 2.653 2.633 16 PCA GHC 3.656 3.117 Random LBO 3.568 2.356 32 PCA LBO 4.157 2.918 Random GHC 3.815 2.228 64 PCA GHC 4.270 3.972 Random LBO 3.330 2.619 
+
+Table 13. Detailed end-to-end design results on GFP with 10000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA LBO 3.162 -3.738 Random LBO 2.785 -4.556 16 PCA LBO 4.712 3.452 Random GHC 4.502 3.029 32 PCA GA 5.287 4.823 Random GHC 4.806 3.829 64 PCA GHC 5.554 5.042 Random GA 4.758 3.003 
+
+Table 14. Detailed end-to-end design results on AAV with 1000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA GA -1.687 -4.039 Random LBO -6.492 -7.534 16 PCA SA 2.484 -1.568 Random RS -0.913 -6.523 32 PCA GA 3.906 -0.680 Random SA 2.753 -3.336 64 PCA GHC 5.232 2.962 Random GHC 4.066 -1.557 Q-BioLat : Binary Latent Protein Fitness Landscapes for QUBO-Based Optimization 
+
+Table 15. Detailed end-to-end design results on AAV with 2000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA LBO -4.213 -6.054 Random LBO -3.352 -5.891 16 PCA RS 1.325 -0.440 Random LBO 1.769 -3.162 32 PCA RS 2.866 0.349 Random GHC 4.184 -2.674 64 PCA RS 1.779 -0.353 Random GHC 0.164 -1.511 
+
+Table 16. Detailed end-to-end design results on AAV with 5000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA LBO -1.727 -6.113 Random LBO -2.616 -5.168 16 PCA RS -0.245 -2.136 Random GHC 0.610 -2.630 32 PCA GA 2.929 0.666 Random RS 1.336 -5.012 64 PCA SA 3.999 2.249 Random GA 2.548 -1.150 
+
+Table 17. Detailed end-to-end design results on AAV with 10000 training samples. Bits Representation Best optimizer Best score ↑ Top-10 mean ↑
+
+8 PCA LBO -1.903 -3.723 Random LBO -5.172 -7.184 16 PCA RS -0.237 -2.834 Random LBO 1.197 -4.205 32 PCA SA 1.904 0.727 Random LBO -0.154 -5.185 64 PCA GA 4.541 2.091 Random GHC 0.644 -2.174

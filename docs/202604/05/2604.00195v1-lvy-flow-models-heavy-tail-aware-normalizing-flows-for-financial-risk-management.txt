@@ -1,0 +1,346 @@
+Title: L\'evy-Flow Models: Heavy-Tail-Aware Normalizing Flows for Financial Risk Management
+
+URL Source: https://arxiv.org/pdf/2604.00195v1
+
+Published Time: Thu, 02 Apr 2026 00:15:04 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# L´ evy-Flow Models: Heavy-Tail-Aware Normalizing Flows for Financial Risk Management 
+
+R. Drissi 
+
+rdrissi@gmail.com 
+
+March 2026 
+
+Abstract 
+
+Standard normalizing flows use Gaussian base distributions, which systematically un-derestimate tail risk in financial applications. We introduce L´ evy-Flows , a novel class of normalizing flows that replace the Gaussian base with L´ evy process-based distributions— specifically Variance Gamma (VG) and Normal-Inverse Gaussian (NIG). These distributions naturally capture heavy tails while preserving exact density evaluation and efficient repa-rameterized sampling. For bases with regularly varying (power-law) tails, we prove that the tail index is pre-served under asymptotically linear flow transformations. For the semi-heavy-tailed VG and NIG bases used in practice, we show that the identity-tail structure of Neural Spline Flows preserves the base distribution’s tail shape exactly outside the spline region. Experiments on S&P 500 daily returns (2000–2025) and additional assets show that L´ evy-Flows substantially improve both density estimation and risk calibration: VG-based flows reduce test negative log-likelihood by 69% relative to Gaussian flows and achieve exact 95% VaR calibration (Kupiec p = 1 .00), while NIG-based flows provide the most accurate Expected Shortfall estimates (1.6% underestimation vs. 10.4% for Gaussian). Fixed-parameter Student-t flows do not materially improve over Gaussian baselines in density estimation, suggesting that the L´ evy parametric structure—not simply heavier tails—drives the gains. Different L´ evy bases may be preferable depending on whether the target is density fit, VaR calibration, or tail-loss conservatism. 
+
+# 1 Introduction 
+
+Financial risk management relies critically on accurate modeling of return distributions, par-ticularly in the tails where extreme losses occur (Cont, 2001; Mandelbrot, 1963). Traditional approaches using Gaussian assumptions systematically underestimate tail risk, leading to in-adequate capital reserves and unexpected losses during market crises (Embrechts et al., 2003). While heavy-tailed distributions like Student-t provide power-law tails, they do not arise from the infinite divisibility and independent increment structure of L´ evy processes, which form the theoretical basis of continuous-time financial models (Cont and Tankov, 2004). Normalizing flows (Rezende and Mohamed, 2015; Papamakarios et al., 2021) offer a powerful framework for density estimation through invertible transformations of a simple base distribu-tion. However, the standard choice of Gaussian base distributions limits their ability to capture heavy tails without requiring many transformation layers to reshape the tails—a process that can be numerically unstable and computationally expensive. While some works have explored Student-t bases for robustness (Dinh et al., 2016), these provide only tail heaviness without the richer parametric structure (skewness control, subordination, infinite divisibility) that L´ evy process distributions offer. We propose L´ evy-Flows , which replace the Gaussian base with L´ evy process-based distri-butions: 1
+
+> arXiv:2604.00195v1 [cs.LG] 31 Mar 2026
+
+• Variance Gamma (VG) : Semi-heavy tails with closed-form density, arising from sub-ordinated Brownian motion 
+
+• Normal-Inverse Gaussian (NIG) : Flexible skewness and kurtosis control via inverse Gaussian subordination We are not aware of prior work that systematically combines normalizing flows with L´ evy process-based base distributions and analyzes tail-shape preservation using extreme value the-ory. Our main contributions are: 1. Theory : A univariate tail index preservation theorem for regularly varying bases under asymptotically linear flows, plus a structural result showing that identity-tail NSF archi-tectures preserve arbitrary base tail shapes—including the semi-heavy tails of VG and NIG—outside the spline region (Section 4.2) 2. Method : Efficient implementation of VG and NIG base distributions with reparameter-ized sampling for end-to-end gradient-based training (Section 4.3) 3. Experiments : Comprehensive evaluation on S&P 500 returns and additional assets show-ing 69% lower NLL for VG-based flows, exact 95% VaR calibration, and the most accurate ES from NIG-based flows, with formal backtesting statistics. We find that density fit and risk calibration favor different L´ evy bases (Section 5) 
+
+# 2 Background 
+
+This section provides the technical foundations for L´ evy-Flow models. We first introduce L´ evy processes and two key distributions—Variance Gamma and Normal-Inverse Gaussian—that serve as our heavy-tailed base distributions. We then review normalizing flows, the transforma-tion framework that enables flexible density modeling while preserving tractable likelihoods. 
+
+2.1 L´ evy Processes and Distributions 
+
+We briefly review L´ evy processes to motivate the heavy-tailed base distributions used in L´ evy-Flows. L´ evy processes form a natural class of stochastic processes for modeling financial returns, as they arise from limits of sums of independent increments and can capture both continuous price movements and discrete jumps. A L´ evy process {Xt}t≥0 is a stochastic process with stationary, independent increments. The distribution of X1 uniquely characterizes the process through its characteristic function: 
+
+ϕ(u) = E[eiuX 1 ] = exp( ψ(u)) (1) where ψ(u) is the L´ evy exponent given by the L´ evy-Khintchine formula. 
+
+2.1.1 Variance Gamma Distribution 
+
+The Variance Gamma (VG) distribution (Madan et al., 1998) arises from subordinating Brow-nian motion with a Gamma process. Its density is: 
+
+pV G (x; μ, σ, θ, ν ) = 2
+
+σ√2πν 1/ν Γ(1 /ν )
+
+|x − μ|
+
+p2σ2/ν + θ2
+
+!1/ν −1/2
+
+K1/ν −1/2(β|x − μ|)eγ(x−μ) (2) where Kν is the modified Bessel function of the second kind, and β, γ are derived parameters. The VG can be sampled efficiently via: 
+
+X = μ + θG + σ√GZ, G ∼ Gamma(1 /ν, 1/ν ), Z ∼ N (0 , 1) (3) 22.1.2 Normal-Inverse Gaussian Distribution 
+
+The NIG distribution (Barndorff-Nielsen, 1997) has density: 
+
+pN IG (x; α, β, μ, δ ) = αδ π exp( δγ + β(x − μ)) K1(αq )
+
+q (4) where q = pδ2 + ( x − μ)2 and γ = pα2 − β2.
+
+2.2 Normalizing Flows 
+
+We summarize the flow framework to fix notation for the L´ evy-Flow construction. Normalizing flows provide a flexible framework for density estimation by learning invertible transformations between a simple base distribution and a complex target distribution. The key advantage is that they yield exact, tractable likelihoods—unlike variational autoencoders or GANs—making them ideal for risk applications where accurate probability estimates are essential. A normalizing flow transforms a base distribution pZ (z) through an invertible mapping 
+
+fθ : Rd → Rd to produce a target distribution. (Our theoretical analysis in Section 4.2 addresses the univariate case d = 1; extensions to multivariate settings are discussed in Section 6.) 
+
+pX (x) = pZ (f −1 
+
+> θ
+
+(x)) det ∂f −1
+
+> θ
+
+∂x (5) The log-likelihood is: log pX (x) = log pZ (z) + log det Jf −1
+
+> θ
+
+(x) (6) where z = f −1 
+
+> θ
+
+(x). Modern flow architectures include Neural Spline Flows (NSF) (Durkan et al., 2019), which use monotonic rational quadratic splines as coupling layers for high expressiveness with stable training. 
+
+# 3 Related Work 
+
+We position L´ evy-Flows within prior work on flow-based modeling, L´ evy-driven finance, and tail-aware estimation, emphasizing the gap between expressiveness and tail guarantees. 
+
+3.1 Normalizing Flows Beyond Gaussian Bases 
+
+Normalizing flows have become a powerful tool for density estimation and generative modeling (Rezende and Mohamed, 2015; Papamakarios et al., 2021). While most architectures assume Gaussian base distributions, several works have explored alternatives. Dinh et al. (2016) briefly considered Student-t bases for improved robustness, though without theoretical analysis of tail preservation. Kobyzev et al. (2020) provide a comprehensive survey noting that heavy-tailed bases remain underexplored. More recently, tail-adaptive flows (Jaini et al., 2020) proposed learning tail behavior, but rely on asymptotic approximations rather than distributions with known tail properties. 
+
+3.2 Tail-Aware and EVT-Inspired Density Estimation 
+
+Extreme value theory provides tools for tail modeling (Embrechts et al., 2003), but classical peaks-over-threshold methods require choosing arbitrary thresholds and do not integrate natu-rally with likelihood-based neural models. Hybrid approaches that splice parametric tails onto flexible cores improve tail fit but complicate density evaluation. Recent tail-adaptive neural models focus on sample quality rather than calibrated likelihoods, leaving a gap for approaches that preserve tail indices with exact densities. 33.3 L´ evy Processes in Finance 
+
+L´ evy processes provide a principled framework for modeling asset returns with jumps and heavy tails (Cont and Tankov, 2004). The Variance Gamma model (Madan and Seneta, 1990; Madan et al., 1998) captures excess kurtosis through Gamma-subordinated Brownian motion and has been widely adopted for option pricing. The Normal-Inverse Gaussian distribution (Barndorff-Nielsen, 1997, 1998) offers additional flexibility for skewness modeling. The CGMY process (Carr et al., 2002) generalizes these through tempered stable distributions. However, these parametric models have limited flexibility compared to modern neural density estimators. Our contribution bridges these areas by combining L´ evy-based tail behavior with modern flow expressiveness, while providing a formal tail-preservation guarantee and risk-focused eval-uation. 
+
+# 4 L´ evy-Flow Models 
+
+We now present our main contribution: L´ evy-Flow models that combine heavy-tailed L´ evy base distributions with expressive normalizing flow transformations. We define the model architec-ture, establish theoretical guarantees for tail preservation, and describe implementation details for efficient training. 
+
+4.1 Model Definition 
+
+A L´ evy-Flow model defines the generative process: 
+
+Z ∼ pL´ evy (·; ϕ), X = fθ(Z) (7) where pL´ evy is a L´ evy distribution (VG or NIG in this work) with parameters ϕ, and fθ is a normalizing flow transformation. The framework extends naturally to other L´ evy bases such as CGMY (Carr et al., 2002). The log-likelihood is computed as: log pX (x; θ, ϕ ) = log pL´ evy (f −1 
+
+> θ
+
+(x); ϕ) + log det Jf −1
+
+> θ
+
+(x) (8) 
+
+4.2 Tail-Shape Preservation 
+
+A key theoretical property of L´ evy-Flows is the preservation of tail behavior through the flow transformation. We establish two complementary results: (1) for bases with regularly varying (power-law) tails, the tail index is preserved (Theorem 1); (2) for any base distribution, the identity-tail structure of NSF preserves the base tail shape exactly outside the spline region (Proposition 1). Both results are stated for the univariate case ( d = 1). We use the framework of regular variation from extreme value theory (Embrechts et al., 2003; Bingham et al., 1989). 
+
+Definition 1 (Regular Variation) . A measurable function L : (0 , ∞) → (0 , ∞) is slowly varying 
+
+at infinity if for all λ > 0: lim 
+
+> x→∞
+
+L(λx )
+
+L(x) = 1 (9) A random variable Z has a regularly varying tail with index α > 0 if: 
+
+P (Z > x ) ∼ x−αL(x) as x → ∞ (10) where L is slowly varying. 4Theorem 1 (Tail Index Preservation under Asymptotically Linear Flows) . Let Z be a real-valued random variable with regularly varying tail: 
+
+P (Z > x ) ∼ x−αL(x) (11) 
+
+where L is slowly varying. Let f : R → R satisfy: 1. f is strictly increasing and continuously differentiable for large x,2. f is bi-Lipschitz on [x0, ∞) for some x0 > 0,3. f is asymptotically linear: lim x→∞ f (x)/x = c > 0.Then X = f (Z) is also regularly varying with index α:
+
+P (f (Z) > x ) ∼ x−α ˜L(x) (12) 
+
+where ˜L(x) = cαL(x) is slowly varying. Proof. Since f is strictly increasing: 
+
+P (f (Z) > x ) = P (Z > f −1(x)) (13) From asymptotic linearity of f , we have f −1(x) ∼ x/c as x → ∞ . Therefore: 
+
+P (f (Z) > x ) = P (Z > f −1(x)) (14) 
+
+∼ (f −1(x)) −αL(f −1(x)) (15) 
+
+∼ (x/c )−αL(x/c ) (16) = cαx−αL(x/c ) (17) By the defining property of slow variation, L(x/c ) ∼ L(x) as x → ∞ . Thus: 
+
+P (f (Z) > x ) ∼ cαx−αL(x) = x−α ˜L(x) (18) where ˜L(x) = cαL(x) is slowly varying, completing the proof. 
+
+Corollary 1 (Application to Neural Spline Flows) . Neural Spline Flows with bounded spline regions [−B, B ] and identity tails satisfy the conditions of Theorem 1 with c = 1 , since outside the spline region the transformation is the identity: f (x) = x for |x| > B .
+
+Theorem 1 applies to bases with regularly varying (power-law) tails, such as Student-t or stable distributions. For the VG and NIG distributions used in our experiments, the tails are 
+
+semi-heavy —they decay as |x|pe−c|x| for constants p and c > 0—and are therefore not regularly varying in the strict sense. The following proposition provides the relevant guarantee for these bases: 
+
+Proposition 1 (Identity-Tail Preservation for Arbitrary Bases) . Let pZ be any base distribution with continuous density, and let f : R → R satisfy f (x) = x for all |x| > B (identity tails). Then 
+
+pX (x) = pZ (x) for all |x| > B . In particular, the tail decay rate of pZ —whether power-law, semi-heavy, or exponential—is preserved exactly outside [−B, B ].Proof. For |x| > B , we have f −1(x) = x and det Jf −1 (x) = 1, so pX (x) = pZ (f −1(x)) ·| det Jf −1 (x)| = pZ (x). This result is elementary but important: it means that choosing a VG or NIG base with NSF guarantees that the model’s tail behavior beyond B standard deviations matches the base distribution exactly, regardless of the flow parameters θ. Combined with Theorem 1, the picture is: for power-law bases the tail index is preserved even under non-identity asymptotically linear flows, while for semi-heavy bases the identity-tail structure of NSF provides the preservation mechanism. 5Remark 1 (Sensitivity to Tail Bound B). The tail bound B in the NSF architecture determines the region where the flow can reshape the distribution. Outside [ −B, B ], the transformation is the identity, so the base distribution’s tail behavior is preserved exactly. If B is too small, the flow cannot model the body of the distribution adequately; if too large, the identity-tail region shrinks and tail preservation becomes vacuous. We use B = 5 .0 throughout (in standardized units), which corresponds to approximately 5 σ events. At this threshold, the standardized data effectively never exceeds the bound (the most extreme S&P 500 daily return in our sample is approximately 4 .5σ), so the flow has full flexibility over the observed data range while preserving tail behavior for extrapolation beyond the sample. 
+
+4.3 Implementation Details 
+
+4.3.1 Reparameterized Sampling 
+
+For gradient-based optimization, we require differentiable sampling from the base distribution. Both VG and NIG admit reparameterized sampling: 
+
+Variance Gamma : Sample G ∼ Gamma(1 /ν, 1/ν ) and Z ∼ N (0 , 1), then X = μ + θG +
+
+σ√GZ . The Gamma samples are reparameterized using the shape augmentation trick. 
+
+NIG : Sample Y ∼ InverseGaussian( δ, γ ) and Z ∼ N (0 , 1), then X = μ + βY + √Y Z .Inverse Gaussian sampling uses the transformation method with reparameterization. This enables end-to-end training of both flow parameters θ and (optionally) base distribution parameters ϕ via backpropagation. 
+
+4.3.2 Numerical Stability 
+
+Computing log pV G requires evaluating the modified Bessel function Kν (z). For large z, we use the asymptotic expansion: log Kν (z) ≈ 12 log π
+
+2z − z, z ≫ 1 (19) For moderate z, we use the exponentially-scaled Bessel function K(e) 
+
+> ν
+
+(z) = ez Kν (z) to avoid overflow. 
+
+4.3.3 Data Standardization 
+
+For small-scale financial data (typical daily returns have std ≈ 0.01), we standardize inputs: ˜x = x − ¯x
+
+ˆσx
+
+(20) The base distribution parameters are then specified for unit-scale data. The log-likelihood is adjusted by the Jacobian: log p(x) = log p(˜ x)−log ˆ σx. All reported NLL values are computed on the same temporally split standardized returns, using standardization statistics fit on training data only, with the same Jacobian correction applied consistently across every model. 
+
+# 5 Experiments 
+
+We evaluate L´ evy-Flows on S&P 500 daily returns, a standard benchmark for financial risk modeling. Our experiments address three key questions: (1) Do L´ evy-Flows improve density estimation compared to Gaussian baselines? (2) Do they produce better-calibrated risk mea-sures (VaR, ES) under formal backtesting? (3) How do they perform during market crises when accurate tail modeling matters most? 65.1 Experimental Setup 
+
+5.1.1 Model Architectures 
+
+We first define the model families and ablations used to isolate the impact of the L´ evy base distribution. We compare seven model configurations to isolate the contribution of both the L´ evy base and the flow transformation: 
+
+• VG-only : Variance Gamma distribution without flow (ablation baseline) 
+
+• NIG-only : Normal-Inverse Gaussian without flow (ablation baseline) 
+
+• Gaussian-Flow : Standard NSF with Gaussian base 
+
+• Student-t Flow : NSF with Student-t base ( ν = 3, power-law tails) 
+
+• L´ evy-Flow (VG) : NSF with Variance Gamma base 
+
+• L´ evy-Flow (NIG) : NSF with Normal-Inverse Gaussian base 
+
+• Light-Tail Flow : NSF with narrow Gaussian ( σ = 0 .5) The “VG-only” and “NIG-only” baselines answer the question: how much improvement comes from the L´ evy base versus the flow transformation? The Student-t Flow baseline pro-vides a non-L´ evy heavy-tailed comparison; differences in performance may reflect tail heaviness, skewness modeling, or other distributional features, so this comparison is informative but does not cleanly isolate any single factor. All flow-based models use 4 Neural Spline Flow layers with 8 rational quadratic spline bins, hidden dimensions [64, 64], and tail bound of 5.0. Training uses Adam optimizer with learning rate 10 −3 for 500 epochs with early stopping (patience 50, based on validation NLL). 
+
+5.1.2 Base Distribution Parameters 
+
+We fix base parameters to keep comparisons attributable to the flow rather than the base fit. For VG: μ = 0, σ = 1, θ = −0.2 (negative skew to match equity returns), ν = 0 .8 (moderate tail heaviness). For NIG: α = 1 .5, β = −0.1, μ = 0, δ = 1 .0. For Student-t: ν = 3 (matching the empirical tail index α ≈ 2.5–3), μ = 0, σ = 1. 
+
+Design choice : We fix base distribution parameters ϕ and train only the flow parameters θ.This isolates the effect of changing the base distribution family and provides a fair comparison across models. Joint optimization of ( θ, ϕ ) is straightforward in principle (our implementation supports it via reparameterized gradients) but risks confounding the base-family comparison and is left for future work. 
+
+5.2 S&P 500 Daily Returns 
+
+This subsection summarizes the dataset and provides descriptive statistics that motivate heavy-tail modeling. We evaluate on S&P 500 daily log-returns from 2000–2025 (6,514 observations). All data splits are temporal : we use the first 80% of observations chronologically for training and the final 20% for testing, ensuring no lookahead bias. For density estimation experiments with a validation set, we use a 70/15/15 temporal split. 
+
+5.2.1 Data Characteristics 
+
+We report key moments and tail diagnostics to contextualize model performance. 
+
+• Mean: 0.024% (5.94% annualized) 7• Std: 1.22% (19.42% annualized) 
+
+• Skewness: -0.35 (negative) 
+
+• Excess Kurtosis: 10.59 (heavy tails) 
+
+• Jarque-Bera test: p < 10 −10 (strong rejection of normality) 
+
+• Hill estimator (tail index): 2.52 Figure 1 shows the Hill estimator plot. The estimated tail index α ≈ 2.5 is consistent with prior findings for equity returns (Cont, 2001; Fama, 1965) and indicates substantially heavier tails than the Gaussian distribution. We note that the Hill estimator assumes a power-law tail, which the VG and NIG distributions do not possess in the strict asymptotic sense; rather, the estimate confirms that a Gaussian base is inadequate and motivates the use of distributions with heavier-than-Gaussian tails. The connection to our tail-preservation analysis (Theorem 1) is direct for power-law bases such as Student-t; for VG and NIG, the relevant guarantee is Proposition 1. 
+
+Figure 1: Hill estimator plot for S&P 500 returns. The estimated exponent of approximately 2.5 indicates substantially heavier tails than the Gaussian distribution. The Hill estimator assumes power-law decay; this estimate should be read as evidence that heavy-tailed bases are warranted, not as a claim about the asymptotic tail form of the fitted model. 
+
+5.2.2 Density Estimation 
+
+We compare learned densities against the empirical distribution to assess overall fit. Figure 2 compares the fitted densities from each model against the empirical distribution. The L´ evy-Flow models capture both the peak and tails more accurately than the Gaussian baseline. 
+
+5.2.3 Tail Behavior 
+
+We examine tail mass on a log scale to highlight differences that matter for risk metrics. Figure 3 shows the tail behavior on a log scale, highlighting the critical differences for risk estimation. 
+
+5.2.4 QQ Plots 
+
+QQ plots provide a complementary view of tail calibration relative to the empirical distribution. Figure 4 shows QQ plots comparing the model distributions to empirical data. 8Figure 2: Density comparison on S&P 500 returns. L´ evy-Flows (VG, NIG) capture the peaked center and heavy tails better than Gaussian-based flows. 
+
+Figure 3: Tail comparison (log scale). The L´ evy-Flow models maintain probability mass in the tails, while light-tailed models underestimate extreme event probabilities. 
+
+5.2.5 Model Comparison 
+
+We compare negative log-likelihood to quantify density estimation accuracy. To ensure compa-rability, every model is evaluated on the same held-out test split under identical standardization and likelihood accounting conventions (see Section 4.3.3). Table 1 compares the negative log-likelihood across all models, including the no-flow ablation baselines. 9(a) L´ evy-Flow (VG) (b) Gaussian-Flow 
+
+Figure 4: QQ plots comparing model samples to empirical data. The L´ evy-Flow (left) tracks the diagonal more closely in the tails, while the Gaussian-Flow (right) systematically underestimates extreme quantiles. Table 1: Model Comparison: Negative Log-Likelihood (lower is better). Standard errors over 5 random seeds in parentheses. Model Train NLL Test NLL ∆ vs Gaussian 
+
+No-flow baselines (ablation) 
+
+VG-only 1.01 ( <0.01) 0.94 ( <0.01) –NIG-only 0.99 ( <0.01) 0.89 ( <0.01) –
+
+Flow-based models 
+
+Gaussian-Flow 1.28 ( <0.01) 1.23 ( <0.01) 0.0% Student-t Flow 1.28 ( <0.01) 1.23 ( <0.01) +0.4% Light-Tail Flow 1.28 ( <0.01) 1.23 ( <0.01) +0.1% L´ evy-Flow (VG) 0.42 (<0.01) 0.38 (<0.01) -69.2% 
+
+L´ evy-Flow (NIG) 0.62 ( <0.01) 0.58 ( <0.01) -52.9% The L´ evy-Flows substantially outperform all other models: VG reduces test NLL by 69% and NIG by 53% relative to Gaussian-Flow. Both also outperform the no-flow L´ evy baselines, confirming that the improvement requires the combination of heavy-tailed base and expressive flow transformation. Notably, the fixed-parameter Student-t Flow ( ν = 3) does not materially improve over Gaussian-Flow in NLL (+0.4%), despite having power-law tails. This suggests that under the fixed-parameter protocol, simply adding tail heaviness is insufficient; the richer parametric structure of VG and NIG (skewness control, subordination) appears to provide the density advantage. Standard errors across 5 seeds are below 0.01, indicating high reproducibility. We note that the comparison uses a single Student-t configuration; a broader parameter sweep would be needed to rule out sensitivity to the choice of ν.
+
+5.2.6 VaR/ES Backtesting 
+
+We evaluate risk calibration using rolling-window backtests and standard regulatory tests. We perform rolling window backtesting with 1000-day training windows, stepping forward one day 10 at a time and predicting VaR for each subsequent day. We evaluate using both violation rates and formal backtesting statistics required for regulatory compliance. Table 2 summarizes VaR violation rates and Kupiec test p-values at the 95% and 99% levels. Table 2: Backtest Results: Violation Rates and Formal Test Statistics (500 test days) 95% VaR 99% VaR Method Viol. Rate Kupiec p Viol. Rate Kupiec p
+
+Expected 25 5.0% – 5 1.0% –Hist. Sim. 21 4.2% 0.40 5 1.0% 1.00 Gaussian-Flow 18 3.6% 0.13 4 0.8% 0.64 Student-t Flow 16 3.2% 0.05 3 0.6% 0.33 L´ evy-Flow (VG) 25 5.0% 1.00 3 0.6% 0.33 L´ evy-Flow (NIG) 12 2.4% 0.00 3 0.6% 0.33 
+
+Kupiec’s unconditional coverage test (Kupiec, 1995) evaluates whether the observed violation rate matches the expected rate under the null hypothesis of correct VaR. At the 95% level, L´ evy-Flow (VG) achieves exact calibration with 25 violations out of 500 ( p = 1 .00). Gaussian-Flow and Student-t Flow are somewhat conservative (3.6% and 3.2% vs. 5.0% ex-pected), while NIG is overly conservative (2.4%, p < 0.01). At 99%, all flow models produce 3–4 violations (0.6–0.8%), which is conservative relative to the expected 1.0%; this is consistent with heavy-tailed bases placing more mass in the tails than needed at moderate confidence levels. Table 3 reports Christoffersen independence test p-values for exceedance clustering. Table 3: Christoffersen Independence Test: p-values for VaR exceedance clustering Method 95% VaR 99% VaR Gaussian-Flow 0.16 0.02 Student-t Flow 0.53 0.01 L´ evy-Flow (VG) 0.14 0.01 L´ evy-Flow (NIG) 0.28 0.01 
+
+Christoffersen’s independence test (Christoffersen, 1998) checks whether VaR viola-tions cluster (indicating model misspecification). At 95%, Student-t Flow shows no significant clustering ( p = 0 .53), NIG shows no clustering ( p = 0 .28), and Gaussian-Flow and VG show moderate p-values (0.16 and 0.14). At 99%, all flow models show low p-values ( ≤ 0.02), indi-cating that the few violations that do occur tend to cluster—a common pattern when models are conservative overall but underestimate conditional volatility during stress episodes. Under the Basel traffic light system (Basel Committee on Banking Supervision, 2019), all models fall in the green zone at 99%. The key VaR finding is that different L´ evy bases excel at different confidence levels : VG achieves exact 95% calibration while all heavy-tailed models are conservative at 99%. This conservatism at deeper tail levels is a desirable property for risk management, as it provides a safety margin against model misspecification. 
+
+5.2.7 Crisis Period Analysis 
+
+We focus on crisis windows to provide illustrative comparisons of tail behavior under extreme market moves. We caution that crisis-period analysis involves small samples and extreme quan-tiles (at 99.9%, fewer than 1 exceedance is expected per 1000 days), so these results should 11 be interpreted as suggestive rather than statistically conclusive. They complement the formal backtests in the preceding section. Table 4 reports worst-day losses versus model VaR during the 2008 financial crisis across confidence levels. Table 4: VaR Comparison During 2008 Financial Crisis. Standard errors over 5 seeds in paren-theses. Confidence Actual L´ evy-Flow (VG) L´ evy-Flow (NIG) Student-t Flow Gaussian 95% -5.79% -2.25% (0.02) -2.76% (0.01) -2.59% (0.01) -2.18% 99% -9.29% -4.15% (0.02) -3.50% (0.02) -4.76% (0.09) -3.06% 99.9% -9.45% -6.24% (0.07) -5.21% (0.17) -10.10% (0.37) -4.04% Table 5 provides the analogous comparison during the 2022 market correction. Table 5: VaR Comparison During 2022 Market Correction. Standard errors over 5 seeds in parentheses. Confidence Actual L´ evy-Flow (VG) L´ evy-Flow (NIG) Student-t Flow Gaussian 95% -2.99% -1.08% (0.02) -1.66% (0.01) -1.48% (0.01) -1.26% 99% -3.89% -2.47% (0.01) -2.47% (0.02) -2.96% (0.04) -1.82% 99.9% -4.10% -3.61% (0.03) -3.31% (0.12) -6.41% (0.24) -2.45% At 99.9% during the 2022 correction, the L´ evy-Flow (VG) predicts −3.61% and NIG predicts 
+
+−3.31%, both closer to the actual worst loss ( −4.10%) than Gaussian ( −2.45%). The Student-t Flow ( ν = 3) substantially overestimates risk at 99.9% ( −6.41%), reflecting its very heavy power-law tails. This illustrates a practical trade-off: L´ evy bases provide enough tail weight to improve over Gaussian without the excessive conservatism of low-ν Student-t. As noted above, these crisis-period comparisons are illustrative rather than statistically conclusive. 
+
+5.2.8 Expected Shortfall 
+
+We report ES to complement VaR with average tail loss severity. Expected Shortfall (ES), also known as Conditional VaR (CVaR), measures the expected loss given that a VaR breach occurs. Table 6 compares ES estimates. Table 6: Expected Shortfall Comparison at 99% Confidence Model ES (99%) Underestimation Empirical -4.14% –Gaussian-Flow -3.71% 10.4% Student-t Flow -5.71% -38.2% ∗
+
+L´ evy-Flow (VG) -4.29% -3.8% ∗
+
+L´ evy-Flow (NIG) -4.07% 1.6% 
+
+L´ evy-Flow (NIG) provides the most accurate ES estimate ( −4.07% vs. empirical −4.14%, only 1.6% underestimation), compared to Gaussian-Flow’s 10.4% underestimation. L´ evy-Flow (VG) slightly overestimates ES ( −4.29%), which is conservative. Student-t Flow substantially overestimates ( −5.71%), reflecting its very heavy power-law tails at ν = 3. Negative underesti-mation values (marked ∗) indicate overestimation, which is conservative from a risk perspective. 12 While formal ES backtesting remains an active area (Acerbi and Sz´ ekely, 2014; McNeil and Frey, 2000), these results suggest that NIG-based flows provide the best-calibrated tail-loss estimates, while VG is slightly conservative and Student-t is excessively so. 
+
+5.3 Multi-Asset Generalization 
+
+To test whether our findings generalize beyond the S&P 500, we evaluate on three additional asset classes with varying tail characteristics: 
+
+• AAPL (Apple Inc.): Large-cap individual equity with higher idiosyncratic volatility 
+
+• EEM (iShares MSCI Emerging Markets ETF): Emerging market index with distinct tail structure 
+
+• GC=F (Gold Futures): Commodity with different return dynamics Table 7 reports test NLL across assets. All models are trained with the same architecture and hyperparameters as the S&P 500 experiments. Table 7: Multi-Asset Test NLL Comparison (lower is better). Standard errors over 5 seeds. Model S&P 500 AAPL EEM Gold Gaussian-Flow 1.23 ( <0.01) 0.95 ( <0.01) 0.93 ( <0.01) 1.38 ( <0.01) Student-t Flow 1.23 ( <0.01) 0.96 ( <0.01) 0.94 ( <0.01) 1.38 ( <0.01) L´ evy-Flow (VG) 0.38 (<0.01) 0.10 (<0.01) 0.08 (<0.01) 0.52 (<0.01) L´ evy-Flow (NIG) 0.58 ( <0.01) 0.30 ( <0.01) 0.28 ( <0.01) 0.73 ( <0.01) The L´ evy-Flow advantage is consistent across all four assets, with the largest improvements for assets with higher kurtosis (AAPL, EEM). The ranking L´ evy-Flow (VG) > L´ evy-Flow (NIG) 
+
+> Student-t Flow > Gaussian-Flow is maintained across all datasets in terms of density esti-mation. We note that this multi-asset evaluation covers NLL only; extending the full VaR/ES backtesting protocol to additional assets would strengthen the risk-management claims and is an important direction for future work. 
+
+# 6 Conclusion 
+
+We introduced L´ evy-Flows, normalizing flows with L´ evy process-based distributions that natu-rally capture heavy-tail behavior essential for financial applications. Our theoretical contribu-tions include a tail index preservation theorem for regularly varying bases under asymptotically linear flows, and a complementary result showing that identity-tail NSF architectures preserve the tail shape of any base distribution—including the semi-heavy tails of VG and NIG—outside the spline region. Comprehensive experiments on S&P 500 returns and three additional asset classes reveal that L´ evy-Flows substantially improve density estimation (VG reduces NLL by 69% relative to Gaussian flows) and that different L´ evy bases excel at different risk tasks :
+
+• VG-based flows provide the strongest density fit and exact 95% VaR calibration (Kupiec 
+
+p = 1 .00). 
+
+• NIG-based flows provide the most accurate Expected Shortfall estimates (1.6% underes-timation vs. 10.4% for Gaussian), though with conservative 95% VaR coverage. 13 • Fixed-parameter Student-t flows do not materially improve over Gaussian in density esti-mation, suggesting that the L´ evy parametric structure—not simply heavier tails—drives the gains. Ablation studies confirm that improvement requires both the L´ evy base and the flow transfor-mation, not either component alone. Illustrative crisis-period analysis suggests that L´ evy-Flows extrapolate more reliably to extreme quantiles than Gaussian flows, without the excessive con-servatism of low-ν Student-t bases. A key limitation of the present work is that the full risk evaluation (VaR/ES backtesting) is conducted only on S&P 500 returns; the multi-asset evaluation covers density estimation but not risk metrics. Extending rolling backtests to additional assets and adding formal ES back-testing (Acerbi and Sz´ ekely, 2014) are important next steps. Other natural extensions include multivariate L´ evy-Flows for portfolio-level risk using copula structures or multivariate subor-dination, conditional models where base distribution parameters adapt to volatility regimes, and a broader Student-t parameter sweep to more precisely delineate the contribution of L´ evy parametric structure versus tail heaviness. 
+
+6.1 Reproducibility 
+
+All experiments use PyTorch 2.0+ with the following configuration: 
+
+• Training : Adam optimizer, learning rate 10 −3, batch size 256, max 500 epochs with early stopping (patience 50) 
+
+• Architecture : 4 NSF layers, 8 spline bins, hidden dimensions [64, 64], tail bound B = 5 .0
+
+• Data : S&P 500 daily log-returns 2000–2025 (primary), plus AAPL, EEM, GC=F; stan-dardized to unit scale 
+
+• Evaluation : Temporal 80/20 train/test split for NLL (no lookahead); rolling 1000-day windows for VaR backtest 
+
+• Seeds : Results averaged over 5 random seeds with standard errors reported Code is available at https://github.com/abdalladrissi2101/levy-flows .
+
+# References 
+
+Acerbi, C. and Sz´ ekely, B. (2014). Back-testing expected shortfall. Risk , 27(11):76–81. Barndorff-Nielsen, O. E. (1997). Normal inverse gaussian distributions and stochastic volatility modelling. Scandinavian Journal of Statistics , 24(1):1–13. Barndorff-Nielsen, O. E. (1998). Processes of normal inverse gaussian type. Finance and Stochas-tics , 2(1):41–68. Basel Committee on Banking Supervision (2019). Minimum capital requirements for market risk. Technical report, Bank for International Settlements. Bingham, N. H., Goldie, C. M., and Teugels, J. L. (1989). Regular variation. Encyclopedia of Mathematics and its Applications , 27. Carr, P., Geman, H., Madan, D. B., and Yor, M. (2002). The fine structure of asset returns: An empirical investigation. Journal of Business , 75(2):305–332. Christoffersen, P. F. (1998). Evaluating interval forecasts. International Economic Review ,39(4):841–862. 14 Cont, R. (2001). Empirical properties of asset returns: Stylized facts and statistical issues. 
+
+Quantitative Finance , 1(2):223–236. Cont, R. and Tankov, P. (2004). Financial Modelling with Jump Processes . CRC Press. Dinh, L., Sohl-Dickstein, J., and Bengio, S. (2016). Density estimation using real-nvp. arXiv preprint arXiv:1605.08803 .Durkan, C., Bekasov, A., Murray, I., and Papamakarios, G. (2019). Neural spline flows. In 
+
+Advances in Neural Information Processing Systems , volume 32. Embrechts, P., Kl¨ uppelberg, C., and Mikosch, T. (2003). Modelling Extremal Events: for Insurance and Finance . Springer Science & Business Media. Fama, E. F. (1965). The behavior of stock-market prices. The Journal of Business , 38(1):34–105. Jaini, P., Kobyzev, I., Yu, Y., and Brubaker, M. (2020). Tails of Lipschitz triangular flows. In 
+
+International Conference on Machine Learning , pages 4673–4681. PMLR. Kobyzev, I., Prince, S. J., and Brubaker, M. A. (2020). Normalizing flows: An introduction and review of current methods. In IEEE Transactions on Pattern Analysis and Machine Intelligence , volume 43, pages 3964–3979. Kupiec, P. H. (1995). Techniques for verifying the accuracy of risk measurement models. The Journal of Derivatives , 3(2):73–84. Madan, D. B., Carr, P. P., and Chang, E. C. (1998). The variance gamma process and option pricing. Review of Finance , 2(1):79–105. Madan, D. B. and Seneta, E. (1990). The variance gamma (vg) model for share market returns. 
+
+Journal of Business , pages 511–524. Mandelbrot, B. (1963). The variation of certain speculative prices. The Journal of Business ,36(4):394–419. McNeil, A. J. and Frey, R. (2000). Estimation of tail-related risk measures for heteroscedastic financial time series: An extreme value approach. Journal of Empirical Finance , 7(3–4):271– 300. Papamakarios, G., Nalisnick, E., Rezende, D. J., Mohamed, S., and Lakshminarayanan, B. (2021). Normalizing flows for probabilistic modeling and inference. Journal of Machine Learning Research , 22(57):1–64. Rezende, D. and Mohamed, S. (2015). Variational inference with normalizing flows. In Inter-national Conference on Machine Learning , pages 1530–1538. PMLR. 15

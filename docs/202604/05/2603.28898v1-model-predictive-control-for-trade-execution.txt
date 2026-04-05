@@ -1,0 +1,622 @@
+Title: Model Predictive Control For Trade Execution
+
+URL Source: https://arxiv.org/pdf/2603.28898v1
+
+Published Time: Wed, 01 Apr 2026 00:08:35 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Model Predictive Control For Trade Execution 
+
+## Thomas P. McAuliffe 1∗, Samuel Liew 1, Yuchao Li 2, Andrey Ushenin 1,Chihang Wang 1, Alexandros Tasos 1, Jack Pearce 1, Dimitris Tasoulis 1,Dimitri P. Bertsekas 1, 2, 3 , Theodoros Tsagaris 1
+
+> 1
+
+Bayforest Technologies, London, UK 
+
+> 2
+
+Arizona State University, Tempe, AZ, USA  
+
+> 3
+
+Massachusetts Institute of Technology, Cambridge, MA, USA 
+
+## April 1, 2026 
+
+Abstract 
+
+We address the problem of executing large client orders in continuous double-auction markets under time and liquidity constraints. We propose a model predictive control (MPC) framework that balances three competing objectives: order completion, market impact, and opportunity cost. Our algorithm is guided by a trading schedule (such as time-weighted average price or volume-weighted average price) but allows for deviations to reduce the expected execution cost, with due regard to risk. Our MPC algorithm executes the order progressively, and at each decision step it solves a fast quadratic program that trades off expected transaction cost against schedule deviation, while incorporating a residual cost term derived from a simple base policy. Approximate schedule adherence is maintained through explicit bounds, while variance constraints on deviation provide direct risk control. The resulting system is modular, data-driven, and suitable for deployment in production trading infrastructure. Using six months of NASDAQ ‘level 3’ data and simulated orders, we show that our MPC approach reduces schedule shortfall by approximately 40-50% relative to spread-crossing benchmarks and achieves significant reductions in slippage. Moreover, augmenting the base policy with predictive price information further enhances performance, highlighting the framework’s flexibility for integration with forecasting components. 
+
+# 1 Introduction 
+
+We consider the design of an algorithm to execute a client’s order in a continuous double-auction market. This is a trading mechanism in which both buyers and sellers sub-mit bids and offers simultaneously, and transactions occur whenever the bids and offers are ‘marketable’ (when a buyer’s bid equals or exceeds a seller’s ask). It is the dominant structure of modern exchanges and trading plat-forms. The problem has received significant attention by both the professional and academic communities. The objective is to balance three competing priorities: completing the order within a given time period, minimizing purchase cost penalties due to market impact, and minimizing op-portunity cost from subsequent price improvement. We illustrate these trade-offs with two contrasting policies, assuming that a fixed buy order is to be executed within a given time window: (1) One possibility is to send a market order for the full quantity to the double-auction market. This means that we will immediately trade at the best price offered. In the absence of sufficient offered quantity at the best quote, the  
+
+> ∗Email: tom.mcauliffe@bayforest.ai
+
+order ‘sweeps the book,’ executing piecemeal across pro-gressively worse price levels (for a buy: increasingly higher asks). The book subsequently refills as other participants and market makers re-quote, but the strong demand in-duces price impact. The order completes almost instantly (assuming there is sufficient volume currently available), but at the cost of maximal market impact and an average execution price materially worse than the arrival price due to the sweeping. (2) The opposite extreme is to slice the client order into tiny clips and post highly passive limit orders (e.g. offer to buy at the current bid or slightly below) throughout the given time window. Then the market price impact is small, and the execution price tends to track the contem-poraneous market average. However, the completion risk is high: orders may never trade, queue position can be lost due to cancels/requotes, and favorable price moves may not be properly exploited. In practice, good execution policies lie between these extremes, balancing completion, impact, and slippage. 1
+
+There is a rich academic literature on the topic, but much 
+
+> 1Slippage generally refers to a measure of the difference between an order’s execution price and a specified benchmark price. Several types of slippage relevant to our trade execution setting will be discussed later; see Section 5.2.
+
+1
+
+> arXiv:2603.28898v1 [q-fin.TR] 30 Mar 2026
+
+of it includes assumptions that violate practical constraints. In this paper, we develop a realistic, production-grade algorithm that balances theoretical considerations with practical concerns and constraints. Because of its speed and flexibility, our algorithm can be deployed in a scal-able, modular environment that coordinates orders across venues, order types, and brokers. 
+
+## 1.1 Current Practices Review 
+
+Broadly speaking, the industry’s most common approach to order execution aims to minimize deviation from a benchmark volume-weighted average price (VWAP), as introduced by Berkowitz et al. [ 1]. In practice, such algo-rithms follow a trading schedule that tracks the market’s aggregate executed volume over the trading day. The intraday volume profile exhibits a characteristic U-shape: trading activity is highest at the market open and close [ 2]. This strategy aligns with market intuition: exe-cuting more when liquidity is abundant mitigates market impact (known to scale with participation rate) [ 3]. Exe-cuting brokers and electronic trading platforms implement variations of this VWAP-based approach [4, 5, 6]. Bertsimas and Lo [ 7] formulated the optimal execution problem as a dynamic programming (DP) problem mini-mizing market impact costs. Under a linear impact model, they showed that the solution is a time-weighted average price (TWAP) strategy, now a standard baseline among practitioners. Almgren and Chriss [ 8 ] extended this frame-work by introducing a mean-variance formulation that penalizes cost uncertainty. In analogy with modern port-folio theory, they derived an efficient frontier of execution paths that minimize arrival slippage for a given level of risk. Both formulations determine a static schedule prior to trading, based on modeled price, impact dynamics, and a specified risk aversion parameter. Cartea and Jaimungal [ 9] further enhanced these models by allowing a mixture of market and limit orders. Their algorithm executes passively when running ahead of sched-ule, thereby earning part of the spread, and resorts to market orders to catch up when behind schedule. This structure introduces an online, rule-based decision compo-nent, bridging theoretical models and practical execution logic. Busetti and Boyd [ 10 ] studied optimal execution un-der a VWAP benchmark for a risk-averse broker. They model slippage as a mean-variance objective incorporating quadratic transaction costs, and propose both a static execution strategy, computed before trading, and a dy-namic strategy that adapts to information about volumes revealed during the day. The dynamic method embeds the problem within a linear-quadratic stochastic control frame-work and employs DP to address uncertainty in total daily market volume. Using real NYSE data and a log-normal model of intraday volumes, they show that the dynamic strategy reduces both VWAP deviation and execution costs compared with the standard static solution. Reinforcement learning (RL) is a natural framework for modelling online sequential decision making under uncertainty. A substantial body of work has explored RL-based execution strategies [ 11 , 12 , 13 ]. Nevmyvaka et al. [ 11 ] developed one of the first empirical RL systems trained directly on NASDAQ limit order data. Their agent controls order aggressiveness ut, posting passively for ut <
+
+0 and crossing the spread for ut > 0. Hendricks and Wilcox [ 14 ] proposed a formulation that maps their action space to the fraction of the Almgren-Chriss schedule executed in each interval. The intuition is that overshooting the schedule may be advantageous when volume is high and spreads are tight. Their approach uses Q-learning to effect this adjustment dynamically. Moallemi and Wang [ 12 ] focused on optimizing child orders by modeling the current stage cost around short du-ration price trajectory forecasts. They considered several approximations: (1) directly forecasting the sum of price returns, (2) a temporal-difference (TD) learning variant that exploits intermediate returns, and (3) a continuation-value approach estimating the benefit of deferring ex-ecution. For (2) and (3), they employed double deep Q-networks (DDQN). Li et al. [13 ] proposed the separation of tasks across three levels: (1) macro-level estimation of daily volume profiles, (2) meta-level selection of intermediate order quantities for a given tranche of the parent, and (3) microstructural-level submission of individual child orders. Such task separation, often termed hierarchical reinforce-ment learning [ 15 , 16 ], tends to improve scalability and interpretability. There has also been interest in the use of model pre-dictive control (MPC) methods for trade execution and portfolio optimization. For example, Clinet et al. [ 17 ]proposed a MPC method by modeling a trading execution problem using a linear state equation, quadratic cost, and additional positivity constraints. Plessen and Bemporad [ 18 ] studied the performance of multiple MPC methods designed for stock trading under the assumption of pro-portional transaction costs. Other related MPC methods can be found in the references quoted in these papers. Note that MPC is closely related to RL. In fact, some of the most reliable RL methods can be viewed as a form of MPC; see [19], [20]. The methodology of this paper bears a conceptual rela-tion to the literature cited above. However, our framework allows for the flexible use of current and historical market data, includes multiple modular components that can be designed independently, and allows for fast execution of a variety of trading actions, as we will discuss shortly. 
+
+## 1.2 A Summary of our Approach 
+
+Our work aims to develop a policy for placing orders at each of T time periods. It balances a high rate of comple-tion, a small expected mean and variance of trading cost, and relatively small deviation from a schedule such as 2VWAP. At each time period the policy submits multiple orders at varying prices based on an MPC optimization. It uses a cost approximation for future stages, and applies constraints on the deviation from the schedule. A detailed mathematical formulation will be given later. The opti-mization is very fast, and allows a large number of orders to be placed simultaneously at different price levels. Our approach takes into account stochastic uncertainties about the execution of the placed orders at the current time, and about the market price at future times. Our algorithmic design is consistent with our view that a scalable, practical trading algorithm should satisfy the following constraints: 1. Data driven. We do not wish to make many as-sumptions about market dynamics, and instead prefer to measure and respond online. Similar to Hendricks and Wilcox [ 14 ] and others, we should incorporate as much recent market state information into the system as possible to improve online decision making. Various components of our framework naturally lend themselves to data-driven learning. 2. Fast decision times. In a live trading environment we are managing hundreds to thousands of simulta-neous orders. If each intraday decision requires many milliseconds, state information will be very stale by the time of actually taking an action. 3. Well separated concerns. Similar to Li et al. [13 ], we argue that a robust system should be composed of single-responsibility services with well-defined key performance indicators. Such separation enables rig-orous testing, isolated improvement and introspection of individual components, and better parallelization across researchers and developers. 4. Rich action space. The literature exclusively fo-cuses on action spaces defining simple limit and mar-ket orders (which interact with a simulated exchange), the most advanced of which use order ‘level 3’ (L3) data to generate fills. In practice, there is a huge variety of order types and parameterizations, broker algorithms, exchanges, and alternative trading sys-tems available as liquidity sources. We wish to fully account for these possibilities in our implemented algorithm. 
+
+# 2 Problem Formulation and the MPC Methodology 
+
+In this section, we provide a high level summary of the MPC algorithmic framework as applied to our problem. It involves a stochastic discrete-time system and sequential decision making over T time periods (see the textbook by Bertsekas [20] and references quoted there). Denoting time by t, the system involves a state (denoted by xt2), a decision/control (denoted by ut), a random quantity that models uncertainty (denoted by wt), and a function ft, which governs the evolution of the system’s state: 
+
+xt+1 = ft(xt, u t, w t), t = 0 , 1, . . . , T − 1.
+
+The control ut is to be selected from a given constraint set Ut(xt) that depends on the state xt. The probability distribution of wt is given and may depend on ( xt, u t). The transition from xt to xt+1 incurs a cost gt(xt, u t, w t), and there is an additional cost gT (xT ) at the terminal time T to account for the terminal state xT .We aim to minimize the expected value of the total cost 
+
+gT (xT ) +  
+
+> T−1
+
+X
+
+> t=0
+
+gt(xt, u t, w t)with an appropriate choice of each ut ∈ Ut(xt) as a func-tion of xt.
+
+## 2.1 The Exact DP Algorithm 
+
+The optimal solution can be found in principle by the DP algorithm. The exact version of DP computes for all xt
+
+and t, the scalar J∗ 
+
+> t
+
+(xt), which is the optimal cost starting at state xt and going to the end of the horizon T . Then, an optimal decision at time t and state xt is obtained from the minimization 
+
+u∗ 
+
+> t
+
+∈ argmin 
+
+> ut∈Ut(xt)
+
+E
+
+n
+
+gt(xt, u t, w t) + J∗
+
+> t+1
+
+(ft(xt, u t, w t)) 
+
+o
+
+,
+
+(2.1) where E{·} denotes expected value with respect to the probability distribution of wt.This encodes the classical DP principle: At each t we should minimize the sum of the cost at the current time t
+
+plus the future costs, assuming that we will make optimal choices at the future times t + 1 , . . . , T − 1. 
+
+## 2.2 The Approximate DP Algorithm 
+
+Since computing the optimal cost functions J∗ 
+
+> t
+
+is in-tractable for our problem, approximate DP/RL replaces 
+
+J∗ 
+
+> t+1
+
+with an approximation ˜Jt+1 in Eq. (2.1) , and com-putes an approximately optimal decision ˜ ut according to ˜ut ∈ argmin 
+
+> ut∈Ut(xt)
+
+E
+
+n
+
+gt(xt, u t, w t) + ˜Jt+1 (ft(xt, u t, w t)) 
+
+o
+
+.
+
+(2.2) This is the MPC method with one-step lookahead min-imization. [A multistep version of MPC, involves mini-mization of the cost of multiple stages, say k, followed by ˜Jt+k(xt+k). We will not consider it here, although it is an interesting possibility for future work.] 
+
+> 2This state contains both market (prices, volatility, etc) and order level (executed quantity, schedule, etc) data.
+
+3The method is also referred to as approximation in value space , and is one of the most effective and reliable RL methods. Naturally, the computation of ˜Jt+1 is an important issue. In our case it will be done with a form of the rollout algorithm, whereby ˜Jt+1 approximates the cost function corresponding to some policy, starting at time t + 1. 
+
+# 3 Trade Execution Model 
+
+We will now describe our MPC method (2.2) as applied to trade execution. At each time t, it solves a quadratic programming problem of the form: min  
+
+> ut∈Ut(xt)
+
+E
+
+
+
+Current Stage Trading Cost +Schedule Deviation Penalty +Future Cost Approximation 
+
+
+
+The first and second terms above correspond to gt of Eq. (2.2), while the third term corresponds to ˜Jt+1 .For simplicity, we will assume in this section a uniform time discretization, i.e., that the time horizon is divided into T equally spaced time steps, and that orders are sub-mitted, filled and cancelled at the times t = 0 , 1, . . . , T − 1. However, our MPC methodology applies to the more gen-eral case where the duration of an order may be longer or shorter than one unit. Theoretically, this involves no major difficulty, and can be done by using a more compli-cated definition of the state xt, which additionally encodes the backlog of orders that have not been processed by the end of a time period; see, cf. [ 20 , Section 1.6]. Indeed, our implementation, described in Section 4, can be modified to account for orders of variable duration. Using notation to be introduced shortly and the uniform time discretization assumption, the preceding minimiza-tion takes the form min  
+
+> ut∈Ut(xt)
+
+(ct ◦ πt)′ut
+
+| {z }
+
+> Trading Cost
+
++ γ(qt + π′
+
+> t
+
+ut − st+1 )2
+
+| {z }
+
+> Schedule Deviation
+
++ ξt(Q − qt − π′
+
+> t
+
+ut)
+
+| {z }
+
+> Future Cost
+
+(3.1) where ◦ denotes componentwise vector product, and a prime denotes vector transpose. Our notation is as follows: 
+
+• T : duration of the parent order 
+
+• Q: face quantity of the parent order 
+
+• qt: the accumulated position at time t (the total quantity of the orders that have been filled up to t)
+
+• ut: The vector of distinct order sizes that are placed at time t (the dimension of this vector is defined as 
+
+d, and is a hyperparameter of the system) 
+
+• πt: The vector of fill probabilities corresponding to the orders represented by ut, also of dimension d
+
+• ct: The corresponding vector of execution costs per unit order of ut at time t
+
+• st+1 : The scheduled position (as specified by TWAP, VWAP, etc) 
+
+• γ: A positive hyperparameter that weighs the sched-ule deviation penalty (for higher values of γ the sched-ule is followed more closely) 
+
+• ξt: The per-share valuation or rollout cost per share for the expected residual quantity In reference to the MPC equation (2.2) , the state xt con-sists of qt together with the market state (the limit order book) at time t. The control is ut as defined above. The control constraint set Ut(xt) is defined by market and risk-related conditions at the current state (see the subsequent discussion in Section 4.1.2). The probability vector πt
+
+encodes the uncertainty, and is appropriately estimated in our implementation (see Section 4.1.3). The schedule deviation at time t + 1 is the random variable 
+
+ϵt+1 = qt+1 − st+1 .
+
+Its mean, ˆmt = qt + π′
+
+> t
+
+ut − st+1 ,
+
+appears in the schedule deviation penalty term in the minimization Eq. (3.1). 
+
+# 4 Model Implementation 
+
+We now provide the implementation details of our MPC execution system. Consistent with the requirements listed in Section 1.2, the components of our implementation form a modular infrastructure that is data-driven, fast, and flexible. They work together to solve the optimization problem defined in (3.1) at each time step t.In Section 1.2 we specified the requirement that our algo-rithm should fully exploit the multiple sources of liquidity available in a live trading environment. Each element of the control vector ut corresponds to the quantity al-located to one of d pre-specified order templates. These templates are partially parameterized in the sense that all non-quantity attributes of the order are fixed at opti-mization time, while the order size is determined by the optimizer. In particular, at time t, we construct a vector of d
+
+candidate orders ot, where the i-th component ui,t of the control vector ut specifies the quantity allocated to the corresponding order template oi,t . Each candidate order is defined as 
+
+oi,t = ( pi, venue i, type i, . . . ),
+
+where pi denotes the order price, the order duration is one time step, and the remaining fields specify the target venue (NASDAQ, NYSE, IEX, etc. ), order type (limit, market, immediate-or-cancel, etc. ), and any other required parameters apart from quantity. 44.1 System Components 
+
+The MPC problem in (3.1) is a simple program with quadratic cost and constraints, and inputs provided by a few key pieces of infrastructure. These are: 1. Scheduler function st+1 = Fs(t). This component performs a function similar to the ‘Macro-trader’ of Li et al [13]. 2. Candidate orders model ot = Fo(xt, t ). This compo-nent generates the set of candidate orders at time 
+
+t.3. Fill probability model πt = Fπ (xt, o t). For example, a market order has fill probability = 1.0. 4. Fill covariance model Σ t = FΣ(xt, o t); see Section 4.1.3. 5. Control constraints Ut(xt) = Fu(Σ t, x t). A series of constraints are maintained throughout the order management process, managed by this component. 6. Trading cost model ct = Fc(xt, o t). This models the trading cost per share of a candidate order. 7. Future cost per share, ξt = Fξ (xt). This component estimates the per-share cost of the residual quantity to be traded, by following a simple base policy. 
+
+4.1.1 Scheduler 
+
+The scheduler component can choose st statically or in response to market conditions. We have kept it static in our initial implementation, choosing to follow a VWAP profile that we pre-compute before the trading session. The VWAP implementation of Fs is given by 
+
+Fs(t) = Q ˆνt
+
+ˆνT
+
+,
+
+where ˆνt is the cumulative volume forecast for time t. By contrast, the TWAP implementation is given by 
+
+Fs(t) = Q tT .
+
+Alternatively, we could use an Almgren-Chriss profile, or train some model to predict a suitable st given the input state xt, like Hendricks & Wilcox [ 14 ]. In such a case, Fs
+
+becomes a function of xt and t.
+
+4.1.2 Constraints 
+
+At each time step, the component Fu(Σ t, x t) chooses a set of constraints Ut(xt) for the MPC optimization. 1. ut ≥ 0, all quantities are positive; we are not allowed to sell if the parent is a buy order, and vice versa. 2. ut ≤ κ, for an individual max order size κ (say 50% of Q). 3. 1′ut +qt ≤ st+1 +ρupper  
+
+> t
+
+, an upper tube bound (which can start at say 20% of the order quantity and decay to 0 at t = T ). 4. 1′umt + qt ≥ st+1 − ρlower  
+
+> t
+
+, a lower tube bound (which will force the optimization to choose higher cost, higher probability orders if it falls too far behind the schedule). The vector umt is the slice of ut that corresponds to (guaranteed fill) market orders. 5. ˆ vt = u′
+
+> t
+
+Σtut ≤ β, which constrains the uncertainty we wish to permit around our target schedule. Here β is a scalar hyperparameter, and Σ t is the fill covariance, i.e., the covariance of the order vector ut; see the next section. 
+
+4.1.3 Fill Probability and Covariance Models 
+
+The systems Fπ and FΣ go hand in hand, but in principle can be modeled separately. There are plenty of ways to model fill probability, for example Maglaras et al [21 ] who use a recurrent neural network (RNN) and the limit order book microstructure. For an illustration of the model of fill covariance, con-sider the case of two limit orders. Suppose there are two levels in the book, one closer to the mid (level 1) and one deeper in the book (level 2). Let z1 and z2 be non-independent Bernoulli random variables corresponding to whether level 1 and level 2 are (fully) filled respectively, with probabilities 
+
+P {z1 = 1 } = π1, P {z2 = 1 } = π2.
+
+The covariance between them is Σ12 = Cov( z1, z 2) = E{z1z2} − E{z1} · E{z2},
+
+where Cov (z1, z 2) represents the covariance between the random variables z1 and z2. The matrix of joint outcome probabilities is 
+
+z1 = 0 z1 = 1 
+
+z2 = 0 1 − π1 π1 − π2
+
+z2 = 1 0 π2
+
+Note that the entries sum to 1. The asymmetry is due to the fact that it is impossible to fill the deeper level without also filling the shallow one. From this matrix, 
+
+E{z1z2} = 0 · (1 − π1) + 0 · 0 + 0 · (π1 − π2) + 1 · π2 = π2,
+
+so that Cov( z1, z 2) = E{z1z2} − E{z1} · E{z2} = π2 − π1π2.
+
+Generalizing, for arbitrary levels i and j, the joint proba-bility of both being filled equals the probability of filling the deeper level, i.e. 
+
+E{zizj } = min {πi, π j }.
+
+5Therefore a model of the fill covariance matrix for these orders is Σij = min {πi, π j } − πiπj ,
+
+which we can use to construct FΣ. Note that in practice orders can be partially filled; this is a simple model used to bootstrap our system. For more complex order types (and venues) we can measure the fill covariance empirically. A more complex fill probability model involves condi-tioning on a fast cancel mechanism. Rather than modeling the unconditional fill probability πi = P {zi = 1 }, we in-stead model the conditional probability 
+
+πci = P {zi = 1 | not cancelled },
+
+where cancellation is triggered by a separate module that monitors adverse market conditions in real time. 3
+
+The fast-cancel module needs to operate at very low la-tency and withdraws resting limit orders when microstruc-tural signals indicate imminent adverse selection. A simple signal is to trigger when the order book imbalance shifts sharply. This creates a conditional fill distribution that is substantially more favorable (with respect to adverse selection) than the unconditional one: fills that would have occurred just before a price move we would benefit from are systematically avoided. From a modeling perspective, this decomposition is ad-vantageous because the conditional fill probability πci can be learned from historical data where the fast-cancel logic was active. The resulting model captures the effective fill dynamics experienced by the trading system in produc-tion. This approach separates concerns: the fill probability model Fπ estimates execution likelihood given that orders remain active, while the fast-cancel module independently manages adverse selection risk. Both components can be trained and improved in isolation, consistent with the modularity requirements outlined in Section 1.2. All other components remain unchanged. 
+
+4.1.4 Trading Cost per Share 
+
+Next, we discuss the trading cost per share. The simplest approach is to represent this cost as a vector of compo-nents, with the component for candidate limit order oi
+
+being the deviation of the order from the market price, normalized by spread: 
+
+ϕ pi − pmt
+
+δt
+
+where ϕ is the side multiplier (=1 for buys, -1 for sells). Here pi is the price attached to oi. It is set to pmt + 0 .5 · δt
+
+for market orders where we cross the spread (and don’t attach a limit price), or simply to pmt for a mid-IOC (immediate-or-cancel order). This form of Fc measures the price paid (in units of spread) relative to the mid. Alternative cost functions 
+
+> 3In practice, this type of system usually runs on an ultra-low latency field-programmable gate array (FPGA).
+
+exhibit similar properties. For example, consider a cost defined as the difference between the trade price and the 
+
+t + 1 mid price (often referred to in the industry as a ‘markout’). Both specifications yield an increasing cost as a function of fill probability. This pattern is driven by market microstructure. Heuristically, consider two cases: (A) we are filled at the front of a long, stable queue; (B) we are filled at the end of the queue as a level collapses. In case (A) we collect half the spread relative to the mid at the end of the interval, for case (B) we pay it. Lower probability orders, deeper in the book, are more likely to be filled at stable levels. Equivalently, very passive orders tend to have lower market impact than aggressive ones. Given the similarity in properties, we adopt the simpler cost function for speed and interpretability. There are other sensible order pricing methods; we could train a neural network to predict an interval VWAP slippage for the candidate order oi,t , or map the cost function to a traditional impact model, such as after Cont et al [ 3]. We consider this an open research question. 
+
+4.1.5 Future Cost per Share 
+
+The future cost approximation is set equal to the cost of following a simple base policy. A scalar ξt encodes the expected (per-share) cost of executing the remaining shares under this policy, expressed in units of spreads (consistent units with Fc). For simplicity, we consider a base policy that submits market orders for the residual quantity, yielding ξt = 0 .5, i.e., half a spread. This mecha-nism accommodates price forecasts: if we expect prices to move against us, we can increment ξt accordingly. This is discussed in Section 5.5. 
+
+## 4.2 Optimization 
+
+Bringing all of this together, we substitute terms into (3.1) to obtain the final quadratic programming problem solved at each time step t. Our implementation of this problem uses the fast second order conic solver Clarabel [ 22 ], and takes about 1 millisecond 4 for an action space of d = 11, which is consistent with requirement 2 of Section 1.2. 
+
+# 5 Experiments 
+
+In this section we discuss our algorithm’s performance in a simulated environment. 
+
+## 5.1 Simulation Environment 
+
+We trade 1200 instruments per day on a simulated NAS-DAQ. For each instrument on each trading day for six months (2025-01-02 to 2025-07-02) we manage a $10K parent order over the full session, alternating buying and selling each day. This corresponds to ≈ 170,000 parent 
+
+> 4Experiments were conducted on a server equipped with two AMD EPYC 7R13 processors.
+
+6orders. For each instrument we maintain a full order book, built using L3 ITCH message data. Additionally, we simulate a conservative 10 ms latency between order submission and interaction with the book. In our simula-tion environment we can submit both market and limit orders. Market orders remove liquidity upon arrival, limit orders join or create a price level queue. We simulate limit order fills when the order behind us in the queue gets filled. If the filled quantity is less than our order quantity, we partially fill and leave the residual resting in the queue. 
+
+## 5.2 Metrics 
+
+We evaluate execution performance using three comple-mentary price-based metrics, designed to isolate different aspects of execution quality. All metrics are expressed in basis points (bps) and normalized so that positive values correspond to worse execution outcomes for both buy and sell orders. Let: 
+
+• p0 denotes the arrival price , defined as the mid-price at the time the parent order is received; 
+
+• pvwap denotes the market VWAP , defined as the volume-weighted average traded price over the life-time of the order; 
+
+• pfwap denotes the fill-weighted average price (FWAP) ,defined as the quantity-weighted average price of all executed trades generated by the algorithm across one parent order; 
+
+• pswap denotes the schedule-weighted average price (SWAP) , defined as the hypothetical FWAP that would be obtained if the prescribed execution sched-ule were followed exactly and all scheduled quantities were executed at the current mid-price at each deci-sion time. Using the side multiplier ϕ (=1 for buys, -1 for sells) these define the following metrics: 
+
+• Arrival slippage (bps): 
+
+zarrival = 10 , 000 pfwap − p0
+
+p0
+
+ϕ
+
+Measures how far our realized execution price drifted from the price when the order arrived. 
+
+• VWAP slippage (bps): 
+
+zvwap = 10 , 000 pfwap − pvwap 
+
+pvwap 
+
+ϕ
+
+Compares our execution price against the market average price over the same window. 
+
+• Schedule shortfall (bps): 
+
+zschedule = 10 , 000 pfwap − pswap 
+
+pswap 
+
+ϕ
+
+Measures how much worse (or better) our algorithm performed relative to its own intended schedule. 
+
+## 5.3 Performance Across Schedule Types 
+
+TWAP, VWAP, and Almgren-Chriss trading schedules are defined as follows: 
+
+• TWAP: We trade linearly in time: 
+
+st = Q tT
+
+• VWAP: We trade along the schedule of an offline volume profile forecast (that uses information up to the previous trading day): 
+
+st = Q ˆνt
+
+ˆνT
+
+• Almgren-Chriss: We trade with a static Almgren-Chriss (after [ 8]) profile, wrapping the impact terms into a single shared parameter ψ that we illustratively set to 5 basis points: 
+
+st = Q
+
+
+
+1 − sinh( ψ(T − t)) sinh( ψT )
+
+
+
+Unless otherwise noted, all experiments in Section 5.3 use the same optimization, solver, hyperparameters, and candidate order set; only the scheduler Fs (hence st) differs across TWAP, VWAP, and Almgren-Chriss. This shared parameterization is shown in Table 1. Parameter Value Interval 5 minutes 
+
+ξt 0.5
+
+ρupper  
+
+> t
+
+, ρ lower  
+
+> t
+
+15% 
+
+β 5
+
+γ 1
+
+d 11 
+
+ot, 0 Market order 
+
+ot,i Increasingly passive limit orders, 
+
+i = 1 , . . . , 10 
+
+πt, 0 Market order fill probability, 1.0 
+
+πt,i Linearly decreasing from 0 .9 to 0 .1, 
+
+i = 1 , . . . , 10 Table 1: Simulation baseline parameters 
+
+5.3.1 Cost of Execution 
+
+Slippage measurements are made for the three schedules to illustrate the flexibility of our formulation. We do not wish to compare performance across profile types. These structures are chosen in a live setting to minimize market impact, which we are not simulating. Our choice of a static 5 bps for the Almgren-Chriss parameter, for example, is arbitrary and should be refined per-instrument. 7For each candidate profile we run two simulations, one using the MPC optimization procedure detailed in Sec-tion 2, and one that crosses the spread at each optimization step for the scheduled quantity (labeled ‘crossing’). Slippage metrics from the simulations are summarized in Table 2, but we draw more attention to Table 3, which compares performance for each scheduling type to its spread-crossing baseline. For clarity and consistency across tables and figures, we use the following naming convention for all execution policies considered: 
+
+• TWAP/Schedule, VWAP/Schedule, AC/Schedule: the schedule being followed, independent of any pol-icy. 
+
+• TWAP/MPC, VWAP/MPC, AC/MPC: the proposed MPC execution method, using the corresponding schedule. 
+
+• TWAP/Crossing, VWAP/Crossing, AC/Crossing: the spread-crossing baseline that executes the sched-uled quantity at each decision time by crossing the spread. 
+
+• TWAP/Oracle, VWAP/Oracle, AC/Oracle: the MPC method with an oracle base policy that uses future price information (e.g., close price) to compute the future cost. Cost / bps zarrival zschedule zvwap 
+
+VWAP/MPC 18.10 4.53 4.36 VWAP/Crossing 19.59 6.75 6.12 TWAP/MPC 16.98 4.71 5.49 TWAP/Crossing 19.15 6.75 6.83 AC/MPC 20.99 9.03 12.46 AC/Crossing 21.70 13.21 17.22 Table 2: Performance metrics (in basis points) across strategies. Positive values indicate worse execution for both buys and sells. Improvement / % ∆zarrival ∆zschedule ∆zvwap 
+
+VWAP/MPC 8.23 48.85 40.37 TWAP/MPC 12.77 43.14 24.55 AC/MPC 3.37 46.34 38.20 Table 3: Performance improvements of the MPC policies over the spread-crossing baseline for each profile type. The results of Tables 2 and 3 clearly demonstrate that the MPC algorithm provides a significant performance boost, including greater than 40 % improvement in the cost of following each candidate schedule. Arrival and VWAP improvements are more varied; these are more of a function of the profiles themselves relative to actual market moves. 
+
+5.3.2 Accuracy of Schedule Following 
+
+Figure 1 shows average intraday completion rate densities. The optimization maintains a stable tube around the schedule, most evidently for TWAP policies. This is clearer in Figure 2 for the Almgren-Chriss and VWAP profiles. Summary statistics for these deviations are presented in Table 4, with corresponding histograms shown in Figure 3.                       
+
+> ϵt/ % Mean Std Median TWAP/MPC -0.765 2.471 -1.062 TWAP/Crossing -0.271 0.534 -0.030 AC/MPC -2.849 4.807 -1.459 AC/Crossing -2.756 4.827 -0.712 VWAP/MPC -0.574 2.450 -0.912 VWAP/Crossing -0.231 0.545 -0.024
+
+Table 4: Schedule deviation summary statistics. On average, all simulations slightly lag the prescribed schedule. For the crossing simulations, this is attributed due to our simulated latency. Specifically, price move-ments in the trading direction between optimization and order submission can result in some market orders remain-ing unfilled, since such orders are simulated as limit orders placed at the far touch. In the MPC simulations, the lag is instead attributed to imperfect calibration of fill proba-bilities: although the optimizer targets schedule adherence in expectation, realized executions tend to underfill with this fill probability model. The Almgren-Chriss profiles accelerate aggressively, re-sulting in a substantially higher concentration of market orders, particularly at the beginning of the trading session. This behavior is reflected in larger negative schedule devi-ations and, more generally, inferior slippage performance (see Table 2). Figure 4 shows the distribution of quantities submitted (values of the chosen action vector ut) for the MPC simu-lations. Significantly higher density of market orders for Almgren-Chriss profiles is represented here, both for sub-mitted and filled. The TWAP and VWAP profiles exhibit similar behavior, allocating as much quantity as feasible to low-probability, high-payoff orders, as previously discussed in Section 4.1.4. 
+
+## 5.4 Hyperparameter Selection 
+
+The hyperparameters γ and β play an important role in controlling the optimization. In particular, γ controls how strongly | ˆmt|2 is penalized. This is a soft constraint; the optimizer is free to target positions above or below the schedule (subject to other constraints) depending on the value of ξt. If it is relatively cheap to execute more shares at the current stage, then it may be desirable to have positive expected schedule deviation E{ϵt+1 } > 0 (and the opposite for a relatively expensive current stage). 8In contrast, β controls the amount of ‘risk’ the optimizer can take. Higher β encourages greater concentration of order quantity on the lower probability but better payoff price levels. Using the same base parameterization as described in Table 1, and a TWAP profile, Figure 5 shows the distri-butions of ϵt, ˆmt , and ˆvt across simulations as we vary 
+
+γ. Under the spread-crossing base policy, ˆmt is almost always positive, as the cost of rollout is higher than any action at the current stage. As γ is increased the density of ˆmt increasingly clusters at zero. This is shown clearly in Figure 6. Figure 7 shows the schedule deviation ϵt and its target moments across simulations as we now vary β. The in-tention here is to control the variance of ϵt, denoted by Var {ϵt}, and it is clear that as β increases the distribution of ϵt widens. To verify the calibration of our control, we plot realised Var {ϵt} as a function of β across the same simulations in Figure 8. At higher values of β the amount of risk we can practically take seems to be limited by the outer tube ( ρupper , ρ lower ), but in these simulations we observe good calibration. To confirm that the risk we are taking is worth it, we plot improvement in slippage metrics (over the spread crossing baseline, as in Table 3) as a function of β. Taking risk pays off, and performance monotonically improves across all metrics as β increases. This can be attributed to an increased density of (filled) low probability and high payoff orders. 
+
+## 5.5 Base Policy Design 
+
+So far we have used a spread-crossing base policy for rollout and defined ξt = 0 .5 (half a spread). This is a simple but quite pessimistic choice. The role of the base policy is to provide a mechanism to approximate 
+
+J∗ 
+
+> t
+
+(xt). In practical trading, there may be a short term price forecast that we wish to incorporate. If we predict that the price will increase over the next 5 minutes (and we’re buying), we can incorporate this information into the rollout cost ξt. The base policy becomes “cross the spread at our forecasted price level.” This has the effect of increasing the cost of the residual quantity relative to executing these shares now, encouraging the optimization to exceed the schedule, which is desirable behavior. To demonstrate this effect, we keep other simulation and optimization parameters constant, then measure per-formance of an ‘oracle’ base policy by setting 
+
+ξt = ϕ pclose − pmt
+
+δt
+
+,
+
+where ϕ is the side multiplier and pclose is defined as the daily closing auction price (which happens at the end of the trading session, after our order completes). Tables 5 and 6 demonstrate the significant improvement achieved when we provide the optimization with future price information. Though obviously this approach is not realistic ( pclose is not known), our results demonstrate Cost / bps zarrival zschedule zvwap 
+
+TWAP/MPC 16.98 4.71 5.49 TWAP/Crossing 19.15 6.75 6.83 TWAP/MPC-Oracle 7.298 -5.62 -5.42 Table 5: Performance comparisons with the oracle policy as the base policy. Here we use ‘MPC-Oracle’ to denote the MPC policy with the oracle base policy. Improvement / % ∆zarrival ∆zschedule ∆zvwap 
+
+TWAP/MPC 12.77 43.14 24.55 TWAP/MPC-Oracle 162.43 220.06 226.06 Table 6: Performance improvement over the spread-crossing baseline for the MPC and the MPC-Oracle poli-cies. that inclusion of accurate price predictions into the base policy can yield significant performance improvements. 
+
+# 6 Discussion 
+
+Our MPC algorithmic framework for trade execution bal-ances schedule following with controlled risk taking. It is modular, fast, and agnostic to the chosen execution schedule. The experimental results we have presented demonstrate significant performance improvements for a static strategy, trading $10K alternating buy and sell par-ent orders, across three schedule types (TWAP, VWAP, and Almgren-Chriss). As described in Section 4.1, in a live trading environment we can exploit a substantially richer action space than simple limit and market orders. In addition to direct order placement, a wide range of execution broker algorithms is available (see, e.g., [ 4, 5, 6]), as well as multiple trading venues. In our framework, each such order configuration corresponds to an element of the vector ot at optimization time. We can therefore assign a cost to each candidate order type that more accurately reflects its realized cost as a function of the current market state xt. For example, passive limit orders typically offer more favorable payoffs when filled, while VWAP-following broker algorithms tend to perform better when prices are trending away from the trader. These effects can be learned from data, allowing the use of an offline (or indeed online) trained model for Fc
+
+(as a function of broker, venue, state, etc) rather than the simplified aggressiveness-based cost specification employed in our simulations. The choices of the hyperparameters β and γ are impor-tant, as discussed in Section 5.4, and we observe effective control of the mean and variance of schedule deviation. However, we note that these constraints are only required due to our limited lookahead: they constrain the action search space to regions we believe will perform well over 9the full horizon. A better approximation to the expected future cost, possibly through an improved transition func-tion (in the literature often referred to as a ‘world model’), would enable further lookahead, allowing the optimizer to properly evaluate the consequences of actions. In turn, this reduces the need to constrain the search. Our formulation also admits an extension in which an 
+
+outer-loop controller selects the optimization hyperparame-ter tuple ( β, γ, ρ upper  
+
+> t
+
+, ρ lower  
+
+> t
+
+, ξ t) as an action, based on the same observed market state xt. Such a mechanism would allow the system to adapt its risk profile dynamically, taking on greater risk in more benign market conditions. Additionally, we note that the framework is easily ex-tended to accommodate orders with durations spanning multiple time steps. We note these possibilities here and leave their implementation and empirical evaluation for future work. 
+
+# 7 Conclusions 
+
+We have presented an MPC-based framework of schedule-informed parent order execution. It is free of any market dynamics modelling, scalable, and modular. Using NAS-DAQ L3 simulations we have shown: 
+
+• Explicit control of expected schedule deviation and its uncertainty, governed by two hyperparameters, 
+
+β and γ, and demonstrated it across three schedule types: TWAP, VWAP and Almgren-Chriss. 
+
+• Significant performance improvement across three slippage metrics (arrival slippage, VWAP slippage, schedule shortfall) in comparison to a spread-crossing baseline. 
+
+• Even greater performance gains are observed when the future cost is computed through an oracle base policy that uses estimated future price information. In this setting, the algorithm effectively balances current-stage execution costs and expected schedule deviation against anticipated closing prices, resulting in substantially more efficient trading. While such oracle information is not available in practice, our results suggest that incorporating short-horizon price forecasts (possibly generated by a neural network) into the rollout component may yield significant ben-efits. 
+
+# References 
+
+[1] Stephen A. Berkowitz, Dennis E. Logue, and Eu-gene A. Noser. The total cost of transactions on the NYSE. The Journal of Finance , 43(1):97–112, March 1988. [2] Colin Bennett and Miguel A. Gil. Measuring histori-cal volatility: Close-to-close, exponentially weighted, parkinson, garman-klass, rogers-satchell and yang-zhang volatility. Technical report, Santander Global Banking & Markets, Equity Derivatives Europe, Madrid, February 2012. Presented at Equity Deriva-tives Europe, February 3, 2012. [3] Rama Cont, Arseniy Kukanov, and Sasha Stoikov. The price impact of order book events. Journal of Financial Econometrics , 12(1):47–88, January 2014. [4] Morgan Stanley & Co. LLC. Morgan stanley’s U.S. cash equity order handling & routing practices: Fre-quently asked questions. Last updated August 2024. [5] J.P. Morgan. Machine learning in fx. Prepared by J.P. Morgan Sales and Trading. For institutional & professional clients only. [6] UBS Investment Bank. Fx algorithmic execution. Accessed via UBS Neo. Describes ORCA Direct, Tap, Float, TWAP, VWAP strategies. [7] Dimitris Bertsimas and Andrew W. Lo. Optimal con-trol of execution costs. Journal of Financial Markets ,1(1):1–50, 1998. [8] Robert Almgren and Neil Chriss. Optimal execution of portfolio transactions. Journal of Risk , 3:5–39, 2000. [9] ´Alvaro Cartea and Sebastian Jaimungal. Optimal execution with limit and market orders. Quantitative Finance , 15(8):1279–1293, 2015. [10] Enzo Busseti and Stephen Boyd. Volume weighted average price optimal execution. arXiv preprint arXiv:1509.08503 , September 2015. [11] Yuriy Nevmyvaka, Yi Feng, and Michael Kearns. Re-inforcement learning for optimized trade execution. In Proceedings of the 23rd International Conference on Machine Learning (ICML) , pages 673–680. ACM, 2006. [12] Ciamac C. Moallemi and Muye Wang. A reinforce-ment learning approach to optimal execution. Quan-titative Finance , 22(6):1051–1069, 2022. [13] Xiaodong Li, Pangjing Wu, Chenxin Zou, and Qing Li. Hierarchical deep reinforcement learning for vwap strategy optimization. IEEE Transactions on Big Data , 10(3):288–300, 2023. [14] Dieter Hendricks and Diane Wilcox. A reinforcement learning extension to the almgren–chriss framework for optimal trade execution. In 2014 IEEE Con-ference on Computational Intelligence for Financial Engineering & Economics (CIFEr) , pages 457–464. IEEE, 2014. 10 [15] Peter Dayan and Geoffrey E. Hinton. Feudal rein-forcement learning. In Advances in Neural Informa-tion Processing Systems (NeurIPS) , volume 5, pages 271–278. Morgan Kaufmann, 1993. [16] Richard S. Sutton, Doina Precup, and Satinder Singh. Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning. Arti-ficial Intelligence , 112(1–2):181–211, 1999. [17] Simon Clinet, Jean-Fran¸ cois Perreton, and Serge Rey-dellet. Optimal trading: a model predictive control approach. arXiv preprint arXiv:2110.11008 , 2021. [18] Mogens Graf Plessen and Alberto Bemporad. Stock trading via feedback control: Stochastic model pre-dictive or genetic? arXiv preprint arXiv:1708.08857 ,2017. [19] Dimitri P. Bertsekas. Model predictive control and reinforcement learning: A unified framework based on dynamic programming. IFAC-PapersOnLine ,58(18):363–383, 2024. [20] Dimitri P. Bertsekas. A Course in Reinforcement Learning . Athena Scientific, Belmont, MA, 2nd edi-tion, 2025. [21] Costis Maglaras, Ciamac C. Moallemi, and Muye Wang. A deep learning approach to estimating fill probabilities in a limit order book. Quantitative Fi-nance , 22(11):1989–2003, 2022. [22] Paul J. Goulart and Yuwen Chen. Clarabel: An interior-point solver for conic programs with quadratic objectives, 2024. 11 A Notation Reference 
+
+Table 7: Notation Reference 
+
+Symbol Description 
+
+T Duration of the parent order (number of time periods) 
+
+t Time index, 0 ≤ t ≤ Txt State at time t (includes qt and market state) 
+
+ut Control vector of order quantities at time twt Random quantity modeling uncertainty 
+
+ft System dynamics function 
+
+gt Stage cost function 
+
+J∗ 
+
+> t
+
+(xt) Optimal cost-to-go from state xt
+
+˜Jt+1 Approximate cost-to-go (rollout approximation) 
+
+Ut(xt) Control constraint set at time tQ Quantity of the parent order 
+
+qt Executed position at time tst Scheduled position at time td Dimensionality of action space (number of candidate orders) 
+
+oi,t Candidate order i at time tpi Limit price of candidate order oi
+
+πt Fill probability vector Σt Fill covariance matrix 
+
+ct Trading cost vector per share (in units of spreads) 
+
+κ Maximum individual order size 
+
+δt Bid-ask spread at time tpmt Mid price at time tpclose Close (future) price 
+
+γ Schedule deviation penalty hyperparameter 
+
+β Variance constraint hyperparameter 
+
+ξt Rollout cost per share (in units of spreads) at time tψ Almgren-Chriss impact parameter 
+
+ρupper  
+
+> t
+
+, ρ lower  
+
+> t
+
+Upper and lower tube bounds ˆνt Cumulative volume forecast for time tϵt+1 Schedule deviation at time t + 1 ( qt+1 − st+1 )ˆmt Expected schedule deviation, E{ϵt+1 }
+
+ˆvt Variance of schedule deviation, Var {ϵt+1 }
+
+p0 Arrival price (mid-price when order received) 
+
+pfwap Fill-weighted average price 
+
+pvwap Market volume-weighted average price 
+
+pswap Schedule-weighted average price 
+
+ϕ Side multiplier (+1 buy, −1 sell) 
+
+zarrival Arrival slippage (bps) 
+
+zvwap VWAP slippage (bps) 
+
+zschedule Schedule shortfall (bps) 
+
+Fs Scheduler function 
+
+Fo Candidate order generator 
+
+Fu Constraint controller 
+
+Fπ Fill probability model 
+
+FΣ Fill covariance model 
+
+Fc Order trading cost model 
+
+Fξ Rollout cost model 
+
+12 Figure 1: Schedule following across three candidate profile types. Using MPC vs simply crossing the spread. Red corresponds to higher density. 13 Figure 2: Evolution of schedule deviation across the trading day. 
+
+Figure 3: Histograms of schedule deviation. 14 Figure 4: Submitted and filled price levels 
+
+Figure 5: Histograms of ϵt and targeted moments as a function of γ.15 Figure 6: E{ ˆmt} vs target γ.
+
+Figure 7: Histograms of ϵt and targeted moments as a function of β.16 Figure 8: Var {ϵt} vs target β. The dotted line shows perfect calibration. 
+
+Figure 9: Performance improvement across slippage metrics (compared to spread crossing baseline) as we increase β.17

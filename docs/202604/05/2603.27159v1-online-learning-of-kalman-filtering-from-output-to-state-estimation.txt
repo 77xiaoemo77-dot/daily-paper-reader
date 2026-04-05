@@ -1,0 +1,6874 @@
+Title: Online Learning of Kalman Filtering: From Output to State Estimation
+
+URL Source: https://arxiv.org/pdf/2603.27159v1
+
+Published Time: Tue, 31 Mar 2026 00:29:41 GMT
+
+Number of Pages: 58
+
+Markdown Content:
+# Online Learning of Kalman Filtering: From Output to State Estimation 
+
+Lintao Ye ∗ Ankang Zhang ∗ Ming Chi ∗ Bin Du † Jianghai Hu ‡
+
+March 31, 2026 
+
+Abstract 
+
+In this paper, we study the problem of learning Kalman filtering with unknown system model in partially observed linear dynamical systems. We propose a unified algorithmic framework based on online optimization that can be used to solve both the output estimation and state estimation scenarios. By exploring the properties of the estimation error cost functions, such as conditionally strong convexity, we show that our algorithm achieves a log T -regret in the horizon length T for the output estimation scenario. More importantly, we tackle the more challenging scenario of learning Kalman filtering for state estimation, which is an open problem in the literature. We first characterize a fundamental limitation of the problem, demonstrating the impossibility of any algorithm to achieve sublinear regret in T . By further introducing a random query scheme into our algorithm, we show that a √T -regret is achievable when rendering the algorithm limited query access to more informative measurements of the system state in practice. Our algorithm and regret readily capture the trade-off between the number of queries and the achieved regret, and shed light on online learning problems with limited observations. We validate the performance of our algorithms using numerical examples. 
+
+# 1 Introduction 
+
+Kalman filtering is a foundational approach to estimation and prediction of time-series data corrupted by stochastic noise [1, 2]. When applied to estimate the state of partially observed linear dynamical systems with Gaussian process and/or measurement noise, the Kalman filter achieves the minimum mean square estimation error among all state estimators of the system [3, 4]. However, constructing the optimal Kalman filter requires complete and exact knowledge of the underlying system model, which is generally absent in many real-world applications [5, 6]. A natural idea is to use the so-called certainty equivalence approach: Identifying the system model from measurement data and then using the identified system model in the Kalman filter design as if it was the true model [7]. Unfortunately, for partially observed linear dynamical system, one can only identify the system model up to some similarity transformation using system data [6,8,9]. This makes the approach of learning the Kalman filter using identified system model not applicable [10]. 
+
+> ∗
+
+School of Artificial Intelligence and Automation at the Huazhong University of Science and Technology, Wuhan, China; {yelintao93,zak,chiming}@hust.edu.cn 
+
+> †
+
+College of Automation Engineering at Nanjing University of Aeronautics and Astronautics, Nanjing, China; 
+
+iniesdu@nuaa.edu.cn 
+
+> ‡
+
+Elmore Family School of Electrical and Computer Engineering at Purdue University, West Lafayette, IN, USA; 
+
+jianghai@purdue.edu 
+
+1
+
+> arXiv:2603.27159v1 [cs.LG] 28 Mar 2026
+
+There is a pioneered line of research that takes an alternative approach to learning the Kalman filter with unknown system model [11 –15], which leverages the fact that the Kalman filter constitutes a linear regression from past system outputs to the current state and thus does not need to explicitly identify the system’s internal dynamics. Nonetheless, a caveat in the aforementioned work is that since the system state is not accessible, the regression is instead performed from past system outputs to the current output, which yields an estimate of the system output at the current time step, and the problem thus becomes the output estimation (or prediction) problem with unknown system model [16, 17]. While it has been shown in [12 –15] that least squares methods can be successfully used to obtain the regressed output estimates that are comparable and converging fast to the output estimates returned by the optimal Kalman filter, it does not solve the state estimation problem for which the Kalman filter was originally designed in Kalman’s seminal work [3]. Motivated by this gap in the literature, we aim to answer the following questions in this paper: Can we design a unified algorithmic framework that moves beyond learning Kalman filtering for output estimation to state estimation? Is there any fundamental limitation of learning Kalman filtering for state estimation, and if so, how to resolve it? 
+
+As we readily mentioned above, a key challenge for learning Kalman filtering for state estimation is that the state information is absent hence the performance (i.e., state estimation error) of the designed filter cannot be directly evaluated. This creates a paradox in the algorithm design: Optimizing the performance of the learned filter while the performance itself cannot be evaluated. Such a paradox can be bypassed by considering the output estimation problem [13, 16], since the output estimation error can be directly evaluated given the output and the learned output estimate. Hence, we are further motivated to study whether the paradox creates any fundamental limitation in the problem of learning Kalman filtering for state estimation. Meanwhile, following the online learning setup studied in previous work [10, 14, 18], we consider the scenario where the system outputs become available in an online manner (i.e., over time). The filter needs to be designed based on the outputs seen before to produce an estimate of the system output or state at the current time step, and the learning performance is measured by the regret of the online algorithm [19]. The online learning setup is arguably more practical yet more challenging than its offline counterpart, where the learner acts after the whole sequence of data samples becomes available [20]. Our main contributions are summarized below. 
+
+• Unified online optimization framework. We propose a unified online optimization framework that encompasses both output and state estimation setups. Since the Kalman filter in hindsight produces the estimate of the output or state of the system at the current time step as a linear combination of the past outputs, we focus on optimizing over the set of linear filters and show that the estimation error cost is conditionally strongly-convex in the filter parameter. Such strong convexity allows us to show that an online convex optimization algorithm achieves a log T -regret with respect to the horizon length T for the output estimation problem in the first place, which matches those achieved in [12 –15] using least squares methods. In addition, our proposed online optimization algorithmic framework is conceptually simpler than the least squares methods used, further allowing us to achieve the regret with minimal requirements on prior knowledge of the system model and noise statistics. Nonetheless, the most important advantage of our algorithmic framework is its ability to tackle the more challenging state estimation problem. 
+
+• Fundamental limitation of learning state estimation. Before delving into providing regret upper bounds for learning Kalman filtering for state estimation, we first characterize a fundamental 2performance limitation of any online learning algorithm applied to the state estimation problem. We demonstrate that for any online learning algorithm that is only given access to the system output history, the state estimates returned by the algorithm must incur a regret that scales at least linearly in the horizon length T , which is no better than, e.g., a naive algorithm that simply returns a bounded state estimate at each time step. Such a regret lower bound result indicates that learning state estimation is provably more difficult than learning output estimation. 
+
+• Achievable performance with informative measurements. As indicated by the above fundamental limitation, to hope for a meaningful regret sublinear in T , an online learning algorithm needs to receive extra information beyond the system output history. To this end, we consider a reasonable and practical scenario where the online algorithm has limited queries to more informative measurements of the underlying system’s state. We show that under the extra queries of the measurements, achieving a √T -regret is possible. We also explicitly characterize the trade-off between the number of extra measurement points and the achievable regret. Such a trade-off is made possible by a novel random query scheme that we introduce into our online algorithm design, which may be of independent interest to the field of online optimization and online learning. 
+
+Related Work. The problem of adaptive filtering for output estimation of a linear dynamical system has been studied in the literature for decades [21 –25]. While being able to tackle uncertain or changing system model and noise statistics, this classic line of work mainly focuses on the asymptotic performance guarantees of the proposed methods. Recently, algorithms for learning Kalman filtering for output estimation with finite-time performance guarantees have been proposed with sample complexity analysis [10] or regret bound analysis [10 –12, 14] for stable or marginally stable linear dynamical systems. The algorithm design in these papers is based on least squares methods, and the technical tools are carefully built upon recent advances in finite-sample analysis of control and system identification [8, 26 –29]. While the problem of learning Kalman filtering for state estimation has been considered in [30, 31], they assume that there is an oracle that can directly return the system state or state estimation error for the proposed algorithms. It is well-known that the Kalman filter for (state) estimation and the Linear Quadratic Regulator (LQR) for control are dual problems, and when the system model is known, they yield the same solution strategy based on solving a set of Riccati equations [4, 32]. The important problem of learning LQR with unknown system model has been well-studied in the literature with an optimal √T -regret [33 –38]. However, when the system model is unknown, learning Kalman filtering and learning LQR are no longer dual of each other, since the learning landscape of the Kalman filter contains an extra set of parameters due to the measurement matrix in partially observed linear dynamical system. This is a common phenomenon identified in the literature on learning in partially observed systems [31,39] and learning in decentralized systems with limited state information [40 –42]. 
+
+Notations. The sets of integers and real numbers are denoted as Z and R, respectively. For a real number a, let ⌊a⌋ be the largest integer that is greater than or equal to a. A positive semidefinite matrix P is denoted by P ⪰ 0, and P ⪰ Q if and only if P − Q ⪰ 0. For a vector x ∈ Rn, let 
+
+∥x∥be its Euclidean norm. For a matrix P ∈ Rn×n, let ρ(P ), ∥P ∥, and ∥P ∥F be its spectral radius, spectral norm, and Frobenius norm, respectively. The Kronecker product is denoted as ⊗. For a matrix P ⪰ 0, let P 1/2 be any matrix P1 such that P ⊤ 
+
+> 1
+
+P1 = P , and let λmin (P ) (resp., λmax (P ))be its smallest (resp., greatest) eigenvalue. Let In be an n-dimensional identity matrix. Given any integer n ≥ 1, [n] ≜ {1, . . . , n }. Let σ(·) represent the sigma-field generated by the random variables in its argument. Let N (0 , P ) be a zero-mean Gaussian distribution with covariance P ⪰ 0. Let 
+
+[Pi]i∈[n] = P1 · · · Pn
+
+ be a concatenation of matrices Pi ∈ Rn×mi .32 Problem Formulation and Preliminaries 
+
+Consider a discrete-time linear time-invariant (LTI) system given by 
+
+xt+1 = Ax t + wt
+
+yt = Cx t + vt, (1) where xt ∈ Rn and yt ∈ Rp are the state and output of the system, respectively, and A ∈ Rn×n and 
+
+C ∈ Rp×n are the system matrices. The noise wt i.i.d. 
+
+∼ N (0 , W ) and vt i.i.d. 
+
+∼ N (0 , V ) with W, V ⪰ 0
+
+are the process noise and measurement noise, respectively, which are assumed to be independent. For simplicity, we assume that the initial state satisfies x0 = 0 . We also make the following assumption throughout the paper. 
+
+Assumption 2.1. The pair (A, W 1/2) is stabilizable and the pair (A, C ) is detectable. 
+
+Kalman filter for state estimation. Let ˆxKF  
+
+> t
+
+be the estimator of the state xt given by the Kalman filter. The standard form of the Kalman filter is given by the following recursion [4]: 
+
+ˆxKF  
+
+> t+1
+
+= ( A − LtC)ˆ xKF  
+
+> t
+
++ Ltyt (2) initialized with ˆxKF  
+
+> 0
+
+= 0 . The matrix Lt ∈ Rn×p is known as the Kalman gain given by 
+
+Lt = AΣtC⊤(CΣtC⊤ + V )−1, (3) and Σt is given by the following recursion initialized with Σ0 = 0 :
+
+Σt = AΣtA⊤ − AΣt−1C⊤(CΣt−1C⊤ + V )−1CΣt−1A⊤ + W. (4) It is well-known (see, e.g. [4]) that for any t ≥ 0, the Kalman filter ˆxKF  
+
+> t
+
+achieves the minimum mean square estimation error (MSEE), i.e., 
+
+ˆxKF  
+
+> t
+
+∈ arg min 
+
+> ˆxt∈σ(y0,...,y t−1)
+
+E ∥xt − ˆxt∥2 . (5) 
+
+Kalman filter for output estimation. Apart from the state estimation problem, Kalman filtering can also be used to construct an estimator (or predictor) for the output yt of system (1) as ˆyKF  
+
+> t
+
+= C ˆxKF  
+
+> t
+
+[12, 13, 18], where ˆxKF  
+
+> t
+
+is given by (2) . Note that the output estimator ˆyKF  
+
+> t
+
+inherits the optimality of the state estimator ˆxKF  
+
+> t
+
+as we argued above, i.e., for any t ≥ 0, ˆyKF  
+
+> t
+
+achieves the minimum MSEE 
+
+ˆyKF  
+
+> t
+
+∈ arg min 
+
+> ˆyt∈σ(y0,...,y t−1)
+
+E
+
+h
+
+∥yt − ˆyt∥2 i
+
+. (6) Although the Kalman filter is optimal, its implementation through the steps above relies on the complete knowledge of the system matrices A, C and the noise covariance matrices W, V . To overcome this limitation, the goal of this paper is to propose algorithms leveraging online optimization methods that learn a near-optimal filter without knowing A, C, W, V of the system. 42.1 Steady-State Kalman Filter and Truncated Filters 
+
+In this subsection, we introduce the class of filters considered in the online optimization algorithms that will be proposed in later sections. We first observe from (2) and (5) that the idea of Kalman filtering is to compute the current state estimate ˆxKF  
+
+> t
+
+based on the output history y0, . . . , y t−1.Specifically, initialized with ˆxKF  
+
+> 0
+
+= 0 , we unroll (2) to express ˆxKF as 
+
+ˆxKF  
+
+> t
+
+=
+
+> t
+
+X
+
+> s=1
+
+Ψt,s Ls−1ys−1, (7) where for any k, l ≥ Z≥0, Ψk,l ≜ (A − Lk−1C)( A − Lk−2C) × · · · × (A − LlC) if k > l and Ψk,l ≜ In if 
+
+k ≤ l. Thus, we may view Ψt,s Ls−1
+
+ 
+
+> s∈[t]
+
+as the (optimal) parameter associated with the Kalman filter 
+
+ˆxKF  
+
+> t
+
+. However, the parameter Ψt,s Ls−1
+
+ 
+
+> s∈[t]
+
+is time varying over t and its dimension grows linearly as t. To overcome these drawbacks, we adopt the steady-state version of ˆxKF  
+
+> t
+
+(see, e.g., [4, Chapter 4]) and truncate it to a fixed-length interval of the past outputs. Formally, denote 
+
+M ⋆s ≜ (A − LC )s−1L ∈ Rn×p, ∀s ≥ 1, (8) where 
+
+L = AΣC⊤(CΣC⊤ + V )−1, (9) and Σ is the unique positive semidefinite solution to the following discrete algebraic Ricatti equation: 1
+
+Σ = AΣA⊤ − AΣC⊤(CΣC⊤ + V )−1CΣA⊤ + W. (10) Defining yt = 0 for all t < 0, the steady-state Kalman filter ˆxSK  
+
+> t
+
+is given by 
+
+ˆxSK  
+
+> t
+
+=
+
+> t
+
+X
+
+> s=1
+
+M ⋆s yt−s, ∀t ≥ 0, (11) and a truncated steady-state Kalman filter ˆxTK  
+
+> t
+
+is given by 
+
+ˆxTK  
+
+> t
+
+=
+
+> h
+
+X
+
+> s=1
+
+M ⋆s yt−s, ∀t ≥ 0, (12) where h ∈ Z≥1 will be a tuning parameter in our algorithm that is kept fixed for all t. It follows from (12) that the parameter associated with ˆxTK  
+
+> t
+
+satisfies that [M ⋆s ]s∈[h] ∈ Rn×(ph ) and does not change over time t.In the remainder of this paper, we will assume that there exist known constants α0, α 1, ψ, ¯σ ∈ R>0
+
+such that 
+
+α0In ⪯ W ⪯ α1In, α 0Ip ⪯ V ⪯ α1Ip, ∥C∥ ≤ ψ, ∥Σ∥ ≤ ¯σ. (13) In addition, we denote 
+
+κF =
+
+r ¯σα0
+
+, γ F = 1 − α0
+
+2¯ σ , (14) 
+
+> 1The existence of a unique positive semidefinite solution to (10) is guaranteed by Assumption 2.1 [4, Chapter 4].
+
+5where 0 < γ F < 1 holds by definition (see Lemma E.4 in Appendix E). We now prove the following properties for the parameter M ⋆ = [ M ⋆s ]s∈[h] associated with ˆxTK  
+
+> t
+
+;the proof is included in Appendix B. 
+
+Lemma 2.1. For any s ∈ Z≥1, ∥M ⋆s ∥ ≤ κ2 
+
+> F
+
+γs−1 
+
+> F
+
+, ∥M ⋆s ∥F ≤ pmin {p, n }κ2 
+
+> F
+
+γs−1 
+
+> F
+
+and ∥M ⋆∥F ≤
+
+pmin {p, n } κ2 
+
+> F
+> 1−γF
+
+, where M ⋆s given by (8) .
+
+Lemma 2.1 shows that the dependence of ˆxTK  
+
+> t
+
+on the past information yt−s decays exponentially as s ∈ Z≥1 increases, which will guide our choice of the interval length h ∈ Z≥1 used in ˆxTK  
+
+> t
+
+. In addition, Lemma 2.1 specifies a set of matrices that the optimal parameter M ⋆ belongs to, i.e., 
+
+M ⋆ ∈ K M with 
+
+KM ≜
+
+n
+
+M = [ Ms]s∈[h] : ∥M ∥F ≤ pmin {p, n } κ2
+
+> F
+
+1 − γF
+
+o
+
+. (15) Based on the above arguments, one can show that optimizing over all M ∈ K M will give us the parameter M ⋆ in the truncated steady-state Kalman filter ˆxTK  
+
+> t
+
+; the specific form of the corresponding optimization problem will be specified later in the next subsection. The above ideas of using the steady-state version of the Kalman filter and truncating to a fixed interval can also be applied to the output estimation problem. Specifically, similarly to (11) -(12) , the steady-state Kalman filter for output estimation and its truncated version are respectively given by 
+
+ˆySK  
+
+> t
+
+=
+
+> t
+
+X
+
+> s=1
+
+N ⋆s yt−s, ∀t ≥ 0, (16) 
+
+ˆyTK  
+
+> t
+
+= C ˆxTK  
+
+> t
+
+=
+
+> h
+
+X
+
+> s=1
+
+N ⋆s yt−s, ∀t ≥ 0, (17) where we also define yt = 0 for all t < 0 and 
+
+N ⋆s ≜ C(A − LC )s−1L ∈ Rp×p, ∀s ≥ 1. (18) The following result can be proved in a similar way to Lemma 2.1. 
+
+Lemma 2.2. For any s ∈ Z≥1, ∥N ⋆s ∥ ≤ κ2 
+
+> F
+
+ψγ s−1 
+
+> F
+
+, ∥N ⋆s ∥ ≤ √pκ 2 
+
+> F
+
+ψγ s−1 
+
+> F
+
+, and ∥N ⋆∥ ≤ √pψ κ2 
+
+> F
+> 1−γF
+
+,where N ⋆ = [ N ⋆s ]s∈[h] with N ⋆s given by (18) .
+
+Finally, similarly to (15) , Lemma 2.2 specifies a set of matrices such that the optimal parameter 
+
+N ⋆ = [ N ⋆s ]s∈[h] associated with ˆyTK  
+
+> t
+
+belongs to, i.e., N ⋆ ∈ K N with 
+
+KN ≜
+
+n
+
+N = [ Ns]s∈[h] : ∥N ∥F ≤ √pψ κ2
+
+> F
+
+1 − γ2
+
+> F
+
+o
+
+. (19) 
+
+2.2 Online Optimization Framework and Problem Considered 
+
+The key to our algorithm design and analysis of learning the Kalman filter is to view the problem as an online (convex) optimization problem [19, 43]. Specifically, the basic framework of online optimization can be viewed as an interaction between a decision-maker and an environment over a time horizon of length T ∈ Z≥1. At each time step t ≥ 0, the decision-maker first chooses xt ∈ X 
+
+from an action set X ⊆ Rn and incurs a cost given by ft(xt), where ft(·) is a (convex) cost function 6that only becomes available after the action xt. The goal of the decision maker is to minimize a 
+
+regret metric defined as R(T ) = PT −1 
+
+> t=0
+
+ft(xt) − PT −1 
+
+> t=0
+
+min x∈X ft(x), which compares the cost incurred by the decision-maker and the optimal cost in hindsight, which can be obtained when the functions 
+
+f0(·), . . . , f T −1(·) are given a priori. If one can show that R(T ) = o(T ), then R(T )/T → 0 as T → ∞ ,i.e., xt approaches an optimal solution x⋆ ∈ arg min x∈X ft(x) as t → ∞ .
+
+Learning Kalman filtering for output estimation. Viewing the above framework in the language of learning Kalman filtering for output estimation, we see that at each time step t ≥ 0,the decision-maker first chooses a filter parameter Nt = [ Nt,s ]s∈[h] ∈ K N with Nt,s ∈ Rp×p and KN
+
+defined in (19) , and incurs the output estimation error ft(Nt) = ∥yt − ˆyt(Nt)∥2 with the output estimate ˆyt(Nt) = Phs=1 Nt,s yt−s.2 Since the decision-maker has access to yt at each time step t ≥ 0
+
+and ˆyt(Nt) is determined by the decision-maker, the cost function ft(·) = ∥yt − ˆyt(·)∥ is available to the decision-maker after choosing Nt for any t ≥ 0. Such a scenario corresponds to the full information setting in online optimization literature [44, 45]. In other words, at each time step 
+
+t ≥ 0, the cost function ft(·) is fully characterized, which also allows the computation of the gradient 
+
+∇ft(N ) at any point N ∈ K N . As in the general online optimization framework, our goal in the problem of learning Kalman filtering for output estimation is to minimize the following regret: 
+
+Ry(T ) =  
+
+> T−1
+
+X
+
+> t=0
+
+∥yt − ˆyt(Nt)∥2 − 
+
+> T−1
+
+X
+
+> t=0
+
+yt − ˆyKF  
+
+> t
+> 2
+
+, (20) where ˆyKF  
+
+> t
+
+is the Kalman filter for output estimation in hindsight given by (6). 
+
+Learning Kalman filtering for state estimation. Similarly, we can use the online optimization framework to describe the problem of learning Kalman filtering for state estimation. At each time step t ≥ 0, the decision-maker chooses a filter parameter Mt = [ Mt,s ]s∈[h] ∈ K M with Mt,s ∈ Rn×p
+
+and KM defined in (15) , and incurs the state estimation error ft(Mt) = ∥xt − ˆxt(Mt)∥2 with the state estimate ˆxt(Mt) = Phs=1 Mt,s yt−s. Different from output estimation, we do not have direct access to the state xt at any time step t ≥ 0, so that the problem does not correspond to the full information setting in the online optimization framework. Still, the goal in the problem of learning Kalman filtering for state estimation is to minimize the regret defined as 
+
+Rx(T ) =  
+
+> T−1
+
+X
+
+> t=0
+
+∥xt − ˆxt(Mt)∥2 − 
+
+> T−1
+
+X
+
+> t=0
+
+xt − ˆxKF  
+
+> t
+> 2
+
+, (21) where ˆxKF  
+
+> t
+
+is the Kalman filter for state estimation in hindsight given by (5) . The major challenge here is that the decision-maker does not have direct access to the cost ft(Mt) = ∥xt − ˆxt(Mt)∥2
+
+incurred after choosing Mt at each time step t ≥ 0. We will provide a remedy for this issue when we study the state estimation problem in Section 5 of the paper. 
+
+Summary of our main results. In Section 3, we characterize properties of the cost functions 
+
+ft(·) in both the output and state estimation problems, which will be useful throughout. In Section 4, we propose to use an online gradient descent algorithm for learning Kalman filtering for output estimation and show that it yields an O( log 4 T ) regret via the conditionally strong convexity of the cost function. In Section 5.1, we first characterize a fundamental limitation of learning Kalman filtering for state estimation, proving that for any online algorithm given only access to system   
+
+> 2To simplify notations in the paper, we use a single notation ft(·)to denote the objective function in different scenarios; its argument will indicate the underlying scenario that is being considered.
+
+7outputs y0, y 1, . . . , the algorithm inevitably incurs an Ω( T ) regret. In Section 5.2, we consider a scenario where the online algorithm has limited queries to more informative measurements of the system state (besides the original system output history), and propose a novel variant of online gradient descent algorithm based on random queries that achieves an ˜O(τ + √T ) regret for learning Kalman filtering for state estimation, where τ is the number of queries for informative measurements. 
+
+# 3 Cost Functions of the State and Output Estimation Problems 
+
+In this section, we elaborate on the expression of the cost functions in the state and output estimation problems. We begin with the following definitions. 
+
+Definition 3.1. (Strongly-convexity) A differentiable function f : X → R is μ-strongly convex with 
+
+μ > 0 if 
+
+f (y) − f (x) ≥ ⟨ y − x, ∇f (x)⟩ + μ
+
+2 ∥y − x∥2 , ∀x, y ∈ X .
+
+Definition 3.2. (Smoothness) A differentiable function f : X → R is β-smooth with β > 0 if 
+
+∥∇ f (y) − ∇ f (x)∥ ≤ β ∥y − x∥ , ∀x, y ∈ X .
+
+Definition 3.3. (Lipschitzness) A function f : X → R is l-Lipschitz continuous with l > 0 if 
+
+|f (y) − f (x)| ≤ l ∥y − x∥ , ∀x, y ∈ X .
+
+Some useful facts are summarized below. For a twice differentiable function f : X → R
+
+with X ⊆ Rd, it is well-known that μ-strongly convex (resp., β-smooth) as per Definition 3.1 (resp., Definition 3.2) is equivalent to ∇2f (x) ⪰ μI d (resp., ∇2f (x) ⪯ βI d) for all x ∈ X (see, e.g. [46, Chapter 3]), where we also note that ∇2f (x) ⪯ ∇2f (x) Id. Moreover, a direct consequence of β-smoothness is that f (y)−f (x) ≤ ∇ f (x)⊤(y−x)+ β 
+
+> 2
+
+∥y − x∥2 [46, Chapter 3]. For a differentiable function f : X → R, the condition ∥∇ f (x)∥ ≤ l for all x ∈ X implies that f (·) is l-Lipschitz [46, Chapter 3]. We will make the following assumption, which can also be found in existing work for learning in 
+
+partially observed LTI systems [8, 28, 40, 47]. 
+
+Assumption 3.1. The system matrix A satisfies that ρ(A) < 1, i.e., there exist κA ∈ R≥1 and 
+
+γA ∈ R with ρ(A) < γ A < 1 such that Ak ≤ κAγkA for all k ∈ Z≥0.
+
+Note that the existence of κA and γA in Assumption 3.1 follows from the Gelfand formula [48, Chapter 5]. 
+
+Cost function of the state estimation problem. Recall that in the problem of learning Kalman filtering for state estimation, the cost function is given by ft(M ) = ∥xt − ˆxt(M )∥2 with 
+
+ˆxt(M ) = Phs=1 Msyt−s and M = [ Ms]s∈[h]. Note that we may write 
+
+ˆxt(M ) = 
+
+> h
+
+X
+
+> s=1
+
+Msyt−s = [ Ms]s∈[h][y⊤
+
+> t−s
+
+]⊤
+
+> s∈[h]
+
+=  Ip ⊗ [y⊤
+
+> t−s
+
+]s∈[h]
+
+ · vec (M ),
+
+8where vec (M ) ∈ Rnph concatenates the rows of M into a (column) vector. Further denoting 
+
+Yt−1: t−h ≜ Ip ⊗ [y⊤
+
+> t−s
+
+]s∈[h], (22) for a given M ∈ Rn×(ph ), we can compactly write 
+
+ft(vec (M )) = ( Yt−1: t−hvec (M ) − xt)⊤(Yt−1: t−hvec (M ) − xt),
+
+which yields 
+
+∇ft(vec (M )) = 2 Y ⊤
+
+> t−1: t−h
+
+(Yt−1: t−hvec (M ) − xt), (23) 
+
+∇2ft(vec (M )) = 2 Y ⊤
+
+> t−1: t−h
+
+Yt−1: t−h. (24) To proceed, we introduce the following probabilistic events regarding the noise wt, v t in system (1) :
+
+Ew =
+
+n
+
+max   
+
+> 0≤t≤T−1
+
+∥wt∥ ≤ 
+
+r
+
+5 tr( W ) log 3Tδ
+
+o
+
+,
+
+Ev =
+
+n
+
+max   
+
+> 0≤t≤T−1
+
+∥vt∥ ≤ 
+
+r
+
+5 tr( V ) log 3Tδ
+
+o
+
+,
+
+(25) where δ ∈ (0 , 1) . It can be shown that the above events hold with high probability; the proof of Lemma 3.1 is given in Appendix B. 
+
+Lemma 3.1. For any T ≥ 1, P(Ew) ≥ 1 − δ/ 3, P(Ev) ≥ 1 − δ/ 3 and P(Ew ∩ E v) ≥ 1 − (2 δ)/3.
+
+For notational simplicity in the sequel, let us denote 
+
+Rx ≜
+
+r
+
+5 tr( W ) log 3Tδ · κA
+
+1 − γA
+
+,Ry ≜ ∥C∥
+
+r
+
+5 tr( W ) log 3Tδ · κA
+
+1 − γA
+
++
+
+r
+
+5 tr( V ) log 3Tδ .
+
+(26) Under the event Ew ∩ E v, we first provide the following bound on the norm of the state xt and output 
+
+yt of system (1); the proof can be found in Appendix B. 
+
+Lemma 3.2. Under the event Ew ∩ E v and for any t ∈ { 0, . . . , T − 1}, it holds that ∥xt∥ ≤ Rx,
+
+∥yt∥ ≤ Ry, and ∥Yt−1: t−h∥ ≤ √hR y.
+
+We then obtain the following properties for the cost function ft(·) in the state estimation problem; the proof can be found in Appendix B. 
+
+Lemma 3.3. For any M ∈ K M with KM defined in (15) , ∥vec (M )∥ ≤ pmin {p, n } κ2 
+
+> F
+> 1−γF
+
+. Moreover, under the event Ew ∩ E v, for any t ∈ { 0, . . . , T − 1} and any M ∈ K M ,
+
+∥∇ ft(vec (M )) ∥ ≤ 2√hR y(pmin {p, n }κ2
+
+> F
+
+√hR y
+
+1 − γF
+
++ Rx), (27) 
+
+∇2ft(vec (M )) ≤ 2hR 2
+
+> y
+
+, (28) 
+
+ft(M ) ≤ 2R2 
+
+> x
+
++ 2 hR 2 
+
+> y
+
+min {p, n }κ4
+
+> F
+
+1(1 − γF )2 . (29) 9As we discussed before, the upper bounds in Lemma 3.3 imply that ft(·) is Lipschitz and smooth. 
+
+Cost function of output estimation. Recall that in the problem of learning Kalman filtering for output estimation, the cost function is given by ft(N ) = ∥yt − ˆyt(N )∥2 with ˆyt(N ) = Phs=1 Nsyt−s
+
+and N = [ Ns]s∈[h]. Similarly to the state estimation problem, we have the following results for the cost function ft(·) in the output estimation problem; the proof is similar to that of Lemma 3.4 and is thus omitted for conciseness. 
+
+Lemma 3.4. For any N ∈ K N with KN defined in (19) , ∥vec (N )∥ ≤ √pψ κ2 
+
+> F
+> 1−γF
+
+and 
+
+ft(vec (N )) = ( Yt−1: t−hvec (N ) − yt)⊤(Yt−1: t−hvec (N ) − yt),
+
+∇ft(vec (N )) = 2 Y ⊤
+
+> t−1: t−h
+
+(Yt−1: t−hvec (N ) − yt),
+
+∇2ft(vec (N )) = 2 Y ⊤
+
+> t−1: t−h
+
+Yt−1: t−h.
+
+Moreover, under the event Ew ∩ E v, for any t ∈ { 0, . . . , T − 1} and any N ∈ K N ,
+
+∥∇ ft(vec (N )) ∥ ≤ 2√hR y(√pκ 2 
+
+> F
+
+ψ
+
+√hR y
+
+1 − γF
+
++ Ry),
+
+∇2ft(vec (N )) ≤ 2hR 2
+
+> y
+
+,ft(N ) ≤ 2R2 
+
+> y
+
++ 2 hR 2
+
+> y
+
+pκ 4 
+
+> F
+
+ψ2 1(1 − γF )2 .
+
+# 4 Learning Kalman Filtering for Output Estimation 
+
+In this section, we study the output estimation problem, which corresponds to the full information setting in the online optimization framework as we discussed in Section 2.2. Recall that the cost of the output estimation problem is given by ft(Nt) = ∥yt − ˆyt(Nt)∥2 with ˆyt(Nt) = Phs=1 Nt,s yt−s,where the filter parameter Nt = [ Nt,s ]s∈[h] is chosen from the set KN defined in (19). 
+
+Algorithm 1: Online learning for output estimation 
+
+Input: Step sizes {ηt}t≥0, truncated filter length h. 
+
+> 1
+
+Initialize N0 = 0 . 
+
+> 2
+
+for t = 0 , 1, . . . do  
+
+> 3
+
+Estimate ˆyt(Nt) = Phs=1 Nt,s yt−s 
+
+> 4
+
+Obtain ft(Nt) = ∥yt − ˆyt(Nt)∥2 
+
+> 5
+
+Update Nt+1 = Π KN (Nt − ηt∇ft(Nt)) 
+
+Output: N0, N 1, . . . .
+
+4.1 Online Learning Algorithm 
+
+We propose using the online learning algorithm (Algorithm 1), which employs the Online Gradient Descent (OGD) method. Specifically, in line 5 of the algorithm, ΠKN (·) denotes the projection of a matrix N ∈ Rp×(ph ) onto the set KN defined in (19) . Noting that ∥N ∥F = ∥vec (N )∥ for any 
+
+N ∈ Rp×(ph ), the projection of N ∈ Rp×(ph ) onto the set KN is equivalent to the projection of vec (N )
+
+onto the p2h-dimensional ball with radius √pψ κ2 
+
+> F
+> 1−γF
+
+centered around the origin. Therefore, we see that 10 the projection ΠKN (·) in line 5 of Algorithm 1 can be computed as ΠKN (N ) = √pψ κ2 
+
+> F
+> 1−γF
+
+N/ ∥N ∥F
+
+for all N ∈ Rp×(ph ).We now characterize the regret Ry(T ) defined in (20) of Algorithm 1 when applied to solve the problem of learning Kalman filtering for output estimation. 
+
+Theorem 4.1. Let the step sizes be ηt = 2(α0 log 2 T )t for all t ≥ 1 and η0 = 0 . Let the length h of the truncated filter ˆyTK  
+
+> t
+
+given by (17) be h = ⌊log T / log (1 /γ F )⌋, where γF is defined in (14) . Then, for any T > 1 and any δ ∈ (0 , 1) , it holds that Ry(T ) = O(log 4 T ), where O(·) hides polynomial factors in log 1 
+
+> δ
+
+and problem parameters p, n, ¯σ, α −10 , α 1, ψ, κA 
+
+> 1−κA
+
+, 1log(2¯ σ/ (2¯ σ−α0)) .3
+
+Challenges in the regret analysis. For the full information setting in online optimization, it has been shown in the literature that for strongly convex cost functions f0(·), . . . , f T −1(·) with 
+
+ft : Rd → R such that ∇2ft(N ) ⪰ μI d for some μ > 0, the OGD algorithm achieves log T -regret (e.g., [45]). However, since the output yt of system (1) is random (due to the noise terms wt and vt), the objective function ft(N ) = ∥yt − ˆyt(Nt)∥2 is also random given any N ∈ K N , which implies that 
+
+∇2ft(N ) ≻ 0 may no longer hold deterministically for any t. Thus, the existing results of OGD for strongly convex functions cannot be applied to our problem. In fact, using only the convexity of 
+
+ft(·) (that holds deterministically for all t ≥ 0), it was shown in [11] that OGD achieves an ˜O(√T )
+
+regret for learning Kalman filtering for output estimation (of scalar linear dynamical system), where 
+
+˜O(·) hides factors in log T .
+
+Prior knowledge required by Algorithm 1. As mentioned in (13) , we assume known constants α0, ψ, ¯σ (i.e., upper bounds on system-related matrices) so that the projection ΠKN (·) in line 5 of the algorithm can be implemented. Meanwhile, recalling from (14) that γF = √¯σα 0, setting the step sizes ηt for all t ≥ 1 and truncated filter length h as Theorem 4.1 require α0, ¯σ and the knowledge of the horizon length T . In Appendix C, we argue that using a doubling trick that has been widely used for online algorithms (see, e.g., [49]), one can remove the dependency of ηt and h
+
+on T and achieve the same O(log 4 T ) regret as Theorem 4.1 without the knowledge of T . Finally, we note that assuming known constants such as α0, ψ, ¯σ described above is typical in learning to estimate or control of unknown LTI systems [14, 50, 51]. 
+
+Comparisons to existing work. Compared to the existing work on learning the Kalman filter for output estimation [12 –15] based on least squares methods, our approach has the following advantages: 1) our algorithm design based on OGD method is conceptually simpler, and our regret analysis is also more constructive, achieving comparable regret bounds (e.g., O(log 4 T ) in [13] and 
+
+O(log 3 T ) in [15]); 2) we do not require a warm-up period in our algorithm (i.e., the regret holds for any T > 1) or the regularity assumption that the matrix A − LC in the steady-state Kalman filter (see (11) ) is diagonalizable [13 –15]; 3) our regret holds against the more general finite-step Kalman filter benchmark (see (20) ) as apposed to the steady-state Kalman filter benchmark considered in [12 –15]. While the regret bounds in [12 –15] also hold for open-loop marginally stable system, we argue later in Section 6 that our regret analysis can be extended to handle open-loop unstable system that can be stabilized with closed-loop input. Finally, we stress that the main merit of our algorithmic framework is its ability to handle the state estimation problem that will be studied in Section 5.     
+
+> 3Exact expression of Ry(T)can be found in the proof of Theorem 4.1.
+
+11 4.2 Proof of Theorem 4.1 
+
+Notations used in this proof. For notational simplicity in this proof, we assume that any filter parameter N ∈ Rp×(ph ) has been readily written in its vectorized form vec (N ) ∈ Rp2h so that we simply denote N . We also reload the notations and use ΠKN (N ) to represent the projection of a vector 
+
+N ∈ Rp2h onto KN = {N ∈ Rp2h : ∥N ∥ ≤ √pψ κ2 
+
+> F
+> 1−γF
+
+}, i.e., ΠKN (N ) = arg min N ′∈K N ∥N ′ − N ∥.The following notations will also be used in this proof: 
+
+RN ≜ √pψ κ2
+
+> F
+
+1 − γF
+
+, β y ≜ 2hR 2
+
+> y
+
+,ly ≜ 2√hR 2
+
+> y
+
+(√pψκ 2
+
+> F
+
+√h
+
+1 − γF
+
++ 1) ,
+
+(30) where Ry is defined in (26). In the following, we provide the main steps in the proof and the omitted details are included in Appendix C. We begin by introducing an auxiliary function based on conditional expectation, which will be used throughout this proof. 
+
+Definition 4.1. Let {F t}t≥0 be a filtration with Ft ≜ σ(w0, . . . , w t−1, v 0, . . . , v t−1) for t ≥ 1 and 
+
+F0 ≜ ∅. For any N ∈ Rp2h and some h ∈ Z≥0, define ft;h(N ) = E[ft(N )|F t−h] for all t ≥ h, where the expectation E[·] is taken with respect to {wt}t≥0 and {vt}t≥0.
+
+We show that the function ft;h(·) defined above has the following properties. 
+
+Lemma 4.1. For any t ≥ h, ft;h(·) is α0-strongly convex. In addition, under the event Ew ∩ E v
+
+defined in (25) , ft;h(·) is ly-Lipschitz. 
+
+Regret decomposition. We decompose the regret Ry(T ) in (20) as 
+
+Ry(T ) =  
+
+> T−1
+
+X
+
+> t=0
+
+ft(Nt) − 
+
+> T−1
+
+X
+
+> t=0
+
+yt − ˆyKF 
+
+> t
+> 2
+
+= 
+
+> T−1
+
+X
+
+> t=0
+
+ ft(Nt) − ft(N ⋆)| {z }
+
+> online optimization regret
+
++ 
+
+> T−1
+
+X
+
+> t=0
+
+ ft(N ⋆) − yt − ˆyKF  
+
+> t
+> 2
+
+| {z }
+
+> truncation & steady-state regret
+
+, (31) where ft(N ⋆) = yt − ˆyTK  
+
+> t
+> 2
+
+and the comparator point N ⋆ = [ N ⋆s ]s∈[h] with N ⋆s defined in (18) . In the sequel, we separately analyze the two regret terms in (31) that correspond to the regret incurred by the gradient-based update in Algorithm 1 and the regret incurred by the truncated Kalman filter considered in (17). 
+
+Online optimization regret. We first prove the following intermediate result, leveraging the strong convexity of ft;h(·) shown in Lemma 4.1. 
+
+Lemma 4.2. For any t ≥ h, let εst = ∇ft(Nt) − ∇ ft;h(Nt). It holds that  
+
+> T−1
+
+X
+
+> t=h
+
+ ft;h(Nt) − ft;h(N ⋆) ≤ − α0 log 2 T
+
+4 
+
+> T−1
+
+X
+
+> t=h
+
+∥Nt − N ⋆∥2 + RN α0h log 2 T
+
+2+ 
+
+> T−1
+
+X
+
+> t=h
+
+ηt
+
+2 ∥∇ ft(Nt)∥2 − 
+
+> T−1
+
+X
+
+> t=h
+
+⟨εst , N t − N ⋆⟩.
+
+12 Next, we relate ft;h(·) to ft(·) and transform the upper bound in Lemma 4.2 to an upper bound based on ft(·).
+
+Lemma 4.3. Under the event Ew ∩ E v, it holds that  
+
+> T−1
+
+X
+
+> t=h
+
+ ft(Nt) − ft(N ⋆) ≤ − α0 log 2 T
+
+4 
+
+> T−1
+
+X
+
+> t=h
+
+∥Nt − N ⋆∥2 + R2 
+
+> N
+
+α0h log 2 T
+
+2+ 
+
+> T−1
+
+X
+
+> t=h
+
+ηt
+
+2 ∥∇ ft(Nt)∥ + 8lyhα0 log 2 T (ly + RN βy)(1 + log T ) +  
+
+> T−1
+
+X
+
+> t=h
+
+Xt(N ⋆),
+
+where Xt(N ⋆) ≜ ⟨∇ (ft − ft;h)( Nt−h), N t−h − N ⋆⟩ + ( ft − ft;h)( Nt−h) + ( ft;h − ft)( N ⋆). Also, it holds that E[Xt(N ⋆)|F t−h] = 0 for all t ≥ h.
+
+To proceed, we provide a high probability upper bound on the summation of the stochastic terms 
+
+Xk(N ⋆), . . . , X T −1(N ⋆).
+
+Lemma 4.4. Suppose the event Ew ∩ E v holds. Then, for any δ ∈ (0 , 1) , the following holds with probability at least 1 − δ/ 3: 
+
+> T−1
+
+X
+
+> t=h
+
+Xt(N ⋆) ≤ 32 l2
+
+> y
+
+h log 3hδ
+
+α0 log 2 T + α0 log 2 T
+
+4 
+
+> T−1
+
+X
+
+> t=0
+
+∥Nt − N ⋆∥2 .
+
+Finally, combining Lemmas 4.3-4.4, we see that under the event Ew ∩ E v, the following holds with probability at least 1 − δ/ 3: 
+
+> T−1
+
+X
+
+> t=0
+
+ ft(Nt) − ft(N ⋆)
+
+≤
+
+> h−1
+
+X
+
+> t=0
+
+ ft(Nt) − ft(N ⋆) + α0 log 2 T
+
+4
+
+> h−1
+
+X
+
+> t=0
+
+∥Nt − N ⋆∥2 + R2 
+
+> N
+
+α0h log 2 T
+
+2+ 
+
+> T−1
+
+X
+
+> t=h
+
+ηt
+
+2 ∥∇ ft(Nt)∥2 + 8lyhα0
+
+(ly + RN βy)(1 + log T ) + 32 l2
+
+> y
+
+h log 3hδ
+
+α0(a)
+
+≤ 3R2 
+
+> N
+
+α0h
+
+2 log 2 T + 4( R2 
+
+> y
+
++ hR 2
+
+> y
+
+R2 
+
+> N
+
+)h + l2
+
+> y
+
+α0 log 2 T (1 + log T )+ 8lyhα0 log 2 T (ly + RN βy)(1 + log T ) + 32 l2
+
+> y
+
+h log 3hδ
+
+α0(b)
+
+=O(log 4 T ), (32) To obtain (a), we use the upper bound ∥N ∥ ≤ RN for any N ∈ K N shown by Lemma 3.4, the upper bound on ft(N ) for any N ∈ K N given by Lemma 3.4, and the following derivation:  
+
+> T−1
+
+X
+
+> t=h
+
+ηt
+
+2 ∥∇ ft(Nt)∥2 ≤ l2 
+
+> yT−1
+
+X
+
+> t=h
+
+1(α0 log 2 T )t
+
+≤ l2
+
+> y
+
+α0 log 2 T (1 + log T ),
+
+13 where we use the upper bound ∥ft(Nt)∥ ≤ ly from Lemma 3.4 and the choice of the step size 
+
+ηt = 2(α0 log 2 T )t for all t ≥ 1. To obtain (b), we first recall the expressions of κF , γ F in (13) and the choice of h = O(log T ), and then deduce from (26) and (30) that Ry = O(√log T ), βy = O(log 2 T ),
+
+ly = O(log 2 T ) and RN = O(1) , where O(·) hides the factors stated in Theorem 4.1. 
+
+Truncation and steady-state regret. To upper bound the truncation and steady-state regret in (31) , we first recall from our discussions in Section 2.1 that ˆyTK  
+
+> t
+
+in (17) is a truncated steady-state version of the original Kalman filter ˆyKF  
+
+> t
+
+= C ˆxKF  
+
+> t
+
+with ˆxKF  
+
+> t
+
+given by (2) . Therefore, the truncation and steady-state regret in (31) consists of two components corresponding to the truncation and the consideration of the steady-state of the Kalman filter. We have  
+
+> T−1
+
+X
+
+> t=0
+
+ ft(N ⋆) − yt − ˆyKF  
+
+> t
+> 2
+
+ = 
+
+> T−1
+
+X
+
+> t=0
+
+  yt − ˆyTK  
+
+> t
+> 2
+
+− yt − ˆySK  
+
+> t
+> 2
+
+| {z }
+
+> (i)
+
++ 
+
+> T−1
+
+X
+
+> t=0
+
+  yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+| {z }
+
+> (ii )
+
+,
+
+(33) where ˆyTK  
+
+> t
+
+and ˆySK  
+
+> t
+
+are defined in (16) and (17), respectively. We now prove the following results. 
+
+Lemma 4.5. Under the event Ew ∩ E v, it holds that  
+
+> T−1
+
+X
+
+> t=0
+
+  yt − ˆyTK  
+
+> t
+> 2
+
+− yt − ˆySK  
+
+> t
+> 2
+
+ ≤
+
+
+
+2 + √hR N + ∥L∥ ∥ C∥ κF
+
+1 − γF
+
+ R2
+
+> y
+
+κF ∥L∥ ∥ C∥
+
+1 − γF
+
+. (34) 
+
+Lemma 4.6. Under the event Ew ∩ E v, it holds that  
+
+> T−1
+
+X
+
+> t=0
+
+  yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+ = O(log 4 T ). (35) 
+
+Overall regret upper bound. Since P(Ew ∩ E v) ≥ 1 − (2 δ)/3 from Lemma 3.1 and the upper bound in (32) holds with probability at least 1 − δ/ 3, we can obtain the overall regret upper bound 
+
+O(log 4 T ) in Theorem 4.1 by combining (32) and (34) -(35) via a union bound, where we also recall the bounds ∥C∥ ≤ ψ from (13) and ∥L∥ ≤ κF from Lemma E.4. 
+
+# 5 Learning Kalman Filtering for State Estimation 
+
+In this section, we turn our attention to the state estimation problem, which is more challenging as we discussed in Section 2.2. Recall that the cost function of the state estimation problem is given by 
+
+ft(Mt) = ∥xt − ˆxt(Mt)∥2 with ˆxt(Mt) = Phs=1 Mt,s yt−s, where the filter parameter Mt = [ Mt,s ]s∈[h]
+
+is chosen from the set KM defined in (15). 
+
+5.1 Lower Bound Results 
+
+We first characterize the fundamental limitations of any algorithm for the problem of learning Kalman filtering for state estimation; the proof of Theorem 5.1 is included in Appendix D. 
+
+Theorem 5.1. Consider any (potentially randomized) algorithm for learning the Kalman filter for state estimation that only has access to the outputs y0, . . . , y t−1 when designing the state estimate ˆxt
+
+14 for each time step t ≥ 0. Let σw ∈ R>0. Then, for any T ≥ 2, there exists a scalar and stable LTI system such that Rx(T ) defined in (21) satisfies 
+
+ERx(T ) ≥ 6T σ w − 56 + 50 σw
+
+1875 σw
+
+, (36) 
+
+where E[·] is taken with respect to the potential randomness of the algorithm and {wt}t≥0, {vt}t≥0.Additionally, consider any algorithm that returns ˆxt with ∥ˆxt∥ ≤ cA for all t ≥ 0 almost surely. Then, for any T ≥ 3 and any δ ∈ (0 , 1) , it holds with probability at least 1 − δ that 
+
+Rx(T ) ≥ 6T σ w − 56 + 50 σw
+
+1875 σw
+
+− O 
+
+r
+
+T (cA + log 1.5 T ) log 3
+
+δ
+
+!
+
+. (37) 
+
+Proof idea. The proof hinges on the fact that for partially observed systems, there can be multiple systems with different system matrices A, C that yield the same output history y0, y 1, . . . 
+
+(given the same realization of the noise sequences {wt}t≥0 and {vt}t≥0). Hence, any algorithm (given only access to y0, y 1, . . . ) cannot perform well simultaneously on all such systems, i.e., any algorithm must incur large regret for at least one of such systems. Theorem 5.1 demonstrates that any algorithm for the problem of learning Kalman filtering for state estimation has to incur a regret at least Ω( T ), and the lower bound Ω( T ) holds for both expected regret and high probability regret. Thus, we know from Theorem 5.1 that the problem of learning Kalman filtering for state estimation is provably more difficult than the problem of learning output estimation studied in Section 4 and also the problem of learning LQR (with unknown system model). In particular, for the latter problem, it has been shown that an ˜O(√T ) regret is achievable [36], matching the Ω( √T ) regret lower [52]. 
+
+5.2 Online Learning Algorithm with Informative Measurements 
+
+From the fundamental limitation results given by Theorem 5.1, one cannot hope for sublinear regret in T for the state estimation problem if the online learning algorithm only has access to the outputs 
+
+y0, y 1, . . . . One natural idea is then to consider that the algorithm has access to limited yet more informative measurements from system (1) . In particular, we assume that at certain time steps 
+
+t ≥ 0, the following measurements can potentially be made available to the learner: 
+
+˜xt = xt + ˜ vt, (38) where the measurement noise satisfies that ˜vt i.i.d. 
+
+∼ N (0 , ˜V ) with ˜V ⪰ 0 and {˜vt}t≥0 is assumed to be independent of {wt}t≥0 and {vt}t≥0 in system (1) . For example, the measurement ˜xt may come from a sensor on system (1) with measurement matrix C = In or a sensor with a known and full column rank measurement matrix C ∈ Rp×n. While being more informative, it can be costly to use such a sensor to collect measurements from system (1) . This motivates us to consider the scenario where the learner may only query for the measurements ˜xt at a limited number of time steps, as will be detailed in our algorithm design next. Finally, we note that the measurement model in (38) has been widely adopted in the literature on learning for unknown linear systems [53–56]. 
+
+Description of the online learning algorithm. We now introduce Algorithm 2 for learning the Kalman filter for state estimation under the informative measurement setting introduced above. To respect the limited access to informative measurements in (38) , we leverage a randomly sampled 15 Algorithm 2: Online learning for state estimation 
+
+Input: Step sizes {ηj }j≥0, truncated filter length h, parameter τ ∈ Z≥1. 
+
+> 1
+
+Initialize M0 = 0 and j = 0 . 
+
+> 2
+
+for i = 0 , 1, . . . do  
+
+> 3
+
+Sample bi i.i.d. 
+
+∼ Unif ({0, . . . , τ − 1}) 
+
+> 4
+
+for t = iτ, . . . , (i + 1) τ − 1 do  
+
+> 5
+
+Compute ˆxt(Mt) = Phs=1 Mt−syt−s 
+
+> 6
+
+if t mod τ = bi then  
+
+> 7
+
+Query to obtain ˜xt = xt + ˜ vt 
+
+> 8
+
+Compute ˜ft(Mt) = ∥˜xt − ˆxt(Mt)∥2 
+
+> 9
+
+Update Mt+1 = Π KM (Mt − ηj ∇ ˜ft(Mt))  
+
+> 10
+
+j ← j + 1  
+
+> 11
+
+else  
+
+> 12
+
+Mt+1 = Mt
+
+Output: M0, M 1, . . . .
+
+bi i.i.d. 
+
+∼ Unif ({0, . . . , τ − 1}) in line 3 of Algorithm 2, where Unif ({0, . . . , τ − 1}) denotes a uniform distribution over the integers in {0, . . . , τ − 1} and τ is an input parameter to the algorithm. In a time interval of length τ , Algorithm 2 then queries to obtain ˜xt once when t mod τ = bi, and updates the filter parameter Mt accordingly (lines 6-10). Otherwise, Algorithm 2 keeps the same filter parameter Mt to the next time step t + 1 (line 12). Note that the update in line 9 of Algorithm 2 can be viewed as a noisy version of the update in line 5 of Algorithm 1, i.e., a noisy gradient ∇ ˜ft(Mt)
+
+is used rather than the true gradient ∇ft(Mt). Finally, note that the for loop from lines 4 to 12 in Algorithm 2 terminates when t reaches T − 1; moreover, for any horizon length T ≥ 1, Algorithm 2 queries to obtain the information measurement in (38) for at most ⌊T /τ ⌋ time steps. We now provide upper bounds on the regret Rx(T ) defined in (21) of Algorithm 2. 
+
+Theorem 5.2. Let the step sizes be ηj = 2 
+
+> α0j
+
+for all j ≥ 1 and η0 = 0 . Let the length h of the truncated filter ˆxTK  
+
+> t
+
+given by (12) be h = ⌊log T / log (1 /γ F )⌋ and let τ ≥ h, where γF is defined in (14) . Then, for any T > 1 and any δ ∈ (0 , 1) , with probability at least 1 − δ, it holds that 
+
+Rx(T ) = O τ ( log 4 T ) log (T /τ ) + √T log 2 T , where O(·) hides polynomial factors in log 1 
+
+> δ
+
+and problem parameters p, n, ¯σ, α −10 , α 1, ψ, κA 
+
+> 1−κA
+
+, 1log(2¯ σ/ (2¯ σ−α0)) , tr( ˜V ).4
+
+Trade-off between queries and regret. As can be seen from the results in Theorem 5.2, there is a clear trade-off between the value of the input parameter τ to Algorithm 2 and the overall regret of the algorithm. In particular, we may write Rx(T ) = ˜O(τ + √T ), where ˜O(·) further compresses log T factors. Recalling that ⌊T /τ ⌋ is the number of times that Algorithm 2 queries ˜xt, the algorithm achieves a sublinear regret in T provided that ⌊T /τ ⌋ is also sublinear in T . A seemly more straightforward way to reduce the queries of ˜xt in Algorithm 2 is to sample bt i.i.d. 
+
+∼ Bernoulli (1 /τ )
+
+and query for ˆxt if and only if bt = 1 . However, such a sampling scheme only guarantees ⌊T /τ ⌋
+
+number of queries for ˜xt in expectation. In contrast, our proposed sampling scheme in line 3 of    
+
+> 4Exact expression of Rx(T)can be found in the proof of Theorem 5.2.
+
+16 Algorithm 2 ensures that the number of queries is given by ⌊T /τ ⌋ deterministically, which facilitates our regret analysis in Theorem 5.2. 
+
+The role of random queries. Algorithm 2 invokes the gradient-based update for the filter parameter Mt in line 9 using the queried ˜xt, when the value of the random variable bi sampled in line 3 satisfies the condition in line 6. In our proof of Theorem 5.2 below, we crucially leverage this randomness in the gradient-based update to extend the regret over the steps when Mt is updated to 
+
+the steps over the whole time horizon t = 0 , . . . , T − 1, achieving the desired balance between the number of queries of ˜xt and the regret of Algorithm 2. Such a novel random query (or sampling) scheme also sheds light on online learning problems with costly or limited observations (e.g., [57, 58]). 
+
+Prior knowledge required by Algorithm 2. Similarly to our arguments for Algorithm 2, to achieve the regret in Theorem 5.2, Algorithm 2 requires the knowledge of α0, ψ, ¯σ given by (13) and the horizon length T . Again, we argue in Appendix D that one can use a doubling trick to achieve the same regret as Theorem 5.2 without the knowledge of T .
+
+5.3 Proof of Theorem 5.2 
+
+Notations used in this proof. Similarly to the proof of Theorem 4.1, we assume that any filter parameter M ∈ Rn×(ph ) has been readily written in its vectorized form vec (M ) ∈ Rnph so that we simply denote M . We also use ΠKM (M ) to denote the projection of a vector M ∈ Rnph onto the set KM = {M ∈ Rnph : ∥M ∥ ≤ pmin {p, n } κ2 
+
+> F
+> 1−γF
+
+}. For our analysis in this proof, we also define the following probabilistic event regarding the noise {˜vt}t≥0 in (38): 
+
+E˜v =
+
+n
+
+max   
+
+> 0≤t≤T−1
+
+∥˜vt∥ ≤ 
+
+r
+
+5 tr( ˜V ) log 12 Tδ
+
+o
+
+. (39) Using similar arguments to those for Lemma 3.1, one can show that P(E˜v) = 1 − δ/ 12 . Noting that Algorithm 2 updates the filter parameter Mt in line 9 if and only if t mod τ = bi with bi sampled in line 3 of the algorithm, we denote the set of time steps t in {0, . . . , T − 1} such Algorithm 2 updates 
+
+Mt as S = {t ≥ 0 : t mod τ = bi} = {t0, . . . , t H−1}, where H = |S| and we know from the definition of Algorithm 2 that ti ∈ { iτ, . . . , (i + 1) τ − 1} for all i ∈ { 0, . . . , H − 1}. Additionally, we denote 
+
+S′ = {tj : j ∈ [H], t j ≥ τ } = {t1, . . . , t H−1}. (40) One can check that |S| = ⌊T /τ ⌋ and |S′| = ⌊T /τ ⌋ − 1. Finally, the following notations will also be used in this proof: 
+
+RM ≜ pmin {p, n }κ2
+
+> F
+
+11 − γF
+
+, β x ≜ 2hR 2
+
+> y
+
+,lx ≜ 2√hR y(pmin {p, n }κ2
+
+> F
+
+√hR y
+
+1 − γF
+
++ Rx),R˜v ≜
+
+r
+
+5 tr( ˜V ) log 12 Tδ ,
+
+(41) where Rx and Ry are defined in (26). In the following, we provide the main steps in the proof and the omitted details are included in Appendix D. 17 Regret decomposition. Similarly to (31) in the proof of Theorem 4.1, we decompose the regret 
+
+Rx(T ) in (21) as 
+
+Rx(T ) =  
+
+> T−1
+
+X
+
+> t=0
+
+ft(Mt) − 
+
+> T−1
+
+X
+
+> t=0
+
+xt − ˆxKF 
+
+> t
+
+= 
+
+> T−1
+
+X
+
+> t=0
+
+ ft(Mt) − ft(M ⋆)| {z }
+
+> online optimization regret
+
++ 
+
+> T−1
+
+X
+
+> t=0
+
+ ft(M ⋆) − xt − ˆxKF  
+
+> t
+> 2
+
+| {z }
+
+> truncation & steady-state regret
+
+, (42) where ft(M ⋆) = xt − ˆxTK  
+
+> t
+> 2
+
+and the comparator point M ⋆ = [ M ⋆s ]s∈[h] with M ⋆s defined in (8). 
+
+Online optimization regret. Similarly to Definition 4.1, we introduce the following auxiliary function. 
+
+Definition 5.1. Let {F t}t≥0 be a filtration with Ft ≜ σ(w0, . . . , w t−1, v 0, . . . , v t−1) for t ≥ 1 and 
+
+F0 ≜ ∅. For any N ∈ Rnph and some h ∈ Z≥0, define ft;h(M ) = E[ft(M )|F t−h] for all t ≥ h, where the expectation E[·] is taken with respect to {wt}t≥0 and {vt}t≥0.
+
+Lemma 5.1. For any t ≥ h, ft;h(·) is α0-strongly convex. In addition, under the event Ew ∩ E v,
+
+ft;h(·) is lx-Lipschitz. 
+
+Similarly to Lemma 4.2, we can leverage the α0-strong convexity of ft;h(·) and prove the following result. 
+
+Lemma 5.2. For any t ≥ h, let εst = ∇ft(Mt) − ∇ ft;h(Mt) and ˜εst = ∇ ˜ft(Mt) − ∇ ft(Mt). It holds that 
+
+X 
+
+> tj∈S′
+
+ ft;h(Mtj − ft;h(M ⋆)) ≤ − α0
+
+4
+
+X 
+
+> tj∈S′
+
+Mtj − M ⋆ 2 + R2 
+
+> M
+
+α0
+
+2 + X 
+
+> tj∈S′
+
+ηj
+
+2 ∇ ˜ftj (Mtj ) 2
+
+− X 
+
+> tj∈S′
+
+⟨εstj , M tj − M ⋆⟩ − X 
+
+> tj∈S′
+
+⟨˜εstj , M tj − M ⋆⟩.
+
+Lemma 5.3. Under the event Ew ∩ E v, it holds that 
+
+X 
+
+> tj∈S′
+
+ ftj (Mtj ) − ftj (M ⋆) ≤ − α0
+
+4
+
+X 
+
+> tj∈S′
+
+Mtj − M ⋆ + R2 
+
+> M
+
+α0
+
+2 + X 
+
+> tj∈S′
+
+ηj
+
+2 ∇ ˜ftj (Mtj ) 2
+
++ 4( lx + RM βx) X 
+
+> tj∈S′
+
+Mtj − Mtj −h + X 
+
+> tj∈S′
+
+Xtj (M ⋆) − X 
+
+> tj∈S′
+
+⟨˜εstj , M tj − M ⋆⟩,
+
+where Xt(M ⋆) ≜ ⟨∇ (ft − ft;h)( Mt−h), M t−h − M ⋆⟩ + ( ft − ft;h)( Mt−h) + ( ft;h − ft)( M ⋆) for all t ≥ h.Moreover, it holds that E[Xt(M ⋆)|F t−h] = 0 for all t ≥ h.Proof. The proof follows directly from that of Lemma 4.3 by considering ft(·) and ft;h(·) in the state estimation problem and summing over tj ∈ S′. ■
+
+As we mentioned before, we now extend the regret over the time steps in S′ to the expected regret over the steps t = τ, . . . , T − 1.18 Lemma 5.4. Under the event Ew ∩ E v, it holds that 
+
+Eb
+
+h T −1X
+
+> t=τ
+
+ ft(Mt) − ft(M ⋆)i
+
+≤ − α0
+
+4 Eb
+
+h T −1X
+
+> t=k
+
+∥Mt − M ⋆∥
+
+i
+
++ R2 
+
+> M
+
+α0τ
+
+2 + Eb
+
+h T −1X
+
+> t=τ
+
+Xt(M ⋆)
+
+i
+
++ τ Eb
+
+h X  
+
+> tj∈S′
+
+ηj
+
+2 ∇ ˜ftj (Mtj ) 2 i
+
++ 4 τ (lx + RM βx)Eb
+
+h X  
+
+> tj∈S′
+
+Mtj − Mtj −h
+
+i
+
+− Eb
+
+h T −1X
+
+> t=τ
+
+⟨˜εst , M t − M ⋆⟩
+
+i
+
+,
+
+where Eb[·] denotes the expectation with respect to b0, . . . , b ⌊T /τ ⌋ sampled in line 3 of Algorithm 2. 
+
+We further upper bound various terms on the right-hand side of the inequality in Lemma 5.4. 
+
+Lemma 5.5. Suppose the event Ew ∩ E v holds and consider any δ ∈ (0 , 1) .(i) It holds with probability at least 1 − δ/ 12 that 
+
+Eb
+
+h T −1X
+
+> t=τ
+
+Xt(M ⋆)
+
+i
+
+≤ 32 l2
+
+> x
+
+h log 12 hδ
+
+α0
+
++ α0
+
+4 Eb
+
+h T −1X
+
+> t=0
+
+∥Mt − M ⋆∥
+
+i
+
+.
+
+(ii) Further supposing the event E˜v defined in (39) holds, 
+
+Eb
+
+h X  
+
+> tj∈S′
+
+ηj
+
+2 ∇ ˜ftj (Mtj ) 2 i
+
+≤ (lx + 2 √hR yR˜v)2
+
+α0
+
+ 1 + log ⌊T /τ ⌋.
+
+(iii) It holds that 
+
+Eb
+
+h X  
+
+> tj∈S′
+
+Mtj − Mtj −h
+
+i
+
+≤ lx + 2 √hR yR˜v
+
+α0
+
+ 1 + log ⌊T /τ ⌋.
+
+(iv) Further supposing the event E˜v holds, the following holds with probability at least 1 − δ/ 12 :
+
+−Eb
+
+h T −1X
+
+> t=τ
+
+⟨˜εst , M t − M ⋆⟩
+
+i
+
+≤ 4√hR yR˜vRM
+
+r
+
+T log 12 
+
+δ .
+
+Finally, we relate the expected regret to high probability regret. 
+
+Lemma 5.6. Under the event Ew ∩ E v, it holds with probability at least 1 − δ/ 12 that  
+
+> T−1
+
+X
+
+> t=τ
+
+
+
+ft(Mt) − ft(M ⋆) − Eb
+
+ft(Mt) − ft(M ⋆)
+
+≤  8R2 
+
+> x
+
++ 8 hR 2
+
+> y
+
+R2
+
+> M
+
+r
+
+2T log 24 
+
+δ . (43) Recalling from Lemma 3.1 that P(Ew ∩ E v) ≥ 1 − 2δ/ 3 and P(E˜v) ≥ 1 − δ/ 12 as argued at the beginning of Section 5.3, we can combine Lemmas 5.4-5.6 and obtain from a union bound that under the event Ew ∩ E v, the following holds with probability at least 1 − δ/ 3: 
+
+> T−1
+
+X
+
+> t=τ
+
+ ft(Mt) − ft(M ⋆) = O τ (log 4 T ) log( T /τ ) + √T log 2 T ,
+
+19 where we again use the facts deduced from (13) -(14) , (26) and (41) that h = O(log T ), lx = O(log 2 T ),
+
+Ry = O(√log T ), R˜v = O(√log T ), βx = O( log 2 T ) and RM = O(1) , where O(·) hides the factors stated in Theorem 5.2. In addition, we get from Lemma 3.3 that under the event Ew ∩ E v, 
+
+> τ−1
+
+X
+
+> t=0
+
+ ft(Mt) − ft(M ⋆) ≤ τ (R2 
+
+> x
+
++ 4 hR 2
+
+> y
+
+R2 
+
+> M
+
+) = O(τ log 2 T ).
+
+Combining the above two inequalities, we obtain that under the event Ew ∩ E v, the following holds with probability at least 1 − δ/ 3: 
+
+> T−1
+
+X
+
+> t=0
+
+ ft(Mt) − ft(M ⋆) = O τ (log 4 T ) log( T /τ ) + √T log 2 T , (44) which completes upper bounding the online optimization regret in (42). 
+
+Truncation and steady-state regret. Investigating the proofs of Lemma 4.5-4.6, one can observe that the proofs also show that under the event Ew ∩ E v, 
+
+> T−1
+
+X
+
+> t=0
+
+ ft(M ⋆) − xt − ˆxKF  
+
+> t
+> 2
+
+ = O(log 4 T ). (45) 
+
+Overall regret upper bound. Combining (44) -(45) and noting that P(Ew ∩ E v) ≥ 1 − 2/(3 δ),we complete the proof of Theorem 5.2. 
+
+# 6 Extensions and Further Comparisons to Existing work 
+
+In this section, we extend our algorithmic framework and regret analysis to (open-loop) unstable system and non-Gaussian noise cases. 
+
+6.1 Unstable System with Closed-Loop Input 
+
+While the Kalman filter can be applied to estimate the state of potentially unstable system [4], the unboundedness of the state of unstable system could make the task of state estimation vacuous, and closed-loop inputs can thus be applied to make the system stable beforehand [32]. Existing work on learning the Kalman filter can only handle open-loop (marginally) stable system without any external inputs [13, 31] or with only open-loop bounded inputs [12, 14, 15]. Note that when there are inputs ut to system (1) , the state equation is given by xt+1 = Ax t + Bu t + wt. In contrast with the aforementioned work, our algorithm design and regret analysis extend gracefully to open-loop unstable systems that can be stabilized by a static or dynamic output feedback controller [39,59 –62]. 5
+
+Specifically, our current regret analysis for Theorems 4.1 and 5.2 holds under an O(√log T ) bound on the system state norm ∥xt∥ for all t ∈ { 0, . . . , T − 1}, which is a consequence of the assumption that 
+
+A is stable. One can show that such an O(√log T ) bound on ∥xt∥ still holds when the closed-loop system is stable under the output feedback controls described above. Finally, extending to open-loop                                           
+
+> 5A static output feedback controller is of the form ut=Ky tfor some K∈Rm×pand the closed-loop system is stable if ρ(A−BKC )<1[60]. A dynamic output feedback controller is of the form ut=CKst, where stby design is the state of another dynamical system st+1 =AKst+BKyt,AK∈Rn×n,BK∈Rn×p,CK∈Rm×nand the closed-loop system is stable if an augmented system matrix depending on AK, B K, C Kis stable [39].
+
+20 unstable system with closed-loop input is generally not possible for the existing works that use least squares methods to learn the filter parameter, since the analysis of these methods typically relies on certain persistency excitation conditions that may not hold under closed-loop inputs [13]. 
+
+6.2 Non-Gaussian Noise and Beyond 
+
+Our current regrets in Theorems 4.1 and 5.2 hold when the noise sequences {wt}t≥0 and {vt}t≥0 are i.i.d. Gaussian. To achieve the regret results in Theorems 4.1 and 5.2, we leverage two properties of the Gaussian noise. First, we prove in Lemma 3.1 that ∥wt∥ and ∥vt∥ are bounded by some 
+
+log T -factor (with high probability), which further leads to the log T -factor bound on ∥xt∥ for all 
+
+t ∈ { 0, . . . , T − 1}. Second, leveraging the lower bound on the noise covariance λmin (V ) ≥ α0 > 0,we show, e.g., in Lemma 4.1 that the output estimation error ft(·) is conditionally strongly-convex. Hence, if other types of noise distributions are considered, as long as the stochastic noise {wt}t≥0 and 
+
+{vt}t≥0 posses the above two properties (examples include sub-Gaussian noise or bounded stochastic noise [63]), the regret results in Theorems 4.1 and 5.2 continue to hold (with a possibly inflation in the power of the log T -factor). Besides stochastic noise, one may also consider potentially adversarially generated non-stochastic noise {wt}t≥0 and {vt}t≥0 with bounded norm [64, 65] (e.g., a constant or a log T upper bound). Since the non-stochastic noise does not have a covariance matrix, we lose the aforementioned conditional strong convexity of the estimation error cost functions. However, the cost functions in both the output and state estimation problems are always convex (as they are quadratic), one can use this convexity to show ˜O(√T ) and ˜O(√τ T ) regret for Algorithms 1 and 2, when applied to solving learning Kalman filtering for output and state estimation, respectively. Note that the regret performance degradation is typical when moving from stochastic noise with positive definite covariance to non-stochastic noise [12, 64]. We leave a formal treatment of non-stochastic noise as future work. Finally, we remark that when considering non-Gaussian or non-stochastic noise, the Kalman filter in hindsight loses its global optimality in terms of minimizing the MSEE but is optimal within the class of linear state estimators [4, Chapter 5]. In addition, the methods based on least squares proposed in [10,12,14] cannot directly handle non-stochastic noise, as the analysis there relies on more subtle properties inherited from the stochastic noise. Existing works that can handle non-stochastic noise only focus on the problem of learning output estimation [11, 16]. 
+
+# 7 Numerical Experiments 
+
+In this section, we validate the theoretical results provided in Theorems 4.1 and 5.2 for Algorithms 1 and 2, respectively. 
+
+7.1 Output Estimation 
+
+To validate the regret bound provided in Theorem 4.1, we use randomly generated instances of system (1) . Specifically, we generate random system matrices A ∈ R4×4 and C ∈ R2×4, where the entries of these matrices are drawn uniformly from (0 , 1) and the matrix A is scaled to have 
+
+ρ(A) = 0 .9. The covariance matrices of the Gaussian noise {wt}t≥0 and {vt}t≥0 are set to be 
+
+W = 0 .25 I4 and V = 0 .25 I2, respectively. We test the performance of Algorithm 1 when applied to solve the above problem instances for the problem of learning Kalman filtering for output estimation, 21 (a) Ry(T ) v.s. T (b) Ry(T )/ log 4 T v.s. T
+
+Figure 1: The regret of Algorithm 1 for learning Kalman filtering for output estimation. where we set the step sizes ηt = 1(log 2 T )t for all t ≥ 1 with η0 = 0 and set the truncated filter length 
+
+h = ⌊log T ⌋ according to Theorem 4.1. We plot curves pertaining to the regret Ry(T ) defined in (20) of Algorithm 1 in Fig. 1, where we vary T from 1 to 3000 and conduct 50 independent experiments. We see from Fig. 1(a)-(b) that Ry(T ) scales as log 4 T , as the curve Ry(T )/ log 4 T in Fig. 1(b) becomes flat as T increases, which matches our regret bound Ry(T ) = O( log 4 T ) provided in Theorem 4.1 and shows that the regret bound Ry(T ) = O(log 4 T ) is also tight when Algorithm 1 is applied to solve the problem instances constructed above. 
+
+7.2 State Estimation 
+
+To validate the regret bound provided in Theorem 5.2, we use the example of longitudinal flight control of Boeing 747 with linearized dynamics given by (see, e.g., [37, 66]) 
+
+A =
+
+
+
+0.99 0.03 −0.02 −0.32 0.01 0.47 4.7 0.00.02 −0.06 0.4 0.00.01 −0.04 0.72 0.99 
+
+ , B =
+
+
+
+0.01 0.99 
+
+−3.44 1.66 
+
+−0.83 0.44 
+
+−0.47 0.25 
+
+ , C =
+
+
+
+1 0 0 00 1 0 00 0 1 0
+
+ .
+
+The system state xt is represented by a four-dimensional vector. Its components correspond to the aircraft’s velocity along the body axis, the velocity perpendicular to the body axis, the pitch angle (defined as the angle between the body axis and the horizontal), and the aircraft’s angular velocity, respectively. Furthermore, the system is driven by a two-dimensional control input consisting of the elevator angle and the engine thrust. We set the covariance matrices of the Gaussian noise {wt}t≥0
+
+and {vt}t≥0 to be W = 0 .0025 I4 and V = 0 .0025 I3, respectively. Given the above system matrices A, B, C , we find an output feedback control ut = KCy t such that the closed-loop system A + BKC is stable, and apply Algorithm 2 to the closed-loop system for the problem of learning Kalman filtering for state estimation (see also our discussions in Section 6). We set the step sizes ηj = 1 
+
+> j
+
+for all j ≥ 1 with η0 = 0 and set the truncated filter length h = ⌊log T ⌋.Additionally, we set τ = ⌊√T ⌋ in Algorithm 2 (i.e., the number of queries for the informative measurement ˜xt in (38) is bounded by ⌊T /τ ⌋ = ⌊√T ⌋). In Fig 2, we plot curves pertaining to the regret Rx(T ) defined in (21) of Algorithm 2, where we vary T from 1 to 3000 and conduct 50 
+
+22 (a) Rx(T ) v.s. T (b) Rx(T )/√T v.s. T
+
+Figure 2: The regret of Algorithm 2 for learning Kalman filtering for state estimation. independent experiments. Noting that the curve Rx(T )/√T in Fig. 2(b) yields a log T tendency with respect to T , the results in Fig. 2 again match our regret bound Rx(T ) = ˜O(√T ) under the choice of 
+
+τ = ⌊√T ⌋ (with ˜O(·) hiding log T -factors) provided in Theorem 5.2 and show that the √T -factor in the regret bound is also tight when Algorithm 2 is applied to the above Boeing 747 example. 
+
+# 8 Conclusion 
+
+We provided a unified online learning algorithmic framework that solves both the problems of learning Kalman filtering for output estimation and state estimation in unknown linear dynamical systems. While achieving comparable regret to existing work on learning Kalman filtering for output estimation, our proposed algorithm and regret analysis are conceptually simpler and more constructive in that they rely on certain generic properties of the estimation error cost function such as strongly-convexity that we have shown to hold. Our main contribution is to solve the state estimation scenario, which is also an open problem in the literature. While we showed that achieving a sublinear regret is impossible in general, by introducing an addition query access to more informative measurements of the system state, we showed that a sublinear regret is achievable, successfully balancing queries and performance. Our algorithm and result also shed light on online learning problems with limited or costly observations or feedback. Future work includes moving beyond linear systems to nonlinear systems and considering learning extended Kalman filtering or more general output/state estimators. 
+
+# References 
+
+[1] Andrew C Harvey. Forecasting, structural time series models and the Kalman filter. 1990. [2] Jacques JF Commandeur and Siem Jan Koopman. An introduction to state space time series analysis . Oxford university press, 2007. [3] R. E. Kalman. A new approach to linear filtering and prediction problems. Journal of Basic Engineering , 82(1):35–45, 03 1960. 23 [4] Brian DO Anderson and John B Moore. Optimal filtering . Courier Corporation, 2005. [5] Steven L. Brunton and J. Nathan Kutz. Data-Driven Science and Engineering: Machine Learning, Dynamical Systems, and Control . Cambridge University Press, Cambridge, 2019. [6] Lennart Ljung. System Identification: Theory for the User . Prentice Hall, Upper Saddle River, NJ, 2nd edition, 1999. [7] Herbert A Simon. Dynamic programming under uncertainty with a quadratic criterion function. 
+
+Econometrica , 24(1):74–81, 1956. [8] Samet Oymak and Necmiye Ozay. Revisiting Ho–Kalman-based system identification: Robust-ness and finite-sample analysis. IEEE Transactions on Automatic Control , 67(4):1914–1928, 2021. [9] Stephen Tu, Ross Boczar, Max Simchowitz, Mahdi Soltanolkotabi, and Ben Recht. Low-rank solutions of linear matrix equations via procrustes flow. In International conference on machine learning , pages 964–973. PMLR, 2016. [10] Anastasios Tsiamis, Nikolai Matni, and George Pappas. Sample complexity of Kalman filtering for unknown systems. In Learning for Dynamics and Control , pages 435–444. PMLR, 2020. [11] Mark Kozdoba, Jakub Marecek, Tigran Tchrakian, and Shie Mannor. On-line learning of linear dynamical systems: Exponential forgetting in Kalman filters. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 33, pages 4098–4105, 2019. [12] Udaya Ghai, Holden Lee, Karan Singh, Cyril Zhang, and Yi Zhang. No-regret prediction in marginally stable systems. In Conference on Learning Theory , pages 1714–1757. PMLR, 2020. [13] Anastasios Tsiamis and George J Pappas. Online learning of the Kalman filter with logarithmic regret. IEEE Transactions on Automatic Control , 68(5):2774–2789, 2022. [14] Paria Rashidinejad, Jiantao Jiao, and Stuart Russell. Slip: Learning to predict in unknown dynamical systems with long-term memory. Advances in Neural Information Processing Systems ,33:5716–5728, 2020. [15] Jiachen Qian and Yang Zheng. Model-free online learning for the Kalman filter: Forgetting factor and logarithmic regret. arXiv preprint arXiv:2505.08982 , 2025. [16] Elad Hazan, Karan Singh, and Cyril Zhang. Learning linear dynamical systems via spectral filtering. Advances in Neural Information Processing Systems , 30, 2017. [17] Moritz Hardt, Tengyu Ma, and Benjamin Recht. Gradient descent learns linear dynamical systems. Journal of Machine Learning Research , 19(29):1–44, 2018. [18] Elad Hazan, Holden Lee, Karan Singh, Cyril Zhang, and Yi Zhang. Spectral filtering for general linear dynamical systems. Advances in Neural Information Processing Systems , 31, 2018. [19] Elad Hazan et al. Introduction to online convex optimization. Foundations and Trends ® in Optimization , 2(3-4):157–325, 2016. 24 [20] Shai Shalev-Shwartz. Online learning and online convex optimization. Foundations and Trends ®
+
+in Machine Learning , 4(2):107–194, 2025. [21] Lennart Ljung. Convergence of an adaptive filter algorithm. International Journal of Control ,27(5):673–693, 1978. [22] Wayne A Fuller and David P Hasza. Predictors for the first-order autoregressive process. Journal of Econometrics , 13(2):139–157, 1980. [23] Ching-Zong Wei. Adaptive prediction by least squares predictors in stochastic regression models with applications to time series. The Annals of Statistics , pages 1667–1682, 1987. [24] Tze Leung Lai and Zhiliang Ying. Recursive identification and adaptive prediction in linear stochastic systems. SIAM Journal on Control and Optimization , 29(5):1061–1090, 1991. [25] Feng Ding, Yang Shi, and Tongwen Chen. Performance analysis of estimation algorithms of nonstationary arma processes. IEEE Transactions on Signal Processing , 54(3):1041–1053, 2006. [26] Anastasios Tsiamis, Ingvar Ziemann, Nikolai Matni, and George J Pappas. Statistical learning theory for control: A finite-sample perspective. IEEE Control Systems Magazine , 43(6):67–97, 2023. [27] Mohamad Kazem Shirani Faradonbeh, Ambuj Tewari, and George Michailidis. Finite time identification in unstable linear systems. Automatica , 96:342–353, 2018. [28] Tuhin Sarkar, Alexander Rakhlin, and Munther A Dahleh. Finite time lti system identification. 
+
+Journal of Machine Learning Research , 22(26):1–61, 2021. [29] Yassir Jedra and Alexandre Proutiere. Finite-time identification of linear systems: Fundamental limits and optimal algorithms. IEEE Transactions on Automatic Control , 68(5):2805–2820, 2022. [30] Xiangyuan Zhang, Bin Hu, and Tamer Başar. Learning the Kalman filter with fine-grained sample complexity. In 2023 American Control Conference (ACC) , pages 4549–4554. IEEE, 2023. [31] Jack Umenberger, Max Simchowitz, Juan Perdomo, Kaiqing Zhang, and Russ Tedrake. Globally convergent policy search for output estimation. Advances in Neural Information Processing Systems , 35:22778–22790, 2022. [32] Brian DO Anderson and John B Moore. Optimal control: linear quadratic methods . Courier Corporation, 2007. [33] Yasin Abbasi-Yadkori and Csaba Szepesvári. Regret bounds for the adaptive control of linear quadratic systems. In Proceedings of the 24th Annual Conference on Learning Theory , pages 1–26. JMLR Workshop and Conference Proceedings, 2011. [34] Mohamad Kazem Shirani Faradonbeh, Ambuj Tewari, and George Michailidis. Optimism-based adaptive regulation of linear-quadratic systems. IEEE Transactions on Automatic Control ,66(4):1802–1808, 2020. 25 [35] Sarah Dean, Horia Mania, Nikolai Matni, Benjamin Recht, and Stephen Tu. On the sample complexity of the linear quadratic regulator. Foundations of Computational Mathematics ,20(4):633–679, 2020. [36] Horia Mania, Stephen Tu, and Benjamin Recht. Certainty equivalence is efficient for linear quadratic control. Advances in Neural Information Processing Systems , 32:10154–10164, 2019. [37] Taylan Kargin, Sahin Lale, Kamyar Azizzadenesheli, Animashree Anandkumar, and Babak Hassibi. Thompson sampling achieves ˜O(√T ) regret in linear quadratic control. In Conference on Learning Theory , pages 3235–3284. PMLR, 2022. [38] Lintao Ye, Ming Chi, Zhi-Wei Liu, and Vijay Gupta. Online actuator selection and controller design for linear quadratic regulation with an unknown system model. IEEE Transactions on Automatic Control , 70(1):18–33, 2024. [39] Yujie Tang, Yang Zheng, and Na Li. Analysis of the optimization landscape of linear quadratic gaussian (lqg) control. Mathematical Programming , 202(1):399–444, 2023. [40] Lintao Ye, Ming Chi, Ruiquan Liao, and Vijay Gupta. Learning decentralized linear quadratic regulators with √T -regret. SIAM Journal on Control and Optimization , 62(6):3341–3368, 2024. [41] Salar Fattahi, Nikolai Matni, and Somayeh Sojoudi. Efficient learning of distributed linear-quadratic control policies. SIAM Journal on Control and Optimization , 58(5):2927–2951, 2020. [42] Lintao Ye, Hao Zhu, and Vijay Gupta. On the sample complexity of decentralized linear quadratic regulator with partially nested information structure. IEEE Transactions on Automatic Control ,68(8):4841–4856, 2022. [43] Shai Shalev-Shwartz et al. Online learning and online convex optimization. Foundations and Trends ® in Machine Learning , 4(2):107–194, 2012. [44] Martin Zinkevich. Online convex programming and generalized infinitesimal gradient ascent. In 
+
+Proceedings of the 20th international conference on machine learning (icml-03) , pages 928–936, 2003. [45] Elad Hazan, Amit Agarwal, and Satyen Kale. Logarithmic regret algorithms for online convex optimization. Machine Learning , 69(2):169–192, 2007. [46] Sébastien Bubeck et al. Convex optimization: Algorithms and complexity. Foundations and Trends ® in Machine Learning , 8(3-4):231–357, 2015. [47] Sahin Lale, Kamyar Azizzadenesheli, Babak Hassibi, and Anima Anandkumar. Logarithmic regret bound in partially observable linear dynamical systems. Advances in Neural Information Processing Systems , 33:20876–20888, 2020. [48] Roger A Horn and Charles R Johnson. Matrix analysis . Cambridge university press, 2012. [49] Tor Lattimore and Csaba Szepesvári. Bandit algorithms . Cambridge University Press, 2020. [50] Alon Cohen, Tomer Koren, and Yishay Mansour. Learning linear-quadratic regulators efficiently with only √T regret. In International Conference on Machine Learning , pages 1300–1309. PMLR, 2019. 26 [51] Asaf B Cassel and Tomer Koren. Online policy gradient for model free learning of linear quadratic regulators with √T regret. In International Conference on Machine Learning , pages 1304–1313, 2021. [52] Max Simchowitz and Dylan Foster. Naive exploration is optimal for online lqr. In International Conference on Machine Learning , pages 8937–8948. PMLR, 2020. [53] Torsten Söderström. Errors-in-variables methods in system identification. Automatica , 43(6):939– 958, 2007. [54] Masoud Moravej Khorasani and Erik Weyer. Non-asymptotic confidence regions for the parameters of eiv systems. Automatica , 115:108873, 2020. [55] Marko Nonhoff, Emiliano Dall’Anese, and Matthias A Müller. Online convex optimization for robust control of constrained dynamical systems. arXiv preprint arXiv:2401.04487 , 2024. [56] Yuyang Zhang, Xinhe Zhang, Jia Liu, and Na Li. Sample efficient algorithms for linear system identification under noisy observations. arXiv preprint arXiv:2504.09057 , 2025. [57] Elad Hazan and Tomer Koren. Linear regression with limited observation. In Proceedings of the 29th International Coference on International Conference on Machine Learning , pages 1865–1872, 2012. [58] Saeed Ghoorchian, Evgenii Kortukov, and Setareh Maghsudi. Contextual multi-armed bandit with costly feature observation in non-stationary environments. IEEE Open Journal of Signal Processing , 5:820–830, 2024. [59] Joao P Hespanha. Linear systems theory . Princeton university press, 2018. [60] Ilyas Fatkhullin and Boris Polyak. Optimizing static linear feedback: Gradient method. SIAM Journal on Control and Optimization , 59(5):3887–3911, 2021. [61] Jingliang Duan, Wenhan Cao, Yang Zheng, and Lin Zhao. On the optimization landscape of dynamic output feedback linear quadratic control. IEEE Transactions on Automatic Control ,69(2):920–935, 2023. [62] Ankang Zhang, Ming Chi, Xiaoling Wang, and Lintao Ye. Model-free output feedback stabiliza-tion via policy gradient methods. arXiv preprint arXiv:2601.19284 , 2026. [63] Roman Vershynin. High-dimensional probability: An introduction with applications in data science , volume 47. Cambridge university press, 2018. [64] Max Simchowitz, Karan Singh, and Elad Hazan. Improper learning for non-stochastic control. In Conference on Learning Theory , pages 3320–3436. PMLR, 2020. [65] Elad Hazan and Karan Singh. Introduction to online control. 2025. [66] Tadashi Ishihara, Hai-Jiao Guo, and Hiroshi Takeda. A design of discrete-time integral controllers with computation delays via loop transfer recovery. Automatica , 28(3):599–603, 1992. [67] Nikhil Bansal and Anupam Gupta. Potential-function proofs for gradient methods. Theory of Computing , 15(1):1–32, 2019. 27 [68] Andrew Chi-Chin Yao. Probabilistic computations: Toward a unified measure of complexity. In 
+
+18th Annual Symposium on Foundations of Computer Science (sfcs 1977) , pages 222–227. IEEE Computer Society, 1977. [69] Sanjeev Arora and Boaz Barak. Computational complexity: a modern approach . Cambridge University Press, 2009. [70] Ramon Van Handel. Probability in high dimension. Lecture Notes (Princeton University) ,2(3):2–3, 2014. 28 Appendix Contents 
+
+1 Introduction 12 Problem Formulation and Preliminaries 4
+
+2.1 Steady-State Kalman Filter and Truncated Filters . . . . . . . . . . . . . . . . . . . 52.2 Online Optimization Framework and Problem Considered . . . . . . . . . . . . . . . 6
+
+3 Cost Functions of the State and Output Estimation Problems 84 Learning Kalman Filtering for Output Estimation 10 
+
+4.1 Online Learning Algorithm . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10 4.2 Proof of Theorem 4.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12 
+
+5 Learning Kalman Filtering for State Estimation 14 
+
+5.1 Lower Bound Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 5.2 Online Learning Algorithm with Informative Measurements . . . . . . . . . . . . . . 15 5.3 Proof of Theorem 5.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17 
+
+6 Extensions and Further Comparisons to Existing work 20 
+
+6.1 Unstable System with Closed-Loop Input . . . . . . . . . . . . . . . . . . . . . . . . 20 6.2 Non-Gaussian Noise and Beyond . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 
+
+7 Numerical Experiments 21 
+
+7.1 Output Estimation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 7.2 State Estimation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 
+
+8 Conclusion 23 A Organization of Appendix and Notations 30 B Proofs of Preliminary Results 31 
+
+B.1 Proof of Lemma 2.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 B.2 Proof of Lemma 3.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 B.3 Proof of Lemma 3.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 B.4 Proof of Lemma 3.3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 
+
+C Omitted Proofs and Discussions in Section 4 for Output Estimation 33 
+
+C.1 Proof of Lemma 4.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 33 C.2 Proof of Lemma 4.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34 C.3 Proof of Lemma 4.3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35 C.4 Proof of Lemma 4.4 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37 C.5 Proof of Lemma 4.5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 38 C.6 Proof of Lemma 4.6 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39 C.7 Doubling Trick to Remove the Knowledge of T in Algorithm 1 . . . . . . . . . . . . . 43 29 D Omitted Proofs and Discussions in Section 5 for State Estimation 44 
+
+D.1 Proof of Theorem 5.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44 D.2 Proof of Lemma 5.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 50 D.3 Proof of Lemma 5.2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 50 D.4 Proof of Lemma 5.4 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 51 D.5 Proof of Lemma 5.5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 52 D.6 Proof of Lemma 5.6 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 54 D.7 Doubling Trick to Remove the Knowledge of T in Algorithm 2 . . . . . . . . . . . . . 54 
+
+E Technical Lemmas 54 
+
+E.1 Statistical Inequalities . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 54 E.2 Kalman Filter Properties . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 55 E.3 Matrix and Algebra . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 58 
+
+# A Organization of Appendix and Notations 
+
+In Appendix B, we provide the proofs of several preliminary results stated in Sections 2-3, including properties of the truncated steady-state Kalman filter ˆxTK  
+
+> t
+
+introduced in (12) and properties of estimation error cost function ft(·). In Appendix C, we provide proofs pertaining to the regret bound of Algorithm 1 when applied to the problem of learning Kalman filtering for output estimation. In Appendix D, we provide the proof of the regret lower bounds for learning Kalman filtering for state estimation and the proofs pertaining to the regret bounds of Algorithm 2 when applied to solve the problem of learning Kalman filtering for state estimation. In Appendix E, we prove some technical lemmas that are used in the proofs of our main results. Table 1: Notations 
+
+Notation Definition 
+
+KN , KM Sets of candidate filter parameters for output and state estimation, resp. 
+
+RN , R M Upper bounds on the norm of filter parameters in KN and KM , resp. 
+
+βy, l y Smooth and Lipschitz parameters of ft(N ) in output estimation, resp. 
+
+Rx, R y Upper bounds on the norm of state and output of system (1), resp. 
+
+R˜v Upper bound on the noise in the informative measurements given by (38) 
+
+α0, α 1, ψ, ¯σ Bounds on system parameters given in (13) 
+
+N ⋆ = [ N ⋆s ]s∈[h] The optimal filter parameter of ˆyTK  
+
+> t
+
+given in (17) 
+
+M ⋆ = [ M ⋆s ]s∈[h] The optimal filter parameter of ˆxTK  
+
+> t
+
+given in (12) 
+
+κA, γ A Parameters pertaining to matrix A described in Assumption 3.1 
+
+κF , γ F Parameters pertaining to the Kalman filter given in (14) 
+
+ˆxSK  
+
+> t
+
+, ˆySK  
+
+> t
+
+Steady-state Kalman filter given in (11) and (16), resp. 
+
+Yt−1: t−h Matrix form of past output history given in (22) 30 B Proofs of Preliminary Results 
+
+B.1 Proof of Lemma 2.1 
+
+Recalling that M ⋆s = ( A − LC )s−1L ∈ Rn×p for all s ∈ [h], we have 
+
+∥M ⋆s ∥ = (A − LC )s−1L
+
+≤ (A − LC )s−1 ∥L∥≤ κ2 
+
+> F
+
+γs−1 
+
+> F
+
+,
+
+where the last relation uses Lemma E.4. Noting the basic inequality ∥P ∥2 
+
+> F
+
+≤ min {m, n } ∥ P ∥2 for any P ∈ Rm×n, we have ∥M ⋆s ∥F ≤ pmin {p, n }κ2 
+
+> F
+
+γs−1 
+
+> F
+
+for all s ∈ [h]. Moreover, we have 
+
+∥M ⋆∥F = [M ⋆s ]s∈[h] F
+
+≤   hX
+
+> s=1
+
+∥M ⋆s ∥2
+
+> F
+
+1/2
+
+≤   min {p, n }κ4
+
+> Fh
+
+X
+
+> s=1
+
+γ2( s−1) 
+
+> F
+
+1/2
+
+≤ pmin {p, n } κ2
+
+> F
+
+1 − γF
+
+.
+
+■
+
+B.2 Proof of Lemma 3.1 
+
+Recall that the process noise satisfies that wt i.i.d. 
+
+∼ KN (0 , W ). For any t ∈ { 0, . . . , T − 1}, it then follows from Lemma E.1 in Appendix E that ∥wt∥ ≤ 
+
+q
+
+5 tr( W ) log 3Tδ with probability at least 
+
+1 − δ/ (3 T ). By a union bound over all t ∈ { 0, . . . , T − 1}, we get that P(Ew) ≥ 1 − δ/ 3. Similarly, we can show P(Ev) ≥ 1 − δ/ 3. Further taking a union bound yields that P(Ew ∩ E v) ≥ 1 − (2 δ)/3.■
+
+B.3 Proof of Lemma 3.2 
+
+Unrolling (1) for t ∈ { 0, . . . , T − 1} and recalling the assumption that x0 = 0 , we get 
+
+xt =
+
+> t−1
+
+X
+
+> s=0
+
+At−(s+1) ws. (B.1) 31 Suppose the event Ew ∩ E v holds. It follows from (25) and Assumption 3.1 that 
+
+∥xt∥ =
+
+> t−1
+
+X
+
+> s=0
+
+At−(s+1) ws
+
+≤
+
+> t−1
+
+X
+
+> s=0
+
+At−(s+1) ∥ws∥≤
+
+r
+
+5 tr( W ) log 3Tδ
+
+> t−1
+
+X
+
+> s=0
+
+κAγt−(s+1) 
+
+> A
+
+≤
+
+r
+
+5 tr( W ) log 3Tδ · κA
+
+1 − γA
+
+.
+
+In addition, we have 
+
+∥yt∥ =  C
+
+> t−1
+
+X
+
+> s=0
+
+At−(s+1) ws
+
+ + vt
+
+≤ ∥ C∥
+
+r
+
+5 tr( W ) log 3Tδ · κA
+
+1 − γA
+
++
+
+r
+
+5 tr( V ) log 3Tδ .
+
+Finally, recall from (22) that Yt−1: t−h = Ip ⊗ [y⊤
+
+> t−s
+
+]⊤
+
+> s∈[h]
+
+, which yields 
+
+Y ⊤
+
+> t−1: t−h
+
+Yt−1: t−h = Ip ⊗ ([ y⊤
+
+> t−s
+
+]s∈[h][y⊤
+
+> t−s
+
+]⊤
+
+> s∈[h]
+
+).
+
+We then obtain that for any t ∈ { h, . . . , T − 1},
+
+∥Yt−1: t−h∥ =
+
+q
+
+λmax (Yt−1: t−hY ⊤
+
+> t−1: t−h
+
+)=
+
+q
+
+[y⊤
+
+> t−s
+
+]s∈[h][y⊤
+
+> t−s
+
+]⊤
+
+> s∈[h]
+
+=
+
+vuut hX
+
+> s=1
+
+∥yt−s∥2
+
+≤ √hR y,
+
+which completes the proof of the lemma. ■
+
+B.4 Proof of Lemma 3.3 
+
+First, noting that ∥M ∥F = ∥vec (M )∥, the upper bound on ∥vec (M )∥ follows directly from M ∈ M 
+
+and (15). We then prove (27). Recalling the expression of ∇ft(vec (M )) given by (23), we have 
+
+∥∇ ft(vec (M )) ∥ ≤ 2 ∥Yt−1: t−h∥ ∥ Yt−1: t−hvec (M ) − xt∥≤ 2 ∥Yt−1: t−h∥   ∥Yt−1: t−h∥ ∥ vec (M )∥ + ∥xt∥ .
+
+32 It then follows from Lemma 3.2 and (15) that 
+
+∥∇ ft(vec (M )) ∥ ≤ 2√hR y(pmin {p, n }κ2
+
+> F
+
+√hR y
+
+1 − γF
+
++ Rx).
+
+Next, we prove (28). Recalling the expression of ∇2ft(vec (M )) given by (24), we have 
+
+∇2ft(vec (M )) = 2 Y ⊤
+
+> t−1: t−h
+
+Yt−1: t−h
+
+≤ 2 ∥Yt−1: t−h∥2
+
+≤ 2hR 2
+
+> y
+
+,
+
+where we used the fact that Y ⊤ 
+
+> t−1: t−h
+
+= ∥Yt−1: t−h∥ and Lemma 3.2. Finally, we prove (29) . Recalling that ft(M ) = ∥xt − ˆxt(M )∥2 with ˆxt(M ) = Phs=1 Msyt−s for any M ∈ M and Yt−1: t−h defined in (22), we have 
+
+ft(M ) ≤ 2 ∥xt∥2 + 2 
+
+> h
+
+X
+
+> s=1
+
+Msyt−s
+
+> 2
+
+≤ 2R2 
+
+> x
+
++ 2 ∥Yt−1: t−h∥2 ∥vec (M )∥2
+
+≤ 2R2 
+
+> x
+
++ 2 hR 2 
+
+> y
+
+min {p, n }κ4
+
+> F
+
+1(1 − γF )2 ,
+
+where the last relation follows from the upper bounds on ∥Yt−1: t−h∥ and ∥vec (M )∥ that we have shown above. ■
+
+# C Omitted Proofs and Discussions in Section 4 for Output Estima-tion 
+
+C.1 Proof of Lemma 4.1 
+
+By Definition 4.1, for any N ∈ Rp×(ph ), we have ∇2ft;h(N ) = ∇2E[ft(N )|F t−k] = E[∇2ft(N )|F t−k],where we swap E and ∇2 since ∇2ft(N ) is continuous in N . Moreover, since k = h, we get from Lemma 3.4 that for any t ≥ h,
+
+E[∇2ft(N )|F t−h]=2 E[Y ⊤
+
+> t−1: t−h
+
+Yt−1: t−h|F t−h]=2 Ip ⊗ E[y⊤
+
+> t−s
+
+]⊤
+
+> s∈[h]
+
+[y⊤
+
+> t−s
+
+]s∈[h]|F t−h
+
+
+
+=Ip ⊗ E
+
+h 
+
+Cx t−1
+
+...
+
+Cx t−h
+
+ +
+
+
+
+vt−1
+
+...
+
+vt−h
+
+ 
+
+Cx t−1
+
+...
+
+Cx t−h
+
+ +
+
+
+
+vt−1
+
+...
+
+vt−h
+
+⊤
+
+Ft−h
+
+i
+
+> (a)
+
+⪰ Ip ⊗ E
+
+h
+
+vt−1
+
+...
+
+vt−h
+
+ v⊤ 
+
+> t−1
+
+· · · v⊤
+
+> t−h
+
+ i
+
++ Ip ⊗ E
+
+h
+
+Cx t−1
+
+...
+
+Cx t−h
+
+ x⊤
+
+> t−1
+
+C⊤ · · · x⊤
+
+> t−h
+
+C⊤ Ft−h
+
+i
+
+⪰λmin (V )Ip2h.
+
+33 where (a) follows from the fact that the measurement noise vk is independent of the state xk for all k ≥ 0, and the definition of the filtration Ft−h = σ(w0, . . . , w t−h−1, v 0, . . . , v t−h−1). This proves that ft:h(·) is α0-strongly convex for all t ≥ h.Next, we recall from Lemma 3.3 that ft(·) is ly-Lipschitz under the event Ew ∩ E v. Supposing 
+
+Ew ∩ E v holds, we then get from the definition of ft;h(·) that for any given N, N ′ ∈ K N ,
+
+|ft;h(N ) − ft;h(N ′)| = E[ft(N ) − ft(N ′) Ft−h]
+
+≤ E|ft(N ) − ft(N ′)| Ft−h
+
+
+
+≤ lyE∥N − N ′∥ Ft−h
+
+
+
+≤ ly∥N − N ′∥,
+
+which shows that ft;h(·) is ly-Lipschitzness. ■
+
+C.2 Proof of Lemma 4.2 
+
+Consider any t ≥ h. By the α0-strong convexity of ft;h(·) shown in Lemma 4.1, we know from Definition 3.1 that 
+
+ft;h(Nt) − ft;h(N ⋆) ≤ ∇ ft;h(Nt)⊤(Nt − N ⋆) − α0
+
+2 ∥Nt − N ⋆∥2 . (C.1) Next, we aim to provide an upper bound on ft;h(Nt)⊤(Nt − N ⋆). We first obtain that 
+
+∥Nt+1 − N ⋆∥2 ≤ ∥ Nt − N ⋆ − ηt∇ft(Nt)∥
+
+= ∥Nt − N ⋆∥2 + η2 
+
+> t
+
+∥∇ ft(Nt)∥2 − 2ηt∇ft(Nt)⊤(Nt − N ⋆), (C.2) where the inequality follows from the fact that Nt+1 = Π KN (Nt −ηt∇ft(Nt)) and [67, Proposition 2.2]. It then follows from (C.2) that 
+
+2∇ft(Nt)⊤(Nt − N ⋆) ≤ ∥Nt − N ⋆∥2 − ∥ Nt+1 − N ⋆∥2
+
+ηt
+
++ ηt ∥∇ ft(Nt)∥2 .
+
+Noting that ∇ft(Nt) = ∇ft;h(Nt) + εst , we have 
+
+⟨∇ ft(Nt), N t − N ⋆⟩ = ⟨∇ ft;h(Nt), N t − N ⋆⟩ + ⟨εst , N t − N ⋆⟩.
+
+Combining the above two relations, we obtain 
+
+∇ft;h(Nt)⊤(Nt − N ⋆) ≤ ∥Nt − N ⋆∥2 − ∥ Nt+1 − N ⋆∥2
+
+2ηt
+
++ ηt
+
+2 ∥∇ ft(Nt)∥2 − ⟨ εst , N t − N ⋆⟩. (C.3) 34 Going back to (C.1) and summing over t ∈ { k, . . . , T − 1}, we get  
+
+> T−1
+
+X
+
+> t=h
+
+ ft;h(Nt) − ft;h(N ⋆)
+
+≤ 
+
+> T−1
+
+X
+
+> t=h
+
+ ∇ft;h(Nt)⊤(Nt − N ⋆) − α0
+
+2 ∥Nt − N ⋆∥2 
+
+≤ 12 
+
+> T−1
+
+X
+
+> t=h
+
+ 1
+
+ηt+1 
+
+− 1
+
+ηt
+
+− α0
+
+
+
+∥Nt − N ⋆∥2 + ∥Nh − N ⋆∥2
+
+2ηh
+
++ 
+
+> T−1
+
+X
+
+> t=h
+
+ηt
+
+2 ∥∇ ft(Nt)∥2 − 
+
+> T−1
+
+X
+
+> t=h
+
+⟨εst , N t − N ⋆⟩≤ − α0 log 2 T
+
+4 
+
+> T−1
+
+X
+
+> t=h
+
+∥Nt − N ⋆∥2 + R2 
+
+> N
+
+α0h
+
+2 + 
+
+> T−1
+
+X
+
+> t=h
+
+ηt
+
+2 ∥∇ ft(Nt)∥2 − 
+
+> T−1
+
+X
+
+> t=h
+
+⟨εst , N t − N ⋆⟩,
+
+where the last inequality follows from the choice of the step size ηt = 2(α0 log 2 T )t for all t ≥ h and the upper bound on the norm of any N ∈ K N shown by Lemma 3.4. ■
+
+C.3 Proof of Lemma 4.3 
+
+Throughout this proof, we assume that the event Ew ∩ E v holds. First, relating ft(·) to ft;h(·), we know from the upper bound ∥∇ ft(Nt)∥ ≤ ly from Lemma 3.4 that  
+
+> T−1
+
+X
+
+> t=h
+
+ ft(Nt) − ft(N ⋆) = 
+
+> T−1
+
+X
+
+> t=h
+
+ ft;h(Nt) − ft;h(N ⋆) + 
+
+> T−1
+
+X
+
+> t=h
+
+ (ft − ft;h)( Nt) + ( ft;h − ft)( N ⋆),
+
+where we write (ft − ft;h)( N ) = ft(Nt) − ft;h(N ) for some N to simplify the notations. We then get from Lemma 4.2 that  
+
+> T−1
+
+X
+
+> t=h
+
+ ft(Nt) − ft(N ⋆) ≤ − α0 log 2 T
+
+4 
+
+> T−1
+
+X
+
+> t=h
+
+∥Nt − N ⋆∥2 + R2 
+
+> N
+
+α0h
+
+2 + 
+
+> T−1
+
+X
+
+> t=h
+
+ηt
+
+2 ∥∇ ft(Nt)∥2
+
++ 
+
+> T−1
+
+X
+
+> t=h
+
+⟨εst , N ⋆ − Nt⟩
+
+| {z }
+
+> (i)
+
++ 
+
+> T−1
+
+X
+
+> t=h
+
+ (ft − ft;h)( Nt) + ( ft;h − ft)( N ⋆)| {z }
+
+> (ii )
+
+. (C.4) In the following, we will provide upper bounds on (i) and (ii ) on the right-hand side of (C.4). 
+
+Upper bound on term (i) in (C.4) . We decompose the term ⟨εst , N ⋆ − Nt⟩ to get a term with zero expectation conditioned on the filtration Ft = σ(w0, . . . , w t−1, v 0, . . . , v t−1), where recall 
+
+εst = ∇ft(Nt) − ∇ ft;h(Nt). We have 
+
+⟨εst , N t − N ⋆⟩ = ⟨∇ (ft − ft;h)( Nt−h), N t−h − N ⋆⟩ + ⟨∇ (ft − ft;h)( Nt−h), N t − Nt−h⟩
+
++ ⟨∇ (ft − ft;h)( Nt) − ∇ (ft − ft;h)( Nt−h), N t − N ⋆⟩. (C.5) Recalling the definition of the filtration Ft−h = σ(w0, . . . , w t−h−1, v 0, . . . , v t−h−1), we see from Algorithm 1 that Nt−h is Ft−h-measurable. It follows that 
+
+E⟨∇ (ft − ft;h)( Nt−h), N t−h − N ⋆⟩|F t−k
+
+ = ⟨E[∇(ft − ft;h)( Nt−h)|F t−h], N t−h − N ⋆⟩ = 0 ,
+
+35 where we also recall the definition ft;h(Nt−k) = E[ft(Nt−h)|F t−k]. We now upper bound the remaining two terms on the right-hand side of (C.5). We have  
+
+> T−1
+
+X
+
+> t=h
+
+⟨∇ (ft − ft;h)( Nt−h), N t − Nt−k⟩ + ⟨∇ (ft − ft;h)( Nt) − ∇ (ft − ft;h)( Nt−h), N t − N ⋆⟩≤ 
+
+> T−1
+
+X
+
+> t=h
+
+
+
+∥∇ (ft − ft;h)( Nt−h)∥ ∥ Nt − Nt−h∥
+
++   ∥∇ ft(Nt) − ∇ ft(Nt−h)∥ + ∥∇ ft;h(Nt−h) − ∇ ft;h(Nt)∥  ∥Nt − N ⋆∥
+
+
+
+> (a)
+
+≤ 
+
+> T−1
+
+X
+
+> t=h
+
+
+
+2ly ∥Nt − Nt−k∥ + 2 βy ∥Nt − Nt−h∥ ∥ Nt − N ⋆∥
+
+
+
+> (b)
+
+≤2( ly + 2 RN βy) 
+
+> T−1
+
+X
+
+> t=h
+
+∥Nt − Nt−h∥ ,
+
+where to obtain (a), we use the upper bound on ∥∇ ft(Nt−h)∥ shown by Lemma 3.4, which also implies via the definition ft;h(Nt−h) = E[ft(Nt−h)|F t−h] that ∇ft;h(Nt−k) = E[∇ft(Nt−k)|F t−k]
+
+and thus ∥∇ ft;h(Nt−h)∥ ≤ ly; to obtain (b), we use the βy-smoothness of ft;h(·), which is a direct consequence of the βy-smoothness of ft(·) shown by Lemma 3.4. It remains to upper bound  
+
+> T−1
+
+X
+
+> t=h
+
+∥Nt − Nt−h∥ ≤  
+
+> T−1
+
+X
+
+> t=hh−1
+
+X
+
+> i=0
+
+∥Nt−i − Nt−i−1∥
+
+> (a)
+
+≤ 
+
+> T−1
+
+X
+
+> t=hh−1
+
+X
+
+> i=0
+
+∥ηt−i−1∇ft(Nt−i−1)∥
+
+> (b)
+
+≤ lyT −1X
+
+> t=hh−1
+
+X
+
+> i=0
+
+ηt−i−1(c)
+
+≤ 2lyhα0 log 2 T 
+
+> T−1
+
+X
+
+> t=1
+
+1
+
+t ≤ 2lyhα0 log 2 T (1 + log T ), (C.6) where (a) follows from line 5 of Algorithm 1 and [67, Proposition 2.2], (b) uses Lemma 3.4, and (c)
+
+follows from the choice of the step size ηt = 2(α0 log 2 T )t for t ≥ 1 and η0 = 0 .
+
+Upper bound on term (ii ) in (C.4) . Similarly, we may decompose each term (ft − ft;h)( Nt)
+
+in the summation in (ii ) as 
+
+ft(Nt) − ft;h(Nt) = ( ft − ft;h)( Nt−k) + ( ft − ft;h)( Nt) − (ft − ft;h)( Nt−k), (C.7) 36 where we notice that E[( ft − ft;h)( Nt−h)|F t−h] = 0 . The remaining two terms in (C.7) can be upper bounded as  
+
+> T−1
+
+X
+
+> t=h
+
+ (ft − ft;h)( Nt) − (ft − ft;h)( Nt−h)
+
+≤ 
+
+> T−1
+
+X
+
+> t=h
+
+ ft(Nt) − ft(Nt−h) + ft;h(Nt−h) − ft;h(Nt)
+
+≤2lyT −1X
+
+> t=h
+
+∥Nt − Nt−h∥ (b)
+
+≤ 4l2
+
+> y
+
+hα0 log 2 T (1 + log T ),
+
+where the second inequality follows from the ly-Lipschitzness of ft(·) and ft;h(·) shown by Lemma 3.4 and (b) follows from similar arguments to those for (C.6). Going back to (C.4) completes the proof of the lemma. ■
+
+C.4 Proof of Lemma 4.4 
+
+We first decompose Xh(N ⋆), . . . , X T −1(N ⋆) into martingale difference (sub)sequences. Defining time indices ti,j = h+i+( j −1) h for all i ∈ { 0, . . . , h −1} and all j ∈ [Ti], where Ti = max {j : ti,j ≤ T −1},we may write PT −1 
+
+> t=h
+
+Xt = Phi=1 
+
+PTi 
+
+> j=1
+
+Xti,j . Since E[Xt|F t−h] = 0 as shown by Lemma 4.3 for all 
+
+t ≥ h and ti,j = ti,j −1 + h, we have E[Xti,j |F ti,j −1] = 0 . Considering any i ∈ { 0, . . . , h − 1} and the corresponding filtration {F ti,j }j≥1, we see that {Xti,j }j≥1 forms a martingale difference sequence with respect to {F ti,j }j≥1. In addition, under the event Ew ∩ E v, we have that for any t ≥ h,
+
+|Xt(N ⋆)| ≤ ∥∇ (ft − ft;h)( Nt−h)∥ ∥ Nt−h − N ⋆∥ + |ft(Nt−h) − ft(N ⋆)| + |ft;h(N ⋆) − ft;h(Nt−h)|
+
+> (a)
+
+≤ 2ly ∥Nt−h − N ⋆∥ + 2 ly ∥Nt−h − N ⋆∥ ,
+
+where (a) follows from the fact that both ∥∇ ft(N )∥ and ∥∇ ft;h(N )∥ are upper bounded by ly for all 
+
+N ∈ K N and the fact that both ft(·) and ft;h(·) are ly-Lipschitz continuous, as shown by Lemma 3.4. Now, for any i ∈ { 0, . . . , h − 1}, we can apply the Azuma inequality (Lemma E.3) and obtain 
+
+P(
+
+> Ti
+
+X
+
+> j=1
+
+Xti,j (N ⋆) ≥ ϵ) ≤ exp 
+
+
+
+− ϵ2
+
+32 l2
+
+> y
+
+PTi 
+
+> j=1
+
+Nti,j −h − N ⋆ 2
+
+
+
+. (C.8) Fixing a probability δ/ (3 h) for some δ ∈ (0 , 1) and letting 
+
+δh = exp 
+
+
+
+− ϵ2
+
+32 l2
+
+> y
+
+PTi 
+
+> j=1
+
+Nti,j −h − N ⋆ 2
+
+
+
+,
+
+we compute that 
+
+ϵ =
+
+vuut(32 l2 
+
+> y
+
+log 3hδ )
+
+> Ti
+
+X
+
+> j=1
+
+Nti,j −h − N ⋆ 2.
+
+37 It then follows from (C.8) that with probability at least 1 − δ/ (3 h),
+
+> Ti
+
+X
+
+> j=1
+
+Xti,j (N ⋆) ≤
+
+vuut(32 l2 
+
+> y
+
+log 3hδ )
+
+> Ti
+
+X
+
+> j=1
+
+Nti,j −h − N ⋆ 2.
+
+Applying a union bound, we further get that with probability at least 1 − δ/ 3, 
+
+> T−1
+
+X
+
+> t=h
+
+Xt(N ⋆) = 
+
+> h−1
+
+X
+
+> i=0
+> Ti
+
+X
+
+> j=1
+
+Xti,j (N ⋆) ≤
+
+> h−1
+
+X
+
+> i=0
+
+vuut(32 l2 
+
+> y
+
+log 3hδ )
+
+> Ti
+
+X
+
+> j=1
+
+Nti,j −h − N ⋆ 2(a)
+
+≤
+
+> h−1
+
+X
+
+> i=0
+
+ 16 l2 
+
+> y
+
+log 3hδ
+
+ϱ + ϱ
+
+2
+
+> Ti
+
+X
+
+> j=1
+
+Nti,j −h − N ⋆ 2 
+
+> (b)
+
+= 16 l2
+
+> y
+
+h log 3hδ
+
+ϱ + ϱ
+
+2 
+
+> T−1
+
+X
+
+> t=h
+
+∥Nt−h − N ⋆∥2
+
+≤ 16 l2
+
+> y
+
+h log 3hδ
+
+ϱ + ϱ
+
+2 
+
+> T−1
+
+X
+
+> t=0
+
+∥Nt − N ⋆∥2 ,
+
+where (a) follows from the inequality √ab ≤ a 
+
+> 2ϱ
+
++ ϱ 
+
+> 2
+
+b that holds for any a, b, ϱ ∈ R>0, and (b) follows from the way we set ti,j . Setting ϱ = ( α0 log 2 T )/2 gives the result of the lemma. ■
+
+C.5 Proof of Lemma 4.5 
+
+Consider a single term yt − ˆyTK  
+
+> t
+> 2
+
+− yt − ˆySK  
+
+> t
+> 2
+
+for any t ∈ { 0, . . . , T − 1}. We first recall from Lemma 3.2 that ∥yt∥ ≤ Ry (under the event Ew ∩ E v). We then get from (17) that 
+
+yTK  
+
+> t
+
+=
+
+> h
+
+X
+
+> s=1
+
+N ⋆s yt−s ≤ ∥ Yt−1: t−h∥ ∥ N ⋆∥≤ √hR yRN ,
+
+where we used the upper bounds ∥Yt−1: t−h∥ ≤ √hR y and ∥N ⋆∥ ≤ RN shown in Lemmas 3.2 and 3.4, respectively. Moreover, recalling (16), we also have 
+
+ˆySK  
+
+> t
+
+=
+
+> t
+
+X
+
+> s=1
+
+N ⋆s yt−s ≤ Ry ∥L∥ ∥ C∥ κF
+
+1 − γF
+
+, (C.9) where the inequality follows from Lemma 2.2. Furthermore, we obtain that 
+
+ˆySK  
+
+> t
+
+− ˆyTK  
+
+> t
+
+=
+
+> t
+
+X
+
+> s=h+1
+
+N ⋆s yt−s
+
+≤ Ry ∥L∥ ∥ C∥ κF γhF
+
+1 − γF
+
+.
+
+38 Combining the above arguments, we deduce that 
+
+yt − ˆyTK  
+
+> t
+> 2
+
+− yt − ˆySK  
+
+> t
+> 2
+
+=  yt − ˆyTK  
+
+> t
+
+− yt + ˆ ySK 
+
+> t
+
+⊤ 2yt − ˆyTK  
+
+> t
+
+− ˆySK 
+
+> t
+
+
+
+≤ ˆySK  
+
+> t
+
+− ˆyTK  
+
+> t
+
+2yt − ˆyTK  
+
+> t
+
+− ˆySK 
+
+> t
+
+≤
+
+
+
+2Ry + √hR yRN + Ry ∥L∥ ∥ C∥ κF
+
+1 − γF
+
+
+
+ˆySK  
+
+> t
+
+− ˆyTK 
+
+> t
+
+≤
+
+
+
+2 + √hR N + ∥L∥ ∥ C∥ κF
+
+1 − γF
+
+
+
+κF ∥L∥ ∥ C∥ R2
+
+> y
+
+γhF
+
+1 − γF
+
+.
+
+Now, since we set h = ⌊log T / log (1 /γ F )⌋, it holds that γhF ≤ 1/T . Summing over t = 0 , . . . , T − 1
+
+yields (34). ■
+
+C.6 Proof of Lemma 4.6 
+
+We assume throughout this proof that the event Ew ∩ E v holds. First, consider a single term 
+
+yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+for any t ∈ { 0, . . . , T − 1}, we have 
+
+yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+= (ˆ yKF  
+
+> t
+
+− ˆySK  
+
+> t
+
+)⊤(2 yt − ˆySK  
+
+> t
+
+− ˆyKF  
+
+> t
+
+)
+
+≤ ˆyKF  
+
+> t
+
+− ˆySK  
+
+> t
+
+2yt − ˆySK  
+
+> t
+
+− ˆyKF 
+
+> t
+
+≤ ˆyKF  
+
+> t
+
+− ˆySK 
+
+> t
+
+ 2 ∥yt∥ + ˆySK  
+
+> t
+
++ ˆyKF 
+
+> t
+
+. (C.10) Recall from Lemma 3.2 that ∥yt∥ ≤ Ry holds for all t ∈ { 0, . . . , T − 1}, and we have shown in the proof of Lemma 4.5 that ˆySK  
+
+> t
+
+≤ √hR yRN + RyκF ∥L∥ ∥ C∥ γhF 
+
+> 1−γF
+
+for all t ∈ { 0, . . . , T − 1}. Thus, we see that to upper bound (C.10) , we need to further upper bound ˆyKF  
+
+> t
+
+− ˆySK  
+
+> t
+
+and ˆyKF  
+
+> t
+
+for all 
+
+t ∈ { 0, . . . , T − 1}. To this end, we first prove the following intermediate result. 
+
+Lemma C.1. Consider the Kalman filter ˆxKF  
+
+> t
+
+given by (2) initialized with ˆxKF  
+
+> 0
+
+= 0 . For any 
+
+t ∈ { 0, . . . , T − 1}, it holds that 
+
+ˆxKF  
+
+> t
+
+≤ Rˆx(t) ≜
+
+s
+
+∥W + LV L ⊤∥ κ2
+
+> F
+
+λmin (W )(1 − γ2 
+
+> F
+
+) Ry ∥L∥ t + κ4 
+
+> F
+
+∥W − Σ∥ ∥ C∥ W + LV L ⊤
+
+λmin (V )λmin (W )(1 − γF )2(1 + γF ) . (C.11) 
+
+In addition, for any t ∈ { 0, . . . , T − 1}, it holds that 
+
+ˆxSK  
+
+> t
+
+≤ ∥ L∥ Ry
+
+κF
+
+1 − γF
+
+,
+
+where ˆxSK  
+
+> t
+
+is given by (11) .Proof. Recall that we denote 
+
+Ψk,l = ( A − Lk−1C)( A − Lk−2C) × · · · × (A − LlC),
+
+39 for any k, l ∈ Z≥0 with k ≤ l, and let Ψk,l = In if k > l . We then get from (2) that 
+
+ˆxKF  
+
+> t
+
+=
+
+> t−1
+
+X
+
+> s=0
+
+Ψt,s +1 Lsys
+
+> (a)
+
+≤
+
+s
+
+∥W + LV L ⊤∥ κ2
+
+> F
+
+λmin (W )(1 − γ2 
+
+> F
+
+) Ryt−1X
+
+> s=0
+
+∥Ls∥
+
+> (b)
+
+≤
+
+s
+
+∥W + LV L ⊤∥ κ2
+
+> F
+
+λmin (W )(1 − γ2 
+
+> F
+
+) Ryt−1X
+
+> s=1
+
+∥L∥ + κ3 
+
+> F
+
+γs−1 
+
+> F
+
+∥W − Σ∥ ∥ C∥
+
+α0
+
+s
+
+∥W + LV L ⊤∥
+
+λmin (W )(1 − γ2 
+
+> F
+
+)
+
+!
+
+≤
+
+s
+
+∥W + LV L ⊤∥ κ2
+
+> F
+
+λmin (W )(1 − γ2 
+
+> F
+
+) Ry t ∥L∥ + κ3 
+
+> F
+
+∥W − Σ∥ ∥ C∥
+
+(1 − γF )α0
+
+s
+
+∥W + LV L ⊤∥
+
+λmin (W )(1 − γ2 
+
+> F
+
+)
+
+!
+
+, (C.12) where (a) follows from (E.2) in Lemma E.5, (b) follows from (E.4) in Lemma E.5 and the fact L0 = 0 
+
+since Σ0 = 0 .Next, we get from (11) and Lemma 2.1 that for any t ∈ { 0, . . . , T − 1},
+
+ˆxSK  
+
+> t
+
+=
+
+> t
+
+X
+
+> s=1
+
+M ⋆s ys−1 ≤ ∥ L∥ Ry
+
+κF
+
+1 − γF
+
+.
+
+■
+
+In the remainder of this proof, we split our arguments into t ∈ { 0, . . . , 2s0 − 1} and t ∈{2s0, . . . , T − 1},6 where we let 
+
+s0 = max 
+
+
+
+(1 − γF )λmin (V )2κ4 
+
+> F
+
+∥W − Σ∥ ∥ C∥2 log(1 /γ F )
+
+s
+
+λmin (W )(1 − γ2 
+
+> F
+
+)
+
+∥W + LV L ⊤∥ , log T
+
+log(1 /γ F )
+
+ + 1 . (C.13) 
+
+Upper bound on ˆyKF  
+
+> t
+
+− ˆySK  
+
+> t
+
+for all t ∈ { 2s0, . . . , T − 1}. First, note that for any t ∈{2s0, . . . , T − 1},
+
+ˆxKF  
+
+> t
+
+= Ψ t,s 0 ˆxKF  
+
+> s0
+
++
+
+> t−1
+
+X
+
+> s=s0
+
+Ψt,s +1 Lsys,
+
+Similarly, note that the (untruncated) steady-state Kalman filter may also be written as 
+
+ˆxSK  
+
+> t+1
+
+= ( A − LC )ˆ xSK  
+
+> t
+
++ Ly t
+
+initialized with ˆxSK  
+
+> 0
+
+= 0 . It follows that for any t ≥ s0,
+
+ˆxSK  
+
+> t
+
+= ( A − LC )t−s0 ˆxSK  
+
+> s0
+
++
+
+> t−1
+
+X
+
+> s=s0
+
+(A − LC )t−(s+1) Ly s.           
+
+> 6Note that if T≤2s0−1, we simply consider t∈ { 0, . . . , 2s0−1}in the rest of the proof.
+
+40 Since ˆyKF  
+
+> t
+
+= C ˆxKF  
+
+> t
+
+and ˆySK  
+
+> t
+
+= C ˆxSK  
+
+> t
+
+, we compute that for any t ≥ 2s0,
+
+ˆyKF  
+
+> t
+
+− ˆySK  
+
+> t
+
+= CΨt,s 0 ˆxKF  
+
+> s0
+
+− C(A − LC )t−s0 ˆxSK 
+
+> s0
+
+| {z }
+
+> (i)
+
++ C
+
+> t−1
+
+X
+
+> s=s0
+
+ Ψt,s +1 Ls − (A − LC )t−(s+1) Lys
+
+| {z }
+
+> (ii )
+
+. (C.14) For term (i) in (C.14), we have 
+
+∥(i)∥ ≤ C Ψt,s 0 − (A − LC )t−s0 ˆxKF  
+
+> s0
+
++ C(A − LC )t−s0 (ˆ xKF  
+
+> s0
+
+− ˆxSK  
+
+> s0
+
+)
+
+≤ ∥ C∥ ˆxKF  
+
+> s0
+
+Ψt,s 0 − (A − LC )t−s0 + ∥C∥ (A − LC )t−s0 ˆxKF  
+
+> s0
+
+− ˆxSK  
+
+> s0
+
+. (C.15) By the expression of Ψt,s 0 , we have 
+
+Ψt,s 0 − (A − LC )t−s0 = (A − Lt−1C) · · · (A − Ls0 C) − (A − LC )t−s0 .
+
+Note from Lemma E.5 that for any s ≥ s0,
+
+∥A − LsC − (A − LC )∥ ≤ ∥ C∥ ∥ Ls − L∥ ≤ κ3 
+
+> F
+
+γs0 
+
+> F
+
+∥W − Σ∥ ∥ C∥2
+
+λmin (V )
+
+s
+
+∥W + LV L ⊤∥
+
+λmin (W )(1 − γ2 
+
+> F
+
+)
+
+| {z }
+
+> εs0
+
+. (C.16) It then follows from Lemma E.7 that for any t ≥ s0,
+
+Ψt,s 0 − (A − LC )t−s0 ≤ (t − s0)κ2 
+
+> F
+
+(κF εs0 + γF )t−s0−1εs0
+
+≤ (t − s0)κ2
+
+> F
+
+ 1 + γF
+
+2
+
+t−s0−1
+
+εs0 , (C.17) where we also used the fact εs0 ≤ (1 − γF )/(2 κF ), i.e., κF εs0 + γF ≤ (1 + γF )/2, which can be shown via the choice of s0. Going back to (C.15), we obtain that for any t ≥ 2s0,
+
+∥(i)∥ ≤ ∥ C∥ Rˆx(s0)( t − s0)κ2
+
+> F
+
+ 1 + γF
+
+2
+
+t−s0−1
+
+εs0 + ∥C∥ κF γt−s0
+
+> F
+
+
+
+Rˆx(s0) + ∥L∥ Ry
+
+κF
+
+1 − γF
+
+
+
+= ( t − s0)
+
+ 1 + γF
+
+2
+
+t−s0−1
+
+O
+
+ log 1.5 TT
+
+
+
++ O
+
+ log 1.5 TT
+
+
+
+. (C.18) To obtain (C.18) , we first recall the expressions of κF , γ F given in (13) , the bounds α0, α 1, ¯σ, ψ given in (13) , and ∥L∥ ≤ κF shown by Lemma E.4. One can then show via the choice of s0 that γs0−1 
+
+> F
+
+= 1 /T ,which also implies εs0 = O(1 /T ), where O(·) hides the factors stated in Theorem 4.1. Moreover, we also deduce from Lemma C.1 and the facts s0 = O(log T ) (see (C.13) ) and Ry = O(√log T ) (see (26)) that Rˆx(s0) = O(log 1.5 T ).41 Similarly, for term (ii ) in (C.14), we have 
+
+∥(ii )∥ ≤ ∥ C∥ Ryt−1X
+
+> s=s0
+
+Ψt,s +1 Ls − (A − LC )t−(s+1) L
+
+≤ ∥ C∥ Ryt−1X
+
+> s=s0
+
+ ∥Ψt,s +1 − (A − LC )t−(s+1) ∥∥ Ls∥ + ∥(A − LC )t−(s+1) ∥∥ Ls − L∥
+
+> (a)
+
+≤ Ryt−1X
+
+> s=s0
+
+(t − s − 1) κ2
+
+> F
+
+ 1 + γF
+
+2
+
+t−s−2
+
+εs0 (∥C∥ ∥ L∥ + εs0 ) + κF γt−(s+1)  
+
+> F
+
+εs0
+
+!
+
+> (b)
+
+≤ 4Ry
+
+(1 − γF )2 εs0 (∥C∥ ∥ L∥ + εs0 ) + RyκF
+
+1 − γF
+
+εs0
+
+> (c)
+
+= O
+
+ √log TT
+
+
+
+, (C.19) where (a) follows from (C.16) and (C.17) .7 To obtain (b), we used the relation Pt−1 
+
+> s=s0
+
+(t − s −
+
+1)((1 + κF )/2) t−s−2 ≤ 1/(1 − κF )2 proved in Lemma E.8. To obtain (c), we again notice that 
+
+Ry = O(√log T ) and ε0 = O(1 /T ) as we argued above. Combining (C.15) and (C.19), we obtain from (C.14) that for any t ∈ { 2s0, . . . , T − 1},
+
+ˆyKF  
+
+> t
+
+− ˆySK  
+
+> t
+
+≤ (t − s0)
+
+ 1 + γF
+
+2
+
+t−s0−1
+
+O
+
+ log 1.5 TT
+
+
+
++ O
+
+ log 1.5 TT
+
+
+
+= O
+
+ log 1.5 TT
+
+
+
+, (C.20) where the equality follows from the fact ((1 + γF )/2) s0−1 ≤ 1/T which can also be shown via the choice of s0.
+
+Upper bound on ˆyKF  
+
+> t
+
+for all t ∈ { 2s0, . . . , T − 1}. For any t ∈ { 2s0, . . . , T − 1}, we know that 
+
+ˆyKF  
+
+> t
+
+≤ ˆyKF  
+
+> t
+
+− ˆySK  
+
+> t
+
++ ˆySK  
+
+> t
+
+.
+
+As we have shown in the proof of Lemma 4.5 that for any t ∈ { 2s0, . . . , T − 1},
+
+ˆySK  
+
+> t
+
+≤ ∥ C∥ ∥ L∥ Ry
+
+κF
+
+1 − γF
+
+= O(plog T ).
+
+It follows that for any t ∈ { 2s0, . . . , T − 1},
+
+ˆyKF  
+
+> t
+
+= O
+
+ log 1.5 TT
+
+
+
++ O(plog T ). (C.21) Now, going back to (C.10) and using the upper bounds in (C.20) and (C.21) , we obtain that for any t ∈ { 2s0, . . . , T − 1},
+
+yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+= O
+
+ log 1.5 TT
+
+  
+
+O(plog T ) + O
+
+ log 1.5 TT
+
+ 
+
+, (C.22)            
+
+> 7More precisely, one can show that (C.17) still holds if the s0term is replaced by s+ 1 , since s≥s0in relation (a).
+
+42 where we also used Ry = O(√log T ) and the above upper bound on ySK  
+
+> t
+
+. Summing over all 
+
+t ∈ { 2s0, . . . , T − 1}, we get  
+
+> T−1
+
+X
+
+> t=2 s0
+
+  yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+ = O  log 2 T  + O
+
+ log 3 TT
+
+
+
+= O(log 2 T ), (C.23) where we used the fact T ≥ log T .
+
+Upper bound on the summation of yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+over t ∈ { 0, . . . , 2s0 − 1}.
+
+We have 
+
+> 2s0−1
+
+X
+
+> t=0
+
+  yt − ˆySK  
+
+> t
+> 2
+
+− yt − ˆyKF  
+
+> t
+> 2
+
+ (a)
+
+≤
+
+> 2s0−1
+
+X
+
+> t=0
+
+ 4 ∥yt∥2 + 2 ySK  
+
+> t
+> 2
+
++ 2 ˆyKF  
+
+> t
+> 2
+
+
+
+> (b)
+
+≤
+
+> 2s0−1
+
+X
+
+> t=0
+
+ 4Ry + 2 Ry ∥L∥ ∥ C∥ κF
+
+1 − γF
+
++ O(R2
+
+> y
+
+t2)
+
+≤ 2s0
+
+ O(plog T ) + O((2 s0 − 1) 2 log T )
+
+> (c)
+
+≤ O (log 4 T ), (C.24) where (a) follows from the fact ∥a + b∥2 ≤ 2 ∥a∥2 + 2 ∥b∥2. To obtain (b), we first recall the upper bounds ∥yt∥ ≤ Ry and the upper bound on ySK  
+
+> t
+
+given by (C.9) in the proof of Lemma 4.5, for all 
+
+t ∈ { 0, . . . , T − 1}. Next, we notice from (C.11) in Lemma C.1 that ˆxKF  
+
+> t
+
+= O(Ryt), which implies that ˆyKF  
+
+> t
+> 2
+
+≤ ∥ C∥2 ˆyKF  
+
+> t
+> 2
+
+= O(R2
+
+> y
+
+t2) for all t ∈ { 0, . . . , T − 1}. Finally, (c) follows from the choice of s0 = O(log T ).Combining (C.23) and (C.24) completes the proof of Lemma 4.6. ■
+
+C.7 Doubling Trick to Remove the Knowledge of T in Algorithm 1 
+
+Theorem 4.1 shows that Algorithm 1 achieves O(log 4 T ) regret when the horizon length T is known a priori. We now argue that using a doubling trick, one can achieve the same regret without the knowledge of T . The arguments follow by dividing the total horizon T into M consecutive intervals with length Li for i ≥ 0, where Li = Ti − Ti−1 with Ti = 2 2i
+
+and T−1 = 0 , and 
+
+M = ⌈log ( log T 
+
+> log 2
+
+)/ log 2⌉ = O(log log T ). For each interval of length Li, we apply Algorithm 1 with the horizon length set to be Li, which yields the regret Ry(Li) = O(log 4 Li). Summing over all 
+
+i ∈ { 0, . . . , M }, we obtain 
+
+Ry(T ) = 
+
+> M
+
+X
+
+> i=0
+
+Ry(Ti − Ti−1) ≤
+
+> M
+
+X
+
+> i=0
+
+O(log 4 Ti)=
+
+> M
+
+X
+
+> i=0
+
+O(2 4i)= O
+
+ 1 − 24( M +1) 
+
+1 − 24
+
+
+
+= O(2 4( M +1) )= O 24 log log T  = O(log 4 T ).
+
+43 D Omitted Proofs and Discussions in Section 5 for State Estimation 
+
+D.1 Proof of Theorem 5.1 
+
+By Yao’s principle [68, 69], to establish (36) in the theorem, it is enough to demonstrate a random instance of the state estimation problem and prove that the expected regret of any deterministic algorithm when applied to solve such a random problem instance is large. 8
+
+First, we describe the random problem instance to be considered. To this end, we define a discrete random variable r ∈ R with P(r = 1) = P(r = 4) = P(r = −2) = 1 /3, and consider a class of scalar LIT systems (parameterized by the value of r) given by 
+
+xt+1 = ax t + wt
+
+yt = cx t + vt. (D.1) Here, we let a = 1 /5, c = 1 /r , vt i.i.d. 
+
+∼ N (0 , σ v), wt = r ˜wt with ˜wt i.i.d. 
+
+∼ N (0 , σ w), σv, σ w ∈ R>0, and 
+
+wt, vt and r are assumed to be independent of each other for all t ≥ 0; set the initial condition to be x0 = 0 . Conditioned on different values of r, the LTI system in (D.1) takes different forms. Specifically, denoting r1 = 1 , r2 = 4 and r3 = −2, we obtain that conditioned on r = ri for any 
+
+i ∈ { 1, 2, 3}, system (D.1) satisfies that 
+
+xs(i) 
+
+> t+1
+
+= 15 xs(i) 
+
+> t
+
++ ri ˜wt
+
+ys(i) 
+
+> t
+
+= 1
+
+ri
+
+xs(i) 
+
+> t
+
++ vt,
+
+(D.2) where we use xs(i) 
+
+> t
+
+and ys(i) 
+
+> t
+
+to denote the corresponding state and output of the system indexed by s(i), respectively, and note that we also have xs(i) 
+
+> t
+
+= 0 . One can now verify that the LTI systems s(1), s(2) and s(3) are related to each other by some similarity transformation captured by 
+
+r. Specifically, one can show the following result. 
+
+Lemma D.1. Given the same initial condition xs(1)0 = xs(2)0 = xs(3)0 = 0 , it holds that (i) xs(2) 
+
+> t
+
+=
+
+r2xs(1) 
+
+> t
+
+, xs(3) 
+
+> t
+
+= r3xs(1) 
+
+> t
+
+for all t ≥ 0; and (ii) ys(1) 
+
+> t
+
+= ys(2) 
+
+> t
+
+= ys(3) 
+
+> t
+
+= yt for all t ≥ 0, where yt is given by (D.1) .
+
+To proceed, recalling the regret Rx(T ) for the state estimation problem defined in (21) , we know that the expected regret of any deterministic algorithm satisfies that 
+
+ERx(T ) = E
+
+"T −1X
+
+> t=0
+
+ (ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2#
+
+, (D.3) where E[·] denotes the expectation with respect to {wt}t≥0, {vt}t≥0 and r, ˆxt is the state estimate returned by the algorithm, and ˆxKF  
+
+> t
+
+is the Kalman filter given by (2) . For our analysis in the sequel, let Ew,v [·] denote the expectation with respect to {wt}t≥0 and {vt}t≥0, and let Er[·] denote the expectation with respect to r. Moreover, let ˆxs(i) 
+
+> t
+
+and ˆxKF ,s(i) 
+
+> t
+
+respectively denote the state           
+
+> 8Since we consider any algorithm including the optimal Kalman filter that designs the state estimate ˆxtfor each time step t≥0based on the past outputs y0, . . . , y t−1. A deterministic algorithm will return a state estimate ˆxtthat is a deterministic function of y0, . . . , y t−1.
+
+44 estimate returned by the deterministic algorithm and the Kalman filter, conditioned on r = ri,for all i ∈ { 1, 2, 3}, which are initialized as ˆxKF ,s(i)0 = ˆxs(i)0 = 0 . We then deduce that for any 
+
+t ∈ { 0, . . . , T − 1}, the corresponding term within the summation in (D.3) satisfies 
+
+E(ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2 =Ew,v 
+
+h
+
+Er
+
+(ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2i
+
+=Ew,v 
+
+h 3X
+
+> i=1
+
+13
+
+ (ˆ xs(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2 − (ˆ xKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2i
+
+=
+
+> 3
+
+X
+
+> i=1
+
+13 Ew,v 
+
+h
+
+(ˆ xs(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2 − (ˆ xKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2i| {z }
+
+> Rs(i)
+> t
+
+, (D.4) where the first equality follows from the fact that r is independent of {wt}t≥0 and {vt}t≥0.Our goal next is to lower bound (D.4) by a positive number. Using the notation Rs(i) 
+
+> t
+
+introduced in (D.4) , our strategy is to first show that (Rs(2) 
+
+> t
+
+− Rs(1) 
+
+> t
+
+) + ( Rs(3) 
+
+> t
+
+− Rs(1) 
+
+> t
+
+) is lower bounded by a positive number. If we can also show that Rs(1) 
+
+> t
+
+≥ 0, then we obtain a positive lower bound for (D.4). To this end, for any i ∈ { 2, 3} and any t ≥ 0, we first write 
+
+Rs(i) 
+
+> t
+
+− Rs(1) 
+
+> t
+
+= Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+(ˆ xs(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2 − (ˆ xs(1) 
+
+> t
+
+− xs(1) 
+
+> t
+
+)2i
+
+y0, . . . , y t−1
+
+i
+
++ Ew,v 
+
+h
+
+(ˆ xKF ,s(1) 
+
+> t
+
+− xs(1) 
+
+> t
+
+)2 − (ˆ xKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2i
+
+= Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+(ˆ xt − xs(i) 
+
+> t
+
+)2 − (ˆ xt − xs(1) 
+
+> t
+
+)2i
+
+y0, . . . , y t−1
+
+i
+
++ Ew,v 
+
+h
+
+(ˆ xKF ,s(1) 
+
+> t
+
+− xs(1) 
+
+> t
+
+)2 − (ˆ xKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2i
+
+, (D.5) where the first equality uses the total expectation law, and the second equality uses the fact that the state estimate ˆxt returned by the deterministic algorithm are determined given y0, . . . , y t−1, which allows us to use the same symbol ˆxt (resp., ˆxKF  
+
+> t
+
+) for the state estimate returned by the deterministic algorithm corresponding to the systems s(1) and s(2). The following results provide lower bounds for the two terms on the right-hand side of (D.5). 
+
+Lemma D.2. For any i ∈ { 2, 3} and any t ≥ 1, it holds that 
+
+Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+(ˆ xt − xs(i) 
+
+> t
+
+)2 − (ˆ xt − xs(1) 
+
+> t
+
+)2i
+
+y0, . . . , y t−1
+
+i
+
+≥ Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+2(1 − ri)xs(1) 
+
+> t
+
+ˆxt y0, . . . , y t−1
+
+ii 
+
++ ( r2 
+
+> i
+
+− 1) σw. (D.6) 
+
+Proof. For any i ∈ { 2, 3} and any t ≥ 1, we have 
+
+Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+(ˆ xt − xs(i) 
+
+> t
+
+)2 − (ˆ xt − xs(1) 
+
+> t
+
+)2i
+
+y0, . . . , y t−1
+
+i
+
+=Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+(xs(1) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)(2ˆ xt − xs(i) 
+
+> t
+
+− xs(1) 
+
+> t
+
+) y0, . . . , y t−1
+
+ii 
+
+> (a)
+
+= Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+(1 − ri)xs(1)
+
+> t
+
+ 2ˆ xt − (ri + 1) xs(1)
+
+> t
+
+ y0, . . . , y t−1
+
+ii 
+
+=Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+2(1 − ri)xs(1) 
+
+> t
+
+ˆxt − (1 − r2 
+
+> i
+
+)( xs(1) 
+
+> t
+
+)2 y0, . . . , y t−1
+
+ii 
+
+> (b)
+
+=Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+2(1 − ri)xs(1) 
+
+> t
+
+ˆxt y0, . . . , y t−1
+
+ii 
+
+− Ew,v 
+
+h
+
+(1 − r2 
+
+> i
+
+)( xs(1) 
+
+> t
+
+)2i
+
+,
+
+45 where (a) follows from Lemma D.1, and (b) uses again the total expectation law. Additionally, we know that for any t ≥ 1,
+
+Ew,v 
+
+h
+
+(r2 
+
+> i
+
+− 1)( xs(1) 
+
+> t
+
+)2i
+
+= ( r2 
+
+> i
+
+− 1) Ew,v 
+
+" 15 xs(1) 
+
+> t−1
+
++ ˜ wt
+
+2#
+
+> (a)
+
+= ( r2 
+
+> i
+
+− 1) Ew,v 
+
+ 125 (xs(1) 
+
+> t−1
+
+)2 + 25 xs(1) 
+
+> t−1
+
+˜wt + ˜ w2
+
+> t
+
+
+
+> (b)
+
+≥ (r2 
+
+> i
+
+− 1) Ew,v 
+
+ 25 xs(1)
+
+> t−1
+
+
+
+Ew,v [ ˜ wt] + ( r2 
+
+> i
+
+− 1) Ew,v [ ˜ w2 
+
+> t
+
+]
+
+> (c)
+
+= ( r2 
+
+> i
+
+− 1) σw,
+
+where (a) uses (D.2) , (b) uses the fact r2 
+
+> i
+
+− 1 > 0 for r2 = 4 and r3 = −2, and (c) uses the fact that 
+
+˜wt is independent of ˜xs(1) 
+
+> t−1
+
+. This completes the proof of the lemma. ■
+
+Lemma D.3. For any i ∈ { 2, 3} and any t ≥ 0, it holds that 
+
+Ew,v 
+
+h
+
+(ˆ xKF ,s(1) 
+
+> t
+
+− xs(1) 
+
+> t
+
+)2 − (ˆ xKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2i
+
+≥ − r3 
+
+> i
+
++ 25 riσw
+
+625 σwT .
+
+Proof. Considering any system s(i) for i ∈ { 1, 2, 3}, we know from (2) that ˆxKF ,s(i) 
+
+> t
+
+is given by 
+
+ˆxKF ,s(i) 
+
+> t+1
+
+= 15 − ls(i)
+
+> t
+
+ri
+
+!
+
+ˆxKF ,s(i) 
+
+> t
+
++ ls(i) 
+
+> t
+
+yt, (D.7) initialized with ˆxKF ,s(1) 
+
+> t
+
+= 0 , where 
+
+ls(i) 
+
+> t
+
+= σs(i)
+
+> t
+
+5ri(σs(i) 
+
+> t
+
+/r 2 
+
+> i
+
++ σv) ,
+
+and σs(i) 
+
+> t
+
+≥ 0 is given by the recursion 
+
+σs(i) 
+
+> t
+
+= σs(i)
+
+> t−1
+
+25 − (σs(i) 
+
+> t−1
+
+)2
+
+25 r2 
+
+> i
+
+(σs(i) 
+
+> t−1
+
+/r 2 
+
+> i
+
++ σv) + σw, (D.8) initialized with σs(i)0 = 0 .Note that the error covariance of the Kalman filter satisfies that Ew,v 
+
+( ˆxKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2 = σs(i)
+
+> t
+
+for all t ≥ 0 (see, e.g., [4]), which yields 
+
+Ew,v 
+
+h
+
+(ˆ xKF ,s(1) 
+
+> t
+
+− xs(1) 
+
+> t
+
+)2 − (ˆ xKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2i
+
+= σs(1) 
+
+> t
+
+− σs(i) 
+
+> t
+
+. (D.9) Moreover, observe from (D.8) that σs(i) 
+
+> t
+
+can be viewed as a function of σv for all t ≥ 0, and we write 
+
+σs(i) 
+
+> t
+
+(σv) accordingly. Also observe from (D.8) that σs(i) 
+
+> t
+
+(0) = σw for all t ≥ 0 and all i ∈ { 1, 2, 3}.46 Thus, we have σs(1) 
+
+> t
+
+(0) − σs(2) 
+
+> t
+
+(0) = 0 for all t ≥ 0. Below, we argue by the continuity of σs(i) 
+
+> t
+
+(σv) in 
+
+σv that σs(1) 
+
+> t
+
+(σv) − σs(2) 
+
+> t
+
+(σv) is also small under our choice of σv (which is close to 0). Let us consider any system s(i) for i ∈ { 1, 2, 3}. For any t ≥ 2, we calculate 
+
+σs(i) 
+
+> t
+
+(σv) − σs(i) 
+
+> t
+
+(0) = σs(i)
+
+> t−1
+
+25 − (σs(i) 
+
+> t−1
+
+(σv)) 2
+
+25 r2 
+
+> i
+
+(σs(i) 
+
+> t−1
+
+(σv)/r 2 
+
+> i
+
++ σv) + σw − σw
+
+= σvriσs(i) 
+
+> t−1
+
+(σv)25 σs(i) 
+
+> t−1
+
+(σv) + 25 riσv
+
+. (D.10) To further upper bound (D.10) , we will invoke lower and upper bounds on σs(i) 
+
+> t−1
+
+(σv) for all t ≥ 2.A lower bound can be easily obtained from (D.8) as σs(i) 
+
+> t−1
+
+≥ σw for all t ≥ 2. To obtain an upper bound, we leverage the optimality of the Kalman filter ˆxs(i) 
+
+> t
+
+. Specifically, we recall from (5) that the Kalman filter ˆxKF ,s(i) 
+
+> t
+
+with the Kalman gain ls(i) 
+
+> t
+
+given by (D.7) achieves the minimum MSEE. Hence, if we replace the optimal Kalman gain ls(i) 
+
+> t
+
+in (D.7) with any other gain, e.g., ri 
+
+> 5
+
+, we get a suboptimal filter denoted as ˜xs(i) 
+
+> t
+
+that satisfies 
+
+˜xs(i) 
+
+> t+1
+
+= ri
+
+5 yt,
+
+initialized with ˜xs(i)0 = 0 . We know from e.g., [4, Chapter 4] that the error covariance of this suboptimal filter satisfies that Ew,v 
+
+(˜ xs(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2 = ˜ σs(i) 
+
+> t
+
+, where ˜σs(i) 
+
+> t
+
+is given by 
+
+˜σs(i) 
+
+> t
+
+= r2 
+
+> i
+
+σv
+
+25 + σw, ∀t ≥ 1
+
+with ˜σs(i) 
+
+> t
+
+= 0 . Since ˜xs(i) 
+
+> t
+
+, we have σs(i) 
+
+> t
+
+≤ ˜σs(i) 
+
+> t
+
+for all t ≥ 1.Using the above lower and upper bounds on σs(i) 
+
+> t
+
+for all t ≥ 1 in (D.10) , we obtain that for any 
+
+t ≥ 2,
+
+σs(i) 
+
+> t
+
+(σv) − σs(i) 
+
+> t
+
+(0) ≤
+
+σvri
+
+ r2  
+
+> iσv
+> 25
+
++ σw
+
+
+
+25 σw + 25 riσv
+
+=  
+
+> r2
+> i
+> 25 T2
+
++ riσw
+
+> T
+
+25 σw + ri
+
+> 25 T
+
+≤ 
+
+> r3
+> i
+> 25
+
++ riσw
+
+25 σw
+
+· 1
+
+T
+
+= r3 
+
+> i
+
++ 25 riσw
+
+625 σwT , (D.11) where we plug in the choice of σv = 1 /T . Since (D.11) holds for all i ∈ { 1, 2, 3}, and (D.10) directly implies that σs(i) 
+
+> t
+
+(σv) − σs(i) 
+
+> t
+
+(0) ≥ 0 for all i ∈ { 1, 2, 3} and all t ≥ 2, we get from (D.9) that for any 47 t ≥ 2,
+
+Ew,v 
+
+h
+
+(ˆ xKF ,s(1) 
+
+> t
+
+− xs(1) 
+
+> t
+
+)2 − (ˆ xKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2i
+
+= σs(1) 
+
+> t
+
+(σv) − σs(i) 
+
+> t
+
+(σv)
+
+≥ σs(1) 
+
+> t
+
+(0) − σs(i) 
+
+> t
+
+(0) − r3 
+
+> i
+
++ 25 riσw
+
+625 σwT
+
+≥ − r3 
+
+> i
+
++ 25 riσw
+
+625 σwT ,
+
+where the second inequality uses the relation σs(1) 
+
+> t
+
+(0) = σs(i) 
+
+> t
+
+(0) = 0 as we argued above. Finally, we notice from (D.8) that σs(i)0 (σv) = 0 and σs(i)1 (σv) = σw for all σv ∈ R≥0, which implies that 
+
+σs(i)0 (σv) − σs(i)0 (0) = σs(i)1 (σv) − σs(i)1 (0) = 0 , completing the proof of the lemma. ■
+
+Applying Lemmas D.2-D.3 to (D.5), we obtain that for any t ≥ 1,
+
+Rs(2) 
+
+> t
+
+− Rs(1) 
+
+> t
+
++ Rs(3) 
+
+> t
+
+− Rs(1) 
+
+> t
+
+≥ Ew,v 
+
+h
+
+Ew,v 
+
+h
+
+2(2 − r2 − r3)xs(1) 
+
+> t
+
+ˆxt y0, . . . , y t−1
+
+ii 
+
++ ( r22 + r23 − 2) σw − r32 + r33 + 25 σw(r2 + r3)625 σwT
+
+= 18 σw − 56 + 50 σw
+
+625 σwT .
+
+Recalling that Rs(1) 
+
+> t
+
+= Ew,v 
+
+( ˆxs(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2 − ( ˆxKF ,s(i) 
+
+> t
+
+− xs(i) 
+
+> t
+
+)2 for all t ≥ 0, we know by the optimality of the Kalman filter (i.e., (5) ) that Rs(1) 
+
+> t
+
+≥ 0. Going back to (D.4) , we now get that for any t ≥ 1,
+
+E(ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2 = 13
+
+ Rs(2) 
+
+> t
+
+− Rs(1) 
+
+> t
+
++ Rs(3) 
+
+> t
+
+− Rs(1) 
+
+> t
+
++ 3 Rs(1)
+
+> t
+
+
+
+≥ 6σw − 56 + 50 σw
+
+1875 σwT . (D.12) Finally, noticing that the initial values satisfy ˆx0 = ˆxs(i) 
+
+> t
+
+= x0 = 0 and summing (D.12) over all 
+
+t ∈ { 1, . . . , T − 1}, we complete the proof of (36) in the theorem. Notice that we have proved (36) holds for any algorithm that only has access to y0, . . . , y t−1
+
+when designing ˆxt for all t ≥ 0, and (36) holds even when the algorithm is applied to the class of stable scalar LTI systems given by (D.1) . Thus, to prove (37) , we consider any algorithm that returns ˆxt such that ∥ˆxt∥ ≤ cA for all t ≥ 0, and also apply the algorithm to the class of systems in (D.1) . Moreover, we see that to prove (37) , it suffices for us to lower bound Rx(T ) − E[Rx(T )] 
+
+(i.e., upper bound E[Rx(T )] − Rx(T )) with a high probability. Towards this end, we first prove the following result. 
+
+Lemma D.4. Consider system (D.1) , any T ≥ 3 and any δ ∈ (0 , 1) . Then, under the event Ew
+
+defined in (25) for system (D.1) , it holds that 
+
+|xt|2 ≤ 125 σw log Tδ , ∀t ∈ { 0, . . . , T − 1}.
+
+In addition, it holds that 
+
+E|xt|2 ≤ 125 σw(1 + log T ), ∀t ∈ { 0, . . . , T − 1}.
+
+48 Proof. For any t ≥ 0, we derive from (D.1) that 
+
+xt = atx0 +
+
+> t−1
+
+X
+
+> s=0
+
+at−(s+1) wt
+
+=
+
+> t−1
+
+X
+
+> s=0
+
+at−(s+1) r ˜wt,
+
+where we recall that x0 = 0 , and r ∈ { 1, 4, −2} and a = 1 /5. It follows that for any t ∈ { 0, . . . , T −1},
+
+|xt| ≤ max   
+
+> 0≤t≤T−1
+
+| ˜wt|
+
+> t−1
+
+X
+
+> s=0
+
+4
+
+ 15
+
+t−(s+1) 
+
+≤ 5 max   
+
+> 0≤t≤T−1
+
+| ˜wt|,
+
+which also implies that 
+
+x2 
+
+> t
+
+≤ 25 max   
+
+> 0≤t≤T−1
+
+| ˜wt|2. (D.13) By the definition of the event Ew defined in (25), we know that under the event Ew,
+
+| ˜wt| ≤ 
+
+r
+
+5σw log 3Tδ , ∀t ∈ { 0, . . . , T − 1}.
+
+It follows from (D.13) that 
+
+x2 
+
+> t
+
+≤ 125 σw log 3Tδ , ∀t ∈ { 0, . . . , T − 1}.
+
+From (D.13), we also get that 
+
+Ex2
+
+> t
+
+ ≤ 25 E
+
+h
+
+max   
+
+> 0≤t≤T−1
+
+| ˜wt|2i
+
+,
+
+which implies via Lemma E.2 that 
+
+Ex2
+
+> t
+
+ ≤ 125 σw(1 + log T ), ∀t ∈ { 0, . . . , T − 1}.
+
+■
+
+Now, considering the term in E[Rx(T )] − Rx(T ) corresponding to any t ∈ { 0, . . . , T − 1} as per (D.3), we have 
+
+E(ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2 −  (ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2
+
+≤2Eˆx2 
+
+> t
+
++ x2
+
+> t
+
+ + 2  ˆxKF 2 + 2 x2
+
+> t
+
+≤2cA + 2 Ex2
+
+> t
+
+ + 2  ˆxKF 
+
+> t
+
+2 + 2 x2 
+
+> t
+
+. (D.14) From Lemma C.1 used in the proof of Lemma 4.6, one can show that |ˆxKF  
+
+> t
+
+| = O(√log T t ) for all 
+
+t ∈ { 0, . . . , T −1}, under the event Ew ∩E v, where Ew and Ev are given by (25) defined for system (D.1) .49 Moreover, using similar arguments to those for (C.21) , one can show that |ˆxKF  
+
+> t
+
+| = O(√log T ) for all 
+
+t ∈ { 2s0, . . . , T − 1}, under the event Ew ∩ E v, where s0 is given by (C.13) and satisfies s0 = O( log T ).Combining the above arguments, we see that under the event Ew ∩ E v, |ˆxKF  
+
+> t
+
+| = O(log 1.5 T ) holds for all t ∈ { 0, . . . , T − 1}. Applying Lemma D.4, we then get from (D.14) that under the event Ew ∩ E v,
+
+E(ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2 −  (ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2
+
+≤2cA + 250 σw log 3Tδ + 250 σw(1 + log T ) + O(log 1.5 T )=O(cA + log 1.5 T ).
+
+One can now apply Lemma E.3 and deduce that under the event Ew ∩ E v, the following holds with probability at least 1 − δ/ 3:
+
+ERx(T ) − Rx(T )= 
+
+> T−1
+
+X
+
+> t=0
+
+
+
+E(ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2 −  (ˆ xt − xt)2 − (ˆ xKF  
+
+> t
+
+− xt)2
+
+≤
+
+r
+
+2T O(cA + log 1.5 T ) log 3
+
+δ .
+
+We now obtain from a union bound and (36) that the following holds with probability at least 1 − δ.
+
+Rx(T ) ≥ 6T σ w − 56 + 50 σw
+
+1875 σw
+
+− O 
+
+r
+
+(cA + log 1.5 T )T log 3
+
+δ
+
+!
+
+.
+
+■
+
+D.2 Proof of Lemma 5.1 
+
+First, noting that ∇2ft(M ) shares the same expression with ∇2ft(N ) in the output estimation problem for any M and any N (see our discussions in Section 3), we know from our arguments in the proof of Lemma 4.1 that ∇2ft;h(N ) ⪰ α0 for all N ∈ Rnph , which proves that ft;h(·) is α0-strongly convex. Moreover, we know from Lemma 3.3 that ft(·) in the state estimation problem is lx-Lipschitz under the event Ew ∩ E v. It follows from our arguments in the proof of Lemma 4.1 that ft;h(·) is 
+
+lx-Lipschitz under the event Ew ∩ E v. ■
+
+D.3 Proof of Lemma 5.2 
+
+Consider the function ft;h(·) defined in Definition 5.1 for the state estimation problem. Note that the update rule in line 9 of Algorithm 2 is based on ∇ ˜ft(Mt) (rather than the true gradient ∇ft(Mt)). Now, following similar arguments in the proof of Lemma 4.2 leading up to (C.3) (replacing N with 50 M and replacing ∇ft(·) with ∇ ˜ft(·)), one can get that 
+
+X 
+
+> tj∈S′
+
+ ftj ;h(Mtj ) − ftj ;h(M ⋆)
+
+≤ X 
+
+> tj∈S′
+
+ ∇ftj ;h(Mtj )⊤(Mtj − M ⋆) − α0
+
+2 Mtj − M ⋆ 
+
+≤ 12
+
+X 
+
+> tj∈S′
+
+ 1
+
+ηj+1 
+
+− 1
+
+ηj
+
+− α0
+
+
+
+Mtj − M ⋆ + ∥Mt1 − M ⋆∥2
+
+2η1
+
++ X 
+
+> tj∈S′
+
+ηj
+
+2 ∇ ˜ftj (Mtj ) 2
+
+− X 
+
+> tj∈S′
+
+⟨∇ ˜ftj (Mtj ) − ∇ ftj ;h(Mtj ), M tj − M ⋆⟩
+
+= − α0
+
+4
+
+X 
+
+> tj∈S′
+
+Mtj − M ⋆ 2 + R2 
+
+> M
+
+α0
+
+2 + X 
+
+> tj∈S′
+
+ηj
+
+2 ∇ ˜ftj (Mtj ) 2
+
+− X 
+
+> tj∈S′
+
+⟨εstj , M tj − M ⋆⟩ − X 
+
+> tj∈S′
+
+⟨˜εstj , M tj − M ⋆⟩,
+
+where the last inequality follows from the choice of the step size ηj = 2 
+
+> α0j
+
+for all j ≥ 1 and the upper bound on the norm of any M ∈ K M shown by Lemma 3.3. ■
+
+D.4 Proof of Lemma 5.4 
+
+First, for t = 0 , 1, . . . in Algorithm 2, let θt = 1 if t mod τ = bi (i.e., if Algorithm 1 performs the update in line 9), and let θt = 0 if otherwise. It then follows from the definition of S′ in (40) that the left-hand side of the inequality shown in Lemma 5.3 can be written as 
+
+X 
+
+> tj∈S′
+
+ ftj (Mtj ) − ftj (M ⋆) = 
+
+> T−1
+
+X
+
+> t=τ
+
+ ft(Mt) − ft(M ⋆)θt.
+
+Taking the expectation Eb[·] with respect to {bi}i≥0 sampled in line 3 of Algorithm 2, we obtain that 
+
+Eb
+
+h X  
+
+> tj∈S′
+
+ ftj (Mtj ) − ftj (M ⋆)i
+
+= Eb
+
+h T −1X
+
+> t=τ
+
+ ft(Mt) − ft(M ⋆)θt
+
+i
+
+> (a)
+
+= 
+
+> T−1
+
+X
+
+> t=τ
+
+Eb
+
+h
+
+ft(Mt) − ft(M ⋆)
+
+i
+
+Eb[θt]
+
+> (b)
+
+= Eb
+
+h T −1X
+
+> t=τ
+
+ ft(Mt) − ft(M ⋆)i 1
+
+τ . (D.15) To obtain (a), we first recall that bi i.i.d. 
+
+∼ Unif ({0, . . . , τ − 1}) (and thus {θt}t≥0) is assumed to be independent of {wt}t≥0, {vt}t≥0 and {˜vt}t≥0. Since Mt is measurable with respect to the sigma-field 
+
+σ(w0, . . . , w t−1, v 0, . . . , v t−1, ˜vt, . . . , ˜vt−1, b 0, . . . , b ⌊t/τ ⌋− 1) and θt is independent of b0, . . . , b ⌊t/τ ⌋− 1, we conclude that θt is independent of Mt for all t ∈ { k, . . . , T − 1}. To obtain (b), we use the facts that 
+
+θt ∈ { 0, 1} and P(θt = 1) = 1 /τ .51 Similarly, we take the expectation Eb[·] on each term on the right-hand side of the inequality shown in Lemma 5.3. Using similar arguments to those for (D.15), one can show that 
+
+Eb
+
+h X  
+
+> tj∈S′
+
+Xtj (M ⋆)
+
+i
+
+= Eb
+
+h T −1X
+
+> t=τ
+
+Xt(M ⋆)
+
+i 1
+
+τ
+
+Eb
+
+h X  
+
+> tj∈S′
+
+⟨˜εstj , M tj − M ⋆⟩
+
+i
+
+= Eb
+
+h T −1X
+
+> t=τ
+
+⟨˜εst , M t − M ⋆⟩
+
+i 1
+
+τ ,
+
+where we similarly use the independence of θt from Xt(M ⋆) and ˜εst . ■
+
+D.5 Proof of Lemma 5.5 
+
+Suppose throughout this proof that the event Ew ∩ E v holds and consider any δ ∈ (0 , 1) .
+
+Proof of part (i). The proof of part (i) follows directly from that of Lemma 4.4. Specifically, we observe that if we replace N with M , instead define the time indices ti,j = k + i + ( j − 1) h for all 
+
+i ∈ { 0, . . . , h − 1} and all j ∈ [Ti], where Ti = max {j : ti,j ≤ T − 1}, and replace δ with δ/ 4, the proof of Lemma 4.4 still holds, which yields  
+
+> T−1
+
+X
+
+> t=τ
+
+Xt(M ⋆) ≤ 32 l2
+
+> x
+
+h log 12 hδ
+
+α0
+
++ α0
+
+4 
+
+> T−1
+
+X
+
+> t=0
+
+∥Mt − M ⋆∥ .
+
+Since the above inequality holds for any realization of the random variables b0, . . . , b ⌊T /τ ⌋, taking the expectation Eb[·] with respect to b0, . . . , b ⌊T /τ ⌋ on both sides of the above inequality proves part (i). 
+
+Proof of part (ii). First, we get from ˜ftj (Mtj ) = xtj + ˜ vtj − ˆxtj (Mtj ) 2 that 
+
+∇ ˜ftj (Mtj ) = 2 Y ⊤  
+
+> tj−1: tj−h
+
+(Ytj −1: tj −hMtj − xtj − ˜vtj )= ∇ftj (Mtj ) − 2Ytj −1: tj −h ˜vtj , (D.16) where Ytj −1: tj −h is defined in (22) and the second equation follows from (23) . Now, under the event 
+
+E˜v defined in (39), we have max 0≤t≤T −1 ∥˜vt∥ ≤ R˜v, which implies 
+
+∇ ˜ftj (Mtj ) 2
+
+≤   ∇ftj (Mtj ) + 2 ∥Yt−1: t−h∥ ˜vtj
+
+2
+
+≤ (lx + 2 √hR yR˜v)2, ∀tj ∈ S, (D.17) where we also use the upper bound ∥Yt−1: t−h∥ ≤ √hR y shown in Lemma 3.2 and ∇ ˜ft(Mtj ) ≤ lx
+
+shown in Lemma 3.3. Thus, we get that under the event E˜v,
+
+X 
+
+> tj∈S′
+
+ηj
+
+2 ∇ ˜ftj (Mtj ) 2
+
+≤ (lx + 2 √hR y)2 X 
+
+> tj∈S′
+
+ηj
+
+2= (lx + 2 √hR yR˜v)2
+
+α0 
+
+> ⌊T /τ ⌋− 1
+
+X
+
+> j=1
+
+1
+
+j
+
+≤ (lx + 2 √hR yR˜v)2
+
+α0
+
+(1 + log ⌊T /τ ⌋),
+
+52 where the equality follows from the choice of the step size ηj = 1 
+
+> α0j
+
+for all j ≥ 1 and the fact 
+
+|S′| = ⌊T /τ ⌋ − 1. Since the above inequality holds for any realization of the random variables 
+
+b0, . . . , b ⌊T /τ ⌋, taking the expectation Eb[·] with respect to b0, . . . , b ⌊T /τ ⌋ on both sides of the above inequality completes the proof of part (ii). 
+
+Proof of part (iii). From the definition of S′ in (40) and the assumption that τ ≥ h, we see that from Mtj −h to Mtj for any tj ∈ S′, Algorithm 2 performs the update in line 9 at most once at the step tj−1. Thus, we have 
+
+Mtj − Mtj −h
+
+> (a)
+
+≤ ηj−1∇ ˜ftj−1 (Mtj−1 )
+
+> (b)
+
+≤ 1
+
+α0(j − 1) (lx + 2 √hR yR˜v), ∀2 ≤ j ≤ ⌊ T /τ ⌋,
+
+where (a) follows from line 9 of Algorithm 2 and [67, Proposition 2.2]; (b) follows from the choice of the step size ηj = 1 
+
+> α0j
+
+for all j ≥ 1 and the upper bound shown in (D.17) . Also note that 
+
+∥Mt1 − Mt1−h∥ ≤ η0∇ ˜ft(Mt1−h) = 0 since η0 = 0 . Summing over all t ∈ S′, we get 
+
+X 
+
+> tj∈S′
+
+Mtj − Mtj −h ≤ lx + 2 √hR yR˜v
+
+α0 
+
+> ⌊T /τ ⌋− 1
+
+X
+
+> j=2
+
+1
+
+j − 1
+
+≤ lx + 2 √hR yR˜v
+
+α0
+
+(1 + log ⌊T /τ ⌋).
+
+Since the above inequality holds for any realization of the random variables b0, . . . , b ⌊T /τ ⌋, taking the expectation Eb[·] with respect to b0, . . . , b ⌊T /τ ⌋ on both sides of the above inequality completes the proof of part (iii). 
+
+Proof of part (iv). We show that {−⟨ ˜εst , M t − M ⋆⟩} t≥τ form a martingale difference sequence. For any t ∈ { τ, . . . , T − 1}, we have 
+
+E˜v
+
+h
+
+Eb
+
+h
+
+− ⟨ ˜εst , M t − M ⋆⟩
+
+ii 
+
+= Eb
+
+h
+
+− E˜v⟨∇ ˜ft(Mt) − ∇ ft(Mt), M t − M ⋆⟩
+
+i
+
+= Eb
+
+h
+
+E˜v
+
+h
+
+⟨2Yt−1: t−h ˜vt, M t − M ⋆⟩
+
+ii 
+
+> (a)
+
+= Eb
+
+h
+
+⟨2Yt−1: t−hE˜v[˜ vt], E˜v[Mt] − M ⋆⟩
+
+i (b)
+
+= 0 ,
+
+where E˜v[·] denotes the expectation with respect to ˜v0, . . . , ˜vT −1. To obtain (a), we use the fact that 
+
+{˜vt}t≥0 is independent of Mt and {yt}t≥0 (and thus Yt−1: t−h); and (b) follows from the fact that 
+
+˜vt i.i.d. 
+
+∼ N (0 , ˜V ). In addition, we have 
+
+Eb
+
+h
+
+− ⟨ ˜εst , M t − M ⋆⟩
+
+i
+
+≤ Eb
+
+h
+
+∥˜εst ∥ ∥ Mt − M ⋆∥
+
+i
+
+≤ Eb
+
+h
+
+2 ∥Yt−1: t−h∥ ∥ ˜vt∥ ∥ Mt − M ⋆∥
+
+i
+
+≤ 4√hR yR˜vRM ,
+
+where the last inequality again uses Lemmas 3.2-3.3 and the fact Mt, M ⋆ ∈ K M . Hence, applying Lemma E.3, we conclude that further under the event E˜v, it holds with probability at least 1 − δ/ 12 
+
+53 that  
+
+> T−1
+
+X
+
+> t=τ
+
+Eb
+
+h
+
+− ⟨ ˜εst , M t − M ⋆⟩
+
+i
+
+≤ 4√hR yR˜vRM
+
+r
+
+T log 24 
+
+δ .
+
+■
+
+D.6 Proof of Lemma 5.6 
+
+First, for any t ∈ { τ, . . . , T − 1}, we get from Lemma 3.3 that under the event Ew ∩ E v,
+
+ft(Mt) − ft(M ⋆) − Eb
+
+ft(Mt) − ft(M ⋆) ≤ 8R2 
+
+> x
+
++ 8 hR 2 
+
+> y
+
+min {p, n } κ2 
+
+> F
+
+∥L∥2
+
+(1 − γF )2
+
+= 8 R2 
+
+> x
+
++ 8 hR 2
+
+> y
+
+R2 
+
+> M
+
+.
+
+Applying Lemma E.3, we obtain that under the event Ew ∩ E v, (43) holds with probability at least 
+
+1 − δ/ 12 . ■
+
+D.7 Doubling Trick to Remove the Knowledge of T in Algorithm 2 
+
+Following the same arguments in Appendix C.7, we divide the total horizon T into consecutive intervals with length Li = Ti − Ti−1, where Ti = 2 2i
+
+with T−1 = 0 , apply Algorithm 2 to each interval, and sum the resulting regret over all the intervals. Moreover, we have 
+
+Rx(T ) = 
+
+> M
+
+X
+
+> i=0
+
+Rx(Li)=
+
+> M
+
+X
+
+> i=0
+
+O τ (log 4 Li) log( Li/τ ) + pLi log 2 Li
+
+
+
+≤
+
+> M
+
+X
+
+> i=0
+
+
+
+O(τ log( T /τ ) log 4 Li) + O(pTi log 2 Ti)
+
+
+
+> (a)
+
+≤ O (τ log( T /τ ) log 4 T ) + O(√T )
+
+> M
+
+X
+
+> i=0
+
+O(2 2i)= O(τ log( T /τ ) log 4 T ) + O(√T )O(2 2 log log T )
+
+> (b)
+
+= O τ log( T /τ ) log 4 T + √T log 2 T ,
+
+where (a) follows from the arguments in Appendix C.7 and (b) uses the fact M = O(log log T ).
+
+# E Technical Lemmas 
+
+E.1 Statistical Inequalities 
+
+Lemma E.1. [51, Lemma 14] Let w ∼ N (0 , Σw) with w ∈ Rd and Σw ⪰ 0. For any z ≥ 1, it holds that 
+
+P(∥w∥ > p5 tr(Σ w)z) ≤ e−z .
+
+54 Moreover, for any δ ∈ (0 , 1/e ), it holds with probability at least 1 − δ that 
+
+∥w∥ ≤ 
+
+r
+
+5 tr(Σ w) log 1
+
+δ .
+
+Lemma E.2. Let wt i.i.d. 
+
+∼ N (0 , Σw) with wt ∈ Rd and Σw ⪰ 0 for t = 0 , . . . , T − 1. Then, for any 
+
+T ≥ 1,
+
+E
+
+h
+
+max   
+
+> 0≤t≤T−1
+
+∥wt∥2 i
+
+≤ 5 tr(Σ w)(1 + log T ).
+
+Proof. First, we get from Lemma E.1 and a union bound over all t ∈ { 0, . . . , T − 1} that 
+
+P
+
+
+
+max   
+
+> 0≤t≤T−1
+
+∥wt∥2 > x 
+
+
+
+≤ T exp 
+
+
+
+− x
+
+5 tr(Σ w)
+
+
+
+,
+
+for any x ≥ 5 tr(Σ w) log T . It then follows that 
+
+E
+
+h
+
+max   
+
+> 0≤t≤T−1
+
+∥wt∥2 i
+
+=
+
+Z ∞
+
+> 0
+
+P
+
+
+
+max   
+
+> 0≤t≤T−1
+
+∥wt∥2 > x 
+
+
+
+dx 
+
+≤
+
+Z 5 tr(Σ w ) log T
+
+> 0
+
+1dx +
+
+Z ∞  
+
+> 5 tr(Σ w) log T
+
+T exp 
+
+
+
+− x
+
+5 tr(Σ w)
+
+
+
+dx 
+
+= 5 tr(Σ w) log T + 5 tr(Σ w)T
+
+Z ∞ 
+
+> log T
+
+e−ydy 
+
+
+
+Let y = x
+
+5 tr(Σ w)
+
+
+
+= 5 tr(Σ w) log T + 5 tr(Σ w).
+
+■
+
+Lemma E.3. [70, Corollary 3.9] Let {Xk}k≥0 be a martingale difference sequence adapted to a filtration {F k}k≥0. Suppose |Xk| ≤ ck for all k ≥ 0. Then, for any s ≥ 1 and any ϵ ∈ R, it holds that 
+
+P
+
+ sX
+
+> k=1
+
+Xk > ϵ 
+
+
+
+≤ exp 
+
+
+
+− ϵ2
+
+2 Psk=1 c2
+
+> k
+
+
+
+.
+
+Equivalently, for any 0 < δ < 1 and any ε ∈ R, it holds with probability at least 1 − δ that 
+
+> s
+
+X
+
+> k=1
+
+Xk ≤
+
+vuutlog 1
+
+δ
+
+> s
+
+X
+
+> k=1
+
+2c2
+
+> k
+
+.
+
+E.2 Kalman Filter Properties 
+
+Lemma E.4. Consider system (1) and suppose Assumption 2.1 holds. Let κF and γF be given by 
+
+(14) . Then, it holds that 0 < γ F < 1 and (A − LC )k ≤ κF γkF for all k ∈ Z≥0, where L is given by 
+
+(3) and satisfies ∥L∥ ≤ κF .Proof. First, we note from (13) that W ⪰ α0In and Σ given by (10) satisfies Σ ⪯ ¯σI n, which also implies via (13) that W ⪰ (α0/¯σ)Σ = 2(1 − γF )Σ . Since we know from [4, Chapter 4] that Σ also satisfies the following equation: 
+
+Σ = ( A − LC )Σ( A − LC )⊤ + W + LV L ⊤, (E.1) 55 we get 
+
+Σ ⪰ (A − LC )Σ( A − LC )⊤ + 2(1 − γF )Σ ,
+
+which further implies 
+
+Σ−1/2(A − LC )Σ( A − LC )⊤Σ−1/2 ⪯ (2 γF − 1) In.
+
+Denoting H = Σ 1/2 and Λ = Σ −1/2(A − LC )Σ 1/2, we have A − LC = HΛH−1. In the following, we will provide upper bounds on ∥H∥, ∥H−1∥ and ∥Λ∥.Observing that 
+
+Σ−1/2(A − LC )Σ( A − LC )⊤Σ−1/2 = H−1(HΛH−1)HH (HΛH−1)⊤H−1 = ΛΛ ⊤ ⪯ (2 γF − 1) In,
+
+we obtain ∥Λ∥ ≤ √2γF − 1 ≤ γF . Since H = Σ 1/2, we directly have ∥H∥ = Σ1/2 = √¯σ.From (E.1) , we also know that Σ ⪰ W ⪰ α0In, which implies that Σ−1/2 ⪯ p1/α 0In and thus 
+
+∥Σ−1/2∥ ≤ p1/α 0. Since H−1 = Σ −1/2, we have ∥H−1∥ ≤ p1/α 0. Combining the above arguments, we see that for any k ∈ Z≥0, ∥(A − LC )k∥ = ∥H∥∥ H−1∥∥ Λ∥k ≤ κF γkF . Moreover, since V ⪰ α0Ip
+
+by (13), we get from (E.1) that Σ ⪰ LV L ⊤ ⪰ α0LL ⊤ which implies ∥L∥ ≤ p¯σ/α 0.Finally, our above arguments readily show that ¯σ ≥ α0, which implies via γF = 1 − α0/(2 ¯σ)
+
+by (13) that 0 < γ F < 1. ■
+
+Lemma E.5. Consider the Kalman filter ˆxKF  
+
+> t
+
+for state estimation given by (2) initialized with 
+
+ˆxKF  
+
+> t
+
+= 0 . In addition, consider the corresponding recursion of Σt in (4) initialized with Σ0 = 0 and the Riccati equation in (10) . For any k, l ∈ Z≥0, let 
+
+Ψk,l = ( A − Lk−1C)( A − Lk−2C) × · · · × (A − LlC),
+
+if k > l , and let Ψk,l = In if k ≤ l. Then, for any t ≥ 1,
+
+∥Ψt, 1∥ ≤ 
+
+s
+
+∥W + LV L ⊤∥ κ2
+
+> F
+
+λmin (W )(1 − γ2 
+
+> F
+
+) , (E.2) 
+
+∥Σt − Σ∥ ≤ κ2 
+
+> F
+
+γt−1 
+
+> F
+
+∥W − Σ∥
+
+s
+
+∥W + LV L ⊤∥
+
+λmin (W )(1 − γ2 
+
+> F
+
+) , (E.3) 
+
+∥Lt − L∥ ≤ κ3 
+
+> F
+
+γtF ∥W − Σ∥ ∥ C∥
+
+λmin (V )
+
+s
+
+∥W + LV L ⊤∥
+
+λmin (W )(1 − γ2 
+
+> F
+
+) , (E.4) 
+
+where Σ is the solution to (10) and L is given by (3) .Proof. We first prove (E.3) . It follows from the recursion of Σt in (4) initialized with Σ0 = 0 that 
+
+Σ1 = W . We then know from [4, Chapter 4] that for any t ≥ 1,
+
+Σt ⪰ Ψt, 1Σ1Ψ⊤ 
+
+> t, 1
+
+⪰ λmin (W )Ψ t, 1Ψ⊤
+
+> k, 1
+
+,
+
+which implies via Lemma E.6 that 
+
+∥Ψt, 1∥∥ Ψ⊤
+
+> t, 1
+
+∥ ≤ ∥Σt∥
+
+λmin (W ) =⇒ ∥ Ψt, 1∥ ≤ 
+
+s
+
+∥Σt∥
+
+λmin (W ) , (E.5) 56 where we also used fact ∥Ψt, 1∥ = ∥Ψ⊤
+
+> t, 1
+
+∥.To get a uniform upper bound on ∥Ψt, 1∥ over t ≥ 1, we invoke the optimality of Kalman filtering. Specifically, it is well-known (see, e.g., [4]) that Σt = E(xt − ˆxKF  
+
+> t
+
+)( xt − ˆxKF  
+
+> t
+
+)⊤ for all t ≥ 0. Thus, the filter ˆxSK  
+
+> t
+
+given by the recursion ˆxSK  
+
+> t+1
+
+= ( A − LC ) ˆxSK  
+
+> t
+
++ Ly t initialized with ˆxSK  
+
+> 0
+
+= 0 is a suboptimal filter. Denoting the error covariance of ˆxSK  
+
+> t
+
+as ˜Σt = E(xt − ˆxSK  
+
+> t
+
+)( xt − ˆxSK  
+
+> t
+
+)⊤, we obtain from the suboptimality of ˆxSK  
+
+> t
+
+that Σt ⪯ ˜Σt for all t ≥ 0 [4, Chapter 4]. Moreover, the error covariance ˜Σt
+
+satisfies the following recursion [4, Chapter 4]: 
+
+˜Σt+1 = ( A − LC ) ˜Σt(A − LC )⊤ + W + LV L ⊤,
+
+initialized with ˜Σ0 = 0 . Unrolling this recursion, we get that for any t ≥ 0,
+
+˜Σt =
+
+> t−1
+
+X
+
+> k=0
+
+(A − LC )k(W + LV L ⊤) (A − LC )⊤k
+
+=⇒ ˜Σt ⪯ W + LV L ⊤
+
+> t−1
+
+X
+
+> k=0
+
+ (A − LC )( A − LC )⊤k
+
+=⇒ ∥ ˜Σt∥ ≤ W + LV L ⊤
+
+> t−1
+
+X
+
+> k=0
+
+∥A − LC ∥2k ≤ W + LV L ⊤ κ2
+
+> F
+
+1 − γ2
+
+> F
+
+, (E.6) where the last inequality follows from similar arguments to those for Lemma 2.1. Using (E.6) in (E.5), we obtain that (E.2) holds for all t ≥ 1.Next, we prove (E.3). We adopt the following recursion of Σt − Σ (see, e.g., [4, Chapter 4]): 
+
+Σt − Σ = ( A − LC )(Σ t−1 − Σ)( A − LtC)⊤.
+
+Unrolling the above recursion from t = 1 , we further obtain that for any t ≥ 1,
+
+Σt − Σ = ( A − LC )t−1(Σ 1 − Σ)Ψ ⊤
+
+> t, 1
+
+.
+
+It follows from the above arguments that 
+
+∥Σt − Σ∥ = (A − LC )t−1 ∥W − Σ∥ ∥ Ψ⊤
+
+> t, 1
+
+∥≤ κF γt−1 
+
+> F
+
+∥W − Σ∥
+
+s
+
+∥W + LV L ⊤∥ κ2
+
+> F
+
+λmin (W )(1 − γ2 
+
+> F
+
+) ,
+
+which proves (E.3). Finally, we prove (E.4). From (3) and (9), one can show that (see e.g. [30]) for any t ≥ 0,
+
+Lt − L = AΣtC⊤(CΣtC⊤ + V )−1 − AΣC⊤(CΣC⊤ + V )−1
+
+= AΣC⊤
+
+(CΣtC⊤ + V )−1 − (CΣC⊤ + V )−1
+
++ A(Σ t − Σ) C⊤(CΣtC⊤ + V )−1
+
+= AΣC⊤(CΣC⊤ + V )−⊤ C(Σ − Σt)C⊤(CΣtC⊤)−1 − A(Σ − Σt)C⊤(CΣC⊤ + V )−1
+
+= ( LC − A)(Σ − Σt)C⊤(CΣtC⊤ + V )−1.
+
+57 It follows from (E.3) and Lemma E.4 that for any t ≥ 1,
+
+∥Lt − L∥ ≤ ∥ A − LC ∥ ∥ Σt − Σ∥ ∥ C∥ ∥ (CΣtC⊤ + V )−1∥≤ κ3 
+
+> F
+
+γtF ∥W − Σ∥
+
+s
+
+∥W + LV L ⊤∥
+
+λmin (W )(1 − γ2 
+
+> F
+
+) · ∥C∥
+
+λmin (V ) ,
+
+which proves (E.4). ■
+
+E.3 Matrix and Algebra 
+
+Lemma E.6. For any positive semi-definite matrix P, Q ∈ Rn×n with P ⪯ Q, it holds that 
+
+∥P ∥ ≤ ∥ Q∥.Proof. Since P and Q are symmetric, we know that ∥P ∥ = λmax (P ) and ∥Q∥ = λmax (Q). By the relation P ⪯ Q, we have x⊤P x ⪯ x⊤Qx for all x ∈ Rn. Since λmax (M ) = max x∈Rn,∥x∥=1 x⊤M x for any M ∈ Rn×n, we obtain that λmax (P ) ≤ λmax (Q). ■
+
+Lemma E.7. Consider any matrix M ∈ Rn×n and any sequence of matrices ∆0, ∆1, . . . , with 
+
+∆k ∈ Rn×n for all k ≥ 0. Suppose ∥∆k∥ ≤ ε for all k ≥ 0 and for some ε ∈ R>0, and suppose exist 
+
+κ ∈ R>0 and γ ∈ R>0 such that M k ≤ κγ k for all k ≥ 0. Then, 
+
+(M + ∆ k2−1)( M + ∆ k2−2) · · · × (M + ∆ k1 ) − M k2−k1 ≤ (k1 − k1)κ2(κε + γ)k2−k1−1ε, 
+
+for all k1, k 2 ∈ Z≥0 with k2 > k 1.Proof. The proof follows from that of [36, Lemma 5]. ■
+
+Lemma E.8. For any γ ∈ (0 , 1) , it holds that 
+
+> t
+
+X
+
+> k=2 s
+
+(k − s)γk−s−1 ≤ γs−1 (1 − γ)s + γ
+
+(1 − γ)2 .
+
+Proof. We have 
+
+> t
+
+X
+
+> k=2 s
+
+(k − s)γk−s−1 =
+
+> t−s−1
+
+X
+
+> k=s
+
+kγ k−1 ≤
+
+> ∞
+
+X
+
+> k=s
+
+kγ k−1.
+
+Similarly, consider the series 
+
+> ∞
+
+X
+
+> k=s
+
+γk = γs
+
+> ∞
+
+X
+
+> k=0
+
+γk = γs
+
+1 − γ .
+
+Differentiating both sides of the above equation with respect to γ, one can show that 
+
+> ∞
+
+X
+
+> k=s
+
+kγ k−1 = ddγ 
+
+ γs
+
+1 − γ
+
+
+
+= γs−1 (1 − γ)s + γ
+
+(1 − γ)2 ,
+
+which proves the second inequality of the lemma. ■
+
+58

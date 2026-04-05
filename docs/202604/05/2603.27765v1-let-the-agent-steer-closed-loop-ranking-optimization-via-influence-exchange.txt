@@ -1,0 +1,933 @@
+Title: Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange
+
+URL Source: https://arxiv.org/pdf/2603.27765v1
+
+Published Time: Tue, 31 Mar 2026 01:56:14 GMT
+
+Number of Pages: 45
+
+Markdown Content:
+## Sortify Technical Report March 2026 
+
+# Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Sortify Team 1
+
+Recommendation ranking is fundamentally an influence allocation problem: a sorting formula distributes ranking influence among competing factors—organic relevance, advertising bids, price competitiveness—and the business outcome depends on finding the optimal “exchange rates” among them. However, offline proxy metrics systematically misjudge how influence reallocation translates to on-line impact: large offline uplifts often convert into only a small fraction of the expected online gains, with transfer rates far below expectation. More subtly, the bias pattern is asymmetric across metrics—some metrics exhibit optimistic bias (offline overestimates online), while others exhibit pessimistic bias (offline underestimates online)—so a single calibration factor cannot correct both. Traditional approaches worsen this predicament in three ways: manual calibration cannot keep pace with distribution shift; entangled diagnostic signals obscure whether the problem lies in mapping bias or constraint miscalibration; and each round starts from scratch, preventing historical experience from accumulating. 
+
+Figure 1 | Three-panel overview: (a) dual-channel architecture diagram, (b) online GMV/Orders uplift trend across rounds, (c) LLM correction convergence curve 
+
+We present Sortify, a fully autonomous ranking optimization agent driven by a large language model (LLM). The agent reframes ranking optimization as continuous influence exchange, autonomously reg-ulating the allocation of ranking influence among factors and closing the full loop from diagnosis and decision to parameter deployment without human intervention. It addresses the structural problems through three core mechanisms. First, grounded in L.J. Savage’s axiomatization of Subjective Expected Utility (SEU)—which establishes that any rational decision requires exactly two independent inputs: a belief about the state of the world (probability) and a preference over outcomes (utility)—a dual-channel adaptation framework decouples offline-online transfer correction (the Belief channel) from constraint penalty adjustment (the Preference channel), architecturally severing the entanglement between epistemic error and axiological error to enable orthogonal diagnosis and independent correction. Second, an LLM 
+
+> 1Yin Cheng, Liao Zhou, Xiyu Liang, Dihao Luo, Tewei Lee, Kailun Zheng, Weiwei Zhang, Mingchen Cai, Jian Dong, Andy Zhang. All authors are from Shopee.
+> arXiv:2603.27765v1 [cs.AI] 29 Mar 2026 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange
+
+meta-controller, serving as a second-order rational observer, operates on framework-level parameters— adjusting transfer function intercepts and penalty multipliers rather than low-level search parameters— and, based on evidence from 20-round episode histories, selectively corrects residuals left by routine LMS calibration. Third, a persistent Memory DB with 7 relational tables accumulates cross-round learning, providing the state basis for warm start and cross-round calibration continuity. The agent’s core evaluation metric, Influence Share, is a decomposable ranking influence measure in which all factor contributions sum to exactly 100%. It addresses the fundamental limitation of traditional rank-correlation metrics such as Kendall’s 𝜏 , which cannot attribute influence to individual factors or support quantitative exchange between them. Sortify has been deployed on a large-scale recommendation platform spanning two Southeast Asian markets (hereafter Country A and Country B), running fully automated with no manual intervention required. The inner optimization loop operates autonomously in 4-hour cycles, executing 5,000 Optuna trials per round. In Country A’s warm-start experiment, the agent pushed GMV from −3.6% to +9.2% within 7 rounds, with peak order volume reaching +12.5%, while LLM calibration effort converged from 5 correction items per round to 2. In Country B, a cold-start deployment validated its cross-market generalization and end-to-end viability: after two search phases (23 rounds total), the agent identified a parameter structure that achieved +4.15% GMV/UU and +3.58% Ads Revenue in a 7-day A/B test, leading to a full production rollout. Overall, the evidence retained in the main text demonstrates that the system can both continuously improve on existing calibration state and produce deployable policies in new markets. 2Contents 
+
+1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 52 System Architecture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+
+2.1 Overview . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 82.2 Influence Share and Parameter Search Engine . . . . . . . . . . . . . . . . . . . . . . . 92.2.1 Motivation: Beyond Kendall Tau . . . . . . . . . . . . . . . . . . . . . . . . . . 10 2.2.2 Influence Share Definition: From Symmetric Groups to the Influence Permutation Algorithm . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10 2.2.3 Multi-Objective Search Formulation . . . . . . . . . . . . . . . . . . . . . . . . 12 2.2.4 Search Engine . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 2.3 Belief Channel: Offline-Online Transfer Calibration . . . . . . . . . . . . . . . . . . . . 13 2.3.1 Motivation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 2.3.2 Linear Transfer Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 2.3.3 LMS Continuous Calibration . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 2.3.4 LLM Selective Jumps . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 2.4 Preference Channel: Constraint Penalty Adaptation . . . . . . . . . . . . . . . . . . . . 15 2.4.1 Motivation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 2.4.2 Violation Pressure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 2.4.3 Asymmetric Multiplicative Update . . . . . . . . . . . . . . . . . . . . . . . . . 15 2.5 LLM Meta-Controller . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 2.5.1 Motivation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 2.5.2 Two Orthogonal Knobs . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 2.5.3 Context and Evidence Requirements . . . . . . . . . . . . . . . . . . . . . . . . 16 2.5.4 Implementation: Model, Prompt, and Output Safety . . . . . . . . . . . . . . . . 16 2.5.5 Coordination with LMS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 2.6 Memory DB and State Persistence . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 2.6.1 Motivation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 2.6.2 Schema Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 2.6.3 Cross-Round Intelligence . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 
+
+3 Operational Framework . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 
+
+3.1 System Infrastructure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 3.2 One-Shot Pipeline . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 3.3 YOLO Continuous Loop . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 
+
+4 Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 
+
+4.1 Metrics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 4.2 Experiment Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 4.3 Online A/B Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 4.3.1 Exp-401838: Country A PDP Warm-Start (7 Rounds) . . . . . . . . . . . . . . 25 4.4 Offline-Online Transfer Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 4.5 Parameter Evolution and Stability . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 4.5.1 Residual Pendulum Effect in Warm-Start Experiment . . . . . . . . . . . . . . . 27 4.6 LLM Calibration Effectiveness . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28 4.6.1 Correction Convergence . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28 4.7 Sensitivity Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 4.8 Country B Deployment: From Cold Start to Rollout . . . . . . . . . . . . . . . . . . . . 31 3Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+4.8.1 Cold Start Signal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 4.8.2 Search Journey: From Direction to Deployable Parameters . . . . . . . . . . . . 31 4.8.3 Winning Parameter Structure . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 4.8.4 Long-Horizon A/B Validation . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 4.9 Efficiency and Operational Cost . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 
+
+5 Discussion: One-Person Feasibility . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34 
+
+5.1 Scope of What Was Delivered . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34 5.2 Technical Depth and Development Complexity of Sortify . . . . . . . . . . . . . . . . . 34 5.3 From ParaDance to Sortify: Lineage and Domain Expertise . . . . . . . . . . . . . . . . 35 5.4 The Orchestration Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37 5.5 Meta-Nesting: AI Building AI . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37 5.6 Implications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 38 
+
+6 Conclusion, Limitations, and Future Directions . . . . . . . . . . . . . . . . . . . . . . . . 40 A Contributors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43 B Implementation Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43 
+
+B.1 A/B Experiment Integration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43 B.2 Redis Parameter Publishing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43 B.3 State File Management . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43 B.4 Directory Structure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44 
+
+C Notation Table . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44 
+
+4Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# 1. Introduction 
+
+Ranking in recommendation systems determines what users see first, directly impacting key business metrics such as gross merchandise value (GMV), order volume, advertising revenue, and user engagement. Industrial ranking stacks commonly combine multiple signals through tunable scoring functions and feature weights, especially in product search and marketplace recommendation settings Santu et al. [2017], Liu [2009]. Optimizing these parameters is therefore a continuous, high-leverage engineering task. As platforms scale across markets, verticals, and recommendation surfaces, the need for automated, self-correcting parameter optimization becomes increasingly urgent Hutter et al. [2019].   
+
+> Figure 2 |Old vs. New Paradigm: Left—manual optimization loop (offline search, deploy, human judgment, discard state, repeat). Right—Sortify closed loop (offline search, deploy, auto-calibrate via dual channels, accu-mulate in Memory DB, repeat with improved priors). Highlights the structural differences: stateless vs. persistent, single-axis vs. dual-channel, manual vs. LLM-orchestrated.
+
+The standard optimization workflow operates as follows: an offline search algorithm explores the parameter space using proxy metrics computed on logged data, identifies a candidate configuration, and pushes it to production for online A/B validation. A human operator then examines the A/B results, judges whether the outcome is acceptable, and either adopts the new parameters or reverts to the previous configuration Gilotte et al. [2018]. This manual loop, while conceptually simple, suffers from three structural limitations that incremental tuning improvements cannot resolve. 
+
+Offline-Online Transfer Gap. The most critical structural problem is the systematic divergence between offline proxy metrics and online business outcomes. In the Country A warm-start experiment retained in the main text, offline 𝐼 gmv rose from +18.2% to +41.6%, yet the corresponding online GMV fluctuated from −3.6% to +9.2%, revealing a significant optimistic bias in the offline proxy toward online gains. More critically, the same round’s parameter update affects GMV, Orders, and Ads Revenue non-synchronously, indicating that the transfer relationships across different business metrics do not share a single calibration constant. Standard logged-data evaluation methods estimate policy value from historical interactions Gilotte et al. [2018], Dudik et al. [2014], but they do not by themselves provide continuously updated, per-metric transfer calibration for a non-stationary production environment. Our production observations show that the mapping drifts continuously with traffic patterns, time-of-day effects, and competitive dynamics. Without continuous recalibration, each carefully designed offline 5Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+search is built on potentially stale mapping assumptions, and the precision gains from search are partially offset by transfer error. 
+
+Entangled Diagnostic Signals. When an optimization round produces disappointing online results, the operator faces a fundamental attribution problem: did the offline-online mapping predict incorrectly (a 
+
+Belief error), or were the constraint penalties calibrated at the wrong sensitivity level (a Preference error)? These two failure modes require opposite corrections—a Belief error demands adjusting the transfer function intercept, while a Preference error demands rescaling penalty weights Berger [1985]. Without formal separation, the two signal sources are conflated: a round where GMV is positive but Ads Revenue is negative could equally mean the mapping is optimistic or the constraint is too loose. This diagnostic entanglement is not merely a parameter tuning issue; it exposes a limitation of monolithic optimization workflows that compress multiple objectives and constraints into a single correction channel Lin et al. [2019]. 
+
+No Persistent Learning. Each optimization round in conventional systems starts from a blank slate. The transfer relationships learned in round 𝑁 are not carried forward to round 𝑁 + 1. The constraint sensitivities discovered after a violation are forgotten after the next parameter push. This “Groundhog Day” effect means that a system having completed 50 rounds of A/B tests possesses no more calibration intelligence than one running its first round Parisi et al. [2019]. In our production setting, each offline-online observation pair represents 3.5 hours of live traffic data—a non-trivial investment. Discarding this accumulated evidence is both economically wasteful and technically avoidable. Recent work on continual learning Parisi et al. [2019], meta-learning for warm-started optimization Feurer et al. [2015], and LLM-based agents with persistent state Wang et al. [2024] suggests that cumulative learning across episodes is both feasible and valuable for sequential decision problems. We present Sortify, an agent-steered closed-loop system that reframes sorting parameter optimization as continuous influence exchange. Rather than treating optimization as a stateless manual process, Sortify enables an LLM agent to steer the rebalancing of ranking influence among competing factors through a persistent, autonomous feedback loop. Sortify’s core architectural innovation is the decomposition of the influence exchange problem into two orthogonal channels—Belief (how influence predictions translate to reality) and Preference (how hard influence constraints are enforced)—orchestrated by an LLM meta-controller that operates on framework-level parameters rather than bottom-level search parameters. The design of Sortify rests on three principles. First, separation of concerns : transfer mapping correc-tion (Belief) and constraint sensitivity adjustment (Preference) operate on independent axes derived from a Bayesian decision-theoretic decomposition 𝑃 (𝜃 |𝐷 ) × 𝐿 (𝑎, 𝜃 ) Berger [1985], ensuring that corrections along one axis do not interfere with the other. Second, framework-level LLM control : the LLM adjusts the search framework—specifically, transfer function intercepts and penalty multipliers—rather than the 7-dimensional sorting parameter vector directly. This distinction matters because framework parameters encode reusable cross-round experience (e.g., “offline GMV predictions have been 5–8% optimistic over the past 3 rounds”), while bottom-level parameters are ephemeral facts tied to a single data snapshot Feurer et al. [2015]. Third, cumulative memory : a 7-table persistent Memory DB stores every offline-online observation, calibration update, and LLM proposal, enabling the system to build calibration intelligence across rounds rather than resetting after each iteration Parisi et al. [2019], Feurer et al. [2015]. The contributions of this report are as follows: 
+
+• Dual-channel self-adaptation framework. We propose a Belief/Preference decomposition that enables orthogonal calibration of offline-online transfer mapping and constraint sensitivity. In warm-start production A/B tests on a Country A recommendation platform, this framework pushes GMV from −3.6% to +9.2% within 7 rounds, with peak order volume reaching +12.5% (Section 4.3). 
+
+• LLM meta-controller with evidence-based reasoning. We introduce an LLM agent that adjusts two framework-level knobs—transfer function intercept ( 𝛿 intercept ∈ [− 0.1, +0.1]) and penalty multiplier (∈ [ 0.5, 2.0])—grounded in 20-round episode histories and 30-update calibration traces. In the Country A warm-start experiment, the LLM’s calibration effort converges from 5 correction items 6Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+per round to 2 within 7 rounds, indicating that framework-level corrections diminish as evidence accumulates (Section 4.6). 
+
+• Persistent memory architecture for cumulative learning. We demonstrate that a 7-table relational Memory DB enables the system to warm-start on existing calibration state and extend cross-round learning into subsequent experiments. The Country A case starts directly from an existing Memory DB state, while the Country B case completes a cross-market deployment without architectural modification (Sections 4.5 and 4.8). The remainder of this report is organized as follows. Section 2 presents the system architecture, detailing the Influence Share metric, dual-channel mechanism, LLM meta-controller, and Memory DB design. Section 3 describes the operational framework, including the 10-step one-shot pipeline and YOLO continuous loop with failure recovery. Section 4 provides evaluation evidence from 30 optimization rounds across Country A and Country B, comprising 7 Country A warm-start rounds and 23 Country B deployment rounds. Section 6 discusses limitations—including residual parameter oscillation, statistical uncertainty in low-traffic windows, and insufficient evidence for extreme structural breaks—and outlines future directions. 7Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# 2. System Architecture 
+
+In this section, we present the complete architecture of Sortify, a three-layer closed-loop system for continuous sorting parameter optimization. The system takes online A/B experiment data as input, calibrates its internal model of offline-online transfer relationships, and outputs optimized sorting pa-rameters for the next deployment cycle. We detail the five core components: the Influence Share metric and parameter search engine (Section 2.2), the Belief channel for transfer calibration (Section 2.3), the Preference channel for constraint adaptation (Section 2.4), the LLM meta-controller (Section 2.5), and the persistent Memory DB (Section 2.6). 
+
+## 2.1 Overview 
+
+Sortify operates through a three-layer architecture that separates concerns across human configuration, intelligent calibration, and parameter search. 
+
+• Layer 1 (Outer — Human/Configuration): Defines optimization objectives (e.g., maximize 𝐼 gmv ), constraint boundaries (e.g., 𝐼 order degradation ≤ 5%), initial parameter ranges, and penalty weight seeds. This layer is set once per market and updated infrequently. 
+
+• Layer 2 (Middle — LLM + Algorithm): Performs dual-channel calibration. The Belief channel corrects the offline-to-online transfer mapping via LMS regression and LLM-driven intercept adjust-ments. The Preference channel adapts constraint penalty weights via multiplicative updates. The LLM meta-controller orchestrates both channels using evidence from accumulated episode history. 
+
+• Layer 3 (Inner — Optuna TPE Search): Executes 5,000 trials with 25 parallel workers in the 7-dimensional parameter space, operating under the calibrated target ranges and penalty weights produced by Layer 2. The dual-channel design in Layer 2 is not an arbitrary engineering partition but a necessary conse-quence of rational decision axioms. L.J. Savage’s (1954) theory of Subjective Expected Utility (SEU) establishes that any rational decision requires exactly two independent inputs: what you believe the world to be (probability/belief) and what you care about (utility/preference). If a system’s be-havior satisfies consistency axioms, its preferences can be represented by subjective probabilities and a utility function; the utility representation is unique only up to a positive affine transformation. Sortify operationalizes this axiom into a system-level decomposition: 
+
+• Belief channel (truth-seeking): Corresponds to the state belief in Savage’s theory—“How do offline metrics map to online reality?” It concerns only objective physics and system regularities, carrying no value judgment. 
+
+• Preference channel (value-seeking): Corresponds to the utility function in Savage’s theory—“How much does it hurt when a constraint is violated?” It defines only loss boundaries, without interfering with physical regularities. If these two are not forcibly decoupled, the system falls into unavoidable cognitive biases: Wishful Thinking —distorting the objective assessment of offline-online transfer rates because of an intense desire for goal achievement; or Sour Grapes —reducing the importance of red-line constraints to make the overall loss function converge when transfer rates are poor. The dual-channel design severs this “diagnostic entanglement” at the architectural level, ensuring independent self-calibration along two orthogonal directions. Furthermore, an intelligent agent can err in two orthogonal directions, each requiring a mutually exclusive correction path: 1. Epistemic Error: “I predicted it would happen, but it didn’t”—the system’s world model has failed. The correction must not modify penalty weights; it must correct the belief mapping. 2. Axiological Error: “It happened, but I didn’t expect it to hurt this much”—the prediction was correct but the utility assessment was insufficient. The correction must not modify the transfer mapping; it must correct the utility function. 8Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+The complete data flow forms a closed loop: online A/B data enters the Memory DB as a new episode 
+
+→ LMS updates transfer model slopes and intercepts → LLM proposes framework-level corrections →
+
+calibrated constraints feed into Optuna search → best parameters are published to Redis → new A/B data is generated → the cycle repeats. Each cycle completes in approximately 4 hours.             
+
+> Figure 3 |Three-layer architecture diagram. Layer 1 (Human/Config) feeds objectives and constraints to Layer 2 (LLM + Algorithm), which contains the Belief channel, Preference channel, and LLM meta-controller. Layer 2 outputs calibrated target_range and penalty_weight to Layer 3 (Optuna TPE Search, 5000 trials ×25 workers). Layer 3 produces best parameters →Redis →online A/B →Memory DB →back to Layer 2.
+
+## 2.2 Influence Share and Parameter Search Engine 
+
+Physical Intuition: Rooms and Walls in High-Dimensional Space 
+
+Before diving into the detailed mathematical derivation and the engineering motivation behind the system, let us establish an intuitive geometric and physical analogy to understand what “ranking” and “influence” truly represent. Imagine a search request that recalls 𝑛 candidate items. From a traditional engineering perspective, ranking simply means calculating a total score for each of these 𝑛 items and ordering them from highest to lowest. However, if we shift our perspective to a high-dimensional geometric space, a completely different and more profound picture emerges. We can view the scores of these 𝑛 items as a single “point” (a score vector) in an 𝑛 -dimensional space. Within this vast space, there exist invisible “walls”. When do we hit a wall? The critical state where any two items have exactly identical scores forms a “hyperplane wall” (a comparison boundary) in this space. Because there are 𝑛 items, the space is intersected by numerous such walls. These intersecting walls partition the entire 𝑛 -dimensional space into multiple closed “rooms” (ge-ometrically known as chambers). Every single “room” represents a specific, deterministic, and unique final ranking order. As long as our score vector—the “point”—stays safely inside a particular room, no items have tied scores, and the final ranking list remains absolutely fixed. Now, consider the task of optimizing the ranking algorithm. In Sortify, we do this by adjusting the parameters 𝜽 (such as changing the weight of GMV), which alters the final scores. In our geometric analogy, adjusting the parameters is essentially pushing this “point” to move continuously through the 
+
+9Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+space .As the parameters change, the point moves. If it merely wanders within the boundaries of a single room, the ranking order does not change at all, even though the underlying scores are shifting. It is only when the point crosses a “wall” —stepping from one room into an adjacent one—that two items swap their ranks, and the overall ranking list actually changes. This brings us to the core insight of our system: the atomic event of ranking change is not the reshuffling of a global list, but the point crossing a specific wall. 
+
+Following this logic, how should we define the “influence” of individual business factors (such as orders, GMV, or ads) on the final ranking? Since a rank change is equivalent to “the point crashing through a wall,” we can simply perform a physical “force analysis.” The distance to the wall is determined by the score difference between two items, and this total score difference is the sum of differences contributed by individual factors. Therefore, each factor acts as a “pusher” exerting force in a specific direction. The “influence” of each factor is determined by how much “force” it exerts in the normal direction of that wall to push the point across. The Influence Share metric measures exactly this: the percentage of pushing force each factor contributes relative to the total push. By adopting this physical intuition, we translate abstract parameter tuning and permutation-group dynamics into a crystal-clear force and kinetic attribution analysis in high-dimensional space. This perspective liberates us from opaque rank correlation metrics (like Kendall Tau) and allows us to delve into the microscopic physical process of every rank swap to precisely quantify the contribution of each business factor. 
+
+2.2.1 Motivation: Beyond Kendall Tau 
+
+Traditional parameter search in sorting systems relies on rank correlation metrics such as Kendall Tau to measure how well a candidate parameter set preserves a target ranking order. While Kendall Tau captures ordinal agreement, it has two critical limitations for multi-factor sorting optimization. First, it is 
+
+not decomposable : Kendall Tau produces a single scalar that cannot be attributed to individual factors, making it impossible to answer questions like “how much of the sorting decision is driven by GMV versus order count?” Second, it does not support factor trade-off analysis : because Kendall Tau has no sum-to-one constraint, there is no natural way to express “shift 5% of sorting influence from orders to GMV while keeping ad exposure stable.” 
+
+2.2.2 Influence Share Definition: From Symmetric Groups to the Influence Permutation Algorithm 
+
+We do not treat Influence Share as an isolated heuristic definition. Instead, we derive it as a continuous attribution scheme built on the permutation structure of ranking itself. Consider a request 𝑞 
+
+with 𝑛 𝑞 items, indexed by 𝑋 𝑞 = {1, . . . , 𝑛 𝑞 }. Under parameter vector 𝜽 , the ranking outcome for that request is a permutation in the symmetric group: 
+
+𝜋 𝑞 (𝜽 ) ∈ 𝑆 𝑛 𝑞 . (1) Here 𝜋 𝑞 (𝜽 )( 𝑘 ) denotes the item placed at rank 𝑘 . Since the symmetric group 𝑆 𝑛 𝑞 is generated by adjacent transpositions 𝑠 𝑘 = (𝑘, 𝑘 + 1), any difference between two rankings can be decomposed into a sequence of local swaps. For ranking control, the atomic event is therefore not “replacing one permutation by another” but flipping the relative order of a specific item pair. To connect this discrete group structure to continuous parameters, let candidate parameters 𝜽 induce a total score vector S𝑞 (𝜽 ) ∈ R𝑛 𝑞 for request 𝑞 . For any 𝑖 ≠ 𝑗 , define the comparison hyperplane and the corresponding chamber: 
+
+𝐻 𝑞𝑖 𝑗 := {𝑥 ∈ R𝑛 𝑞 : 𝑥 𝑖 = 𝑥 𝑗 }, 𝐶 𝜋 := {𝑥 : 𝑥 𝜋 (1) > 𝑥 𝜋 (2) > · · · > 𝑥 𝜋 (𝑛 𝑞 ) }. (2) When S𝑞 (𝜽 ) ∈ 𝐶 𝜋 , the ranking is exactly permutation 𝜋 ; when it crosses some 𝐻 𝑞𝑖 𝑗 , the relative 10 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+order of items 𝑖 and 𝑗 flips. This is the classical reflection-geometric representation of the symmetric group. The local coordinate governing ranking change is therefore the pairwise margin: To avoid notational ambiguity, we assume scores are in generic position; if ties occur, a fixed deterministic tie-breaker resolves them, so the final ranking can still be treated as an element of 𝑆 𝑛 𝑞 .
+
+Δ𝑞 (𝑖, 𝑗 ; 𝜽 ) := 𝑆 𝑞 (𝑖 ; 𝜽 ) − 𝑆 𝑞 ( 𝑗 ; 𝜽 ). (3) In Sortify, the total score is additively decomposed over factors: 
+
+𝑆 𝑞 (𝑖 ; 𝜽 ) =∑︁  
+
+> 𝑓 ∈ F
+
+score 𝑞, 𝑓 (𝑖 ; 𝜽 ), Δ𝑞 (𝑖, 𝑗 ; 𝜽 ) =∑︁  
+
+> 𝑓 ∈ F
+
+Δ𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ), (4) where 
+
+Δ𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) := score 𝑞, 𝑓 (𝑖 ; 𝜽 ) − score 𝑞, 𝑓 ( 𝑗 ; 𝜽 ). (5) This gives the key bridge from group theory to algorithm design: parameter updates do not act on a discrete permutation directly. They first reshape the margin of each pair along the normal direction of the comparison wall; the sign of that margin determines whether a swap occurs; and the accumulation of such swaps yields a new permutation. Under this lens, parameter search becomes an influence permutation algorithm: it continuously reallocates each factor’s share of responsibility for potential swaps across important item pairs. To turn that responsibility into a stable metric, we impose five attribution requirements at the pair level: locality, sign invariance, non-negativity, partition of unity, and invariance under common positive rescaling. Under these requirements, the simplest choice is an 𝐿 1 normalization of absolute factor margins. Define the total pairwise influence budget as: 
+
+𝑍 𝑞𝑖 𝑗 (𝜽 ) :=∑︁  
+
+> 𝑓 ∈ F
+
+Δ𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) . (6) If 𝑍 𝑞𝑖 𝑗 (𝜽 ) = 0, then no factor provides any discriminative signal for that pair, so the pair carries no ranking information and can be excluded from aggregation. For all informative pairs, the pairwise influence share of factor 𝑓 is defined as: 
+
+𝑠 𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) = Δ𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 )
+
+𝑍 𝑞𝑖 𝑗 (𝜽 ) . (7) It follows immediately that Í 𝑓 ∈ F 𝑠 𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) = 1. The role of the absolute value is to separate direction from magnitude: the sign of Δ𝑞, 𝑓 indicates which item the factor pushes forward, while Δ𝑞, 𝑓 
+
+measures how strongly it pushes. Holding other components fixed, 𝑠 𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) increases monotonically with Δ𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) , giving an interpretable local influence signal without requiring the global permutation to vary monotonically with every parameter. To move from pair-level shares to a request-level or dataset-level metric, we aggregate only informative and business-relevant pairs. Let 𝑃 𝑞 denote the pair set for request 𝑞 ; it may contain all informative pairs or be restricted to a Top-(𝐾 + 𝐿 ) region. For (𝑖, 𝑗 ) ∈ 𝑃 𝑞 , let 𝑟 𝑞𝑖 denote the rank of item 𝑖 in request 𝑞 ,and define the position-sensitive weight: 
+
+𝑤 𝑞𝑖 𝑗 = exp 
+
+
+
+− min (𝑟 𝑞𝑖 , 𝑟 𝑞 𝑗 )
+
+𝜏 
+
+
+
+. (8) Here 𝜏 controls the decay rate. Pairs involving higher-ranked items receive larger weights, reflecting the business reality that top-of-page positions matter disproportionately. The aggregate Influence Share for factor 𝑓 is then: 11 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+𝐼 𝑓 (𝜽 ) =
+
+Í𝑞 
+
+Í(𝑖, 𝑗 ) ∈ 𝑃 𝑞 𝑤 𝑞𝑖 𝑗 · 𝑠 𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 )
+
+Í𝑞 
+
+Í(𝑖, 𝑗 ) ∈ 𝑃 𝑞 𝑤 𝑞𝑖 𝑗 
+
+. (9) By construction, Í 𝑓 ∈ F 𝐼 𝑓 (𝜽 ) = 1. This sum-to-one property is what enables “exchange” reasoning: increasing 𝐼 gmv by 5 percentage points necessarily decreases other factors by a combined 5 percentage points, making trade-offs explicit and quantifiable. At this point the derivation closes: a ranking in 𝑆 𝑛 𝑞 
+
+is generated by pairwise swaps, swaps are triggered by pairwise margins crossing comparison walls, and Influence Share measures how much of those potential swaps is attributable to each factor. Operationally, the influence permutation algorithm consists of five steps: compute factor-wise scores and sum them into total scores; sort to obtain 𝜋 𝑞 (𝜽 ); compute Δ𝑞, 𝑓 and 𝑠 𝑞, 𝑓 on 𝑃 𝑞 ; aggregate with 𝑤 𝑞𝑖 𝑗 ; and pass 𝐼 𝑓 (𝜽 ) to the downstream objective and constraints. 
+
+2.2.3 Multi-Objective Search Formulation 
+
+The parameter search optimizes a composite objective that maximizes the primary business metric (𝐼 gmv uplift) while penalizing constraint violations via quadratic penalties: 
+
+J ( 𝜽 ) = 10 · 𝐼 gmv (𝜽 ) − 𝐼 base gmv 
+
+|𝐼 base gmv |
+
+| {z }
+
+> relative uplift
+
+−
+
+> 𝐽
+
+∑︁ 
+
+> 𝑗 =1
+
+𝜆 𝑗 ·  max (0, 𝑣 𝑗 (𝜽 )) 2 (10) where 𝜽 = (ps_ads_wo , ps_ads_wg , ps_org_wo , ps_org_wg , ps_porg_w , ps_price_pow , ps_w2 ) is the 7-dimensional parameter vector, 𝑣 𝑗 (𝜽 ) is the violation of the 𝑗 -th constraint (positive when vio-lated), and 𝜆 𝑗 is the penalty weight for constraint 𝑗 .The quadratic penalty form is a deliberate design choice: penalty 𝑗 = 𝜆 𝑗 · 𝑣 2 
+
+> 𝑗
+
+(11) A 1% violation incurs a penalty of 𝜆 𝑗 × 0.01 2, while a 10% violation incurs 𝜆 𝑗 × 0.10 2 — a 100x difference. This convexity tolerates minor boundary brushes while aggressively penalizing large violations, biasing the search toward solutions where all constraints are mildly satisfied rather than one being severely violated. Linear penalties, by contrast, would treat a 10% violation as merely 10x worse than a 1% violation, insufficient for industrial constraint enforcement. Constraints include bounds on 𝐼 order degradation, 𝐼 ecpm_term degradation, ads top-10 exposure rate, and 
+
+𝐼 gmv_ads . The penalty weights 𝜆 𝑗 are initialized at values between 15,000 and 30,000 and are subsequently adapted by the Preference channel (Section 2.4). 
+
+Figure 4 | Flow diagram showing: item pairs → pairwise score differences → per-factor share (sum=1) → rank-weighted aggregation → 𝐼 gmv , 𝐼 order , 𝐼 ecpm_term . Below: 7 parameters map into the sorting formula, changing factor contributions. 
+
+12 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+2.2.4 Search Engine 
+
+The search is executed by Optuna’s TPE (Tree-structured Parzen Estimator) sampler Akiba et al. [2019], which models the conditional distribution of parameters given good versus bad objective values. Each round runs 5,000 trials with 25 parallel workers using the Constant Liar strategy — when a worker starts a trial before others finish, it assumes pending trials will return a pessimistic value, preventing redundant exploration. A typical search completes in 15–30 minutes .As demonstrated in Section 4.3, this search engine consistently finds parameter configurations that achieve 𝐼 gmv uplifts of +4.9% to +41.6% relative to baseline, subject to calibrated constraints. 
+
+## 2.3 Belief Channel: Offline-Online Transfer Calibration 
+
+2.3.1 Motivation 
+
+The offline-online transfer gap documented in Section 1 is not a fixed constant — it varies across metrics, drifts over time, and shifts abruptly with traffic pattern changes. A static calibration (e.g., “offline GMV predictions are always 3x too optimistic”) would become stale within days. The Belief channel addresses this by maintaining a continuously updated linear transfer model for each metric pair, combining a slow algorithmic estimator (LMS) with a fast pattern-recognizing agent (LLM). From a Bayesian epistemological perspective, the Belief channel embodies two fundamentally differ-ent philosophies for confronting an uncertain world—a dual tempo of belief updating: normal science with smooth priors (LMS) represents the classical Bayesian framework, assuming the world is continu-ous (Markovian), with each round of new evidence incrementally refining the prior; paradigm shift and black swans (LLM intercept jumps) represent the decisive recognition of structural breakpoints when the underlying distribution undergoes cliff-like changes—discarding the old prior and forcibly injecting a new one. The former handles routine distributional drift; the latter responds to sudden paradigmatic disruptions. Together, they constitute a complete response to an uncertain world. 
+
+2.3.2 Linear Transfer Model 
+
+For each metric pair (e.g., 𝐼 gmv → GMV, 𝐼 order → Orders), we model the offline-to-online relationship as: 
+
+ˆ𝑢 online = 𝛼 · 𝑢 offline + 𝛽 (12) where 𝑢 offline and 𝑢 online are the observed offline and online uplifts respectively, 𝛼 (slope) captures the transfer rate, and 𝛽 (intercept) captures the systematic bias. Six such relationships are maintained: GMV~ 𝐼 gmv , Orders~ 𝐼 order , Ads Revenue~ 𝐼 ecpm_term , and three derived metrics. 
+
+2.3.3 LMS Continuous Calibration 
+
+After each round, the slope and intercept are updated via Least Mean Squares (LMS) regression with learning rate 𝜂 = 0.2:
+
+𝛼 𝑡 +1 = 𝛼 𝑡 + 𝜂 · 𝑒 𝑡 · 𝑢 offline ,𝑡 (13) 
+
+𝛽 𝑡 +1 = 𝛽 𝑡 + 𝜂 · 𝑒 𝑡 (14) where the prediction error 𝑒 𝑡 = 𝑢 online ,𝑡 − ˆ𝑢 online ,𝑡 . LMS provides stable, monotonic convergence for gradual distribution drift. However, under sudden structural shifts (e.g., a promotional event or traffic source change), LMS with 𝜂 = 0.2 requires approximately 15 rounds to reach 95% convergence — equivalent to over 2 days of production data, during which the system operates with a miscalibrated transfer model. 13 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+2.3.4 LLM Selective Jumps 
+
+To compress recovery time from structural breaks, the LLM meta-controller (Section 2.5) can directly adjust the intercept 𝛽 in discrete jumps of up to ±0.1:
+
+𝛽 new = 𝛽 old + Δ𝛽 LLM , Δ𝛽 LLM ∈ { 0, ±0.05 , ±0.1} (15) The LLM examines 20-round episode history and can detect patterns invisible to single-observation LMS — for example, “5 consecutive rounds where GMV transfer was pessimistic despite positive 𝐼 gmv 
+
+trends.” When the LLM detects such a pattern, a single intercept jump can accomplish what LMS would need 10+ rounds to achieve. Critically, the LLM adjusts only the intercept , not the slope, because intercept shifts represent systematic bias changes while slope changes indicate fundamental relationship restructuring, which should be left to the more conservative LMS estimator. The output of the Belief channel is a calibrated target_range for each constrained metric — the offline uplift range that, after applying the calibrated transfer function, maps to an acceptable online outcome.   
+
+> Figure 5 |Two-axis diagram. Horizontal axis: Belief (target_range = position of constraint boundary). Vertical axis: Preference (penalty_weight = hardness of constraint boundary). Arrows show LMS moving along Belief axis continuously, LLM making discrete jumps along Belief axis, and violation pressure moving along Preference axis. The two axes are orthogonal — corrections on one do not affect the other.
+
+As shown in Section 4.4, even under warm-start conditions the Belief channel must continue updating with new observations: in Exp-401838, R2 still exhibited a clearly optimistic offline bias, while by R7 the same kind of positive offline signal had become able to translate into significantly positive online GMV. 14 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+## 2.4 Preference Channel: Constraint Penalty Adaptation 
+
+2.4.1 Motivation 
+
+Even with a perfectly calibrated transfer model, the search framework still needs to know how hard 
+
+to enforce each constraint. A constraint that was harmlessly brushed in round 𝑁 may become critically binding in round 𝑁 + 1 due to changing market conditions. The Preference channel continuously adjusts constraint penalty weights based on observed violation patterns. Within Savage’s SEU framework, the Preference channel addresses a fundamentally different error type from the epistemic error corrected by the Belief channel— axiological error : “It happened, but I didn’t expect it to hurt this much.” The system’s prediction was entirely correct, but its assessment of the outcome’s “pain” (utility loss) was severely insufficient. For instance, the system accurately predicted a minor decline in a metric, the online result confirmed a minor decline, yet this small decline triggered a catastrophic alert in the business dashboard. In this case, the correction path must not touch the transfer mapping —the world model is not wrong—but must instead correct the utility function: the system is learning that “this red line is far harder than expected; next time, even at the cost of the primary objective, it must never be crossed again.” 
+
+2.4.2 Violation Pressure 
+
+For each constraint 𝑗 , we compute a normalized violation pressure: 
+
+𝑝 𝑗 = 𝑣 𝑗 (𝜽 )
+
+𝑣 threshold 
+
+> 𝑗
+
+(16) where 𝑣 𝑗 (𝜽 ) is the observed violation magnitude and 𝑣 threshold  
+
+> 𝑗
+
+is the acceptable violation threshold. A pressure of 𝑝 𝑗 > 0 indicates the constraint is being violated; 𝑝 𝑗 ≤ 0 indicates it is satisfied. 
+
+2.4.3 Asymmetric Multiplicative Update 
+
+The penalty weight update follows a multiplicative rule with asymmetric step sizes: 
+
+𝛿 𝑗 =
+
+(
+
+𝛿 up = 0.25 if 𝑝 𝑗 > 0
+
+−𝛿 down = −0.08 if 𝑝 𝑗 ≤ 0 (17) 
+
+𝜆 (𝑡 +1) 
+
+> 𝑗
+
+= 𝜆 (𝑡 ) 
+
+> 𝑗
+
+· exp (𝛿 𝑗 ) (18) This design encodes three deliberate properties: 1. Scale invariance. Multiplicative updates apply equal percentage changes regardless of the absolute magnitude of 𝜆 𝑗 . When one constraint has 𝜆 = 1,000 and another has 𝜆 = 80 ,000 , equal violation pressure produces proportionally equal adjustments. Additive updates would over-correct small weights and under-correct large ones. 2. Loss aversion. The asymmetry 𝛿 up = 0.25 > 𝛿 down = 0.08 means that tightening a constraint (in response to violation) is 3x faster than relaxing it (when satisfied). This reflects the industrial reality that the cost of a constraint violation (e.g., ad revenue collapse) outweighs the opportunity cost of an overly tight constraint (e.g., slightly suboptimal GMV). 3. Log-space interpretability. Because the update is multiplicative in the original space and additive in log-space, 𝛿 up and 𝛿 down are directly interpretable as one-round tightening and relaxation steps. They are intentionally asymmetric, making the system more responsive to violations than to relaxation opportunities. The Preference channel’s output is a set of calibrated penalty_weight values that feed directly into the objective function (Eq. 10). As demonstrated in Section 4.5, the Preference channel’s adaptive weights contribute to narrowing parameter oscillation amplitude across successive experiments. 15 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+## 2.5 LLM Meta-Controller 
+
+2.5.1 Motivation 
+
+The LMS estimator in the Belief channel handles routine distribution drift effectively but is fun-damentally a single-observation, fixed-step-size algorithm. It cannot detect multi-round patterns (e.g., “5 consecutive rounds of pessimistic GMV transfer”), distinguish between noise and structural breaks, or reason about the relationship between Belief corrections and Preference corrections. The LLM meta-controller fills this gap by providing episodic pattern recognition and cross-channel reasoning. From a cybernetics perspective, the LLM meta-controller achieves a leap from first-order control to second-order control (reflection) . First-order control—the Optuna search engine finding optimal solutions in the high-dimensional parameter space under given Belief and Preference conditions—is direct control over the “environment.” The LLM meta-controller, by contrast, does not directly manipulate the low-level sorting parameters 𝜽 . Its inputs are “how the system has been perceiving data” (LMS update histories and observation errors in the Memory DB)—it is learning how the system learns . This intervention on framework-level meta-parameters (intercepts and penalty multipliers) endows the system with the capacity for self-reflection. What the LLM accomplishes is not parameter optimization, but “belief epiphany” and “value recalibration.” 
+
+2.5.2 Two Orthogonal Knobs 
+
+The LLM operates on exactly two output variables: 
+
+Δ𝛽 LLM ∈ [− 0.1, +0.1] (Belief channel: intercept adjustment) (19) 
+
+𝑚 LLM ∈ [ 0.5, 2.0] (Preference channel: penalty multiplier) (20) These bounds are safety constraints, not suggestions. A single-round intercept shift of ±0.1 is already a large correction; the cap prevents catastrophic miscalibration from a single LLM error. The penalty multiplier range of [0.5, 2.0] allows halving or doubling a constraint’s enforcement strength, sufficient for responding to structural breaks without enabling runaway penalty inflation. A critical design decision is that the LLM adjusts framework-level parameters (intercepts and penalty multipliers), not the 7-dimensional bottom-level sorting parameter vector ( 𝜽 ). The rationale is grounded in the distinction between experience and facts : “offline GMV predictions have been 5–8% optimistic over the past 3 rounds” is a reusable structural insight that transfers across data snapshots, while “ps_ads_wg = 2.15” is a one-time fact about today’s data distribution that may be 1.73 tomorrow. The LLM operates in the space of reusable experience; Optuna operates in the space of ephemeral facts. 
+
+2.5.3 Context and Evidence Requirements 
+
+The LLM receives a structured context JSON containing: (1) the current slope and intercept for all 6 prior relations, (2) the 20 most recent episodes with paired offline-online metrics, (3) the 30 most recent prior update history records (both LMS and LLM), and (4) the current penalty weight state. Every LLM proposal must cite specific episode keys as evidence. Proposals without evidence are rejected. When the LLM’s confidence is low — for instance, if the recent episodes show contradictory signals — it is instructed to return an empty proposal (no adjustment), which is preferable to a weakly grounded correction. 
+
+2.5.4 Implementation: Model, Prompt, and Output Safety Model and invocation. The meta-controller invokes an LLM through the Codex CLI’s 2 exec sub-command in a sandboxed subprocess. Sortify implements its own memory system (Section 2.6) and  
+
+> 2OpenAI Codex CLI, https://github.com/openai/codex
+
+16 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange          
+
+> Figure 6 |Input assembly: 20-round episode history (offline/online metric pairs) + 30 prior update records (LMS and LLM correction history) + current penalty weights →Context JSON →LLM reasoning →Output: {delta_intercept, penalty_multiplier, reason, evidence_keys}. Two arrows from output: delta_intercept feeds into Belief channel (intercept update), penalty_multiplier feeds into Preference channel (weight scaling). Safety bounds shown as guard rails on both outputs.
+
+tool-calling mechanisms, making it a fully capable autonomous agent in its own right—Codex serves solely as the underlying LLM inference engine, not as an agent framework. The invocation command is: 
+
+codex exec - --skip-git-repo-check \ --sandbox read-only --color never \ -c model_reasoning_effort="high" 
+
+The prompt is passed through standard input, and the response is read from standard output. The reasoning effort is set to high, which activates extended reasoning before the model produces its structured JSON output. A 300-second timeout prevents pipeline stalls. No temperature parameter is set explicitly; the extended-reasoning mode subsumes sampling control by directing the model to reason thoroughly before committing to an answer. 
+
+Prompt structure. The LLM receives a single-shot prompt consisting of two concatenated parts: 1. System instructions (∼600 words, hardcoded): Define the output JSON schema ( proposal_id , an array of proposals each containing relation_key , delta_intercept , penalty_multiplier ,
+
+reason , and evidence_episode_keys ), specify safety bounds ( |Δ𝛽 | ≤ 0.1, 𝑚 ∈ [ 0.5, 2.0]), and frame the task as Bayesian decision alignment—separating belief updates (intercept corrections on the transfer-function) from preference updates (loss-weight scaling for constraint violations). 2. Context JSON (dynamically generated): The structured context described in Section 2.5.3, exported by the export-llm-context command from the Memory DB. No few-shot examples are provided. The prompt is deliberately kept zero-shot to avoid anchoring the model on past correction patterns, which could suppress novel structural insights. 
+
+Output parsing and safety layers. The LLM’s raw text output passes through a seven-layer safety pipeline before any system state is modified: 1. Prompt-level instruction: The system instructions explicitly constrain output format and value ranges. 17 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+2. Robust JSON extraction: A three-strategy parser attempts direct json.loads , then Markdown code-block extraction via regex, then a brace-depth state machine to isolate the first complete JSON object from potentially noisy output. 3. Schema validation and type coercion: Each proposal field is validated: missing delta_intercept 
+
+defaults to 0.0, missing penalty_multiplier defaults to 1.0, and all numeric fields are cast to float .Malformed entries are silently dropped. 4. Relation key whitelist: Every relation_key in the proposal is checked against the set of keys present in the context’s prior relations. Unknown keys trigger an immediate rejection. 5. Hard clamp: Regardless of the LLM’s output, Δ𝛽 LLM is clamped to [− 0.1, +0.1] and 𝑚 LLM to 
+
+[0.5, 2.0] in code. 6. Global weight bounds: Even after multiplicative scaling, penalty weights stay within configured floors and ceilings (e.g., [1,000 , 80 ,000 ]), preventing cumulative drift across rounds. 7. Failure fallback: If the LLM call times out, returns unparseable output, or produces an empty proposal array, the system falls back to a no-op proposal ( Δ𝛽 = 0, 𝑚 = 1.0). The pipeline continues without interruption. This defense-in-depth design ensures that the LLM is a bounded advisor : it can accelerate convergence through structural insight, but cannot destabilize the system even under adversarial or degenerate outputs. 
+
+2.5.5 Coordination with LMS 
+
+LMS and LLM operate in serial within each round: LMS updates first (Step 5 of the pipeline), then the LLM reads the post-LMS state and proposes adjustments (Steps 7–8). This ordering ensures the LLM operates on the most current algorithmic calibration. To prevent oscillation between channels, a freeze rule applies: if the Belief channel update exceeds a threshold magnitude, the Preference channel freezes for one round, preserving diagnostic clarity. As demonstrated in Section 4.6, in Exp-401838, LLM calibration effort converges from 5 correction items per round to 2 within 7 rounds, indicating that framework-level corrections diminish as evidence accumulates. 
+
+## 2.6 Memory DB and State Persistence 
+
+2.6.1 Motivation 
+
+Without persistent state, the system suffers from a “Groundhog Day” effect: each round starts with no knowledge of past transfer relationships, penalty sensitivities, or LLM correction patterns. After 30 rounds, the system would possess no more calibration intelligence than it had at round 1. The Memory DB solves this by providing a relational store that accumulates every observation, calibration update, and decision across the system’s lifetime. 
+
+2.6.2 Schema Design 
+
+The Memory DB consists of 7 SQLite tables designed for idempotent writes and immutable audit: The schema enforces two critical properties: 1. Idempotency. Composite keys (relation_key + episode_key) in prior_observations prevent duplicate writes if a pipeline step is retried after failure. The same observation written twice produces identical state. 2. Immutability. The memory_events table serves as a write-ahead log. No row is ever deleted or modified, providing a complete forensic trace for debugging calibration anomalies. 
+
+2.6.3 Cross-Round Intelligence 
+
+The Memory DB enables three forms of cross-round intelligence: 
+
+• LLM context assembly. The 20 most recent episodes and 30 most recent update history records 18 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Table 1 | Memory DB schema overview.                
+
+> Table Role Key Fields Write Pattern
+> episodes Fact table: one row per round with paired offline-online snapshots episode_key, offline_metrics, online_uplifts, status Append-only; status: offline →deployed →
+> online
+> offline_candidates Top-5 parameter candidates per round episode_key, rank, params, metrics Append per round
+> prior_relations Current Belief channel state: slope & intercept per metric pair relation_key, slope, intercept, eta Upsert per round
+> prior_observations Raw (offline, online, beta) triples per metric pair and episode relation_key, episode_key, offline_uplift, online_uplift Append with idempotency
+> prior_update_history Belief channel audit trail method (lms/llm), old/new slope, old/new intercept Append-only
+> penalty_wt_upd_hist Preference channel audit trail constraint_metric, pressure, step, old/new weight Append-only
+> memory_events Immutable global audit log event_type, idempotency_key, metadata_json Append-only
+
+are extracted and formatted as the LLM’s input context. As the database grows, the LLM gains increasingly rich evidence for pattern detection. 
+
+• Warm-start across experiments. Exp-401838 started from an existing Memory DB state with pre-calibrated transfer models and penalty weights, rather than default slopes and intercepts. This capability allows the system to extend calibration intelligence from prior episodes into new production rounds (Sections 4.3 and 4.5). 
+
+• Cross-market transfer. When deploying to Country B, the Memory DB schema was reused without modification. The system initialized with default priors but accumulated Country B-specific calibra-tion within a single round, correctly identifying that organic click weights (ps_org_wc) were severely underweighted in the baseline formula (Section 4.8). As demonstrated in Section 4.8, the persistent Memory DB enables Sortify to generalize across markets without architectural changes, validating the design principle that calibration intelligence should be cumulative rather than ephemeral. 19 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Figure 7 | Complete data flow across one YOLO cycle: (1) A/B data pulled → (2) Episode recorded in Memory DB → (3) LMS reads prior_observations, updates prior_relations → (4) LLM context assembled from episodes + update histories → (5) LLM proposal applied to intercepts and penalty weights → (6) Target ranges and penalty weights feed into Optuna objective → (7) 5000-trial search → (8) Best parameters published to Redis → (9) New A/B data generated → back to (1). Memory DB is the central state store connecting all steps. 
+
+20 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# 3. Operational Framework 
+
+In this section, we describe how Sortify operates as a production system — the infrastructure it runs on, the step-by-step pipeline for a single optimization round, and the continuous loop that chains rounds into an autonomous, self-recovering process. The goal is to demonstrate that the architecture described in Section 2 is not merely a theoretical framework but an operationally viable system that runs unattended with built-in failure handling. 
+
+## 3.1 System Infrastructure   
+
+> Table 2 |System configuration.
+
+Component Specification 
+
+Search engine Optuna TPE sampler Akiba et al. [2019] Trials per round 5,000 Parallel workers 25 (Constant Liar strategy) State database SQLite ( agent_memory.db )Parameter publishing Redis key-value store Search time per round 15–30 minutes Data accumulation window 3.5 hours (minimum) Processing time per round 25–50 minutes Total cycle time ∼4 hours Daily throughput ∼6 rounds/day Time alignment 15-minute boundary snapping 
+
+Takeaway: The total cycle time of approximately 4 hours — 3.5 hours for online data accumulation plus 25–50 minutes for processing — enables roughly 6 optimization rounds per day. This cadence is fast enough to respond to intra-day traffic pattern shifts while accumulating sufficient data volume for statistically meaningful A/B comparisons. The system’s runtime footprint is deliberately lightweight. The Memory DB is a single SQLite file; the search engine runs on a single machine; parameter publishing uses a standard Redis instance shared with other production services. No GPU resources are required. The only external dependency beyond the platform’s existing A/B infrastructure is the LLM API call for meta-controller proposals. 
+
+## 3.2 One-Shot Pipeline 
+
+Each optimization round executes a 10-step pipeline. The design target is restart safety , not strict run-to-run determinism: persisted state transitions (such as episode writes, prior updates, and state-file updates) are idempotent, so re-running a completed write step after interruption does not corrupt state; however, steps that depend on external services, especially LLM proposal generation, are not assumed to return byte-identical outputs on every retry. 
+
+Steps 1–4: Data Collection. 
+
+• Step 1 — Pull A/B report. Fetch the online A/B experiment report for the current observation window. The report contains uplift percentages for GMV, Orders, Ads Revenue, Advertiser Value, Organic Clicks, and Ads CTR relative to the control group. 
+
+• Step 2 — Initialize Memory DB. If this is the first round, create the 7-table schema. On subsequent rounds, verify schema integrity and open the existing database. 
+
+• Step 3 — Record offline metrics. Write the current round’s offline search results (objective value, 21 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Influence Share metrics, parameter vector, top-5 candidates) as a new episode in the Memory DB with status offline_recorded .
+
+• Step 4 — Record online metrics. Parse the A/B report from Step 1, write online uplift values to the episode record, and transition the episode status to online_recorded .
+
+Step 5: LMS Calibration (Belief Channel). For each of the 6 prior relations, compute the prediction error between the calibrated transfer model’s forecast and the actual online uplift, then apply LMS updates to slope and intercept (Eqs. 13 and 14). All updates are persisted to prior_relations and logged in 
+
+prior_update_history with method lms_regression .
+
+Step 6: LLM Context Export. Assemble the LLM context JSON by extracting: (1) current slope/intercept for all 6 relations, (2) the 20 most recent episodes, (3) the 30 most recent prior update history records, and (4) current penalty weight state. Write the context to a timestamped file for audit. 
+
+Step 7: LLM Proposal Generation. Call the LLM API with the structured context and system prompt. The LLM returns a JSON proposal containing delta_intercept entries (one per relation) and penalty_multiplier entries (one per constraint), each with a reason field and evidence_keys 
+
+citing specific episodes. If confidence is low, the LLM returns an empty proposal. 
+
+Step 8: Apply LLM Proposal. For each non-empty proposal item: apply delta_intercept to the corresponding relation’s intercept in prior_relations , and apply penalty_multiplier to the corresponding constraint’s penalty weight. Log all changes in prior_update_history (method 
+
+llm_proposal ) and penalty_weight_update_history . If the Belief update magnitude exceeds the freeze threshold, skip Preference updates for this round. 
+
+Step 9: Derive Target Range. Using the updated transfer model (slope, intercept), compute the offline uplift range that maps to an acceptable online outcome for each constrained metric. This calibrated 
+
+target_range replaces the static constraint boundaries in the search objective. 
+
+Step 10: Derive Penalty Weight. Compute violation pressure for each constraint based on the most recent episode’s results (Eq. 16), apply the asymmetric multiplicative update (Eqs. 17 and 18), and persist the new penalty weights. 
+
+Final: Search and Publish. Execute the Optuna TPE search (5,000 trials, 25 workers) with the calibrated target ranges and penalty weights. Extract the best parameter vector, publish to Redis, and write a handoff state file ( one-shot-latest.env ) recording the run tag, config path, and best parameters for the next round. 
+
+## 3.3 YOLO Continuous Loop 
+
+The YOLO (You Only Live Once) mode chains one-shot pipeline executions into an infinite au-tonomous loop with three phases. 
+
+Phase 1 — Coldstart. On first launch, bootstrap initial parameters to Redis using default or user-specified values. Anchor the observation time window to the current timestamp, aligned to a 15-minute boundary. No A/B data exists yet; skip LLM diagnostics and proceed directly to offline search with default priors. 
+
+Phase 2 — Initial. Execute the first full one-shot pipeline with optional manual confirmation. This round establishes the baseline episode in the Memory DB and the first A/B observation pair. 
+
+Phase 3 — YOLO. Enter the infinite loop: 22 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+1. Wait until the minimum data accumulation window (3.5 hours) has elapsed since the last parameter push. 2. Pull the A/B report for the elapsed window. 3. Execute the full one-shot pipeline (Steps 1–10 + Search + Publish). 4. Update yolo-state.env with the new round number, push timestamp, observation window, previous parameters, and A/B report path. 5. Append a complete round record to yolo-event-log.md (round number, timestamp, parameters, A/B results, LLM proposal, errors). 6. Return to step 1. 
+
+Failure Handling. The YOLO loop distinguishes two failure categories: 
+
+• A/B data fetch failures (transient): Retry up to 5 times at 5-minute intervals. Detection criterion: A/B report file is missing or contains fewer than 3 lines. 
+
+• Non-A/B failures (search crash, Redis error, DB corruption): Exit immediately without retry. The operator investigates and restarts manually. 
+
+State Recovery. On restart after a crash or manual stop, the YOLO loop reads yolo-state.env 
+
+to recover: the last completed round number, the timestamp of the last parameter push, the observation window boundaries, and the previous parameter vector. The loop resumes from the next round, reusing the observation window endpoint as the new window start. A forced reset ( --reset flag) clears the state file and restarts from Phase 1.   
+
+> Figure 8 |YOLO Continuous Loop: State machine diagram with three states — Coldstart (bootstrap params, anchor time window), Initial (first full pipeline with manual confirmation), YOLO (infinite loop: wait 3.5h, pull A/B, pipeline, publish, update state, loop). Retry logic shown as a self-loop on the A/B pull step (up to 5 retries). Exit arrow from non-A/B failures. Recovery arrow from restart reading yolo-state.env back into YOLO state.
+
+As demonstrated in Sections 4.3 and 4.8, the YOLO loop ran 7 consecutive rounds (25 hours) in Exp-401838 and accumulated 23 rounds across two search phases in Country B, validating the operational robustness of this design. 23 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# 4. Evaluation 
+
+In this section, we present experimental and deployment evidence from 30 optimization rounds across two markets (Country A and Country B). We evaluate Sortify along six axes: online business effectiveness (Section 4.3), offline-online transfer calibration quality (Section 4.4), parameter stability (Section 4.5), LLM meta-controller effectiveness (Section 4.6), sensitivity analysis (Section 4.7), and Country B deployment from cold start to production rollout (Section 4.8). We conclude with an efficiency analysis (Section 4.9). 
+
+## 4.1 Metrics 
+
+We evaluate Sortify using three categories of metrics: 
+
+Offline metrics (Influence Share based): 
+
+• 𝐼 gmv : Influence share of the GMV factor in sorting decisions. The primary optimization target. 
+
+• 𝐼 order : Influence share of the order factor. Constrained to prevent excessive order degradation. 
+
+• 𝐼 ecpm_term : Influence share of the advertising eCPM factor. Constrained to protect ad revenue. 
+
+• 𝐼 gmv_ads : Influence share of GMV within the advertising channel. 
+
+• ads_top10_rate : Fraction of ads appearing in the top-10 positions. Constrained to maintain ad exposure. 
+
+Online metrics (A/B test): 
+
+• GMV : Gross merchandise value uplift vs. control group. Primary business KPI. 
+
+• Orders : Order volume uplift. Secondary business KPI. 
+
+• Ads Revenue : Total advertising revenue uplift. 
+
+• Advertiser Value : Composite advertiser ROI metric. 
+
+• Organic Clicks : Click-through volume on organic (non-ad) listings. 
+
+• Ads CTR : Click-through rate on ad placements. 
+
+Derived evaluation metrics: 
+
+• Transfer rate : Ratio of online uplift to offline uplift (e.g., online GMV% / offline 𝐼 gmv %), measuring calibration quality. 
+
+• Oscillation ratio : Ratio of maximum to minimum value of ps_ads_wo (the most volatile parameter) across rounds, measuring parameter stability. 
+
+• LLM correction count : Number of non-zero adjustment items per LLM proposal, measuring calibration effort convergence. 
+
+## 4.2 Experiment Setup                      
+
+> Table 3 |Experiment overview.
+> Exp-401838 Exp-437160 Market Country A PDP Country B PDP
+> Rounds 7 (warm-start) 23 (V1: 11 + V3: 12)
+> Duration 25 hours V1: 03-05–07; V3: 03-10–13; freeze 03-14; 7d AB 03-15–22; rollout 03-24
+> Start cond. Warm-start from existing Memory DB state Cold-start, default priors
+> Obs. window 3.5 h/round 6 h/round (V3); 7d static AB post-freeze
+> Proc. time 25–50 min/round 25–50 min/round
+> Parameters 7(ads_wo/wg, org_wo/wg, porg_w, price_pow, w2) 7(org_wc/wg/wo, ads_wc/wg/wo, biz_price_pow)
+
+Exp-401838 is a Country A warm-start experiment that retained historical calibration state. Its core purpose is not to re-demonstrate what happens during cold start, but to test whether a system 24 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+that has already accumulated transfer models and penalty weights can continue advancing in a better direction within production, and converge LLM calibration effort within a limited number of rounds. Exp-437160 validates the system’s end-to-end deployment capability in a previously unseen market. The experiment progressed through two search phases — V1 (11 rounds, GMV win rate 30%) exposed cold-start limitations in a new market, while V3 (12 rounds) identified a Pareto-optimal parameter configuration at R7. This configuration was frozen on 03-14 and validated through a 7-day A/B test before being promoted to production rollout on 03-24. The two experiments serve different lifecycle roles. Exp-401838 demonstrates the inner-loop op-timization mechanism — search, deploy, observe, calibrate — in continuous warm-start production operation. Exp-437160 extends this to the full deployment lifecycle: it progressed through exploration, exploitation, parameter freeze, long-horizon validation, and production rollout, providing evidence that the system can produce deployable policies, not merely promising round-level signals. 
+
+## 4.3 Online A/B Results 
+
+4.3.1 Exp-401838: Country A PDP Warm-Start (7 Rounds)   
+
+> Table 4 |Exp-401838 online A/B results — round-by-round GMV and Orders progression.
+
+Round GMV Orders Ads Revenue Advertiser Value 
+
+R2 −3.6% 0.0% +0.7% +7.9% R3 −1.5% +1.7% −0.8% −1.0% R4 +0.2% +1.7% −8.7% −8.1% R5 +1.9% +3.8% −5.8% −5.6% R6 +0.9% +2.7% −9.4% −10.8% R7 +9.2% +12.5% +5.7% −8.9% 
+
+Takeaway: Exp-401838’s GMV trajectory progresses generally upward across 7 rounds, from −3.6% 
+
+at R2 to +9.2% at R7, with R4 through R7 being 4 consecutive positive rounds. Orders turned positive from R3 onward, peaking at +12.5% . This indicates that under warm-start conditions the system can extend existing calibration state into subsequent rounds rather than starting from scratch each round. 
+
+Caveat. R7 metrics were collected during a low-traffic early morning window ( ∼12K impressions), which introduces higher statistical uncertainty than the typical observation window. The +9.2% GMV and +12.5% Orders results require validation in a high-traffic period. 
+
+Persistent advertiser value pressure. Advertiser Value was positive only in R2 (+7.9%) and turned negative in all subsequent rounds, indicating that even under warm-start conditions, optimizing for GMV and Orders can systematically compress advertiser ROI — a limitation discussed in Section 6. 
+
+## 4.4 Offline-Online Transfer Analysis 
+
+A central claim of Sortify is that even under warm-start conditions, the offline-online mapping still requires continuous calibration. Exp-401838 itself provides two representative paired observations. 
+
+Takeaway: Within the same warm-start experiment, the offline-online mapping changes noticeably across rounds. R2 shows that “positive offline” does not guarantee positive online; R7 shows that after multiple rounds of calibration, offline gains finally begin to translate more reliably into online GMV. This phenomenon supports the necessity of the Belief channel: the transfer relationship is not a one-time setting but requires continuous updating with new observations. 25 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Figure 9 | Online KPI Trends: Single-panel line chart showing Exp-401838 GMV and Orders uplift across 7 rounds. Dashed horizontal line at 0% for reference. Highlights the R4–R7 consecutive positive region and the R7 peak results. 
+
+Table 5 | Representative offline-online gap in Exp-401838. 
+
+Round 𝐼 gmv Uplift Online GMV Observation 
+
+R2 +18.2% −3.6% Significantly optimistic offline; positive offline uplift did not translate to positive GMV R7 +41.6% +9.2% Optimistic bias remains, but after calibration the offline gains begin to translate reliably into positive online GMV 26 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Looking further at the metrics in Section 4.3, GMV, Orders, Ads Revenue, and Advertiser Value do not move in sync. For example, R7 simultaneously shows GMV +9.2%, Orders +12.5%, Ads Revenue +5.7%, but Advertiser Value remains at −8.9%. This indicates that different business metrics should not share a single global calibration factor but should each maintain their own transfer relationship.      
+
+> Figure 10 |Offline-Online Transfer Gap Visualization: Scatter plot with Exp-401838’s per-round offline 𝐼 gmv
+> uplift on the x-axis and corresponding online GMV on the y-axis. Identity line ( 𝑦 =𝑥 ) shown for reference. Points fall well below the identity line, showing systematic optimistic bias; later rounds are closer to the positive quadrant.
+
+## 4.5 Parameter Evolution and Stability 
+
+4.5.1 Residual Pendulum Effect in Warm-Start Experiment 
+
+The most volatile parameter across all experiments is ps_ads_wo (advertising order weight), which controls the trade-off between ad visibility and organic experience. This parameter exhibits a characteristic oscillation pattern we term the “pendulum effect.” 
+
+Takeaway: Even under warm-start conditions, ps_ads_wo remains the most volatile parameter, but its oscillation is contained within a 4.5x range, and the second cycle is narrower than the first. This indicates that the system has not yet converged to a single stable operating point, but has transitioned from unbounded exploration to constrained residual oscillation rather than unbounded drift. 27 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange   
+
+> Table 6 |Exp-401838 parameter oscillation statistics.
+
+Statistic Exp-401838 
+
+ps_ads_wo range 1.96–8.91 Oscillation ratio (max/min) 4.5x 
+
+Complete swing cycles 2Second cycle narrower than first Yes 
+
+Root cause analysis. The pendulum effect arises from a fundamental trade-off in the sorting formula: increasing ad visibility (high ps_ads_wo) improves ad impressions and potential ad revenue but reduces organic click exposure and can depress organic GMV. When the search engine finds a high-ad-weight solution that maximizes 𝐼 gmv in one round, the online results reveal organic degradation, causing the next round’s calibrated constraints to penalize ad weight — swinging the parameter to the opposite extreme. This oscillation reflects a genuine multi-objective tension that the single-objective-with-penalties formulation can only approximate, not resolve.       
+
+> Figure 11 |Parameter Evolution Heatmap: Heatmap with 7 parameters (rows) ×7 rounds (columns) from Exp-401838. Color scale from low to high values. The ps_ads_wo row shows the most pronounced back-and-forth oscillation, but the later half has a narrower swing range.
+
+## 4.6 LLM Calibration Effectiveness 
+
+4.6.1 Correction Convergence Takeaway: In Exp-401838, LLM calibration effort converges from 5 correction items in Round 2 to 2 items by Round 7, with late-stage magnitudes approaching zero. This indicates that under warm-start conditions, the LLM’s role is closer to “filling in remaining calibration residuals” rather than continuously rewriting the entire transfer framework. 28 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Table 7 | Exp-401838 LLM correction convergence. 
+
+Phase Exp-401838 Early (R2) 5 items, full recalibration 
+
+Middle (R3–R6) 2–3 items, decreasing magnitudes 
+
+Late (R7) 2 items, smallest magnitudes ( −0.005 )
+
+Convergence trend Clear convergence : 5 → 2 items, magnitude → ∼ 0
+
+Figure 12 | LLM Correction Convergence: Two-panel visualization. Top panel: bar chart showing the number of non-zero LLM correction items per round for Exp-401838, descending from 5 at R2 to 2 at R7. Bottom panel: line chart showing maximum correction magnitude per round, with an overall declining trend. 
+
+29 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+## 4.7 Sensitivity Analysis 
+
+This section discusses the rationale behind key system hyperparameter choices and their impact on performance. 
+
+LMS learning rate ( 𝜂 = 0.2). The learning rate controls the Belief channel’s responsiveness to single observations. 𝜂 = 0.2 means each round corrects only 20% of the prediction residual, requiring approximately ⌈log (0.05 )/ log (0.8)⌉ = 14 rounds to converge to 95% accuracy from an arbitrary initial bias. A higher 𝜂 would accelerate convergence but increase sensitivity to noisy observations — in low-traffic windows (such as Exp-401838 R7 with ∼12K impressions), single-round observation variance is large, and an overly aggressive learning rate would cause slope/intercept to oscillate unnecessarily under noise. 𝜂 = 0.2 is a classic adaptive filter setting that achieves a reasonable balance between convergence speed and noise robustness, and the LLM’s selective jump mechanism compensates for LMS’s slow response to structural breaks. 
+
+Penalty asymmetry ( 𝛿 up = 0.25 vs. 𝛿 down = 0.08 ). The tightening step is approximately 3x the relaxation step, encoding the industrial reality that “the cost of a constraint violation far exceeds the opportunity cost of an overly tight constraint.” If both were set symmetrically (e.g., both 0.15), penalty weights would decay too quickly after constraint satisfaction, increasing the probability of re-violation in subsequent rounds — in A/B testing, each constraint violation (e.g., ad revenue collapse) can trigger manual intervention or even experiment termination, far exceeding the cost of occasionally conservative GMV optimization. 
+
+LLM safety bounds ( |Δ𝛽 | ≤ 0.1, 𝑚 ∈ [ 0.5, 2.0]). Safety bounds ensure that even if the LLM’s judgment is completely wrong, the single-round deviation remains controllable. Taking the intercept as an example, the maximum single-round shift of ±0.1 across 6 relations implies a maximum single-round displacement of the target_range of approximately 10 percentage points — large enough to cover the typical few-percentage-point systematic bias in practice, but not so large as to cause catastrophic search framework distortion on a misjudgment. The penalty multiplier range [0.5, 2.0] allows halving or doubling constraint enforcement strength in a single round, sufficient to respond to sudden constraint violation patterns. 
+
+Necessity of the freeze mechanism. When the Belief channel undergoes a large update, if the Preference channel is simultaneously allowed to make large penalty weight adjustments, the next round’s online results become difficult to attribute — it is hard to determine whether the GMV change came from the mapping correction or the constraint strength change. The purpose of freezing for one round is to isolate the impact of a significant calibration event, providing clearer signals for subsequent diagnosis. 
+
+Penalty weight clamp range [1,000 , 80 ,000 ] rationale. The lower bound of 1,000 accounts for the magnitude of the positive reward in the objective function: typical positive scores ( 10 × 𝐼 gmv relative uplift) range from 0.5 to 2.0 (corresponding to 𝐼 gmv uplift of 5%–20%); if penalty weights fall below 1,000, even a 1% constraint violation (penalty = 1,000 × 0.01 2 = 0.1) would fail to effectively constrain the positive score. The upper bound of 80,000 preserves the search engine’s exploration capability: when penalty weights are too high (e.g., 80 ,000 × 0.01 2 = 8.0), even minor violations produce penalties far exceeding the positive score, forcing the search engine into an extremely conservative region and potentially missing parameter configurations that are overall superior despite minor constraint brushes. 30 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+## 4.8 Country B Deployment: From Cold Start to Rollout 
+
+Exp-437160 is the only experiment in this study that progressed through the complete deployment lifecycle — from cold-start parameter search to production rollout. This section presents the full evidence chain. 
+
+4.8.1 Cold Start Signal 
+
+To validate that Sortify generalizes beyond a single market, we deployed the system on Country B’s product detail page with a cold-start (no inherited Memory DB). The first round of search produced the following results:   
+
+> Table 8 |Exp-437160 cold-start results (Country B, V1 Round 1).
+
+Metric Value Constraint / Target Status 
+
+Offline objective 0.493 Maximize Achieved 
+
+𝐼 gmv uplift +4.9% ≥ +4% Met 
+
+𝐼 ecpm_term change −4.5% ≥ − 5% Near boundary ads_top10_rate — Constrained Met ps_org_wc change +271.2% (1.0 → 3.71) — Largest adjustment ratio_ads change −32 .0% — Ad share compressed The system correctly identified that Country B’s baseline sorting formula severely underweighted organic click signals (ps_org_wc jumped from 1.0 to 3.71, a +271% adjustment — the largest single-parameter change across all experiments). This market-specific insight emerged from the first round of search without any prior calibration, demonstrating that the Influence Share framework generalizes to new markets. However, this first-round directional signal was far from a deployable policy — subsequent search phases were needed to find a parameter configuration that could survive long-horizon validation. 
+
+4.8.2 Search Journey: From Direction to Deployable Parameters 
+
+The Country B experiment progressed through two search phases before arriving at a deployable configuration: 
+
+V1 (11 rounds, 03-05 to 03-07). The initial cold-start search phase achieved a GMV win rate of only 30% (mean GMV uplift −2.4%). While the system successfully identified the direction — organic click signals were underweighted — the parameters did not converge. All 7 parameters oscillated widely across the search space throughout the 11 rounds. V1’s core lesson was that directional correctness does not imply parameter deployability .
+
+V3 (12 rounds, 03-10 to 03-13). After narrowing the search space and adjusting constraint config-urations based on V1 observations, the system was restarted for a second search phase. Most of the 12 rounds still exhibited the ads-organic seesaw effect — Ads Impressions and Organic Clicks alternated in strict opposition — a structural pattern consistent with the pendulum effect observed in Country A (Section 4.5.1). 
+
+R7 parameter freeze (03-14). Within V3’s 12 rounds, the R8 observation window (measuring R7 parameters) produced the only round where GMV and Ads Revenue were simultaneously positive: GMV +2.6%, Ads Revenue +6.1%. Based on this Pareto-optimal outcome, the R7 parameters were frozen for extended validation. 
+
+4.8.3 Winning Parameter Structure 
+
+The frozen R7 parameters reveal a structurally distinct solution compared to the Country A experi-ments: 31 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange   
+
+> Table 9 |Exp-437160 frozen parameters (R7, Country B).
+
+Parameter Value Interpretation 
+
+ps_org_wc 7.667 Organic Click weight (dominant) 
+
+ps_ads_wc 4.381 Ads Click weight (high) 
+
+ps_org_wg 0.568 Organic GMV weight (suppressed) 
+
+ps_org_wo 0.805 Organic Order weight (suppressed) 
+
+ps_ads_wg 0.641 Ads GMV weight (suppressed) 
+
+ps_ads_wo 0.957 Ads Order weight (moderate) 
+
+ps_biz_price_pow 1.047 Price power (near-neutral) This configuration exhibits a “high Click, low GMV/Order” structure — the sorting formula is primarily driven by click signals, with transaction-based signals deliberately suppressed. This structure reduces the seesaw effect between organic ranking and ads ranking: when the sorting formula does not excessively amplify GMV/Order signals, organic items do not crowd out ad placements simply because they “sell more,” enabling both GMV and Ads Revenue to improve simultaneously. This contrasts with the residual pendulum effect observed in the Country A warm-start experiment (Section 4.5.1), where the key trade-off still centered on the ads order weight. The Country B R7 parameters circumvented this conflict by shifting the primary ranking signal to Clicks — click signals are far less zero-sum between organic and advertising channels than transaction signals. 
+
+4.8.4 Long-Horizon A/B Validation 
+
+The frozen R7 parameters were validated through a 7-day A/B test (03-15 to 03-22; rollout Snapshot #38047, 10% treatment vs. 20% control).   
+
+> Table 10 |7-day A/B core metrics (YMAL scene, yin_exchange vs Control).
+
+Metric Diff Note GMV/UU +4.15% Primary KPI 
+
+GMV +4.10% Consistent with GMV/UU 
+
+GMV/Order +3.97% Average order value drives GMV 
+
+Order/UU +0.17% Near-neutral 
+
+Ads Revenue +3.58% Ad revenue co-positive 
+
+CPC +4.19% Higher per-click value 
+
+Take Rate +3.01% Monetization improved 
+
+Click/UU +1.21% User engagement up 
+
+Ads Load −2.64 % Fewer ad slots, higher value The GMV improvement is driven primarily by average order value (GMV/Order +3.97%) rather than order volume (Order/UU +0.17%), indicating that the click-driven ranking surfaces higher-value items. Ads Revenue increased +3.58% despite Ads Load decreasing by 2.64%, indicating that the per-ad value improved significantly (CPC +4.19%) — fewer but more valuable ad placements. The 7-day observation window is sufficient to filter out intra-day volatility, providing stronger deployment confidence than single-round observations. 
+
+## 4.9 Efficiency and Operational Cost 
+
+Takeaway: Sortify operates with minimal resource overhead — a single LLM API call per round, no GPU requirements, and negligible storage growth. The primary cost is the 3.5-hour data accumulation 32 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange                      
+
+> Table 11 |Operational efficiency metrics.
+> Metric Value Notes
+> Total cycle time ∼4 hours 3.5h accumulation + 25–50min processing Daily optimization rounds ∼6/day 4h/round cadence Trials per round 5,000 25 workers; 15–30min search Human intervention (post-coldstart) Zero Within the inner optimization loop Consecutive unattended rounds 7; 23 Exp-401838 and Exp-437160; governance-limited, not failure-limited A/B fetch retry success 5×5 min No data loss observed Memory DB growth ∼1 KB/round 7 tables; negligible storage LLM API calls 1/round Single meta-controller inference
+
+window, which is dictated by statistical requirements rather than system limitations. The system ran 7 consecutive rounds (25 hours) in Exp-401838, and accumulated 23 rounds across two search phases in Country B; all stops and transitions in these experiments originated from governance-level decisions, not system failures. It is important to distinguish the scope of automation. The inner loop — parameter search, online deployment, A/B observation, LLM calibration, and next-round launch — runs without human inter-vention. However, the outer governance loop — which round’s parameters to freeze for extended validation, whether to promote to full rollout based on long-horizon A/B results, and post-rollout mon-itoring — remains human-driven. The Country B deployment illustrates this boundary: the inner loop autonomously executed 23 rounds across two search phases, but the decisions to freeze R7 parameters, conduct 7-day static A/B testing, and approve production rollout were all made by human operators based on snapshot-level A/B analysis. This division reflects a deliberate design choice: the system automates the high-frequency, data-intensive optimization decisions where human latency is the bottleneck, while preserving human governance over low-frequency, high-stakes deployment decisions. Compared to the manual optimization baseline — which typically required 1–2 human-hours per optimization round for data analysis, parameter selection, and deployment verification — Sortify reduces the marginal cost of each inner-loop round to approximately zero human-hours after initial setup, while increasing the optimization cadence from ∼1 round/day (limited by human availability) to ∼6 rounds/day. This speedup not only means more parameter exploration rounds, but more critically enables the system to respond to intra-day traffic pattern changes — for example, morning peak, midday trough, and evening peak traffic structures may affect optimal parameter configurations, and the 6-round/day cadence ensures at least one calibration update per major traffic period. 
+
+Cost structure analysis. Sortify’s runtime cost has three components: (1) Compute — the Optuna search uses 25 parallel workers on a single multi-core machine, consuming roughly 6.25–12.5 CPU-hours per round (25 cores × 15–30 min); (2) LLM calls — each round makes one API call with 4K–8K input tokens and a structured JSON response. At OpenAI’s public prices as of March 26, 2026 (GPT-5.4: $2.50/1M input, $15.00/1M output; GPT-5.3-Codex: $1.75/1M input, $14.00/1M output), the per-round cost with high reasoning effort is approximately $0.03–$0.10, since billed output includes reasoning tokens beyond the visible JSON. At 6 rounds/day this amounts to roughly $0.18–$0.60/day in LLM spend. If Codex CLI is used via ChatGPT sign-in rather than an API key, cost is absorbed by plan credits rather than per-call billing; (3) Data accumulation — the 3.5-hour online observation window is a fixed statistical requirement, not a systems bottleneck. Storage overhead is negligible: the Memory DB grows by ∼1 KB per round and remains below 100 KB after 30 rounds. 33 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# 5. Discussion: One-Person Feasibility 
+
+A dimension of Sortify that merits explicit discussion is the development process itself: the entire system—algorithm design, code implementation, experimental operation, data analysis, report writing, and visual asset creation—was produced by a single individual orchestrating a fleet of AI coding agents. Not a single line of production code was written by a human hand; not a single sentence of this report was drafted by a human author. The human’s role was exclusively that of architect and orchestrator : defining objectives, decomposing problems, reviewing outputs, and steering the agents toward coherent execution. This section examines the feasibility, mechanisms, and broader implications of this one-person paradigm. 
+
+## 5.1 Scope of What Was Delivered 
+
+To appreciate the claim, it is worth enumerating the concrete artifacts that constitute the Sortify project: 
+
+• Algorithm design. The dual-channel Belief/Preference decomposition, the LMS-based transfer calibration, the LLM meta-controller’s structured prompting protocol, and the asymmetric penalty update rules (Section 2). 
+
+• Production codebase. The 10-step one-shot pipeline, the YOLO continuous loop with failure recovery, the 7-table Memory DB schema, the Optuna-based search engine integration, and the Redis parameter publishing interface (Section 3). 
+
+• Experimental operation. 30 optimization rounds across two country markets (7 in Country A, 23 in Country B), including 25+ hours of unattended YOLO runs and a complete cross-market deployment lifecycle (Section 4). 
+
+• Analysis and reporting. Quantitative evaluation of online A/B results, parameter stability analysis, LLM calibration convergence tracking, cross-market generalization assessment, and the complete bilingual technical report. 
+
+• Presentation materials. Programmatic video compositions, figure generation, and visual assets for communicating results. In a conventional team setting, this scope would typically be distributed across 3–5 roles: an algorithm researcher, a software engineer, an operations specialist, a data analyst, and a technical writer. The com-pression of these roles into a single individual was enabled not by extraordinary individual productivity, but by a fundamental shift in the unit of work from writing to directing .
+
+## 5.2 Technical Depth and Development Complexity of Sortify 
+
+The deliverable inventory above provides a macro-level view of project scope but does not reveal the technical depth that Sortify embodies as a standalone software library. Sortify is far from a loose collection of scripts: it is a production-grade framework comprising approximately 98,000 lines of code across 78 Python modules organized into 7 major subsystems—spanning the full technical stack from low-level data loading to high-level autonomous decision-making. 
+
+Parameter search engine. One of Sortify’s core capabilities is a highly configurable parameter search (hyperparameter tuning) engine. The engine constructs a dependency-aware formula computation graph: given a set of ranking formulas and their nested weight variables, the system automatically parses dependencies, builds a layered computation graph, and incrementally updates only the affected variables when weights change—avoiding approximately 99% of redundant computation. On top of this, the system integrates the Optuna multi-objective optimization framework, supporting NSGA-II Pareto frontier search, Bayesian optimization, evolutionary strategies, and genetic algorithms. The search process also incorporates multiple correlation analyzers (Pearson, Spearman, Kendall), six metric fusion methods (weighted mean, L2 norm, RMS, among others), and Top-K-based ranking quality evaluation—forming 34 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+an end-to-end closed loop from data loading through formula computation and parameter optimization to result analysis. 
+
+The pairwise influence algorithm. One of Sortify’s most original technical contributions is the Pair-wise Influence metric system. The algorithm addresses a critical question: in a multi-factor ranking formula, how can the actual influence of each weight factor on the final ranking outcome be quantified? Traditional sensitivity analysis measures only the marginal effect of parameter perturbation on a sin-gle metric, whereas the Pairwise Influence algorithm pushes the analysis granularity down to item-pair comparisons —sampling item pairs from the Top-K list using configurable strategies (adjacent, random, exhaustive), computing the difference vector Δ𝑥 𝑖 𝑗 across factor dimensions for each pair, then deriving each factor’s relative contribution share via Share 𝑓 = |𝑤 𝑓 · Δ𝑥 𝑖 𝑗, 𝑓 | Í 𝑘 |𝑤 𝑘 · Δ𝑥 𝑖 𝑗,𝑘 |, and finally aggre-gating with configurable weighting schemes (exponential decay, inverse-rank decay) to yield a global influence score 𝐼 𝑓 ∈ [ 0, 1]. The algorithm further computes inter-factor conflict rates CR 𝑎,𝑏 —the fre-quency with which two factors induce opposite ranking preferences on the same item pair—providing irreplaceable diagnostic information for weight tuning. This algorithm was developed from initial concept through mathematical formalization, vectorized implementation, and production integration, entirely by AI agents under human direction. 
+
+Fully autonomous operation pipeline. Beyond the search engine, Sortify implements a complete autonomous operation pipeline. Its core comprises two layers: OneShotPipeline —orchestrating of-fline optimization, LLM proposal generation, and online monitoring into a single automated flow; and 
+
+YoloRunner —a continuously autonomous agent loop with episode-based state tracking, offline-to-online workflow bridging, automatic rollback decisions, and live Belief/Preference state management. To support this autonomous operation, the system implements a 7-table SQLite-backed persistent memory system (with a DualMemory dual-backend architecture) that records each optimization round’s offline results, deployment configurations, online metrics, and decision rationale, providing the LLM meta-controller with complete historical context for proposal generation. This means Sortify is not merely a callable tool library but an intelligent system capable of autonomously initiating, executing, evaluating, and iterating optimization cycles. 
+
+Development complexity. The implementation difficulty of the above capabilities should not be under-estimated. In terms of technical stack diversity alone, Sortify spans five major domains: data engineering (incremental Parquet loading and streaming), numerical computation (NumPy-vectorized formula evalua-tion with incremental updates), optimization theory (multi-objective Pareto optimization with constrained search), systems engineering (SQLite persistence, Redis parameter publishing, Grafana real-time monitor-ing integration), and AI applications (LLM prompt engineering, autonomous decision-making, memory retrieval). These subsystems do not operate in isolation but are tightly coupled through dependency graphs, event streams, and state machines—a design flaw in any single module could trigger cascading failures at runtime. The entire codebase comprises approximately 98,000 lines, over 50 core classes, and more than 10 analyzer types. That a system of this scale was built from scratch and deployed to production by a single person directing AI agents is itself the strongest evidence for the feasibility of the one-person paradigm. 
+
+## 5.3 From ParaDance to Sortify: Lineage and Domain Expertise 
+
+The preceding section established Sortify’s engineering scale: approximately 98,000 lines of code across 78 modules. How could a single person navigate system design at this level of complexity? A crucial part of the answer is that it was not a from-scratch endeavor. Sortify’s design philosophy, 35 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+evaluation architecture, and optimization methodology trace directly to ParaDance 3, an open-source multi-objective parameter optimization library created by the same author. Understanding this lineage is essential for appreciating both the depth of domain expertise underlying Sortify and the evolutionary arc from a general-purpose tuning tool to an autonomous, agent-steered optimization system. 
+
+A 20-month iteration journey. ParaDance was initiated in May 2023 and underwent continuous development through January 2025—a 20-month arc spanning 357 commits, 40+ released versions (v0.1.1 through v0.6.7), and 6 major version epochs. The project evolved from a simple Lorenz-curve sampling utility into a full-fledged production framework comprising 3,688 lines of source code across 48 Python modules organized into 6 core subsystems: evaluation (16 independent evaluators), optimization (Optuna-based Bayesian search with multi-objective aggregation), data loading, pipeline orchestration, sampling, and visualization. Each major version marked a qualitative leap: v0.2.x introduced portfolio visualization; v0.3.x established the Bayesian optimization engine; v0.4.x built the evaluation ecosystem including merge-sort-based weighted inversion pair computation and the JSON formula system; v0.5.x added staged optimization, multi-threaded real-time monitoring, and side-information reranking; and v0.6.x delivered checkpoint recovery and production-hardening features. 
+
+Design decisions ahead of their time. Several architectural choices in ParaDance were unconventional for a 2023-era Python data science tool and have since been validated by broader industry trends: 
+
+• Pluggable evaluator architecture. BaseCalculator used partialmethod to mount 16 evaluators as instance methods via a single-inheritance chain, avoiding the MRO complexity of mixin-based approaches. Adding a new evaluator required only three steps: write a standalone function, register it as a partialmethod , and add a flag string—zero modification to existing code. 
+
+• Declarative JSON formula engine. A formula chaining system with intermediate-result cascading (step1#intermediate → step2 ), conditional branching ( if(cond, true_val, false_val) ), and sandboxed evaluation enabled algorithm engineers to iterate scoring formulas via configuration changes alone, without code deployment. 
+
+• Scale-aware adaptive weight search. Automatic log10 -scale alignment of search boundaries across features with vastly different magnitudes (e.g., CTR ∼0.01 vs. GMV ∼10,000), eliminating the need for manual normalization. 
+
+• Staged optimization with warmup. A two-phase search protocol where the first 𝑁 rounds use a warmup formula to guide exploration, then transition to the main objective with continuous value anchoring—addressing cold-start inefficiency. 
+
+• Production-grade resilience. SQLite-backed optimization persistence, checkpoint-based recov-ery for interrupted long-running jobs, Joblib-based parallel optimization, and Dirichlet-constrained weight sampling on the probability simplex. These design choices—configuration-driven pipelines, pluggable evaluation, scale-aware search, and persistent optimization state—directly informed Sortify’s architecture. The 7-table Memory DB in Sortify is a conceptual descendant of ParaDance’s SQLite persistence; the dual-channel Belief/Preference decomposition extends ParaDance’s multi-objective aggregation into the online calibration domain; and the LLM meta-controller occupies the role that ParaDance’s staged optimization and warmup formulas played at a more primitive level. 
+
+Industry adoption. As of the time of writing, ParaDance has accumulated over 101,000 downloads on PyPI and is used by algorithm engineers at major internet companies across the industry. It has become one of the most widely adopted hyperparameter tuning tools in production recommendation systems, validating both the problem formulation and the architectural decisions made during its 20-month devel-opment. This adoption base also provided the author with continuous feedback from diverse production 
+
+> 3https://github.com/yinsn/ParaDance
+
+36 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+environments—feedback that directly shaped Sortify’s design priorities, particularly the emphasis on transfer calibration, constraint sensitivity management, and autonomous operation with minimal human intervention. In other words, what ParaDance bequeathed to Sortify was not merely reusable code assets but domain judgment forged through 20 months of production refinement—precisely the judgment that enabled the human orchestrator to make sound architectural decisions during agent-driven development, rather than expending limited iteration budget on trial and error. 
+
+## 5.4 The Orchestration Model 
+
+The operational pattern that emerged was consistent across all project phases. The human operator would: 1. Define the intent — specify what needed to be built, fixed, or analyzed, articulated as a natural-language objective with acceptance criteria. 2. Decompose into agent tasks — break the objective into discrete, independently executable units suitable for parallel agent dispatch. 3. Review and integrate — inspect agent outputs for correctness, coherence, and alignment with the overall design, then merge approved artifacts into the project. 4. Iterate on failures — when agent outputs missed the mark, diagnose whether the failure was in task specification (human error) or execution (agent error), and adjust accordingly. This loop mirrors the LLM meta-controller pattern within Sortify itself: a higher-level intelligence (the human) does not perform the low-level optimization (code writing, text drafting) but instead adjusts 
+
+framework-level parameters (task specifications, design constraints) that guide the agents’ execution. The parallel is not coincidental—the same principle of steering over doing that makes Sortify’s autonomous optimization viable also makes the one-person development model viable. 
+
+## 5.5 Meta-Nesting: AI Building AI 
+
+The Sortify project exhibits a meta-structural nesting that merits explicit discussion. What makes the project distinctive is not only what it is but how it was created —the two layers form a self-referential recursive loop. 
+
+Layer 1: The domain agent. At the business logic level, Sortify itself is an autonomous agent designed to replace the systematic decision-making work traditionally performed by algorithm engineers in rank-ing optimization. Historically, such engineers had to continuously monitor discrepancies between offline metrics and online dashboards, manually adjust penalty terms and fusion formulas, and attempt to bridge epistemic bias and axiological misalignment. Sortify, grounded in SEU theory with its Belief/Preference dual channels, autonomously observes 20 rounds of historical evidence, autonomously diagnoses struc-tural breaks, and autonomously executes influence rebalancing—achieving a structural substitution of human cognitive labor in a specific domain (recommendation system tuning). 
+
+Layer 2: The builder agent fleet. At the development level, the entire system was built from scratch by a single individual directing a fleet of AI coding agents. This agent fleet collectively assumed the roles traditionally distributed across architects, full-stack engineers, data engineers, QA testers, and even academic writers and figure designers. They jointly delivered: the Optuna-based parameter search framework with dependency-aware computation graphs and end-to-end pipeline orchestration; the 7-table persistent Memory DB; and the complete bilingual technical report conforming to academic standards. 
+
+The recursive loop. Superimposing these two layers reveals a recursive structure: one set of AI agents (the builder fleet) constructed another AI agent (Sortify), which in turn autonomously automates highly complex business logic . In this process, the human role elevates from “craftsperson writing code” to 37 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+“chief orchestrator defining rules, supplying high-dimensional intuition, and issuing acceptance criteria.” This “AI building AI” bootstrapping process is not merely a philosophically interesting isomorphism—it constitutes direct evidence that multi-agent collaboration is viable for system engineering tasks demanding both deep algorithmic logic and academic rigor. 
+
+## 5.6 Implications 
+
+Paradigm restructuring, not merely efficiency gains. When an entire project’s algorithm design, code implementation, experimental execution, and bilingual L ATEX report writing with figures are all completed by a single person orchestrating agents—with zero human-authored code and zero human-drafted text— this has moved decisively beyond the Copilot-era paradigm of “code completion” or “productivity tools.” It marks a restructuring of the paradigm itself: in traditional software engineering, the gap between “having a good idea” and “shipping a system” spans an enormous implementation chasm. Even after conceiving a core insight like “decouple belief and preference via SEU,” months of infrastructure construction, data cleaning, and debugging would be required to validate its value. Today, implementation cost approaches zero. The ceiling of a project is no longer set by a developer’s familiarity with framework APIs or a team’s headcount, but by the decision-maker’s depth of understanding of business pain points, architectural taste 
+
+for complex systems, and orchestration artistry in directing agent collaboration. 
+
+Dissolving barriers to complex system building. The traditional barrier to building production-grade systems like Sortify is not primarily intellectual but operational : the coordination cost of multi-person teams, the communication overhead of translating design intent into implemented code, and the iteration latency between specifying a change and seeing its effect. When AI agents absorb the implementation burden, the binding constraint shifts from team size to the quality of a single individual’s problem decomposition and design judgment . This implies that a domain expert who deeply understands a problem but lacks a full engineering team can now build and deploy systems of equivalent complexity—a qualitative expansion of what is achievable by a single practitioner. 
+
+Cognitive leverage versus cognitive replacement. A critical nuance is that the human contribution was not eliminated but concentrated . The design decisions—why dual-channel rather than single-channel, why framework-level control rather than direct parameter manipulation, why persistent memory rather than stateless rounds—required domain understanding, architectural taste, and judgment that the agents could not autonomously generate. What the agents eliminated was the mechanical effort of translating 
+
+those decisions into running code, tested pipelines, and formatted prose. The ratio of human cognitive contribution to total project output was thus extremely high per unit of human effort, but the human effort itself was irreducible for the project to succeed. This is cognitive leverage , not cognitive replacement. 
+
+Reproducibility and verifiability. Every artifact in this project carries a complete provenance trail: the agent conversations that produced each code module, the review decisions that accepted or rejected intermediate outputs, and the iteration history that refined the final result. This level of traceability is, paradoxically, more comprehensive than what most multi-person team workflows produce, where design rationale is often lost between Slack threads, whiteboard sessions, and undocumented code reviews. The one-person orchestration model, by routing all decisions through a single point of accountability with AI-assisted record-keeping, may produce more auditable development histories than conventional processes. 
+
+Scalability of the model. The one-person feasibility demonstrated here is not an isolated curiosity but an early instance of a pattern that will likely become routine as AI coding agents mature. The specific combination that enabled it—a well-defined problem domain, modular system architecture, and agents 38 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+capable of producing correct code from natural-language specifications—is not unique to Sortify. Any project that can be decomposed into well-scoped, independently testable components is amenable to this development model. The limiting factor is not the tools but the human’s ability to hold the full system design in mind and specify tasks with sufficient precision. The fact that this report—including this very paragraph—was authored by an AI agent under human direction is itself a demonstration of the thesis it describes. The boundary between human creativity and machine execution has not disappeared, but it has moved: the human provides the what and why ; the agents provide the how . For Sortify, this division of labor was sufficient to deliver a production system, deploy it across two markets, and produce the comprehensive evaluation and documentation presented in this report. Future technology builders will no longer be mired in the implementation swamp but will operate as pure thinkers and commanders—this is not an optimization of efficiency but a redefinition of the act of creation itself. 39 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# 6. Conclusion, Limitations, and Future Directions 
+
+We have presented Sortify, an agent-steered closed-loop system that reframes ranking optimization as continuous influence exchange—where an LLM agent steers the rebalancing of ranking influence among competing factors. Sortify addresses three structural limitations of traditional manual optimization—the offline-online transfer gap, entangled diagnostic signals, and stateless round-by-round operation—through a unified closed-loop architecture. The dual-channel adaptation framework decouples transfer mapping correction (Belief) from constraint penalty adjustment (Preference) into orthogonal dimensions; the LLM meta-controller operates on framework-level parameters, providing evidence-based corrections to LMS calibration residuals; and the persistent Memory DB accumulates calibration intelligence across rounds, supporting warm-start and cross-market transfer. Deployed on Country A and Country B recommendation platforms with the inner optimization loop operating autonomously in 4-hour cycles , the system produces two levels of evidence: peak round-level performance in the Country A warm-start experiment (GMV 
+
++9.2% , Orders +12.5% , with LLM correction items converging from 5 to 2 within 7 rounds), and deployment-validated performance in Country B (GMV/UU +4.15% , Ads Revenue +3.58% in 7-day A/B validation, promoted to production rollout). Despite these results, Sortify exhibits several concrete limitations that constrain its current applica-bility: 
+
+• Parameter oscillation not fully converged. In the Country A warm-start experiment retained in the main text, ps_ads_wo still exhibits a 4.5x residual pendulum effect (Section 4.5). The multi-modal objective landscape created by the ads-organic trade-off is a fundamental limitation that the single-objective-with-penalties formulation can approximate but not resolve. This oscillation indicates that the system has transitioned from unbounded exploration to constrained oscillation, but has not yet converged to a single stable operating point. 
+
+• Statistical uncertainty in low-traffic windows. The strongest results (GMV +9.2%, Orders +12.5% in Exp-401838 R7) were observed during a low-traffic early morning window with approximately 12K impressions (Section 4.3). While the system operated correctly, the statistical power of these estimates is lower than for rounds with typical traffic volume. 
+
+• Insufficient empirical evidence for extreme structural breaks. The retained Country A experiments primarily demonstrate convergence in the number of LLM correction items, but do not cover a sufficiently long or severe post-warm-start lifecycle to validate handling of major structural breaks (Section 4.6). This means the evidence presented for the LLM meta-controller leans more toward “reducing ongoing calibration workload” than “handling extreme mutations.” These limitations point to two directions for future work. First, replacing the single-objective-with-penalties formulation with a multi-objective Pareto frontier approach would allow the system to explicitly model the ads-organic trade-off as a frontier rather than a single optimum, potentially eliminating the pendulum effect. Second, developing a confidence-weighted transfer model that adjusts calibration aggressiveness based on observation volume would allow the system to be more conservative during low-traffic windows and more aggressive during high-traffic periods, reducing statistical risk without sacrificing convergence speed. These extensions build naturally on Sortify’s existing dual-channel and Memory DB architecture, requiring modifications to the objective formulation and context assembly rather than fundamental architectural changes. Finally, the Sortify project itself—from the foundational algorithm design and approximately 98,000 lines of engineering implementation, through 30 rigorous production experiment rounds, to the very drafting of this report—was executed entirely by a single human orchestrating a swarm of AI agents, untouched by a single line of human code or draft text. This fact stands as a silent yet deafening experiment in its own right. As explored in Section 5, it unveils an “AI-generating-AI” meta-nesting logic: an AI fleet in the creation domain birthed an industrial-grade AI hub (Sortify) in the target domain, which in turn autonomously governs highly complex business operations. This transcends mere efficiency 40 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+optimization; it is a structural paradigm shift in software engineering and human exploration. When the long, arduous chasm between conceptualization and realization is fundamentally obliterated, a brutal yet fascinating new era emerges: the ceiling of creation is no longer dictated by the sheer scale of execution capacity, but solely by the cognitive penetration and orchestration artistry of the solitary decision-maker. 41 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# References 
+
+Takuya Akiba, Shotaro Sano, Toshihiko Yanase, Takeru Ohta, and Masanori Koyama. Optuna: Anext-generation hyperparameter optimization framework. In Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining , pages 2623–2631, 2019. doi: 10.1145/3292500.3330701. James O Berger. Statistical Decision Theory and Bayesian Analysis . Springer, 2nd edition, 1985. Miroslav Dudik, Dumitru Erhan, John Langford, and Lihong Li. Doubly robust policy evaluation and optimization. Statistical Science , 29(4):485–511, 2014. Matthias Feurer, Jost Tobias Springenberg, and Frank Hutter. Initializing bayesian hyperparameter optimization via meta-learning. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 29, 2015. doi: 10.1609/aaai.v29i1.9354. Alexandre Gilotte, Clément Calauzènes, Thomas Nedelec, Alexandre Abraham, and Simon Dollé. Offline a/b testing for recommender systems. In Proceedings of the Eleventh ACM International Conference on Web Search and Data Mining , pages 198–206, 2018. doi: 10.1145/3159652.3159687. Frank Hutter, Lars Kotthoff, and Joaquin Vanschoren. Automated Machine Learning: Methods, Systems, Challenges . Springer, 2019. Xiao Lin, Hongjie Chen, Changhua Pei, Fei Sun, Xuanji Xiao, Hanxiao Sun, Yongfeng Zhang, Wenwu Ou, and Peng Jiang. A pareto-efficient algorithm for multiple objective optimization in e-commerce recommendation. In Proceedings of the 13th ACM Conference on Recommender Systems , pages 20–28, 2019. doi: 10.1145/3298689.3346998. Tie-Yan Liu. Learning to rank for information retrieval. Foundations and Trends in Information Retrieval ,3(3):225–331, 2009. German I Parisi, Ronald Kemker, Jose L Part, Christopher Kanan, and Stefan Wermter. Continual lifelong learning with neural networks: A review. Neural Networks , 113:54–71, 2019. Shubhra Kanti Karmaker Santu, Parikshit Sondhi, and ChengXiang Zhai. On application of learning to rank for e-commerce search. In Proceedings of the 40th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 475–484, 2017. doi: 10.1145/3077136. 3080838. Lei Wang, Chen Ma, Xueyang Feng, Zeyu Zhang, Hao Yang, Jingsen Zhang, Zhiyuan Chen, Jiakai Tang, Xu Chen, Yankai Lin, Wayne Xin Zhao, Zhen-Hua Wei, and Hengshu Zhou. A survey on large language model based autonomous agents. Frontiers of Computer Science , 18(6), 2024. doi: 10.1007/s11704-024-40231-1. 42 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+# A. Contributors 
+
+Yin Cheng (yin.cheng@shopee.com ) and his AI Agents were responsible for all core work on this project: 
+
+• Project Development : System architecture design and full-stack engineering implementation 
+
+• Algorithm Design : Conception and iteration of the Pairwise Influence ranking algorithm 
+
+• Experiment Execution : Deployment, monitoring, and data analysis of A/B experiments 
+
+• Report Writing : Ideation, writing, and revision of this technical report 
+
+Acknowledgments 
+
+Special thanks to Liao Zhou ( liao.zhou@shopee.com ) for his deep involvement throughout the project—providing sustained discussion, feedback, and experience transfer on experimentation method-ology and development environment evolution, which played an important role in the iterative refinement of our approach. We also thank the following colleagues for their support:     
+
+> xiyu.liang@shopee.com kailun.zheng@shopee.com dihao.luo@shopee.com tewei.lee@shopee.com zhangweiwei@shopee.com mark.cai@shopee.com jian.dong@shopee.com andy.zhanggx@shopee.com
+
+# B. Implementation Details 
+
+## B.1 A/B Experiment Integration 
+
+Sortify integrates with the platform’s existing A/B testing infrastructure rather than deploying its own experimentation framework. Each parameter push to Redis triggers a traffic split between the control group (current production parameters) and the treatment group (Sortify’s optimized parameters). The A/B report is generated by the platform’s standard metrics pipeline and pulled by Sortify’s one-shot pipeline in Step 1. 
+
+Time window alignment. All observation windows are snapped to 15-minute boundaries to align with the platform’s metrics aggregation cadence. The minimum accumulation window of 3.5 hours ensures sufficient traffic volume for stable uplift estimates in most time-of-day conditions. The maximum window is capped at 3.5 hours to prevent stale data from earlier traffic patterns contaminating later observations. 
+
+## B.2 Redis Parameter Publishing 
+
+The 7-parameter vector is serialized as JSON and written to a Redis key monitored by the sorting service. The publication is atomic—either all 7 parameters update simultaneously or none do. A rollback mechanism allows reverting to the previous parameter set by re-publishing the PREV_PARAMS_JSON 
+
+stored in yolo-state.env .
+
+## B.3 State File Management 
+
+Two state files maintain continuity across pipeline executions and system restarts: 
+
+yolo-state.env — YOLO loop state: 
+
+YOLO_ROUND=5 LAST_PUSH_TIME=2026-03-05T18:45:00 LAST_ONLINE_FROM=2026-03-05T15:15:00 LAST_ONLINE_TO=2026-03-05T18:45:00 
+
+43 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+PREV_PARAMS_JSON={"ps_ads_wo": 3.51, ...} PREV_AB_REPORT_PATH=/path/to/report 
+
+one-shot-latest.env — Last successful one-shot handoff: 
+
+LATEST_RUN_TAG=20260302_143022 CONFIG_PATH=.../pdp-th-topk-order-guard-agent.next.json BEST_SO_FAR=.../search-artifacts/*_best_so_far.json 
+
+## B.4 Directory Structure 
+
+Each round produces artifacts in a timestamped directory: 
+
+updates/ |-- memory/ | ‘-- agent_memory.db <- Master DB (shared across rounds) |-- <run_tag>/ | |-- online-loop.log <- 10-step pipeline output | |-- search.log <- Optuna trial results | |-- ab_report.md <- Online A/B metrics | |-- llm_proposal.json <- LLM output with evidence | |-- rule.publish.json <- Published parameters | |-- search-logs/ | | ‘-- *_trial_table.csv <- All 5,000 trial results | ‘-- search-artifacts/ | ‘-- *_best_so_far.json <- Best parameters found |-- yolo-state.env |-- yolo-event-log.md <- Audit log of all rounds ‘-- one-shot-latest.env 
+
+# C. Notation Table 
+
+44 Let the Agent Steer: Closed-Loop Ranking Optimization via Influence Exchange 
+
+Table 12 | TAB-APP-02. Symbol definitions. Symbol Definition Introduced 
+
+𝜋 𝑞 (𝜽 ) Ranking permutation for request 𝑞 under parameters 𝜽 Eq. 1 
+
+𝑆 𝑛 𝑞 Symmetric group acting on 𝑛 𝑞 items Eq. 1 
+
+S𝑞 (𝜽 ) Total score vector for request 𝑞 Eq. 2 
+
+𝐻 𝑞𝑖 𝑗 Comparison hyperplane 𝑥 𝑖 = 𝑥 𝑗 for items 𝑖, 𝑗 Eq. 2 
+
+𝐶 𝜋 Ranking chamber corresponding to permutation 𝜋 Eq. 2 
+
+𝜽 7-dimensional sorting parameter vector Eq. 10 
+
+F Set of all sorting factors Eq. 4 
+
+𝑆 𝑞 (𝑖 ; 𝜽 ) Total score of item 𝑖 in request 𝑞 Eq. 3 
+
+Δ𝑞 (𝑖, 𝑗 ; 𝜽 ) Total pairwise margin for item pair (𝑖, 𝑗 ) Eq. 3 
+
+Δ𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) Score difference contributed by factor 𝑓 on item pair (𝑖, 𝑗 ) Eq. 4 
+
+𝑍 𝑞𝑖 𝑗 (𝜽 ) Total pairwise influence budget for item pair (𝑖, 𝑗 ) Eq. 6 
+
+𝑠 𝑞, 𝑓 (𝑖, 𝑗 ; 𝜽 ) Pairwise influence share of factor 𝑓 for item pair (𝑖, 𝑗 ) Eq. 7 
+
+𝑃 𝑞 Informative / top-sensitive pair set aggregated for request 𝑞 Eq. 9 
+
+𝑟 𝑞𝑖 Rank of item 𝑖 in request 𝑞 Eq. 8 
+
+𝑤 𝑞𝑖 𝑗 Rank-based exponential decay weight for item pair (𝑖, 𝑗 ) Eq. 8 
+
+𝜏 Decay rate parameter for pair weighting Eq. 8 
+
+𝐼 𝑓 (𝜽 ) Aggregate Influence Share for factor 𝑓 Eq. 9 
+
+J ( 𝜽 ) Composite search objective function Eq. 10 
+
+𝜆 𝑗 Penalty weight for constraint 𝑗 Eq. 10 
+
+𝑣 𝑗 (𝜽 ) Violation magnitude for constraint 𝑗 Eq. 10 
+
+𝛼 Transfer model slope (Belief channel) Eq. 12 
+
+𝛽 Transfer model intercept (Belief channel) Eq. 12 
+
+𝜂 LMS learning rate (= 0.2) Eq. 13 
+
+𝑒 𝑡 Transfer prediction error at round 𝑡 Eq. 13 
+
+Δ𝛽 LLM LLM intercept adjustment ( ∈ [− 0.1, +0.1]) Eq. 15 
+
+𝑝 𝑗 Normalized violation pressure for constraint 𝑗 Eq. 16 
+
+𝛿 up Penalty tightening step size (= 0.25) Eq. 17 
+
+𝛿 down Penalty relaxation step size (= 0.08) Eq. 17 
+
+𝑚 LLM LLM penalty multiplier ( ∈ [ 0.5, 2.0]) Eq. 20 
+
+Table 13 | Abbreviations. Abbreviation Full Form GMV Gross Merchandise Value PDP Product Detail Page TPE Tree-structured Parzen Estimator LMS Least Mean Squares YOLO You Only Live Once (continuous pipeline mode) KPI Key Performance Indicator CTR Click-Through Rate eCPM Effective Cost Per Mille ROI Return on Investment 
+
+45
