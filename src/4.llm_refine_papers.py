@@ -576,19 +576,25 @@ def call_filter(
     )
     if retry_note:
         user_prompt += f"\n\nRetry correction note:\n{retry_note}"
-    repeated_user_prompt = build_repeated_user_prompt(user_prompt)
 
-    resp = client.chat(
-        messages=[
+    final_user_prompt = (
+        user_prompt
+        + "\n\nOutput must be strict JSON only, no markdown, no fences, no extra text."
+    )
+    chat_kwargs = {
+        "messages": [
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": repeated_user_prompt
-                + "\n\nOutput must be strict JSON only, no markdown, no fences, no extra text.",
+                "content": final_user_prompt,
             },
         ],
-        response_format=response_format,
-    )
+    }
+    if os.getenv("DPR_ENABLE_RESPONSE_FORMAT", "0").strip().lower() in {"1", "true", "yes", "on"}:
+        if response_format is not None:
+            chat_kwargs["response_format"] = response_format
+            
+    resp = client.chat(**chat_kwargs)
     content = resp.get("content", "")
     try:
         payload = load_json_lenient(content)
