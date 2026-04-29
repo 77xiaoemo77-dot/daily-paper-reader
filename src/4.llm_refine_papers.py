@@ -484,8 +484,25 @@ def call_filter(
         "additionalProperties": False,
     }
 
-    use_json_object = "gemini" in (client.model or "").lower()
-    if use_json_object:
+    model_name_lower = (client.model or "").lower()
+    # Use the broad JSON object mode for providers that do not support
+    # OpenAI-style strict json_schema response_format.
+    #
+    # DeepSeek supports response_format={"type": "json_object"} for JSON output,
+    # but does not reliably support response_format={"type": "json_schema"}.
+    if any(
+        name in model_name_lower
+        for name in (
+            "gemini",
+            "deepseek",
+            "qwen",
+            "doubao",
+            "moonshot",
+            "kimi",
+            "yi-",
+            "glm",
+        )
+    ):
         response_format = {"type": "json_object"}
     else:
         response_format = {
