@@ -1,0 +1,1074 @@
+Title: MOCA: A Transformer-based Modular Causal Inference Framework with One-way Cross-attention and Cutting Feedback
+
+URL Source: https://arxiv.org/pdf/2604.23107v1
+
+Published Time: Tue, 28 Apr 2026 00:24:26 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# MOCA: A Transformer-based Modular Causal Inference Framework with One-way Cross-attention and Cutting Feedback 
+
+Lei Wang Department of Biostatistics and Informatics Colorado School of Public Health 
+
+lei.2.wang@cuanschutz.edu 
+
+Debashis Ghosh Department of Biostatistics and Informatics Colorado School of Public Health 
+
+debashis.ghosh@cuanschutz.edu 
+
+Abstract 
+
+Causal effect estimation from observational data requires careful adjustment for confounding. Classical estimators such as inverse probability weighting and augmented inverse probability weighting are effective under favorable model specification, but may become unstable when treatment assignment and outcome mechanisms are complex, non-linear and high-dimensional. Machine learning and representation-learning approaches improve flexibility, yet joint training can allow outcome-related information to influence treatment-side representations, which is unde-sirable from a causal perspective. We propose MOCA (Modular One-way Causal Attention), a transformer-based framework that separates treatment and outcome modeling through modular design, and makes confounder adjustments with a one-way attention process. A cutting-feedback strategy implemented with gradient detachment further prevents outcome loss from updating the treatment module. This design preserves directional information flow while retaining the representation power of transformer architectures for causal inference. Across multiple simulated scenarios, including linear, nonlinear, heavy-tailed, hidden-confounding, and high-dimensional settings, MOCA showed competitive or improved performance relative to IPW, AIPW, X-learner, TARNet, and DragonNet. We further illustrate the method on Infant Health and Development Program dataset and Dehejia–Wahba dataset for real world benchmarks. These results suggest that modular attention with one-way information flow provides a promising and interpretable direction for causal inference with modern deep learning models. 
+
+Keywords: causal inference; transformer; cross-attention; modular learning; treatment effect estimation; cutting feedback 
+
+# 1 Introduction 
+
+In observational studies, treatment assignment is typically not randomized, leading to the pres-ence of confounders that affect both treatment assignment and outcomes. Many modern causal methodologies are built on the Rubin potential outcomes framework [Rubin, 2005]. A central quantity of interest is the average treatment effect (ATE). Classical approaches can perform well when the models are correctly specified. Propensity score methods like inverse probability weighting (IPW) [Robins et al., 2000] and doubly robust estimators such as augmented inverse probability weighting (AIPW) [Bang and Robins, 2005] are widely used approaches for confounding adjustment. 1
+
+> arXiv:2604.23107v1 [stat.ML] 25 Apr 2026
+
+However, parametric causal estimators often rely on restrictive assumptions, and cannot capture complex patterns such as nonlinear effects, or high-dimensional covariates. To address these limi-tations and give conditional average treatment effect (CATE) estimates, machine learning-based approaches, such as the T-learner and X-learner have been introduced [Künzel et al., 2019]. Besides, representation-learning approaches such as TARNet [Johansson et al., 2016] and DragonNet [Shi et al., 2019] have embedded the problem of causal inference within a deep learning framework consisting of representation learning paired with two potential outcome heads. Yet joint representation learning may allow for outcome information to affect treatment repre-sentations, which is undesired in causal estimation. To address these challenges, we draw inspiration from recent advances in transformer architectures and cross-attention mechanisms with a modular framework. Transformers [Vaswani et al., 2017] have demonstrated remarkable ability to capture complex dependent structures through attention-based representation learning, while cross-attention provides a natural mechanism for directional information transfer between modules. Building on these ideas, we propose a modular causal modeling framework in this article. In our framework, the treatment branch is designed to learn propensity-related representations, while the outcome branch receives treatment-side information only through one-way cross-attention. This two-step design reflects the causal role of treatment modeling as an adjustment mechanism for confounding. We also incorporate a cutting-feedback strategy through gradient detachment, preventing the outcome loss from propagating backward to affect the treatment module. Our proposed method, MOCA (Modular One-way Causal Attention ), preserves treatment modeling independence while still allowing the outcome module to adapt to complex response surfaces. In this way, the framework retains modern machine learning advantages while maintaining the structural requirements of causal inference and supporting interpretable treatment effect estimation. 
+
+# 2 Problem Setup and Causal Estimand 
+
+We consider an observational dataset consisting of n independent units: {(Xi, T i, Y i)}ni=1 , where 
+
+Xi ∈ Rp denotes the observed covariates, Ti ∈ { 0, 1} is the binary treatment indicator, and Yi is the observed outcome. Under the potential outcomes framework, each unit i has two potential outcomes, Yi(0) and Yi(1) , corresponding to the outcomes that would be observed under control and treatment [Rubin, 2005]. The following assumptions are made. 1. Consistency: the observed outcome equals the corresponding potential outcome under the treatment received: Yi = Yi (Ti), implying no other version of treatment; 2. Ignorability (unconfoundedness): (Yi(0) , Y i(1)) ⊥Ti | Xi. That is, conditional on the observed covariates, treatment assignment is independent of the potential outcomes, which implies no unobserved confounding; 3. Positivity: 0 < P (Ti = 1 | Xi = x) < 1 for all x in the support of X, which ensures that each covariate profile has a positive probability of receiving either treatment level. For a unit i with covariate vector Xi = xi, a natural goal is to evaluate its individual level treatment effect (ITE), τi := Yi(1) − Yi(0) . However, τi is fundamentally unobservable, since for each unit we only observe one potential outcome. We instead focus on the conditional average treatment effect (CATE), τ (x) := E{Y (1) − Y (0) |
+
+X = x}. Although τ (x) is a population-level quantity, it serves as the optimal target for individual-level prediction. In particular, let ˆτ (Xi) denote an estimator of τi. The mean squared error (MSE) 2at Xi = xi can be decomposed as 
+
+E
+
+[
+
+(τi − ˆτ (Xi)) 2 | Xi = xi
+
+]
+
+= E
+
+[
+
+(τi − τ (xi)) 2 | Xi = xi
+
+]
+
++ E
+
+[
+
+(τ (xi) − ˆτ (Xi)) 2 | Xi = xi
+
+]
+
+.
+
+The first term represents irreducible uncertainty, which cannot be reduced by any estimator. Therefore, minimizing the MSE for estimating τi is equivalent to minimizing the MSE for estimating 
+
+τ (xi). This justifies that the best estimator for CATE is also the best estimator for ITE. For the average treatment effect (ATE), τ = E [Y (1) − Y (0)] . In practice, estimation requires learning the potential outcome μ0(x) = E[Y (0) | X = x], μ 1(x) = E[Y (1) | X = x], so that 
+
+τ (x) = μ1(x) − μ0(x), and τ = E(τ (x)) .
+
+# 3 Proposed Method 
+
+We propose a modular transformer-based architecture for causal effect estimation that explicitly separates the treatment assignment mechanism from the potential outcome modeling mechanism (Figure 1). We now describe the steps of the algorithm. 
+
+3.1 Scalar Feature Tokenization 
+
+First, each scalar covariate Xij embedded independently into a d-dimensional token. For the 
+
+j-th covariate of subject i, the initial tokenizer produces h(0)  
+
+> ij
+
+= Wj Xij + bj , h (0)  
+
+> ij
+
+∈ Rd, where 
+
+Wj ∈ Rd×1and bj ∈ Rd. In self-attention, positional information is not incorporated [Lee et al., 2019]. Thus, a learnable positional embedding pj ∈ Rd is then added: ˜hij = h(0)  
+
+> ij
+
++ pj . Thus, for subject i, the token matrix is 
+
+Hi =
+
+[˜h⊤
+
+> i1
+
+, ˜h⊤
+
+> i2
+
+, . . . , ˜h⊤
+
+> ip
+
+]⊤
+
+∈ Rp×d.
+
+3.2 Treatment Module 
+
+3.2.1 Linear and Self-Attention Branch 
+
+The treatment module learns a treatment representation that summarizes confounding information. There are two branches, a linear branch and a self-attention branch. The linear treatment branch is 
+
+H(L,T ) 
+
+> i
+
+= T ok (L,T )(Xi) ∈ Rp×d. The self-attention treatment branch first tokenizes Xi: H(S,T, 0)  
+
+> i
+
+=
+
+T ok (S,T )(Xi) ∈ Rp×d, then applies a Transformer encoder: H(S,T ) 
+
+> i
+
+= Enc T
+
+(
+
+T ok (S,T )(Xi)
+
+)
+
+∈ Rp×d.
+
+The encoder uses self-attention and a feed-forward subnetwork with GELU activation. To be more specific: for an input token matrix H(S,T, 0)  
+
+> i
+
+∈ Rp×d, the self-attention mechanism first computes queries, keys, and values from the same input: 
+
+Q = H(S,T, 0)  
+
+> i
+
+WQ, K = H(S,T, 0)  
+
+> i
+
+WK , V = H(S,T, 0)  
+
+> i
+
+WV ,
+
+where WQ, W K , W V are learned projection matrices. For a single attention head, the self-attention output is 
+
+Self Attn (H) = sof tmax 
+
+( QK ⊤
+
+√dk
+
+)
+
+V = sof tmax 
+
+( (H(S,T, 0)  
+
+> i
+
+WQ)( H(S,T, 0)  
+
+> i
+
+WK )⊤
+
+√dk
+
+)
+
+(H(S,T, 0)  
+
+> i
+
+WV ),
+
+where 
+
+˜ha =
+
+> p
+
+∑
+
+> b=1
+
+αab vb, α ab = exp 
+
+(
+
+q⊤ 
+
+> a
+
+kb/√dk
+
+)∑pb′ =1 exp (q⊤ 
+
+> a
+
+kb′ /√dk
+
+) .
+
+3Thus, each feature token adaptively attends to all other feature tokens, allowing the model to capture nonlinear cross-feature interactions. With multi-head attention, the m-th head is 
+
+head (m)(H(S,T, 0)  
+
+> i
+
+) = sof tmax 
+
+( Q(m)K(m)⊤
+
+√dk
+
+)
+
+V (m),
+
+and the outputs of all heads are concatenated and linearly projected: 
+
+M HA (H(S,T, 0)  
+
+> i
+
+) = Concat (head (1) (H(S,T, 0)  
+
+> i
+
+), . . . , head (M )(H(S,T, 0)  
+
+> i
+
+)) WO.
+
+where WO denotes the learned output projection matrix in multi-head attention, which maps the concatenated outputs from all heads back to the model dimension. A transformer encoder layer then applies residual connections and layer normalization around both the multi-head self-attention block and the feed-forward block: 
+
+˜H = LayerN orm (H(S,T, 0)  
+
+> i
+
++ M HA (H(S,T, 0)  
+
+> i
+
+)) ,H + = LayerN orm ( ˜H + F F N ( ˜H)) .
+
+The feed-forward network is F F N (u) = W2 GELU (W1u + b1) + b2, where GELU is used as the activation function. Therefore, the self-attention treatment representation can be written recursively as H(S,T ) 
+
+> i
+
+= T ransf ormerLayer 
+
+(
+
+H(S,T, 0) 
+
+> i
+
+)
+
+,
+
+The self-attention branch is designed to capture nonlinear feature interactions by updating each feature representation using input-dependent weights determined by all other feature tokens. Combined with nonlinear feed-forward transformations, this allows the branch to represent complex, non-additive relationships among covariates. Although self-attention can provide some linear information, it is not the most efficient and stable way to learn them [Babiloni et al., 2023]. The linear branch acts as a low-complexity shortcut, which provides reliable linear effects and reduces the computational burden on the attention branch. 
+
+3.2.2 Treatment Gating Mechanism 
+
+There is a cross-attention process needed to learn a treatment query : q(T ) ∈ Rd which is used to summarize each branch mentioned above via multi-head attention. To be specific, 
+
+z(L,T ) 
+
+> i
+
+= M HA (q(T ), H (L,T ) 
+
+> i
+
+, H (L,T ) 
+
+> i
+
+) ∈ Rd,z (S,T ) 
+
+> i
+
+= M HA (q(T ), H (S,T ) 
+
+> i
+
+, H (S,T ) 
+
+> i
+
+) ∈ Rd.
+
+In order to combine the information from two branches, a fusion gate is introduced with gate weights. To be more specific, we concatenate the two summary vectors: r(T ) 
+
+> i
+
+= [ z(L,T ) 
+
+> i
+
+; z(S,T ) 
+
+> i
+
+] ∈ R2d.
+
+A two-layer gating network is applied: g(T ) 
+
+> i
+
+= W (T ) 
+
+> g2
+
+GELU 
+
+(
+
+W (T ) 
+
+> g1
+
+r(T ) 
+
+> i
+
++ b(T )
+
+> g1
+
+)
+
++ b(T ) 
+
+> g2
+
+∈ R2. Next, a temperature-scaled softmax gives the treatment gate weights: 
+
+α(T ) 
+
+> i
+
+= sof tmax 
+
+( g(T )
+
+> i
+
+τg
+
+)
+
+=
+
+[
+
+α(T )
+
+> iL
+
+α(T )
+
+> iS
+
+]
+
+, α (T ) 
+
+> iL
+
++ α(T ) 
+
+> iS
+
+= 1 .
+
+In addition, a propensity score head is introduced to transform the gated treatment rep-resentation into a treatment assignment probability. Suppose the weighted concatenation is: 
+
+f (T ) 
+
+> i
+
+= [ α(T ) 
+
+> iL
+
+z(L,T ) 
+
+> i
+
+; α(T ) 
+
+> iS
+
+z(S,T ) 
+
+> i
+
+] ∈ R2d. The propensity-score logit is then computed by l(T ) 
+
+> i
+
+=
+
+Wp2 GELU (Wp1f (T ) 
+
+> i
+
++ bp1) + bp2, and the estimated propensity score is ̂ ei = σ
+
+(
+
+l(T )
+
+> i
+
+)
+
+, where 
+
+σ(u) = 1 /(1 + e−u). At the same time, the treatment latent representation passed to the outcome module is z(T ) 
+
+> i
+
+≡ α(T ) 
+
+> iL
+
+z(L,T ) 
+
+> i
+
++ α(T ) 
+
+> iS
+
+z(S,T ) 
+
+> i
+
+∈ Rd. This is converted into a single treatment token 
+
+H(T ) 
+
+> i
+
+= ( z(T ) 
+
+> i
+
+)⊤ ∈ R1×d.
+
+43.3 Outcome Module 
+
+The outcome module has two separate child modules; one is for control group Yi(0) and another is for treatment group Yi(1) . It uses two separate learnable queries q(0) ∈ Rd, q (1) ∈ Rd, for estimating 
+
+μ0(x) and μ1(x) from two child modules, respectively. Within each child module, it contains three branches: 1. a linear branch, 2. a nonlinear self-attention branch and 3. a frozen treatment branch. For linear and self-attention branch, same as the procedure in treatment module, we define 
+
+H(L,Y ) 
+
+> i
+
+= T ok (L,Y )(Xi),H (S,Y ) 
+
+> i
+
+= Enc Y
+
+(
+
+T ok (S,Y )(Xi)
+
+)
+
+.
+
+For the frozen treatment branch, a key feature of our framework is that information flows from the treatment module to the outcome module only, but not in the reverse direction. We refer to this as one-way cross-attention with cutting feedback. In many real-world problems, modeling mistakes are common. Employing a joint model can lead to the propagation of erroneous information. The cutting feedback idea is widely used in Modular Bayesian Inference for addressing this [Bayarri et al., 2009]. In our practice, the treatment module is first trained, and the frozen treatment branch will not get updated during the outcome learning. Suppose the treatment outputs are obtained as 
+
+(̂ 
+
+ei, H (T )
+
+> i
+
+)
+
+= FT (Xi; θT ) . They are treated as constants with respect to the outcome loss. Formally, the outcome model can be written as 
+
+(̂μ0(Xi),̂ μ1(Xi)) = FY (Xi, stopgrad (H(T ) 
+
+> i
+
+), stopgrad (̂ei); θY ).
+
+Here, stopgrad (·) means that these quantities are used in the forward pass, but gradients are not propagated back through them. Therefore, ∂LY 
+
+> ∂θ T
+
+= 0 . In summary, for each arm t ∈ { 0, 1}, the query q(t) attends to three sources of information: 1. the outcome linear branch, 2. the outcome self-attention branch, 3. the frozen treatment branch. Thus, 
+
+z(L,t ) 
+
+> i
+
+= MHA 
+
+(
+
+q(t), H (L,Y ) 
+
+> i
+
+, H (L,Y )
+
+> i
+
+)
+
+,z(S,t ) 
+
+> i
+
+= MHA 
+
+(
+
+q(t), H (S,Y ) 
+
+> i
+
+, H (S,Y )
+
+> i
+
+)
+
+,z(T,t ) 
+
+> i
+
+= MHA 
+
+(
+
+q(t), H (T ) 
+
+> i
+
+, H (T )
+
+> i
+
+)
+
+.
+
+Note that the z(T,t ) 
+
+> i
+
+represents one-way cross-attention, with the query q(t) coming from the outcome module, while the key and value come from the treatment module. Therefore, the outcome is allowed to ask the treatment representation for information, but the treatment branch itself does not query the outcome branch. We then concatenate all three elements: r(t) 
+
+> i
+
+= [ z(L,t ) 
+
+> i
+
+; z(S,t ) 
+
+> i
+
+; z(T,t ) 
+
+> i
+
+] ∈ R3d.
+
+A fusion gate is also introduced to combine all information. For each arm t, an arm-specific gating network is used: 
+
+g(t) 
+
+> i
+
+= W (t) 
+
+> g2
+
+GELU 
+
+(
+
+W (t) 
+
+> g1
+
+r(t) 
+
+> i
+
++ b(t)
+
+> g1
+
+)
+
++ b(t) 
+
+> g2
+
+∈ R3,α(t) 
+
+> i
+
+= softmax 
+
+( g(t)
+
+> i
+
+τg
+
+)
+
+=
+
+
+
+α(t)
+
+> iL
+
+α(t)
+
+> iS
+
+α(t)
+
+> iT
+
+ , α(t) 
+
+> iL
+
++ α(t) 
+
+> iS
+
++ α(t) 
+
+> iT
+
+= 1 .
+
+The weighted fusion vector is f (t) 
+
+> i
+
+= [ α(t) 
+
+> iL
+
+z(L,t ) 
+
+> i
+
+; α(t) 
+
+> iS
+
+z(S,t ) 
+
+> i
+
+; α(t) 
+
+> iT
+
+z(T,t ) 
+
+> i
+
+] ∈ R3d., based on which, each arm has its own prediction head: ̂
+
+μt(Xi) = W (t) 
+
+> h2
+
+GELU (W (t) 
+
+> h1
+
+f (t) 
+
+> i
+
++ b(t) 
+
+> h1
+
+) + b(t) 
+
+> h2
+
+, t ∈ { 0, 1}.
+
+Therefore, ̂ τi (Xi) =̂ μ1 (Xi)−̂ μ0 (Xi) , which reflect the estimated CATE. And the ATE estimator is [AT E MeanTau = n−1 ∑ni=1 ̂ τi (Xi).53.4 Training Objective 
+
+The treatment and outcome modules are trained separately. First, the treatment module is trained using the binary cross-entropy loss function: LT = − 1
+
+> n
+> ∑ni=1
+
+[Ti log ̂ ei + (1 − Ti) log (1 −̂ ei)] . The outcome module is trained only on observed factual outcomes. Let I0 = {i : Ti = 0 }, I1 = {i : Ti =1}. Then the loss is 
+
+LY = 1
+
+| I 0 |
+
+> ∑
+> i∈I 0
+
+(Yi −̂ μ0(Xi)) 2 + 1
+
+| I 1 |
+
+> ∑
+> i∈I 1
+
+(Yi −̂ μ1(Xi)) 2.
+
+3.5 Modularization and Cutting Feedback Rules 
+
+Cutting feedback originates from modular Bayesian analysis, where unwanted reverse feedback is removed during posterior updating [Frazier and Nott, 2025]. In our work, we mimic this principle through a two-step estimation procedure. There are four rules [Liu and Goudie, 2025] used here to ensure a meaningful modular mechanism. 
+
+3.5.1 Rule 1: Self-contained modules 
+
+This rule requires the model to be decomposed into distinct modules, where each module is self-contained; that is, internally coherent and functionally separable from the rest of the system (Figure 2). We have introduced two modules: a treatment module and an outcome module. Formally, we write ΨT = ( X, T ; θS,T , θ L,T ), ΨY = ( X, T, Y ; θS,Y , θ L,Y ). The treatment module produces an intermediate representation H(T ), which acts as frozen information passed to the downstream outcome module. The overlap between the two modules is ΨT ∩Y = {X, T ; H(T )}. Since {X, T }
+
+is the observed dataset and H(T ) is the frozen representative information, each module remains self-contained in the sense that it is defined by its own data inputs and corresponding parameters. 
+
+3.5.2 Rule 2: Module ordering 
+
+The direction of information flow is explicitly defined from the treatment module to the outcome module. In other words, the treatment module is treated as the parent module, and the outcome module is treated as the child module. Hence, our method satisfies Rule 2 by explicitly imposing the directed modular order ΨT ≺ ΨY .
+
+3.5.3 Rule 3: Cutting feedback 
+
+This rule states that inference for the parent module should be based only on its own module. In our work, we implement this idea through stop-gradient. Specifically, the outcome model is written as 
+
+> (
+
+μ0(Xi), μ 1(Xi)) = FY
+
+> (
+
+Xi, stopgrad( H(T ) 
+
+> i
+
+), stopgrad( ei); θY
+
+> )
+
+,
+
+and the outcome loss satisfies ∂LY 
+
+> ∂θ T
+
+= 0 . This means that the child module may input information from the parent module, but it cannot modify the parent module through reverse feedback. Thus, our framework satisfies Rule 3 through the use of detach / cutting feedback. 
+
+3.5.4 Rule 4: A cut-style downstream update 
+
+In modular Bayesian analysis, this rule refers to posterior updating under a cut distribution. In our machine learning framework, we instead propose a cut-style downstream update for the parameters 6in the outcome module. Step 1 learns the treatment module, and Step 2 learns the outcome module conditional on the treatment representation. This is directly analogous to the logic of cut inference in modular Bayesian analysis: pcut (θT , θ Y | data ) = p(θT | treatment data ) · p(θY | θT , outcome data ).
+
+# 4 Related Work 
+
+4.1 Classical Causal Inference Estimators 
+
+The propensity score is defined as the conditional probability of treatment assignment given observed covariates, 
+
+e(x) = P (T = 1 | X = x).
+
+By balancing covariates between treated and control groups, the propensity score can be used for matching and weighting. A common weighting estimator is inverse probability weighting (IPW), [Robins et al., 2000] which estimates the ATE as ̂
+
+τIP W = 1
+
+n 
+
+> n∑
+> i=1
+> (
+
+TiYî
+
+e(Xi) − (1 − Ti)Yi
+
+1 −̂ e(Xi)
+
+> )
+
+.
+
+A doubly robust estimator combines propensity score estimation and outcome regression. One example is the augmented inverse probability weighting (AIPW) estimator [Bang and Robins, 2005]: ̂
+
+τAIP W = 1
+
+n
+
+> n∑
+> i=1
+> [̂
+
+μ1(Xi) −̂ μ0(Xi) + Ti{Yi −̂ μ1(Xi)}̂
+
+e(Xi) − (1 − Ti){Yi −̂ μ0(Xi)}
+
+1 −̂ e(Xi)
+
+> ]
+
+.
+
+This estimator is consistent if either the treatment model or the outcome regression model is correctly specified, which makes it robust. 
+
+4.2 Machine Learning Based Causal Effect Estimation 
+
+Meta-learning approaches adapt supervised learning algorithms to estimate treatment effects. The T-learner fits two separate outcome models, using the control and treated samples respectively, and estimates the treatment effect by ̂ τ (x) = ̂ μ1(x) −̂ μ0(x).
+
+This approach is simple and flexible, but may suffer when one treatment group has limited sample size. The X-learner improves upon the T-learner by first imputing pseudo-treatment effects and then learning treatment effect functions separately in each group, often achieving better performance under treatment imbalance [Künzel et al., 2019]. In our analysis, we will compare to X-learner since it considers the treatment adjustments. Representation learning methods for causal inference seek to learn latent covariate representations that are useful for estimating both treatment assignment and potential outcomes. TARNet and DragonNet are two examples. Let Φ( X) denote a learned representation of the covariates. TARNet predicts the two potential outcome surfaces through separate heads [Johansson et al., 2016]: ̂
+
+μ0(X) = h0(Φ( X)) ,̂ μ1(X) = h1(Φ( X)) .
+
+The factual prediction is ̂
+
+Y = T̂ μ1(X) + (1 − T )̂ μ0(X),
+
+7and the training objective is typically based on factual outcome loss, 
+
+LT ARN et = 1
+
+n
+
+> n∑
+> i=1
+
+ℓ(Yi, T î μ1(Xi) + (1 − Ti)̂μ0(Xi)) ,
+
+where ℓ(·, ·) is usually mean squared error for continuous outcomes or cross-entropy for binary outcomes. DragonNet extends TARNet by adding an explicit treatment prediction head [Shi et al., 2019]. In addition to the shared representation Φ( X) and the outcome heads h0(Φ( X)) and h1(Φ( X)) ,DragonNet estimates the propensity score through ̂
+
+e(X) = g(Φ( X)) .
+
+Its objective combines outcome prediction loss and treatment classification loss: 
+
+LDragonN et = 1
+
+n
+
+> n∑
+> i=1
+
+[ℓ(Yi, T î μ1(Xi) + (1 − Ti)̂μ0(Xi)) + α ℓ (Ti,̂ e(Xi))] ,
+
+where ℓt is the treatment cross-entropy loss, 
+
+ℓt(Ti,̂ e(Xi)) = −[Ti log ̂ e(Xi) + (1 − Ti) log(1 −̂ e(Xi))] .
+
+While this shared-representation strategy can improve statistical efficiency, the treatment and outcome tasks are still optimized jointly through the same latent representation. Since the treatment classification loss is included in the joint objective, gradient updates will pass information from outcome components to the treatment components. From a causal modeling perspective, this inverse flow should be avoided. 
+
+4.3 Transformer for Tabular Data 
+
+Transformer and attention-based architectures have recently shown strong performance in tabular modeling because they can flexibly capture nonlinear dependencies and higher-order feature interac-tions [Wang et al., 2025]. Such flexibility is potentially valuable for causal inference, however, the application of transformers in causal inference is still a new attempt. For example, utilizing Trans-formers to capture complex, long-range dependencies among time-varying confounders [Melnychuk et al., 2022]. Most existing causal models typically do not emphasize directional information flow between treatment and outcome representations, nor do they explicitly implement cutting feedback to prevent outcome-side gradients from updating treatment-side representations. These limitations motivate architectures that preserve the representational power of attention while introducing mechanism-aware structure. 
+
+4.4 Variance estimation for MOCA using Rubin-style pooling. 
+
+In the real data analysis, machine learning based methods like TARNet, and DragonNet mainly provide point estimates and do not natively output variance estimates. In our work, we adopted a Rubin-style pooling rule [Barnard and Rubin, 1999] to quantify uncertainty for the proposed MOCA estimator. For the j-th MOCA run, we defined the predicted CATE for subject i as 
+
+ˆτij (Xi) = ˆ μ1,j (Xi) − ˆμ0,j (Xi),
+
+8where ˆμ1,j (Xi) and ˆμ0,j (Xi) are the model-predicted potential outcomes under treatment and control, respectively. The corresponding ATE estimate from the j-th run was then computed as the sample mean of the predicted CATE, ˆτj = 1 
+
+> n
+> ∑ni=1
+
+ˆτij . To quantify the within-run uncertainty, we estimated the variance of ˆτj using the sample variance of the predicted CATE, 
+
+Uj =̂ Var(ˆ τj ) = 1
+
+n · 1
+
+n − 1
+
+> n∑
+> i=1
+
+(ˆ τij − ¯τj )2,
+
+where ¯τj = 1 
+
+> n
+> ∑ni=1
+
+ˆτij . Thus, Uj directly reflects the variability of the predicted treatment effects within the j-th fitted MOCA model. After repeating MOCA fitting m times, yielding 
+
+( ˆτ1, U 1), . . . , ( ˆτm, U m), we combined the results using a Rubin-style pooling rule. Specifically, the pooled treatment effect estimate was ¯τ = 1 
+
+> m
+> ∑mj=1
+
+ˆτj , the average within-run variance was ¯U = 
+
+> 1
+> m
+> ∑mj=1
+
+Uj , and the between-run variance was 
+
+B = 1
+
+m − 1
+
+> m∑
+> j=1
+
+(ˆ τj − ¯τ )2.
+
+The final pooled variance was then calculated as 
+
+T = ¯U +
+
+> (
+
+1 + 1
+
+m
+
+> )
+
+B. 
+
+In our real data analysis, we also applied this pooling process for other machine learning methods. 
+
+# 5 Simulation Study 
+
+To comprehensively evaluate the performance of the proposed method, we conducted six simulation studies under multiple data-generating mechanisms. Including MOCA with its one-way and two-way version, there are 7 methods compared in the simulation. IPW and AIPW are well-established methods in classical causal inference, and AIPW is especially attractive due to its doubly robust property. X-learner represent machine-learning-based approaches that have shown competitive performance in treatment effect estimation. TARNet and DragonNet are representation-learning methods and provide important neural-network-based benchmarks for comparison. All simulations and model training were conducted in Python (3.11.4). The proposed model was implemented in PyTorch (version 2.5.1+cu121), with NumPy (version 2.4.3) and Pandas (3.0.1) used for data generation and numerical computation. Random seeds with different seeds for different samples were fixed to ensure reproducibility. We considered two sample-size settings: 100 and 1,000 observations in each of the training, validation, and test sets. 
+
+5.1 Simulation setting 
+
+The data generation mechanisms are based on a classical setting of potential outcomes. For each individual i = 1 , . . . , n , let Xi = ( Xi1, . . . , X ip )⊤ denote the covariate vector, Ti ∈ { 0, 1}
+
+the treatment assignment, and Yi(0) , Y i(1) the potential outcomes. The observed outcome is 
+
+Yi = TiYi(1) + (1 − Ti)Yi(0) . Across all scenarios, treatment is generated from 
+
+Ti ∼ Bernoulli (ei), e i = Pr( Ti = 1 | Xi) = expit (ηi),
+
+where expit (x) = 11+ e−x . Potential outcomes are generated as Yi(0) = μ0(Xi) + εi0, Y i(1) = 
+
+μ1(Xi)+ εi1, with εi0, ε i1 ∼ i.i.d.N (0 , 1) . Unless otherwise specified, observed covariates are generated independently from standard normal distributions: Xij ∼ i.i.d.N (0 , 1) .
+
+9Linear In the linear scenario, p = 5 , with treatment propensity is specified by the logistic model 
+
+ηi = −0.3 + 1 .6Xi1 − 2.0Xi2 + 1 .0Xi3 + 1 .2Xi4 + 0 .8Xi5. And the potential outcome mean functions are μ0(Xi) = 1 .0 + 1 .0Xi1 + 0 .5Xi2 − 0.5Xi3 + 1 .8Xi4 − 0.2Xi5,μ1(Xi) = 2 .0 + 1 .2Xi1 + 0 .3Xi2 − 0.1Xi3 + 0 .2Xi4 − 1.6Xi5.
+
+Nonlinear In the nonlinear scenario, the treatment propensity is generated from ηi = −0.3 + 0.6Xi1 − 2.0 sin( Xi2) + 1 .8X2 
+
+> i3
+
++ Xi4Xi5. And the potential outcome mean functions are 
+
+μ0(Xi) = 1 .0 + Xi1 + 0 .5 sin( Xi2) − 0.5X2 
+
+> i3
+
++ 1 .5Xi4Xi5,μ1(Xi) = 2 .0 + 1 .2 cos( Xi1) + 0 .8Xi2Xi3 − 0.3X2 
+
+> i4
+
++ 0 .5Xi5.
+
+This design introduces nonlinear main effects and interactions in both the treatment and outcome models, making it more challenging for methods that rely on linear specification. 
+
+Hidden confounding In this scenario, and an unobserved confounder Ui ∼ N (0 , 1) affects both treatment assignment and potential outcomes. The treatment propensity is ηi = −0.3 + 1 .2Xi1 −
+
+1.0Xi2 + 0 .8Xi3 + 0 .5Xi4 + 1 .5Ui. The potential outcome mean functions are 
+
+μ0(Xi, U i) = 1 .0 + 1 .0Xi1 + 0 .5Xi2 − 0.5Xi3 + 1 .2Xi4 + 3 .0Ui,μ1(Xi, U i) = 2 .0 + 1 .0Xi1 + 0 .3Xi2 − 0.2Xi3 + 0 .8Xi5 + 1 .5Ui.
+
+Because Ui is omitted from the observed covariates used for estimation, the ignorability assump-tion is violated. 
+
+Hidden confounding (multiple-U) Here, multiple latent confounders affect both treatment and outcomes: Ui1, U i2, U i3 ∼ i.i.d.N (0 , 1) . The treatment propensity is 
+
+ηi = −0.3 + 1 .2Xi1 − 1.0Xi2 + 0 .8Xi3 + 0 .5Xi4 + 1 .5Ui1 + 1 .0Ui2 − 0.8Ui3.
+
+The potential outcome mean functions are 
+
+μ0(Xi, U i) = 1 .0 + 1 .0Xi1 + 0 .5Xi2 − 0.5Xi3 + 1 .2Xi4 + 3 .0Ui1 + 2 .0Ui2 − 1.0Ui3,μ1(Xi, U i) = 2 .0 + 1 .0Xi1 + 0 .3Xi2 − 0.2Xi3 + 0 .8Xi5 + 1 .5Ui1 + 1 .0Ui2 − 0.2Ui3.
+
+Again, ignorability is violated, but more severely than in the single-U case because treatment and outcomes are jointly influenced by several latent variables. 
+
+t-distribution This scenario is same as the linear version, but the covariates are generated from a heavy-tailed distribution: Xij ∼ i.i.d.t 3, j = 1 , . . . , 5. This setting preserves a relatively simple structural form for treatment and outcome regressions while making estimation harder through heavy-tailed covariates. 
+
+High-dimensional In the high-dimensional scenario, the covariate dimension is increased to 
+
+p = 300 , with Xij ∼ i.i.d.N (0 , 1) , j = 1 , . . . , 300 . The treatment propensity depends only on the first five covariates: 
+
+ηi = −2.0 + 1 .6Xi1 − 2.2Xi2 + 3 .1Xi3 + 1 .2Xi4 + 2 .1Xi5.
+
+The potential outcome mean functions are defined through dense linear combinations: μ0(Xi) = 1.0 + X⊤ 
+
+> i
+
+β0, μ 1(Xi) = 2 .0 + X⊤ 
+
+> i
+
+β1, where β0, β 1 ∈ R300 , β0 ∼ N (0 , 0.22I300 ), β 1 ∼ N (0 , 0.22I300 ).
+
+This scenario is designed to evaluate performance when the covariate space is high-dimensional and the outcome surfaces are driven by many weak signals. 10 6 Results 
+
+6.1 Simulation Results 
+
+The simulation results suggest that MOCA is competitive for ATE estimation across all considered settings, and that the one-way attention version generally performs better than the two-way version [Table 1]. This supports the overall effectiveness of MOCA and highlights the value of one-way attention and cutting feedback. Under nonlinear, t-distribution, and high-dimensional settings, MOCA outperform traditional methods such as IPW and AIPW with less outliers [Figure 3-4]. IPW and AIPW may have the estimated propensity scores become extremely large or small [Rosenbaum and Rubin, 1983], leading to unstable weights, increased bias, more outliers, and ultimately larger RMSE [Li et al., 2019]. In these scenarios, MOCA is not only competitive with other machine learning approaches, but also clearly improves upon traditional estimators. Under violations of ignorabillity through the presence of hidden confounders, MOCA also shows advantages when the sample size is small. In particular, its bias is generally smaller than that of competing methods, and the one-way version again performs better than the two-way version. This suggests that when the model is misspecified and information is incomplete, it is important to prevent mutual contamination between the treatment module and the outcome module. However, when the sample size increases to 1000, none of the methods can estimate the ATE well [Table S1, Figure S1-S2]. Therefore, although MOCA shows some robustness to ignorability violation in small samples, valid estimation still fundamentally relies on identifiable assumptions being satisfied [VanderWeele and Arah, 2011]. For CATE estimation, this is one of the main advantages of machine learning based approaches [Table S2-S3, Figure S3-S4]. Because MOCA, X-learner, TARNet, and DragonNet can all produce individual-level predictions of the potential outcomes, it is natural to further assess their ability to estimate CATE. Overall, MOCA is effective for CATE estimation in most scenarios. TARNet, and DragonNet, which rely on learned representations, perform worse than the meta-learning frameworks X-learner under heavy-tailed t-distributed data. Shared representations and trained with squared-error loss can be less stable under heavy-tailed outcomes [Fan et al., 2021]. MOCA, on the other hand, still provided a relatively comparable result. Overall, MOCA performs better than traditional methods such as IPW and AIPW under nonlinear, high-dimensional, t-distributed, and even hidden-confounding settings, while remaining competitive with other machine learning based methods. At the same time, the use of one-way attention and cutting feedback helps reduce potential information pollution and preserves the methodological rationale of the model within the causal inference framework. 
+
+6.2 Real Data Results 
+
+Two open-sourced real datasets are used here [Table 2]. We estimated uncertainty for MOCA by repeatedly fitting the model and combining the resulting ATE estimates using a Rubin-style pooling rule [Barnard and Rubin, 1999]. IHDP refers to the Infant Health and Development Program dataset, which comes from a randomized experiment conducted between 1985 and 1988 to study the effect of home-based intervention on infants’ cognitive test scores [Louizos et al., 2017]. There are 747 observations with 608 controls and 139 treatments. This version contains the treatment indicator, the observed outcome yfactual , the counterfactual outcome ycfactual , the mean potential outcomes under control and treatment ( μ0 and μ1), and 25 covariates. Among these, X1–X6 are continuous variables, while X7–X25 are binary variables. A counterfactual outcome included in this dataset, so that we can show the ATE bias directly. The IHDP results show that MOCA has 11 the smallest ATE bias of 0.006. We have a pooling estimated ATE of 3.991 and a 95% confidence interval of (3.69, 4.29). DW refers to the Dehejia–Wahba dataset, which is a subset of the Lalonde data [Dehejia and Wahba, 1999]. It contains 445 observations with 185 treatments and 260 controls. Typically, we expected ATE is a positive number, and the doubly robust method AIPW can be a good reference [Iacus et al., 2019]. The variables include the treatment indicator treated, age, education, race, marital status, no-degree status, earnings in 1974 and 1975, post-treatment earnings in 1978, and unemployment indicators u74 and u75. Among these, re78 is usually treated as the post-treatment outcome. However, this dataset does not have a truth for reference. In this case, we will report only the ATE instead. The ATE based on doubly robust method AIPW is 784.214 with a 95% confidence interval of (-1746.59, 3315.02), which is a potential reference for other methods. MOCA pooling estimates ATE to be 672.201 and a 95% confidence interval of (-388.15, 1732.55), which is closest to the AIPW method. 
+
+# 7 Discussion 
+
+In conclusion, this paper introduces a modular causal transformer framework that combines represen-tation learning, one-way cross-attention, and cutting feedback for treatment effect estimation. The proposed design aims to preserve the usefulness of treatment information for confounding adjustment while avoiding undesirable reverse influence from outcome learning to treatment representation. Empirical results show that this framework can provide competitive and often improved performance, particularly in settings with nonlinear covariate effects, treatment effect heterogeneity, and complex dependency structures. At the same time, several limitations should be acknowledged. First, although the proposed model showed favorable empirical performance, it remains more computationally intensive than conventional estimators such as IPW, AIPW. Transformer-based architectures require tuning of multiple hyperparameters and may be sensitive to optimization settings, sample size, and training stability. In relatively simple settings, the added complexity of the model may not translate into substantial improvement over simpler approaches. Richer architectures can better capture complex structure, but may also overfit or underperform when the true mechanism is simple or when the available sample size is limited [Hastie et al., 2009]. Second, the validity of the MOCA still relies on standard identification assumptions such as consistency, ignorability, and positivity. The model cannot fully correct for hidden confounding when important variables are entirely unobserved. Third, although the one-way modular design helps reduce feedback contamination, it still relies on the correctness of treatment module. In addition, the hard cutting of feedback, while conceptually attractive for protecting the treatment mechanism, may be overly restrictive in some settings [Carmona and Nicholls, 2020]. This suggests that the optimal degree of modularization may vary across applications. In addition, future work could explore methods that combine the proposed architecture with sensitivity analysis or proxy-variable strategies to better address hidden confounding. 12 References 
+
+Francesca Babiloni, Italo Marras, Jiankang Deng, Filippos Kokkinos, Matteo Maggioni, Grigorios Chrysos, and Stefanos Zafeiriou. Linear complexity self-attention with 3rd order polynomials. 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , 45(11):12726–12737, 2023. Heejung Bang and James M. Robins. Doubly robust estimation in missing data and causal inference models. Biometrics , 61(4):962–973, 2005. John Barnard and Donald B. Rubin. Small-sample degrees of freedom with multiple imputation. 
+
+Biometrika , 86(4):948–955, 1999. M. J. Bayarri, J. O. Berger, and F. Liu. Modularization in bayesian analysis, with emphasis on analysis of computer models. Bayesian Analysis , 2009. Chris Carmona and Geoff Nicholls. Semi-modular inference: Enhanced learning in multi-modular models by tempering the influence of components. In Proceedings of the 23rd International Conference on Artificial Intelligence and Statistics , pages 4226–4235, 2020. Rajeev H. Dehejia and Sadek Wahba. Causal effects in nonexperimental studies: Reevaluating the evaluation of training programs. Journal of the American Statistical Association , 94(448): 1053–1062, 1999. Jianqing Fan, Weichen Wang, and Zhihua Zhu. A shrinkage principle for heavy-tailed data: High-dimensional robust low-rank matrix recovery. The Annals of Statistics , 49(3):1239–1266, 2021. D. T. Frazier and D. J. Nott. Cutting feedback and modularized analyses in generalized bayesian inference. Bayesian Analysis , 20(4):1647–1675, 2025. Trevor Hastie, Robert Tibshirani, and Jerome Friedman. The Elements of Statistical Learning: Data Mining, Inference, and Prediction . Springer, 2 edition, 2009. Stefano M. Iacus, Gary King, and Giuseppe Porro. A theory of statistical inference for matching methods in causal research. Political Analysis , 27(1):46–68, 2019. Fredrik Johansson, Uri Shalit, and David Sontag. Learning representations for counterfactual inference. In Proceedings of the 33rd International Conference on Machine Learning , pages 3020–3029, 2016. Sören R. Künzel, Jasjeet S. Sekhon, Peter J. Bickel, and Bin Yu. Metalearners for estimating heterogeneous treatment effects using machine learning. Proceedings of the National Academy of Sciences , 116(10):4156–4165, 2019. Juho Lee, Yoonho Lee, Jungtaek Kim, Adam Kosiorek, Seungjin Choi, and Yee Whye Teh. Set trans-former: A framework for attention-based permutation-invariant neural networks. In Proceedings of the 36th International Conference on Machine Learning , pages 3744–3753, 2019. Fan Li, Lauren E. Thomas, and Fan Li. Addressing extreme propensity scores via the overlap weights. American Journal of Epidemiology , 188(1):250–257, 2019. Y. Liu and R. J. Goudie. A general framework for cutting feedback within modularized bayesian inference. Journal of the Royal Statistical Society Series B: Statistical Methodology , 87(4): 1171–1199, 2025. 13 Christos Louizos, Uri Shalit, Joris M. Mooij, David Sontag, Richard Zemel, and Max Welling. Causal effect inference with deep latent-variable models. Advances in Neural Information Processing Systems , 30, 2017. Viktoriia Melnychuk, D. Frauen, and Stefan Feuerriegel. Causal transformer for estimating coun-terfactual outcomes. In Proceedings of the 39th International Conference on Machine Learning ,pages 15293–15329, 2022. James M. Robins, Miguel A. Hernán, and Babette Brumback. Marginal structural models and causal inference in epidemiology. Epidemiology , 11(5):550–560, 2000. Paul R. Rosenbaum and Donald B. Rubin. The central role of the propensity score in observational studies for causal effects. Biometrika , 70(1):41–55, 1983. Donald B. Rubin. Causal inference using potential outcomes: Design, modeling, decisions. Journal of the American Statistical Association , 100(469):322–331, 2005. Claudia Shi, David Blei, and Victor Veitch. Adapting neural networks for the estimation of treatment effects. Advances in Neural Information Processing Systems , 32, 2019. Tyler J. VanderWeele and Onyebuchi A. Arah. Unmeasured confounding for general outcomes, treatments, and confounders: Bias formulas for sensitivity analysis. Epidemiology , 22(1):42–52, 2011. Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in Neural Information Processing Systems , 30, 2017. A. Wang, X. Piao, X. Zhang, Y. Guo, and Y. Zhang. Rat: Residual attention transformer for tabular data. IEEE Transactions on Big Data , 2025. 14 Tables and Figures 
+
+Table 1. Summary ATE results for simulation with testing sample size 100 Method ATE bias mean ATE bias median ATE bias SD ATE RMSE mean Linear IPW -0.184 -0.311 1.274 0.977 AIPW 0.029 0.005 0.587 0.333 X-Learner 0.014 -0.007 0.301 0.239 MOCA-OneWay 0.027 0.040 0.538 0.449 MOCA-TwoWay 0.186 0.132 0.506 0.421 TARNet 0.138 0.085 0.387 0.328 DragonNet 0.177 0.217 0.411 0.356 Non-linear IPW 0.433 0.401 0.991 0.816 AIPW 0.080 0.275 1.485 1.010 X-Learner 0.329 0.201 0.592 0.474 MOCA-OneWay -0.166 -0.115 0.697 0.571 MOCA-TwoWay 0.097 0.035 0.587 0.474 TARNet 0.069 0.062 0.372 0.287 DragonNet 0.022 0.049 0.354 0.270 t distribution IPW -0.726 0.400 9.059 2.517 AIPW 0.407 -0.011 2.101 0.768 X-Learner 0.045 -0.018 0.264 0.219 MOCA-OneWay 0.094 0.051 0.515 0.375 MOCA-TwoWay 0.188 0.236 0.668 0.578 TARNet 0.360 0.357 0.422 0.424 DragonNet 0.320 0.325 0.481 0.470 Hidden confounding IPW 2.688 2.652 1.164 2.688 AIPW 2.266 2.495 0.904 2.354 X-Learner 2.284 2.288 0.472 2.284 MOCA-OneWay 1.687 1.701 0.620 1.687 MOCA-TwoWay 2.041 2.131 0.813 2.041 TARNet 2.144 2.138 0.391 2.144 DragonNet 2.146 2.285 0.482 2.146 Hidden confounding MultiU IPW 3.777 3.518 1.297 3.777 AIPW 3.374 3.319 0.807 3.374 X-Learner 3.081 3.180 0.508 3.081 MOCA-OneWay 2.169 2.170 0.518 2.169 15 Method ATE bias mean ATE bias median ATE bias SD ATE RMSE mean MOCA-TwoWay 2.645 2.550 0.670 2.645 TARNet 2.762 2.844 0.483 2.762 DragonNet 2.822 2.820 0.567 2.822 High dimension IPW 11.275 9.551 27.263 20.430 AIPW -9.318 -1.951 31.857 19.971 X-Learner 0.292 0.304 0.902 0.755 MOCA-OneWay -0.648 -0.675 0.760 0.806 MOCA-TwoWay -0.503 -0.531 0.680 0.686 TARNet -0.279 -0.244 0.824 0.689 DragonNet -0.342 -0.255 0.758 0.639 Table 2. Results for the IHDP and DW real data analyses Dataset Method ATE ATE Bias Pooling ATE Pooling ATE Bias 95% CI IHDP Data IPW 8.866 4.911 — — (0.60, 17.13) AIPW 3.325 -0.630 — — (1.80, 4.85) X-Learner 3.861 -0.094 3.905 -0.061 (3.72, 4.08) MOCA 3.961 0.006 3.991 0.025 (3.69, 4.29) TARNet 3.756 -0.199 3.833 -0.133 (3.41, 4.26) DragonNet 3.874 -0.081 4.093 0.127 (3.70, 4.48) DW Data IPW 1067.148 — — — (-2277.80, 4412.10) AIPW 784.214 — — — (-1746.59, 3315.02) X-Learner 2216.231 — 1754.876 — (210.45, 3299.30) MOCA 852.520 — 672.201 — (-388.15, 1732.55) TARNet 1568.681 — 1640.669 — (8.57, 3272.77) DragonNet 2555.009 — 1628.595 — (-17.16, 3274.35) 16 Figure 1: Illustration for MOCA framework with one-way attention. 17 Figure 2: Information flow for MOCA with treatment and outcome modules. 18 Figure 3: ATE bias boxplot for testing sample size 100. 
+
+Figure 4: ATE RMSE boxplot for testing sample size 100. 19 Supplementary Material S1 Additional Tables 
+
+Table S1. Summary ATE results for simulation with testing sample size 1000 Method ATE bias mean ATE bias median ATE bias SD ATE RMSE mean Linear IPW 0.003 -0.054 0.619 0.470 AIPW 0.031 0.049 0.171 0.127 X-Learner 0.001 0.003 0.078 0.059 MOCA-OneWay 0.004 0.009 0.112 0.088 MOCA-TwoWay 0.001 0.004 0.075 0.060 TARNet 0.010 0.009 0.121 0.098 DragonNet 0.017 0.016 0.165 0.137 Non-linear IPW 0.331 0.346 0.231 0.353 AIPW 0.230 0.269 0.202 0.266 X-Learner 0.276 0.267 0.155 0.277 MOCA-OneWay -0.009 -0.033 0.165 0.142 MOCA-TwoWay 0.033 0.039 0.163 0.137 TARNet -0.079 -0.081 0.153 0.145 DragonNet -0.108 -0.094 0.173 0.157 t distribution IPW 0.260 0.117 1.035 0.572 AIPW 0.038 0.004 0.286 0.139 X-Learner 0.013 0.015 0.075 0.061 MOCA-OneWay 0.130 0.138 0.131 0.155 MOCA-TwoWay 0.087 0.088 0.139 0.126 TARNet 0.130 0.121 0.124 0.145 DragonNet 0.158 0.169 0.176 0.188 Hidden confounding IPW 2.419 2.379 0.319 2.419 AIPW 2.470 2.470 0.194 2.470 X-Learner 2.374 2.388 0.181 2.374 MOCA-OneWay 2.417 2.439 0.166 2.417 MOCA-TwoWay 2.369 2.377 0.156 2.369 TARNet 2.323 2.361 0.188 2.323 DragonNet 2.368 2.386 0.188 2.368 Hidden confounding MultiU IPW 3.296 3.318 0.282 3.296 AIPW 3.328 3.322 0.177 3.328 20 Method ATE bias mean ATE bias median ATE bias SD ATE RMSE mean X-Learner 3.292 3.267 0.165 3.292 MOCA-OneWay 3.301 3.294 0.158 3.301 MOCA-TwoWay 3.297 3.309 0.157 3.297 TARNet 3.246 3.287 0.252 3.246 DragonNet 3.281 3.281 0.200 3.281 High dimension IPW 30.048 24.230 23.054 30.784 AIPW 2.347 4.546 17.815 14.271 X-Learner -0.040 -0.011 0.408 0.292 MOCA-OneWay 0.009 0.042 0.546 0.402 MOCA-TwoWay 0.230 0.209 0.339 0.312 TARNet 0.284 0.289 0.237 0.304 DragonNet 0.286 0.281 0.303 0.337 Table S2. Summary CATE results for simulation with testing sample size 100 Method CATE bias mean CATE bias SD CATE RMSE mean Linear X-Learner 0.014 0.301 0.577 MOCA-OneWay 0.027 0.538 2.184 MOCA-TwoWay 0.186 0.506 1.986 TARNet 0.138 0.387 1.037 DragonNet 0.177 0.411 1.089 Non-linear X-Learner 0.329 0.592 2.406 MOCA-OneWay -0.166 0.697 2.328 MOCA-TwoWay 0.097 0.587 2.258 TARNet 0.069 0.372 1.684 DragonNet 0.022 0.354 1.686 t distribution X-Learner 0.045 0.264 0.574 MOCA-OneWay 0.094 0.515 2.049 MOCA-TwoWay 0.188 0.668 2.031 TARNet 0.360 0.422 1.486 DragonNet 0.320 0.481 1.507 Hidden confounding X-Learner 2.284 0.472 2.948 MOCA-OneWay 1.687 0.620 2.701 MOCA-TwoWay 2.041 0.813 2.924 TARNet 2.144 0.391 2.954 21 Method CATE bias mean CATE bias SD CATE RMSE mean DragonNet 2.146 0.482 2.943 Hidden confounding MultiU X-Learner 3.081 0.508 3.898 MOCA-OneWay 2.169 0.518 3.263 MOCA-TwoWay 2.645 0.670 3.593 TARNet 2.762 0.483 3.734 DragonNet 2.822 0.567 3.798 High dimension X-Learner 0.292 0.902 4.878 MOCA-OneWay -0.648 0.760 5.116 MOCA-TwoWay -0.503 0.680 5.090 TARNet -0.279 0.824 4.948 DragonNet -0.342 0.758 4.976 Table S3. Summary CATE results for simulation with testing sample size 1000 Method CATE bias mean CATE bias SD CATE RMSE mean Linear X-Learner 0.001 0.078 0.161 MOCA-OneWay 0.004 0.112 0.416 MOCA-TwoWay 0.001 0.075 0.390 TARNet 0.010 0.121 0.446 DragonNet 0.017 0.165 0.487 Non-linear X-Learner 0.276 0.155 2.040 MOCA-OneWay -0.009 0.165 1.307 MOCA-TwoWay 0.033 0.163 1.172 TARNet -0.079 0.153 0.866 DragonNet -0.108 0.173 0.874 t distribution X-Learner 0.013 0.075 0.162 MOCA-OneWay 0.130 0.131 1.000 MOCA-TwoWay 0.087 0.139 0.903 TARNet 0.130 0.124 0.697 DragonNet 0.158 0.176 0.698 Hidden confounding X-Learner 2.374 0.181 2.853 MOCA-OneWay 2.417 0.166 2.925 MOCA-TwoWay 2.369 0.156 2.887 22 Method CATE bias mean CATE bias SD CATE RMSE mean TARNet 2.323 0.188 2.895 DragonNet 2.368 0.188 2.937 Hidden confounding MultiU X-Learner 3.292 0.165 3.887 MOCA-OneWay 3.301 0.158 3.928 MOCA-TwoWay 3.297 0.157 3.924 TARNet 3.246 0.252 3.926 DragonNet 3.281 0.200 3.954 High dimension X-Learner -0.040 0.408 2.888 MOCA-OneWay 0.009 0.546 4.409 MOCA-TwoWay 0.230 0.339 4.356 TARNet 0.284 0.237 3.299 DragonNet 0.286 0.303 3.366 23 S2 Additional Figures 
+
+Figure S1: ATE bias boxplot for testing sample size 1000. 
+
+Figure S2: ATE RMSE boxplot for testing sample size 1000. 24 Figure S3: CATE bias boxplot for testing sample size 100. 
+
+Figure S4: CATE bias boxplot for testing sample size 1000. 25
