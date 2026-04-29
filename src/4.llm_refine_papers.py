@@ -21,8 +21,47 @@ RANKED_DIR = os.path.join(ARCHIVE_DIR, "rank")
 CONFIG_FILE = os.path.join(ROOT_DIR, "config.yaml")
 
 DEFAULT_FILTER_MODEL = os.getenv("BLT_FILTER_MODEL") or "gemini-3-flash-preview-nothinking"
-DEFAULT_FILTER_CONCURRENCY = 4
-MAX_FILTER_RETRIES = 3
+
+
+def _env_int(name: str, default: int, min_value: int = 1, max_value: int | None = None) -> int:
+    raw = str(os.getenv(name) or "").strip()
+    if not raw:
+        value = default
+    else:
+        try:
+            value = int(raw)
+        except Exception:
+            value = default
+    value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+
+def _env_float(name: str, default: float, min_value: float = 0.0, max_value: float | None = None) -> float:
+    raw = str(os.getenv(name) or "").strip()
+    if not raw:
+        value = default
+    else:
+        try:
+            value = float(raw)
+        except Exception:
+            value = default
+    value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+
+# Conservative defaults for overloaded / rate-limited upstream LLM providers.
+# They can still be overridden from GitHub Actions env or CLI arguments.
+DEFAULT_FILTER_CONCURRENCY = _env_int("DPR_FILTER_CONCURRENCY", 1, min_value=1, max_value=8)
+DEFAULT_FILTER_BATCH_SIZE = _env_int("DPR_FILTER_BATCH_SIZE", 5, min_value=1, max_value=20)
+DEFAULT_MAX_CHARS = _env_int("DPR_MAX_CHARS", 650, min_value=300, max_value=2000)
+DEFAULT_MAX_OUTPUT_TOKENS = _env_int("DPR_MAX_OUTPUT_TOKENS", 2048, min_value=512, max_value=4096)
+MAX_FILTER_RETRIES = _env_int("DPR_MAX_FILTER_RETRIES", 6, min_value=1, max_value=10)
+FILTER_REQUEST_INTERVAL_SECONDS = _env_float("DPR_FILTER_REQUEST_INTERVAL", 5.0, min_value=0.0, max_value=60.0)
+FILTER_BACKOFF_BASE_SECONDS = _env_float("DPR_FILTER_BACKOFF_BASE", 8.0, min_value=1.0, max_value=60.0)
 
 
 def log(message: str) -> None:
@@ -646,6 +685,42 @@ def build_filter_retry_note(
     )
 
 
+def _looks_like_rate_limit_error(exc: Exception) -> bool:
+    text = str(exc or "").lower()
+    return any(
+        marker in text
+        for marker in (
+            "429",
+            "too many requests",
+            "rate limit",
+            "ratelimit",
+            "上游负载已饱和",
+            "请稍后再试",
+        )
+    )
+
+
+def _sleep_after_filter_error(exc: Exception, attempt: int, max_attempts: int, debug_tag: str) -> None:
+    if attempt >= max_attempts:
+        return
+
+    is_rate_limit = _looks_like_rate_limit_error(exc)
+    if is_rate_limit:
+        # Longer exponential backoff for 429 / overloaded upstream.
+        wait = min(180.0, FILTER_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)) + random.uniform(0.0, 3.0))
+        reason = "rate-limit/upstream-overload"
+    else:
+        # Shorter wait for JSON validation / transient parse errors.
+        wait = min(30.0, 2.0 * (2 ** (attempt - 1)) + random.uniform(0.0, 1.5))
+        reason = "invalid-json/transient-error"
+
+    log(
+        f"[WARN] filter {debug_tag} retry sleep {wait:.1f}s "
+        f"after {reason} ({attempt}/{max_attempts})"
+    )
+    time.sleep(wait)
+
+
 def recover_filter_results(
     batch_docs: List[Dict[str, str]],
     runner: Callable[[List[Dict[str, str]], int, str], List[Dict[str, Any]]],
@@ -656,17 +731,21 @@ def recover_filter_results(
         return []
 
     last_error: Exception | None = None
-    for attempt in range(1, max(1, max_attempts) + 1):
+    effective_max_attempts = max(1, max_attempts)
+    for attempt in range(1, effective_max_attempts + 1):
         retry_note = build_filter_retry_note(batch_docs, attempt, last_error) if last_error else ""
         try:
+            if FILTER_REQUEST_INTERVAL_SECONDS > 0:
+                time.sleep(FILTER_REQUEST_INTERVAL_SECONDS)
             raw_results = runner(batch_docs, attempt, retry_note)
             return validate_filter_results(batch_docs, raw_results)
         except Exception as exc:
             last_error = exc
-            log(f"[WARN] filter {debug_tag} attempt {attempt}/{max_attempts} invalid: {exc}")
+            log(f"[WARN] filter {debug_tag} attempt {attempt}/{effective_max_attempts} invalid: {exc}")
+            _sleep_after_filter_error(exc, attempt, effective_max_attempts, debug_tag)
 
     if len(batch_docs) == 1:
-        raise ValueError(f"{debug_tag} failed after {max_attempts} attempts: {last_error}")
+        raise ValueError(f"{debug_tag} failed after {effective_max_attempts} attempts: {last_error}")
 
     mid = max(1, len(batch_docs) // 2)
     left_docs = batch_docs[:mid]
@@ -678,12 +757,12 @@ def recover_filter_results(
     return recover_filter_results(
         left_docs,
         runner,
-        max_attempts=max_attempts,
+        max_attempts=effective_max_attempts,
         debug_tag=f"{debug_tag}_left",
     ) + recover_filter_results(
         right_docs,
         runner,
-        max_attempts=max_attempts,
+        max_attempts=effective_max_attempts,
         debug_tag=f"{debug_tag}_right",
     )
 
