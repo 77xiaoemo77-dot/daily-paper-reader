@@ -315,6 +315,53 @@ def resolve_summary_step_env() -> dict[str, str]:
         env["BLT_SUMMARY_MODEL"] = summary_model
     return env
 
+def resolve_filter_step_env() -> dict[str, str]:
+    """Use a dedicated LLM provider/key for Step 4 filtering when available.
+
+    Priority:
+    1) FILTER_* secrets/envs for the LLM refine/filter step only.
+    2) Existing BLT_* / LLM_* settings as fallback.
+    """
+    env = os.environ.copy()
+
+    filter_api_key = _read_env_text(
+        "FILTER_API_KEY",
+        "BLT_FILTER_API_KEY",
+        "LLM_FILTER_API_KEY",
+        "BLT_API_KEY",
+    )
+    filter_base_url = _read_env_text(
+        "FILTER_BASE_URL",
+        "BLT_FILTER_BASE_URL",
+        "LLM_FILTER_BASE_URL",
+        "LLM_PRIMARY_BASE_URL",
+        "BLT_PRIMARY_BASE_URL",
+        "BLT_API_BASE",
+    )
+    filter_model = _read_env_text(
+        "FILTER_MODEL",
+        "BLT_FILTER_MODEL",
+    )
+
+    if filter_api_key:
+        env["BLT_API_KEY"] = filter_api_key
+    if filter_base_url:
+        env["LLM_PRIMARY_BASE_URL"] = filter_base_url
+        env["BLT_PRIMARY_BASE_URL"] = filter_base_url
+        env["BLT_API_BASE"] = filter_base_url
+    if filter_model:
+        env["BLT_FILTER_MODEL"] = filter_model
+
+    redacted_base = filter_base_url[:28] + "..." if len(filter_base_url) > 28 else filter_base_url
+    print(
+        f"[INFO] Step 4 filter env: "
+        f"dedicated_key={'Y' if filter_api_key else 'N'} | "
+        f"base={redacted_base or '-'} | "
+        f"model={filter_model or '-'}",
+        flush=True,
+    )
+    return env
+
 
 def build_paper_index(papers: Any, trace_set: set[str]) -> dict[str, dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
@@ -724,6 +771,7 @@ def main() -> None:
             "--max-output-tokens",
             os.getenv("DPR_MAX_OUTPUT_TOKENS", "1024"),
         ],
+        env=resolve_filter_step_env(),
     )
     if trace_ids:
         print_trace_llm("LLM", llm_path, trace_ids)
