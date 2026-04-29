@@ -713,14 +713,16 @@ def main() -> None:
         [
             python,
             os.path.join(SRC_DIR, "4.llm_refine_papers.py"),
+            "--min-star",
+            os.getenv("DPR_FILTER_MIN_STAR", "5"),
             "--filter-concurrency",
             os.getenv("DPR_FILTER_CONCURRENCY", "1"),
             "--batch-size",
-            os.getenv("DPR_FILTER_BATCH_SIZE", "5"),
+            os.getenv("DPR_FILTER_BATCH_SIZE", "1"),
             "--max-chars",
-            os.getenv("DPR_MAX_CHARS", "650"),
+            os.getenv("DPR_MAX_CHARS", "400"),
             "--max-output-tokens",
-            os.getenv("DPR_MAX_OUTPUT_TOKENS", "2048"),
+            os.getenv("DPR_MAX_OUTPUT_TOKENS", "1024"),
         ],
     )
     if trace_ids:
