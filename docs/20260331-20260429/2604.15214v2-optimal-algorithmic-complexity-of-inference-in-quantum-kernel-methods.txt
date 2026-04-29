@@ -1,0 +1,2936 @@
+Title: Optimal algorithmic complexity of inference in quantum kernel methods
+
+URL Source: https://arxiv.org/pdf/2604.15214v2
+
+Published Time: Mon, 20 Apr 2026 00:37:10 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+## Optimal algorithmic complexity of inference in quantum kernel methods 
+
+Elies Gil-Fuster, 1, 2, ∗ Seongwook Shin, 1, 3 Sofiene Jerbi, 1, 4 Jens Eisert, 1, 2, 4 and Maximilian J. Kramer 1, †
+
+> 1
+
+Dahlem Center for Complex Quantum Systems, Freie Universit¨ at Berlin, 14195 Berlin, Germany 
+
+> 2
+
+Fraunhofer Heinrich Hertz Institute, 10587 Berlin, Germany 
+
+> 3
+
+Department of Quantum Information Science and Engineering, Sejong University, 209 Neungdong-ro, Gwangjin-gu, 05006, Seoul, Republic of Korea 
+
+> 4
+
+Helmholtz-Zentrum Berlin f¨ ur Materialien und Energie, 14109 Berlin, Germany 
+
+(Dated: April 20, 2026) Quantum kernel methods are among the leading candidates for achieving quantum advantage in supervised learning. A key bottleneck is the cost of inference: evaluating a trained model on new data requires estimating a weighted sum fα(x) = PNi=1 αik(x, x i) of N kernel values to additive precision ε, where α ∈ RN is the vector of trained coefficients. The standard approach estimates each term independently via sampling, yielding a query complexity of O(N ∥α∥22/ε 2). In this work, we identify two independent axes for improvement: (1) How individual kernel values are estimated (sampling versus quantum amplitude estimation), and (2) how the sum is approximated (term-by-term versus via a single observable), and systematically analyze all combinations thereof. The query-optimal combination, encoding the full inference sum as the expectation value of a single observable and applying quantum amplitude estimation, achieves a query complexity of O(∥α∥1/ε ), removing the dependence on N from the query count and yielding a quadratic improvement in both ∥α∥1 and ε. We prove a matching lower bound of Ω( ∥α∥1/ε ), establishing query-optimality of our approach up to logarithmic factors. Beyond query complexity, we also analyze how these improvements translate into gate costs and show that the query-optimal strategy is not always optimal in practice from the perspective of gate complexity. In particular, for realistic hardware constraints, a different strategy – combining quantum amplitude estimation with term-by-term evaluation – can be preferable in terms of total gate count. Taken together, our results provide both a query-optimal algorithm and a practically optimal choice of strategy depending on hardware capabilities, along with a complete landscape of intermediate methods to guide practitioners. All algorithms require only amplitude estimation as a subroutine and are thus natural candidates for early-fault-tolerant implementations. 
+
+I. INTRODUCTION 
+
+It is difficult to overstate the importance of artificial intelligence in today’s world. Motivated by the observation that certain quantum algorithms achieve a computational advantage over classical algorithms for specific tasks, researchers have increasingly explored the potential for achieving quantum advantages in machine learning [BWP +17, SK19, CCC +19, AAA +20]. Quantum kernel methods [TKW26] are among the top candidates for quantum advantage in quantum machine learning (QML), as show-cased in the milestone work of Ref. [LAT21]. Typical QML tasks involve a data domain X and a label co-domain Y, and the goal is to obtain a function f : X → Y which performs well under pre-specified metrics. The mainstream approach is based on embedding quantum kernels [Sch21, HWGF +22, GFED24], where a kernel function k is specified via an n-qubit quantum feature map x 7 → ρ(x), for x, x ′ ∈ X , as 
+
+k(x, x ′) = Tr {ρ(x)ρ(x′)}. (1) A crucial step in any kernel-based pipeline is related to training , i.e., finding suitable parameters α ∈ RN from a training set of size N . After training, one must evaluate the resulting hypothesis on new data – the inference step – which amounts to computing 
+
+fα(x) = 
+
+> N
+
+X
+
+> i=1
+
+αik(x, x i). (2) Commonly used techniques [H +19, Sch21, HWGF +22, TKW26] estimate each of the N terms αik(x, x i) independently via sampling-based amplitude estimation, resulting in a runtime of O(N ∥α∥22/ε2), with ∥α∥22 = PNi=1 α2 
+
+> i
+
+. We refer to this approach as list-and-sum . This scaling can be improved along two independent axes: In the way how individual kernel values are estimated (sampling versus quantum amplitude estimation ), and how the sum over training points is approximated ( term-by-term versus via a single observable ). We systematically investigate these choices in Section III and Appendix B. Ultimately, we show that in the   
+
+> ∗emgilfuster@gmail.com
+> †m.kramer@fu-berlin.de
+> arXiv:2604.15214v2 [quant-ph] 17 Apr 2026
+
+2All-at-once  
+
+> via sampling
+> All-at-once
+> via quantum amplitude estimation
+> List-and-sum
+> via quantum amplitude estimation
+> List-and-sum
+> via sampling
+> How to estimate expectation values: S ampling vs. quantum amplitude estimation (Choice 2)
+> How to approximate the sum:  List-and-sum vs. all-at-once (Choice 1)
+> Estimation via quantum
+> amplitude estimation
+> Estimation via sampling
+> Training dataset
+> Task:
+> Estimate the kernel function
+> to additive precision
+> for a given training dataset.
+> fα(x)ε
+> Training datapoints
+
+FIG. 1. Schematic overview of the four algorithmic strategies for inference in quantum kernel methods. The two axes correspond to the two independent design choices: how the sum over training points is approximated ( list-and-sum versus all-at-once, vertical axis), and how individual expectation values are estimated (sampling versus quantum amplitude estimation, horizontal axis). In list-and-sum, each kernel value k(x, x i) is estimated independently and the results are combined classically. In the all-at-once approach, the full inference sum is encoded as a single observable. Moving from sampling to quantum amplitude estimation yields a quadratic improvement in precision scaling within each row. 
+
+early fault-tolerant regime [EP25], the optimal combination – encoding the full sum as a single observable and applying quantum amplitude estimation – achieves a query complexity of O(∥α∥1/ε), where ∥α∥1 = PNi=1 |αi| (Theorem 9). We complement this with a matching lower bound of Ω( ∥α∥1/ε), establishing optimality up to logarithmic factors (Corollary 11). Beyond query complexity, our results provide a practical guide to quantum kernel inference: given hardware capabilities, Algorithm 1 and Theorem 9 identify the appropriate strategy and its runtime, while Theorem 10 characterizes the corresponding gate complexity. We establish that the strategy yielding the lowest total gate count is list-and-sum with adaptive budget, via quantum amplitude estimation. 
+
+II. PRELIMINARIES A. Problem set-up and notation 
+
+To set the stage properly, we start by defining the problem set-up formally. Suppose we are given a learning task defined on X × Y , where a quantum kernel model has already been trained. We call the parameters of the kernel model α ∈ RN ,where N is the size of the training set. We consider quantum feature maps realized via a data-dependent unitary U (x) applied to the all-0 state vector as |ψ(x)⟩ = U (x)|0⟩, with ρ(x) = |ψ(x)⟩⟨ ψ(x)|. In this case, the kernel function becomes k(x, x ′) = 
+
+|⟨ ψ(x)|ψ(x′)⟩| 2 for x, x ′ ∈ X , and the inference task reduces to evaluating 
+
+fα(x) := 
+
+> N
+
+X
+
+> i=1
+
+αik(x, x i) = 
+
+> N
+
+X
+
+> i=1
+
+αi|⟨ 0|U †(x)U (xi)|0⟩| 2. (3) Here, S = {(xi, y i)}Ni=1 is a training set of size N , where the co-variates xi ∈ X are d-dimensional real vectors, and the labels yi
+
+can be either {± 1} (in the case of binary classification) or real-valued (in the case of regression). For simplicity, we restrict our discussion to binary classification and regression; standard approaches beyond these have been discussed in, e.g., Ref. [SS02]. The vector α = ( α1, . . . , α N ) ∈ RN contains the trained parameters, with each αi being a weight assigned to a training point 3
+
+xi. In the case of binary classification, one composes fα with a sign function to obtain hypotheses of the form gα = sign ◦ fα.Additionally, one can include a bias term b ∈ R, which we leave out for ease of presentation. We refer to N as the size of the training set for simplicity. In practice, sparsity is often imposed over the coefficients during training (e.g., via ℓ1-regularization), so that N only includes the non-zero coefficients, sometimes dubbed support vectors . The number of support vectors can be significantly smaller than the size of the training set, though here we do not make any specific assumptions. We summarize the above in the following formal definition for the computational task of inference. 
+
+Definition 1 (Problem set-up) . Let S = {(xi, y i)}Ni=1 be a training set of size N ∈ N, with (xi, y i) ∈ X × Y , let α = ( αi)Ni=1 ∈
+
+RN be a vector of trained parameters, let U (x) be an input-dependent unitary quantum-feature-map involving G-many gates from a fixed gate set, with U (x)|0⟩ = |ψ(x)⟩, and let ε > 0 be a precision parameter. The goal is to provide a quantum algorithm which, for any new input x, evaluates the kernel function fα(x) in Eq. (3) to additive precision ε.
+
+Definition 2 (Norms) . We use the notation 
+
+∥x∥p := 
+
+> N
+
+X
+
+> i=1
+
+|xi|p
+
+!1/p
+
+(4) 
+
+for p ∈ { 2/3, 1, 2}, although it is not a norm for 0 < p < 1 as it does not fulfill the triangle inequality. For a Hermitian operator 
+
+M with eigenvalues {λi}i, we use ∥M∥ ∞ = max i|λi| and refer to it as the operator norm. 
+
+Definition 3 (Short-hand notation) . We separate the coefficient vector into three parts: (1) its norm ∥α∥1, (2) a probability distribution p = ( pi)Ni=1 with pi = |αi|/∥α∥1, and (3) a vector of signs s = ( si)Ni=1 , with si = sign( αi). With this, we can re-write Eq. (2) as 
+
+fα(x) = ∥α∥1
+
+> N
+
+X
+
+> i=1
+
+pisik(x, x i) = ∥α∥1Ei∼p[sik(x, x i)] . (5) 
+
+Accounting for the positive and negative terms in the sum, we introduce the intermediate variables f± ∈ [0 , 1] as 
+
+f± := 
+
+> N
+
+X
+
+> i=1
+
+δsi,±1pik(x, x i) ≡ 1
+
+∥α∥1
+
+> N
+
+X
+
+> i=1
+
+δsi,±1|αi|k(x, x i). (6) 
+
+We can re-write Eq. (2) in terms of these normalized quantities as fα(x) = ∥α∥1(f+ − f−).
+
+Below, we define the oracle access model used throughout the work and specify the associated gate costs per query. 
+
+Definition 4 (Access model with associated gate costs) . To tackle the goal from Definition 1, we assume the following quantum oracle access model: • Single-input oracle U (x): given any input x and an n-qubit register, we can implement U (x), U †(x), and controlled versions thereof, with an associate cost of G-many gates. • Coefficient quantum-state oracle W (α): Given a (⌈log 2(N )⌉ + 1) -qubit register, prepare a quantum state encoding the coefficients as amplitudes |α⟩ = PNi=1 
+
+√pi|i⟩ ⊗ | si⟩, with pi and si as in Definition 3, and si encoding the sign of the ith 
+
+coefficient as an eigenstate of the Z operator as Z|si⟩ = si|si⟩. The associated cost per query in terms of gates is N .We consider the following classical oracles to access the coefficient vector α: Reading oracle OR(α, i ), read the ith element 
+
+αi; Norm oracle ON (α), compute the norm ∥α∥1; and Sampling oracle OC (α), sample an index i with probability pi (that is, proportional to the magnitude of the coefficients). 
+
+In Section III B, we measure algorithmic cost by the total number of quantum oracle queries, which include the single-input oracle U (x) and the coefficient quantum-state oracle W (α). Below, we provide explicit circuit constructions that confirm that the runtime of our algorithms is indeed dominated by the quantum oracle queries. We note that the gate cost per query varies across algorithms, yet in a way that is mostly independent of ε and ∥α∥1, and hence it does not affect the asymptotic comparisons in runtime and query complexity we perform in this work. We comment on resource estimates in terms of gates in Section III C. The access model we propose in Definition 4 not only allows us to perform a formal analysis of query complexity, but it also accurately reflects realistic implementations. The oracles we introduce can be directly instantiated on hardware, and they do not require any special computational power, nor do they hide exponential overheads. Still, we assume black-box access to U (x)
+
+and W (α) to remove the possibility of optimized implementations which would exploit the structure of the circuits involved. This is a conscious design choice, as it is our goal to focus on the fundamental complexity of the computational task, which in turn provides worst-case guarantees applicable to any specific quantum feature map. As is common in query complexity studies, nothing prevents more-efficient procedures to exist under the assumption that U (x) is of a particular known form. 4 
+
+> B. Amplitude estimation toolbox
+
+The problem in Definition 1 can be viewed as an instance of amplitude estimation. In this section, we introduce the formal background of the amplitude estimation problem and discuss computational approaches for solving it, which we later relate to the task defined in Definition 1. Our presentation of amplitude estimation closely follows that of Ref. [TW25]. We start by defining the amplitude estimation problem .
+
+Definition 5 (Amplitude estimation problem) . Let V ∈ Cd×d be a unitary such that 
+
+V |0⟩ = a |ψgood ⟩ | 0⟩ + p1 − a2 |ψbad ⟩ | 1⟩ , (7) 
+
+where |ψgood ⟩ and |ψbad ⟩ are normalized quantum state vectors, and a ∈ [0 , 1] . Given access to V and V †, the task is to output an estimate ˆa such that a − ε < ˆa < a + ε with probability at least 2/3.
+
+Below we outline two approaches for solving this task. We start by describing a naive classical sampling approach yielding a 
+
+O(ε−2) scaling and then explain the quantum version thereof, known as quantum amplitude estimation , which yields a O(ε−1)
+
+scaling for estimating a to additive precision ε. 
+
+> 1. Sampling-based amplitude estimation
+
+In the classical setting, the amplitude a is not directly accessible; one can only sample from the distribution induced by measuring V |0⟩. Each measurement of the auxiliary register yields outcome |0⟩ with probability p = a2, so estimating a
+
+reduces to estimating the Bernoulli parameter p and taking a square root. 
+
+Theorem 1 (Sampling estimator: variance and concentration) . Let X ∈ [0 , 1] and let Y1, . . . , Y M be i.i.d. Bernoulli random variables with E[Yk] = X. Define the estimator ˆX := PMk=1 Yk/M . Then the mean of the estimator fulfills E[ ˆX] = X and its variance Var( ˆX) ≤ 1/4M . Further, for all ε > 0, the following tail bound holds P(| ˆX − X| ≥ ε) ≤ 2 exp( −2M ε 2). In particular, to guarantee P(| ˆX − X| ≤ ε) ≥ 1 − δ, it suffices to choose M ∈ O (ε−2 log( δ−1)) .
+
+The proof is via standard Chernoff-based arguments, together with the facts that bounded random variables are sub-Gaussian, and that the observations Y1, . . . , Y M are indeed independent. 
+
+Corollary 2 (Estimation of amplitudes) . Let a ∈ [0 , 1] and define X = a2. Let ˆX be as in Theorem 1, and define ˆa := 
+
+p ˆX.Then for a ∈ Ω( ε), the estimator ˆa satisfies |ˆa − a| ≤ ε with probability at least 1 − δ using, M ∈ O (ε−2 log( δ−1)) samples.  
+
+> 2. Quantum amplitude estimation
+
+Quantum amplitude amplification and quantum amplitude estimation, introduced by Brassard et al. [BHMT02], generalize the quadratic speedup achieved by Grover’s search algorithm [Gro96]. These techniques serve as fundamental building blocks in quantum algorithm design to speed-up certain subroutines. 
+
+Theorem 3 (Quantum amplitude estimation [BHMT02, AR20]) . Let a ∈ [0 , 1] and V an nV -qubit unitary as in Definition 5. Given access to V and V †, there exists an estimator ˆa such that for all ε > 0 and δ ∈ (0 , 1) , P(|ˆa − a| ≥ ε) ≤ δ, using 
+
+M ∈ O (ε−1 log( δ−1)) applications of V and V †. More precisely, there exists a constant C > 0 such that P(|ˆa − a| ≥ 
+
+ε) ≤ 2 exp( −CM ε ) for all a ∈ Ω( ε). The procedure from Ref. [AR20] uses nV + 1 qubits, and the total number of gates is 
+
+O(M (GV + nV )) , where GV is the number of gates necessary to implement V or V †.
+
+Remark The concentration bound in Theorem 3 implies that the estimator behaves as if it had variance of order 1/M 2, in contrast to the 1/M variance of sampling-based amplitude estimation from Theorem 1. Aaronson and Rall [AR20] provide constructions for quantum amplitude estimation without using quantum phase estimation or controlled applications of V (which was required in Ref. [BHMT02]). Their analysis assumes a = Ω( ε), ensuring the estimation problem is non-trivial: in this regime, additive error ε corresponds to constant relative error. The work [TW25] argues that related techniques can be extended to regimes where a is comparable to or smaller than ε. Finally, the query complexity of Theorem 3 is optimal up to constant factors. 
+
+Theorem 4 (Optimality of quantum amplitude estimation [NW99]) . Any quantum algorithm that estimates a to additive error 
+
+ε with constant success probability requires Ω( ε−1) applications of V and V †.5Theorem 4 follows from lower bounds for quantum counting [NW99], which reduce to phase estimation lower bounds. Re-finements and extensions to arbitrary success probabilities can be found in Refs. [Lin23, MdW23]. In particular, the dependence on the failure probability δ is also tight [MdW23]. It has been recently proven in Refs. [TW25, TWZ25] that the quadratic speedup for quantum amplitude estimation requires access to the inverses. 
+
+Theorem 5 (Amplitude estimation requires inverse access [TW25]) . Suppose we have only access to the unitary V ∈ Cd×d
+
+from above and no access to the inverse, then any algorithm for amplitude estimation must use Ω(min( d, ε −2)) applications of 
+
+V . 
+
+> C. Related work on quantum kernel methods
+
+While the approach taken here is original and new, it builds on a number of previous works. The naive approach to inference, which we call list-and-sum (fixed budget) below, has already been lined out in foundational works like [H +19, SK19], and re-instated countless times, e.g., in Refs. [Sch21, LAT21, HWGF +22, GGC +24, TKW26]. These references elucidate the two main approaches to estimate the kernel function k(x, x ′) on a quantum computer: either using the inverse U †(x′), or employing the SWAP test [NC00]. To the best of our knowledge, a formal runtime analysis of the naive approach had not been performed before, and we provide it in Theorem 9 in terms of query complexity and Theorem 10 in terms of gates, with further details in Appendix B. Previous works have also characterized the complexity of the training phase of quantum kernel methods. As the training step involves inverting a matrix, this was one of the first applications of the HHL algorithm [HHL09], called quantum support vector machine (qSVM) [RML14]. Recent efforts have further characterized the runtime of training quantum kernels on near-term devices [GTSW24]. The milestone work [LAT21] established a learning separation, proving that quantum kernel methods can learn to evaluate functions outside of P/poly under standard cryptographic assumptions. In this work, we study the complexity of inference in the oracle query model, where we do not assume any structure on the quantum feature map. Beyond this black-box setting, existing works have studied reducing inference cost via surrogates ,either classically [SEM23, LTD +22, SRJ +23, SBS +25], exploiting the random Fourier features technique [RR07]; or quan-tumly [NMM +24], also using variants of shadow tomography [Aar18, HSK23, KGKB25]. Surrogates can reduce inference cost in restricted scenarios, but cannot work in the general setting we consider (Definitions 1 and 4).  
+
+> D. Related work from signal processing
+
+The approach taken here and the ideas we develop have some resemblance with notions of classical sensing, recovery and parameter-estimation in general and similar trade-offs of term-by-term estimation and global strategies exist. Say, if one is aiming at recovering unknown vectors x from estimating fα(x) = PNi=1 αixi, this can be done with different sensing vectors 
+
+α. A collection of such measurements are collected in a vector y(x) = Ax , featuring a matrix A. Then similar trade-offs exist. If x is s-sparse but one measures term-by-term, one arrives at a query complexity of O(N ). However, if one can perform 
+
+coherent measurements and A satisfies the technical condition of the restricted isometry property, then x can be recovered in an 
+
+all-at-once way from O(s log N ) many coherent measurements, making use of techniques of compressed sensing [EK12]. This perspective is also closely related to basis optimization techniques in quantum chemistry, as it is also made use of in quantum computing ansatzes [RBM18, LC19]. Electronic structure Hamiltonians are specified by a quartic tensor ha,b,c,d ,whose complexity can be dramatically reduced by an appropriate choice of orbital basis. Under unitary mode transformations, linearly transforming one set of annihilation operators to another, the tensor may admit low-rank or factorized representations, such as those arising in tensor hypercontraction or density fitting. Conceptually, this mirrors the role of sparsifying bases in compressed sensing and again, similar trade-offs become relevant.  
+
+> III. RESULTS
+
+As alluded to in the introduction, we start from the naive approach and propose several improvements thereof. We highlight two algorithmic choices to make: one regarding how the target quantity fα(x) = PNi=1 αik(x, x i) (or parts thereof) is estimated, and the other regarding how the sum is approximated. In particular, we consider the following possibilities: 1. How to estimate expectation values: either via sampling (see Theorem 1), yielding precision O(1/√M ) from M shots, or via quantum amplitude estimation (see Theorem 3), yielding precision O(1/M ) from M coherent queries. 6                                    
+
+> ii
+> nqubits U†(xi)
+> ⌈log 2N⌉qubits
+> |0⟩flag |0⟩flag
+> Repeat for each i∈ { 1, . . . , N }
+> =nqubits
+> O†(S)QNi=1 U†(xi)data ⊗ | i⟩⟨ i|idx
+> ⌈log 2N⌉qubits FIG. 2. Realizing the “training-set oracle” O†(S)in Definition 6, as Ncontrolled calls to the inverse of the single-input oracle U(x), one for each input in the training set xi∈S. The associated gate cost is O(N(G+ log( N))) . This construction resembles ideas in the linear combination of unitaries (LCU) framework [CW12].
+
+2. How to approximate the sum: the naive option is to list-and-sum , i.e., estimate each term independently and add the results classically, either with a fixed budget for each term or following an adaptive budget scheme. Alternatively, all terms can be grouped into a single all-at-once observable M.These algorithmic choices are illustrated schematically in Figure 1 to provide an intuitive overview. A priori it could be unclear whether such an all-at-once observable exists, or whether it can be efficiently implemented. We address this first in Section III A. A unified algorithm and a theorem describing the runtime complexities follows in Section III B. We comment on resource estimates in Section III C and end by providing a matching query-complexity lower bound in Section III D.  
+
+> A. Existence and implementation of an all-at-once observable
+
+Instead of estimating each kernel term individually, we reinterpret the weighted sum as a single expectation value by embed-ding the coefficients into a quantum state. This allows us to evaluate the entire inference expression in one coherent procedure, rather than aggregating many separate estimates. We show that the full inference sum fα(x) can be cast as the expectation value of a single observable, rather than estimating each kernel value separately. Similar versions of the following results can be found in, e.g., Refs. [NMM +24, GFEBP24, GFGPSD25], though not as formal statements. We start by introducing another quantum oracle that can be constructed from those in our access model. 
+
+Definition 6 (Training-set oracle O†(S)). Let S = {(xi, y i)}Ni=1 be the training set. Given two registers, an n-qubit “data” register and a ⌈log 2(N )⌉-qubit “index” register, which indexes each element i ∈ { 1, . . . , N }, we call training-set oracle O†(S)
+
+O†(S) := 
+
+> N
+
+Y
+
+> i=1
+
+U †(xi)data ⊗ | i⟩⟨ i|idx . (8) We note that this construction does not require quantum random-access memory (QRAM). The training inputs {xi} are classically known and fixed after training, so the controlled unitaries can be compiled into a circuit offline. The O(N ) gate cost per query is inherent to any procedure – classical or quantum – that must touch all N training points. 
+
+Lemma 6 (Query complexity training-set-oracle) . The training-set oracle can be realized with N controlled queries to the single-input oracle U (xi). The associated gate cost is O(N (G + log( N ))) , and the procedure uses one extra qubit. Proof. See Fig. 2 for a visual proof. The associated gate cost is, for each i ∈ { 1, . . . , N }: O(log( N )) gates to perform a multi-controlled bitflip on the flag register conditioned on the index being i, O(G) to call the controlled version of the G gates in U (xi), and O(log( N )) to uncompute the flag bitflip, for a total of O(G + log( N )) . Since these must be repeated N times, the total gate cost of the training-set oracle is O(N (G + log( N ))) .We consider the training-set oracle O†(S) as another quantum oracle in the sense of Definition 4. 
+
+Theorem 7 (All-at-once observable) . Consider the problem set-up from Definition 1. There exists a bounded Hermitian observ-able M(α, S ), with ∥M (α, S )∥∞ ≤ ∥ α∥1, and a quantum state vector |ϕ(x)⟩, such that 
+
+⟨ϕ(x)|M (α, S )|ϕ(x)⟩ = fα(x). (9) 
+
+Moreover, this expectation value can be implemented using n + ⌈log 2 N ⌉ + 2 qubits and O(N (G + log N )) gates. Proof sketch. Set M(α, S ) = PNi=1 αi|ϕ(xi)⟩⟨ ϕ(xi)| and verify directly. We give Figure 3 as visual proof, while full details and a rigorous argument are being presented in Appendix A. 7
+
+|0⟩⟨ 0|
+
+Z
+
+n qubits: |0⟩data U (x) |ϕ(x)⟩
+
+O†(S) PNi=1 
+
+√piU †(xi)|ϕ(x)⟩| i⟩| si⟩⌈log 2 N ⌉ qubits: |0⟩idx 
+
+W (α) PNi=1 
+
+√pi|i⟩| si⟩
+
+|0⟩sign 
+
+> fM(α,S )
+
+/∥α∥1
+
+FIG. 3. Quantum circuit encoding the all-at-once observable as a single expectation value. The all-at-once observable fM(α, S ) is the collection of gates and fixed observables inside the box, up to a factor of ∥α∥1. The intermediate-step formulas serve the purpose of illustrating the action of the gates onto the input state vector |ϕ(x)⟩.
+
+n-qubits: |0⟩data U (x) |ϕ(x)⟩
+
+O†(S)
+
+√f+|ψ+⟩| 0, 0⟩ + √f−|ψ−⟩| 0, 1⟩
+
++ · · · (|ψtrash ⟩| 1, 0⟩ + |ψ′
+
+> trash
+
+|1, 1⟩)
+
+⌈log 2 N ⌉ qubits: |0⟩idx 
+
+W (α) PNi=1 
+
+√pi|i⟩| si⟩
+
+|0⟩sign 
+
+|0⟩QP,trash X
+
+|0⟩QP, ±
+
+PNi=1 
+
+√piU †(xi)|ϕ(x)⟩| i⟩| si⟩| 0, 0⟩
+
+FIG. 4. Quantum circuit encoding the all-at-once observable as amplitudes. Explicit implementation of the unitary V described in Lemma 8. 
+
+The implementation follows the “adjoint” method (using U (x) and U †(x)), as opposed to the SWAP test; the main difference is a trade-off of depth versus width [Sch21, HWGF +22]. To perform quantum amplitude estimation, recall from Definition 5 that we must provide a unitary gate V such that 
+
+V |0⟩ = a|ψgood ⟩| 0⟩ + p1 − a2|ψbad ⟩| 1⟩. (10) Here, a is the quantity we would like to estimate, and the precise form of |ψgood,bad ⟩ is not important, as long as we are able to implement V and V † multiple times. Our general strategy is to relate a to fα(x) = PNi=1 αik(x, x i). Following the short-hand notation from Definition 3, we use quantum amplitude estimation for f+ and f− independently, and then we reconstruct fα(x)
+
+from their difference. We provide a single unitary gate V which allows us to estimate both. 
+
+Definition 7 (Amplitude-encoding unitary) . Consider the problem set-up from Definition 1 and the notation from Definition 3. We the amplitude-encoding unitary V via its action: 
+
+V |0⟩ = pf+|ψ+⟩| 0, 0⟩ + pf−|ψ−⟩| 0, 1⟩ + p1 − f+ − f− (|ψtrash ⟩| 1, 0⟩ + |ψ′
+
+> trash
+
+⟩| 1, 1⟩) . (11) With this, specializing |ψgood ⟩ = |ψ±⟩ and collecting the rest under |ψbad ⟩ for both f± becomes straightforward. We give a circuit depiction for how to construct V in Figure 4, further details can be found in Appendix A. 
+
+Lemma 8 (Single-observable encoded in amplitude) . Under the conditions of Theorem 7, there exists a quantum circuit using 
+
+n + ⌈log 2(N )⌉ + 3 qubits which implements the amplitude-encoding unitary in Definition 7. Proof sketch. Refer to Figure 4 as visual proof, full details are in Appendix B 2 b. 
+
+B. Unified algorithm and runtime complexity 
+
+With the all-at-once observable in hand, the two algorithmic choices can be combined freely, giving rise to a landscape of algorithms summarized in Algorithm 1 (further details can be found in Appendix B). For each combination, we prove the resulting runtime complexity; the results are collected in terms of query complexity in Theorem 9 and in terms of gates in Theorem 10. Moreover, for completeness, we also analyze a sample-and-average strategy in Appendix C, which conceptually interpolates between list-and-sum and all-at-once . Its runtime matches the sampling-based approaches, but does not benefit from quantum amplitude estimation. 8
+
+Algorithm 1 Unified inference for quantum kernel methods. 
+
+Input: x ∈ X (new input), ε > 0 (additive precision), trained coefficients α ∈ RN .
+
+Output: Estimate of fα(x) = PNi=1 αik(x, x i) to ε additive precision. 
+
+Choice 1: How to approximate the sum. 
+
+(a) LIST -AND -SUM (FIXED BUDGET ): estimate every k(x, x i) with the same budget M . [Algorithms B.2 and B.4] (b) LIST -AND -SUM (ADAPTIVE BUDGET ): estimate k(x, x i) with budget Mi. [Algorithms B.3 and B.5] (c) A LL -AT -ONCE : encode fα(x) as a single expectation value ⟨ ˜ϕ(x)| fM(α, S )| ˜ϕ(x)⟩. [Algorithms A.1 and B.8] 
+
+Choice 2: How to estimate expectation values. 
+
+(I) S AMPLING : measure M times; precision O(1/√M ) per estimate. [Theorem 1] (II) Q UANTUM AMPLITUDE ESTIMATION : apply V, V † coherently M times; precision O(1/M ). [Theorem 3]  
+
+> 1:
+
+switch Choice 1: do  
+
+> 2:
+
+case (a) or (b) ▷ List-and-sum  
+
+> 3:
+
+for i ∈ { 1, . . . , N } do  
+
+> 4:
+
+Reading oracle OR(α, i ): obtain αi. 
+
+> 5:
+
+switch Choice 2: do  
+
+> 6:
+
+case (I) ▷ Sampling  
+
+> 7:
+
+Estimate k(x, x i) using Mi shots: ˆk(Mi)(x, x i). 
+
+> 8:
+
+case (II) ▷ Quantum amplitude estimation  
+
+> 9:
+
+Estimate k(x, x i) using Mi coherent queries: ˆk(Mi)(x, x i). 
+
+> 10:
+
+Compute αi ˆk(Mi)(x, x i). 
+
+> 11:
+
+end for  
+
+> 12:
+
+return ˆfα(x) = PNi=1 αi ˆk(x, x i). 
+
+> 13:
+
+case (c) ▷ All-at-once  
+
+> 14:
+
+switch Choice 2: do  
+
+> 15:
+
+case (I) ▷ Sampling  
+
+> 16:
+
+Implement all-at-once observable from Figure 3 (Algorithm A.1) and measure M times.  
+
+> 17:
+
+return ˆf (M ) 
+
+> α
+
+(x). 
+
+> 18:
+
+case (II) ▷ Quantum amplitude estimation  
+
+> 19:
+
+Consider the amplitude-encoding unitary V from Figure 4 (Algorithm B.7).  
+
+> 20:
+
+Run quantum amplitude estimation on V to estimate √f+ and √f− each to precision O(1/M ). 
+
+> 21:
+
+return ˆf (2 M ) 
+
+> α
+
+(x) = ∥α∥1( ˆf+ − ˆf−).
+
+Theorem 9 (Query complexity of inference in quantum kernel methods) . Consider Algorithm 1 and the problem set-up in Defi-nition 1 for estimating the quantum kernel model prediction in Eq. (3) to additive precision ε with constant success probability. The algorithmic runtime depends on the algorithmic choices as follows. (i) Choice 1(a) (list-and-sum, fixed budget): the algorithm requires 
+
+O
+
+ N ∥α∥22
+
+ε2
+
+‡
+
+via sampling [Corollary B.2] , (12) 
+
+O
+
+ N ∥α∥2
+
+ε
+
+
+
+via quantum amplitude estimation [Corollary B.4] . (13) 
+
+(ii) Choice 1(b) (list-and-sum, adaptive budget): the algorithm requires 
+
+O
+
+ ∥α∥21
+
+ε2
+
+
+
+via sampling [Corollary B.3] , (14) 
+
+O
+
+ ∥α∥2/3
+
+ε
+
+⋄
+
+via quantum amplitude estimation [Corollary B.5] . (15) 
+
+(iii) Choice 1(c) (all-at-once): the algorithm requires 
+
+O
+
+ ∥α∥21
+
+ε2
+
+
+
+via sampling [Theorem B.6] , (16) 
+
+O
+
+ ∥α∥1
+
+ε
+
+⋆
+
+via quantum amplitude estimation [Theorem B.7] . (17) 9
+
+We highlight list-and-sum with fixed budget via sampling ( ‡) as the naive approach, all-at-once via quantum amplitude estima-tion ( ⋆) as query-optimal, and list-and-sum with adaptive budget via quantum amplitude estimation ( ⋄) as gate-optimal (see Theorem 10). Proof. Each case follows from the corresponding statement in square brackets; the full proofs are given in Appendix B.  
+
+> C. Resource estimates
+
+In terms of runtime complexity, Theorem 9 dictates that the best algorithmic choice depends on the available hardware. On near-term devices without coherent multi-query access, using an adaptive budget for list-and-sum already yields the same runtime scaling as measuring the more-costly all-at-once observable. Conversely, the all-at-once approach is more beneficial in the early-fault-tolerant regime, where the runtime scaling is directly manifested by the 1-norm of the vector of coefficients, versus the 2/3-norm achieved by list-and-sum with an adaptive budget. Explicitly, within any case for Choice 1, quantum amplitude estimation yields a quadratic improvement over sampling. We expand beyond query-complexity analysis in Theorem 10, where we show the asymptotic scaling of the number of gates associated to each choice. 
+
+Theorem 10 (Number of gates for inference in quantum kernel methods) . Consider Algorithm 1 and the problem set-up in Def-inition 1 for estimating the quantum kernel model prediction in Eq. (3) to additive precision ε with constant success probability. The scaling in the number of gates depends on the algorithmic choices as follows. (i) Choice 1(a) (list-and-sum, fixed budget): the algorithm requires 
+
+O
+
+ GN ∥α∥22
+
+ε2
+
+‡
+
+gates via sampling , O
+
+ GN ∥α∥2
+
+ε
+
+
+
+gates via quantum amplitude estimation . (18) 
+
+(ii) Choice 1(b) (list-and-sum, adaptive budget): the algorithm requires 
+
+O
+
+ G∥α∥21
+
+ε2
+
+
+
+gates via sampling , O
+
+ G∥α∥2/3
+
+ε
+
+⋄
+
+gates via quantum amplitude estimation . (19) 
+
+(iii) Choice 1(c) (all-at-once): the algorithm requires 
+
+˜O
+
+ N G ∥α∥21
+
+ε2
+
+
+
+gates via sampling , ˜O
+
+ (N G + n)∥α∥1
+
+ε
+
+⋆
+
+gates via quantum amplitude estimation . (20) 
+
+We highlight list-and-sum with fixed budget via sampling ( ‡) as the naive approach, all-at-once via quantum amplitude esti-mation ( ⋆) as query-optimal (see Theorem 9), and list-and-sum with adaptive budget via quantum amplitude estimation ( ⋄) as gate-optimal. Proof. We import the query complexity runtime results from Theorem 9 and then we must simply account for the differing gate costs of each oracle query. Our access model in Definition 4 specifies that the single-input oracle U (x) requires G gates, and the coefficient quantum-state oracle W (α) requires N gates. Further, we have shown how to construct the training-set oracle O†(S)
+
+using a number of gates in O(N (G + log( N )) .Since the list-and-sum algorithms only use the single-input oracle, once for x and once for xi, their gate cost is 2G times the number of queries. Via sampling, this results in O(ε−2GN ∥α∥22) gates with a fixed budget, and O(ε−2G∥α∥21) with an adaptive budget. Via quantum amplitude estimation, the scaling in the number of gates is, in turn, O(ε−1GN ∥α∥2) with a fixed budget and O(ε−1G∥α∥2/3) with an adaptive budget. In the all-at-once approaches, the circuits used for sampling and quantum amplitude estimation are not identical, as seen when comparing Figures 3 and 4. Nevertheless, both circuits make the same number of oracle queries, visually: they contain the same number and types of boxes. Namely, each measurement of fM(α, S ) and each query to the unitary V both require one call to the single-input oracle U (x), one call to the quantum-state oracle W (α), and one call to the training-set oracle O†(S).Implementing the unitary V requires one multi-controlled X gate, which has an associated cost of O(n) gates. For sampling, the gate costs per measurement add up to G + N + O(N (G + log( N )) , which scales as O(N (G + log( N )) . For quantum amplitude estimation, the extra multi-controlled gate results in a scaling of O(N (G + log( N )) + n). The total number of gates used in the all-at-once algorithms is, then, ˜O(ε−2N G ∥α∥21) via sampling and ˜O(ε−1(N G + n)∥α∥1) via quantum amplitude estimation, where we have removed the logarithmic factors for simplicity. 10 
+
+Query-optimality versus gate-optimality. When comparing the naive and query-optimal approaches in Theorem 9, there is an N -factor speed-up in the query complexity, on top of the quadratic improvement over the norm of α and the precision ε.In terms of gates, as stated in Theorem 10, the same is no longer true: both list-and-sum with fixed budget and all-at-once 
+
+have an N factor in their gate cost scaling. From the perspective of number of gates, it is not immediately clear anymore that 
+
+all-at-once is better than list-and-sum with adaptive budget. In the case of sampling, list-and-sum with adaptive budget now has an N -factor improvement over all-at-once . In the case of quantum amplitude estimation, all-at-once has both an N and an n factor. Below, we make a principled comparison between the runtime scalings. Let us define GL := ε−1G∥α∥2/3 and 
+
+GA := ε−1(N G + n)∥α∥1 the respective scaling of the numbers of gates. The subscript L stands for “list-and-sum”, and the subscript A stands for “all-at-once” in  
+
+> GL
+> GA
+
+:= ε−1G∥α∥2/3 
+
+> ε−1(N G +n)∥α∥1
+
+= ∥α∥2/3    
+
+> (N+nG)∥α∥1
+
+,
+
+∥α∥1 ≤ ∥ α∥2/3 ≤ √N ∥α∥1
+
+ =⇒
+
+√N + nG√N
+
+
+
+GL ≤ GA ≤
+
+
+
+N + nG
+
+
+
+GL. (21) We thus confirm that the required number of gates via all-at-once has worse scaling than that of list-and-sum with adaptive budget. 
+
+Practical guidelines. As a guide to the eye for the practitioner, our results suggest the following guidelines for choosing an inference strategy: • Use all-at-once combined with quantum amplitude estimation when coherent multi-query access is available, as this achieves query-optimal scaling. • Use list-and-sum with adaptive budget combined with quantum amplitude estimation when gate cost dominates, as this minimizes the total number of gates. • Sampling-based approaches are primarily competitive in near-term regimes without coherent access, but are asymptoti-cally suboptimal in precision.  
+
+> D. Matching lower bound
+
+The query complexity of the all-at-once via quantum amplitude estimation algorithm (cf. Algorithm B.8 and Theorem B.7) is optimal in V -queries up to constant factors in ε.
+
+Corollary 11 (Optimality of Algorithm B.8 in V -queries) . Any algorithm that estimates fα(x) to additive precision ε with constant success probability using the amplitude-encoding unitary V from Definition 7 requires Ω( ∥α∥1/ε) applications of V and 
+
+V †.Proof. It suffices to consider the case N = 1 and α1 = ∥α∥1. Then fα(x) = ∥α∥1k(x, x 1), so estimating fα(x) to additive error ε is equivalent to estimating k(x, x 1) to additive error η = ε 
+
+> ∥α∥1
+
+. In the black-box access model of Definition 4, the unitary 
+
+V prepares a state whose success amplitude is a = pk(x, x 1). Consider a hard family of instances where a ∈ [a0, a 0 + Θ( η)] 
+
+for some constant a0 ∈ (0 , 1) , realizable in the black-box model via standard two-dimensional state-preparation constructions. On this family, any estimator ˆk satisfying |ˆk − a2| ≤ η induces an amplitude estimator ˆa := 
+
+p
+
+max( ˆk, 0) ∈ [0 , 1] with 
+
+|ˆa − a| = |ˆa 2 − a2|
+
+ˆa + a ≤ ηa0
+
+= Θ( η), (22) so precision η on a2 forces precision Θ( η) on a. By the quantum amplitude estimation lower bound (Theorem 4), this requires 
+
+Ω  η−1 applications of V and V †. Substituting η = ε/∥α∥1 yields Ω( ∥α∥1/ε), as claimed. The reduction above shows that the single-training-point case already captures the full V -query complexity. Hence Algo-rithm B.8 is optimal in this model, since Theorem B.7 provides a matching upper bound with no dependence on N . Whether this lower bound extends to the full access model of Definition 4, where algorithms are not required to route all computation through V , remains open. Any improvement beyond this bound would require exploiting additional structure in the feature-map unitaries {U (xi)} beyond black-box access. Such structural access is excluded in the oracle model for any fixed N .Finally, quantum amplitude estimation is optimal for each individual kernel term: estimating k(x, x i) to additive error εi
+
+requires Ω ( 1/εi) applications of V and V † by the same hard-instance argument. Therefore, per-term estimation in list-and-sum 
+
+strategies is also optimal, and any improvement must arise from changing how the sum is approximated. 11  
+
+> IV. DISCUSSION
+
+In this work, we have scrutinized and revisited evaluation methods for inference in quantum kernel methods, which are among the top candidates to achieve quantum advantage in machine learning. Our results have practical implications for the long-term viability of quantum kernels versus other approaches in quantum machine learning (QML), and to the wider question of in what precise sense we can hope to see robust quantum advantages in quantum machine learning for classical data [EP25, LAT21, SSHE21, LLL +24, WJF +25, ZZN +26]. The cost of inference in kernel methods is usually cited as a critical flaw that could prevent scalability [NMM +24]. Our results show that the dependence on the training set size can be confined to the per-query gate cost, so that the number of oracle queries – and hence the scaling with precision – becomes independent of N . We show that the query-complexity scaling of the naive approach O N ∥α∥22/ε2
+
+ can be improved down to O(∥α∥1/ε). By providing matching lower bounds, we showed that this improved scaling is optimal within our access model. Recent work has shown that using generic parametrized quantum circuits as feature maps results in so-called exponential kernel concentration [TWCH24], namely the phenomenon that the kernel function k becomes exponentially close to a Kronecker delta k(x, x ′) ≈ δx,x ′ . In such a situation, the quantities we estimate via quantum amplitude estimation become exponentially close to zero, which in turn violates the assumptions of the lower bounds for the query complexity we give in Section III D. However, the upper bound is unaffected: quantum amplitude estimation remains a valid procedure for any value of an amplitude, and the ˜O(∥α∥1/ε) scaling continues to hold. The practical issue is different: when kernel values are exponentially small, the function fα(x) itself is exponentially close to zero for most inputs, so achieving any fixed precision ε is trivially easy – but the model has no predictive power. In other words, exponential concentration is not a problem for our algorithms but for the kernel itself. Our results are therefore most relevant for kernel functions whose values do not vanish asymptotically [LAT21, HBK +25], which are precisely the settings where quantum kernel methods are expected to be useful. One open question is whether our construction can be generalized to non-unitary quantum feature maps, leading to mixed quantum feature vectors ρ(x) in general. Our results confirm that using quantum amplitude estimation for the all-at-once observable is optimal in terms of query complexity. Taking into account hardware requirements for both noisy and early-fault-tolerant devices, it may well be that this approach is beyond budget. Accordingly, we provide a zoo of algorithms that nicely interpolate between the naive and optimal 
+
+ones, and formally analyze their runtimes. As such, this work aims to constitute a useful handbook for practitioners . Indeed, we hope that our analysis clarifies some of the critical design choices involved in realistic implementations for the inference step in quantum kernel methods. Finally, an exciting open question is whether our improvements for inference can be extended to speed-up the training phase of quantum kernels. The usual pipeline in training kernel methods involves inverting an N × N matrix, and the end-to-end complexity is usually characterized as O(N 3). Anticipating potential paths to reduce the cost, one could take Eq. (3) without assuming that the parameters α have already been trained, and instead define a loss function with respect to those parameters. Then, one option would be to perform (stochastic) gradient descent [SSBD14] on those parameters. Gradient-based optimization of kernel methods has been considered also in classical machine learning [SS02], mostly as a proof technique, and it comes with performance guarantees owing to the fact that usual regularized loss functions are convex with respect to α [SS02]. The representer theorem [Sch21, SS02] further states that the optimal choice of α actually corresponds to the best possible linear function in terms of fitting the training set. Beyond straightforward gradient-based optimization, one could consider more advanced forms of quantum optimization [LHLW23, CSW25], which in turn enjoy favorable performance guarantees for convex loss functions. 
+
+> Acknowledgements
+
+This work has been inspired by conversations with Tom O’Brien of Google Quantum AI. The authors thank Carlos Bravo-Prieto, Vedran Dunjko, Tom O’Brien, Louis Schatzki and Franz Schreiber for useful references and comments in an earlier version of this manuscript. E. G.-F. is a recipient of the 2023 Google PhD Fellowship. Moreover, the authors acknowledge support by the BMFTR (PraktiQOM, QuSol, HYBRID++), the Quantum Flagship (Millenion, PasQuans2), the DFG (SPP 2514, CRC 183), the Munich Quantum Valley, Berlin Quantum, the Clusters of Excellence (MATH+, ML4Q), and the European Research Council (DebuQC). 
+
+> [AAA +20] Giovanni Acampora, Andris Ambainis, Natalia Ares, Leonardo Banchi, Pallavi Bhardwaj, Daniele Binosi, G. Andrew D. Briggs, Tommaso Calarco, Vedran Dunjko, Jens Eisert, Olivier Ezratty, Paul Erker, Federico Fedele, Elies Gil-Fuster, Martin G¨ arttner, Mats Granath, Markus Heyl, Iordanis Kerenidis, Matthias Klusch, Anton Frisk Kockum, Richard Kueng, Mario Krenn, J¨ org L¨ assig, Antonio Macaluso, Sabrina Maniscalco, Florian Marquardt, Kristel Michielsen, Gorka Mu˜ noz-Gil, Daniel M¨ ussig, Hendrik Poulsen Nautrup, Sophie A. Neubauer, Evert van Nieuwenburg, Roman Orus, J¨ org Schmiedmayer, Markus Schmitt, Philipp Slusallek, Filippo Vicentini,
+
+12 
+
+Christof Weitenberg, and Frank K. Wilhelm. Quantum computing and artificial intelligence: status and perspectives. arXiv preprint arXiv:2505.23860 , 2020. [Aar18] Scott Aaronson. Shadow tomography of quantum states. In Proceedings of the 50th annual ACM SIGACT symposium on theory of computing , pages 325–338, 2018. [AR20] Scott Aaronson and Patrick Rall. Quantum approximate counting, simplified , page 24–32. Society for Industrial and Applied Mathe-matics, 2020. [BHMT02] Gilles Brassard, Peter Høyer, Michele Mosca, and Alain Tapp. Quantum amplitude amplification and estimation. Quantum Computation and Information , page 53–74, 2002. [BWP +17] Jacob Biamonte, Peter Wittek, Nicola Pancotti, Patrick Rebentrost, Nathan Wiebe, and Seth Lloyd. Quantum machine learning. 
+
+Nature , 549:195–202, 2017. [CCC +19] Giuseppe Carleo, J. Ignacio Cirac, Kyle Cranmer, Laurent Daudet, Maria Schuld, Naftali Tishby, Leslie Vogt-Maranto, and Lenka Zdeborov´ a. Machine learning and the physical sciences. Rev. Mod. Phys. , 91:045002, 2019. [CSW25] Ahmet Burak Catli, Sophia Simon, and Nathan Wiebe. Exponentially better bounds for quantum optimization via dynamical simulation. arXiv preprint arXiv:2502.04285 , 2025. [CW12] Andrew M. Childs and Nathan Wiebe. Hamiltonian simulation using linear combinations of unitary operations. Quantum Information and Computation , 12:901–924, 2012. [EK12] Yonina C. Eldar and Gitta Kutyniok. Compressed sensing: theory and applications . Cambridge University Press, 2012. [EP25] Jens Eisert and John Preskill. Mind the gaps: The fraught road to quantum advantage. arXiv preprint arXiv:2510.19928 , 2025. [GFEBP24] Elies Gil-Fuster, Jens Eisert, and Carlos Bravo-Prieto. Understanding quantum machine learning also requires rethinking gener-alization. Nat. Comm. , 15:1–12, 2024. [GFED24] Elies Gil-Fuster, Jens Eisert, and Vedran Dunjko. On the expressivity of embedding quantum kernels. Machine Learning: Science and Technology , 5:025003, 2024. [GFGPSD25] Elies Gil-Fuster, Casper Gyurik, Adrian Perez-Salinas, and Vedran Dunjko. On the relation between trainability and dequanti-zation of variational quantum learning models. In The Thirteenth International Conference on Learning Representations , 2025. [GGC +24] Jennifer R. Glick, Tanvi P. Gujarati, Antonio D. Corcoles, Youngseok Kim, Abhinav Kandala, Jay M. Gambetta, and Kristan Temme. Covariant quantum kernels for data with group structure. Nature Physics , 20:479–483, 2024. [Gro96] Lov K. Grover. A fast quantum mechanical algorithm for database search. In Proceedings of the Twenty-Eighth Annual ACM Symposium on Theory of Computing , STOC ’96, page 212–219, New York, NY, USA, 1996. Association for Computing Machinery. [GTSW24] Gian Gentinetta, Arne Thomsen, David Sutter, and Stefan Woerner. The complexity of quantum support vector machines. Quan-tum , 8:1225, 2024. [H +19] Vojtech Havl´ ıˇ cek et al. Supervised learning with quantum-enhanced feature spaces. Nature , 567:209–212, 2019. [HBK +25] Laura J. Henderson, Kerstin Beer, Salini Karuvade, Riddhi Gupta, Angela White, and Sally Shrapnel. Quantum advantage without exponential concentration: Trainable kernels for symmetry-structured data. arXiv preprint arXiv:2509.14337 , 2025. [HHL09] Aram W. Harrow, Avinatan Hassidim, and Seth Lloyd. Quantum algorithm for linear systems of equations. Phys. Rev. Lett. ,103:150502, 2009. [HSK23] Tobias Haug, Chris N. Self, and Myungshik S. Kim. Quantum machine learning of large datasets using randomized measurements. 
+
+Machine Learning: Science and Technology , 4:015005, 2023. [HWGF +22] Thomas Hubregtsen, David Wierichs, Elies Gil-Fuster, Peter-Jan H. S. Derks, Paul K. Faehrmann, and Johannes Jakob Meyer. Training quantum embedding kernels on near-term quantum computers. Phys. Rev. A , 106:04243, 2022. [KGKB25] Robbie King, David Gosset, Robin Kothari, and Ryan Babbush. Triply efficient shadow tomography. PRX Quantum , 6, 2025. [LAT21] Yunchao Liu, Srinivasan Arunachalam, and Kristan Temme. A rigorous and robust quantum speed-up in supervised machine learn-ing. Nature Phys. , 17:1013–1017, 2021. [LC19] Guang Hao Low and Isaac L. Chuang. Hamiltonian simulation by qubitization. Quantum , 3:163, 2019. [LHLW23] Jiaqi Leng, Ethan Hickman, Joseph Li, and Xiaodi Wu. Quantum Hamiltonian descent. arXiv preprint arXiv:2303.01471 , 2023. [Lin23] Yao-Ting Lin. A note on quantum phase estimation. arXiv preprint arXiv:2304.02241 , 2023. [LLL +24] Junyu Liu, Minzhao Liu, Jin-Peng Liu, Ziyu Ye, Yunfei Wang, Yuri Alexeev, Jens Eisert, and Liang Jiang. Towards provably efficient quantum algorithms for large-scale machine-learning models. Nature Comm. , 15:434, 2024. [LTD +22] Jonas Landman, Slimane Thabet, Constantin Dalyac, Hela Mhiri, and Elham Kashefi. Classically approximating variational quan-tum machine learning with random Fourier features. arXiv preprint arXiv:2210.13200 , 2022. [MdW23] Nikhil S. Mande and Ronald de Wolf. Tight bounds for quantum phase estimation and related problems. In Inge Li Gørtz, Martin Farach-Colton, Simon J. Puglisi, and Grzegorz Herman, editors, 31st Annual European Symposium on Algorithms (ESA 2023) , volume 274 of Leibniz International Proceedings in Informatics (LIPIcs) , pages 81:1–81:16, Dagstuhl, Germany, 2023. Schloss Dagstuhl – Leibniz-Zentrum f¨ ur Informatik. [NC00] Michael A. Nielsen and Isaac L. Chuang. Quantum information and quantum computation . Cambridge University Press Cambridge, 2000. [NMM +24] Akimoto Nakayama, Hayata Morisaki, Kosuke Mitarai, Hiroshi Ueda, and Keisuke Fujii. Explicit quantum surrogates for quan-tum kernel models. arXiv preprint arXiv:2408.03000 , 2024. [NW99] Ashwin Nayak and Felix Wu. The quantum query complexity of approximating the median and related statistics. In Proceedings of the Thirty-First Annual ACM Symposium on Theory of Computing , STOC ’99, page 384–393, New York, NY, USA, 1999. Association for Computing Machinery. [RBM18] Nicholas C. Rubin, Ryan Babbush, and Jarrod McClean. Application of fermionic marginal constraints to hybrid quantum algo-rithms. New Journal of Physics , 20(5):053020, May 2018. [RML14] Patrick Rebentrost, Masoud Mohseni, and Seth Lloyd. Quantum support vector machine for big data classification. Phys. Rev. Lett. ,113:130503, 2014. 13 
+
+[RR07] Ali Rahimi and Benjamin Recht. Random features for large-scale kernel machines. In Adv. Neur. Inf. Proc. Sys. , volume 20, 2007. [SBS +25] Mehrad Sahebi, Alice Barthe, Yudai Suzuki, Zo¨ e Holmes, and Michele Grossi. On dequantization of supervised quantum machine learning via random Fourier features. arXiv preprint arXiv:2505.15902 , 2025. [Sch21] Maria Schuld. Quantum machine learning models are kernel methods. arXiv preprint arXiv:2101.11020 , 2021. [SEM23] Franz J. Schreiber, Jens Eisert, and Johannes Jakob Meyer. Classical surrogates for quantum learning models. Phys. Rev. Lett. ,131:100803, 2023. [SK19] Maria Schuld and Nathan Killoran. Quantum machine learning in feature Hilbert spaces. Phys. Rev. Lett. , 122 4:040504, 2019. [SRJ +23] Ryan Sweke, Eric Recio, Sofiene Jerbi, Elies Gil-Fuster, Bryce Fuller, Jens Eisert, and Johannes J. Meyer. Potential and limitations of random Fourier features for dequantizing quantum machine learning. arXiv preprint arXiv:2309.11647 , 2023. [SS02] Bernhard Sch¨ olkopf and Alexander J. Smola. Learning with kernels: support vector machines, regularization, optimization, and beyond . Adaptive computation and machine learning. MIT Press, 2002. [SSBD14] Shai Shalev-Shwartz and Shai Ben-David. Understanding machine learning: From theory to algorithms . Cambridge University Press, 2014. [SSHE21] Ryan Sweke, Jean-Pierre Seifert, Dominik Hangleiter, and Jens Eisert. On the quantum versus classical learnability of discrete distributions. Quantum , 5:417, 2021. [TKW26] John Tanner, Chon-Fai Kam, and Jingbo Wang. Non-variational supervised quantum kernel methods: a review. arXiv preprint arXiv:2604.07896 , 2026. [TW25] Ewin Tang and John Wright. Amplitude amplification and estimation require inverses. arXiv preprint arXiv:2507.23787 , 2025. [TWCH24] Supanut Thanasilp, Samson Wang, Marco Cerezo, and Zo¨ e Holmes. Exponential concentration in quantum kernel methods. 
+
+Nature Comm. , 15:5200, 2024. [TWZ25] Ewin Tang, John Wright, and Mark Zhandry. Conjugate queries can help. arXiv preprint arXiv:2510.07622 , 2025. [WJF +25] Yunfei Wang, Ruoxi Jiang, Yingda Fan, Xiaowei Jia, Jens Eisert, Junyu Liu, and Jin-Peng Liu. Towards efficient quantum algo-rithms for diffusion probability models. arXiv preprint arXiv:2502.14252 , 2025. [ZZN +26] Haimeng Zhao, Alexander Zlokapa, Hartmut Neven, Ryan Babbush, John Preskill, Jarrod R. McClean, and Hsin-Yuan Huang. Exponential quantum advantage in processing massive classical data. arXiv preprint arXiv:2604.07639 , 2026. 14 
+
+## Supplementary Material for “Optimal query complexity for inference in quantum kernel methods” 
+
+Appendix A: Existence and implementation of an all-at-once observable 
+
+Theorem 7 (Single-observable representation) . Consider the problem set-up from Definition 1, in particular the task of estimat-ing the kernel function in Eq. (3) . Then, there exists a bounded Hermitian observable M(α, S ), with ∥M (α, S )∥∞ ≤ ∥ α∥1,and a quantum state |ϕ(x)⟩, such that 
+
+E|ϕ(x)⟩ [M(α, S )] = ⟨ϕ(x)|M (α, S )|ϕ(x)⟩ =
+
+> N
+
+X
+
+> i=1
+
+αik(x, x i) =: fα(x). (A1) 
+
+Proof. A simple calculation confirms that it is sufficient to set M(α, S ) = PNi=1 αi|ϕ(xi)⟩⟨ ϕ(xi)|, since 
+
+⟨ϕ(x)|M (α, S )|ϕ(x)⟩ = ⟨ϕ(x)|
+
+> N
+
+X
+
+> i=1
+
+αi|ϕ(xi)⟩⟨ ϕ(xi)|
+
+!
+
+|ϕ(x)⟩ =
+
+> N
+
+X
+
+> i=1
+
+αi⟨ϕ(x)|ϕ(xi)⟩⟨ ϕ(xi)|ϕ(x)⟩ (A2) 
+
+=
+
+> N
+
+X
+
+> i=1
+
+αik(x, x i) = fα(x).
+
+The operator norm of the observable 
+
+∥M (α, S )∥∞ =
+
+> N
+
+X
+
+> i=1
+
+αi|ϕ(xi)⟩⟨ ϕ(xi)|
+
+> ∞
+
+≤
+
+> N
+
+X
+
+> i=1
+
+∥αi|ϕ(xi)⟩⟨ ϕ(xi)|∥ ∞ =
+
+> N
+
+X
+
+> i=1
+
+|αi| = ∥α∥1 (A3) results from the triangle inequality. Theorem 7 confirms that, in principle, the inference step in kernel methods, i.e., estimating fα(x) for a data input x, can be achieved via a single expectation value, instead of taking a different expectation value for each element in the training set and then summing the results, each weighted by the corresponding αi. As presented, it may be unclear how to estimate the expectation value of the given observable with respect to the quantum state on a quantum device. A direct approach may attempt to construct a unitary gate that maps the ith computational basis element |i⟩ into the quantum feature vector |ϕ(xi)⟩,for i ∈ { 1, . . . , N }. Such a transformation may be costly to obtain just from having access to the state-preparation unitary gate 
+
+U (x). We next present Algorithm A.1, which can be used to implement the all-at-once observable using a few auxiliary qubits. We spell out each oracle call separately to reflect the sequential circuit structure. Note that Algorithm A.1 follows the “adjoint” method to estimate the kernel function (using U (x) and its inverse U †(x)), as opposed to the SWAP test. This is an arbitrary choice, and the main difference between the two approaches is a trade-off of depth versus width [HWGF +22, Sch21]. In the adjoint method, the depth of the circuit is at least twice the depth of U (x). In the SWAP method, the number of qubits in the circuit is at least twice the number of qubits U (x) acts on. 
+
+Algorithm A.1 Single-observable sampling. 
+
+Input: x ∈ X ▷ New input. 
+
+Output: fα(x) = PNi=1 αik(x, x i) ▷ Inference, Eq. (3).  
+
+> 1:
+
+Initialize |0⟩data |0⟩idx |0⟩sign . ▷ n + ⌈log 2(N )⌉ + 1 qubits.  
+
+> 2:
+
+Single-input oracle U (x)data : | ˜ϕ(x)⟩ = |ϕ(x)⟩data |0⟩idx |0⟩sign ▷ G gates.  
+
+> 3:
+
+Quantum-state coefficient oracle W (α)idx ,sign : |ϕ(x)⟩data |0⟩idx |0⟩sign 7 → PNi=1 
+
+√pi|ϕ(x)⟩data |i⟩idx |si⟩sign ▷ N gates.  
+
+> 4:
+
+Training-set oracle O†(S): PNi=1 
+
+√pi|ϕ(x)⟩data |i⟩idx |si⟩sign 7 → PNi=1 
+
+√piU †(xi)|ϕ(x)⟩data |i⟩idx |si⟩sign ▷ O(N (G + log N )) gates.  
+
+> 5:
+
+Norm coefficient oracle ON (α): ∥α∥1. 
+
+> 6:
+
+return Expectation value of observable: ∥α∥1|0⟩⟨ 0|data ⊗ Iidx ⊗ Zsign ▷ Total number of gates O(N (G + log N )) 
+
+Lemma A.1 (Single-observable implementation) . Under the conditions of Theorem 7, there exists a quantum circuit with n +
+
+⌈log 2(N )⌉ + 2 qubits and O(N (G + log N )) gates which implements M(α, S ), as specified in Algorithm A.1. The algorithm makes one call to each of the following oracles: single-input oracle, training-set oracle, norm coefficient oracle, and quantum-state coefficient oracle. This algorithm involves measuring the expectation value of an auxiliary observable fM(α, S ) fulfilling 
+
+∥ fM(α, S )∥∞ = ∥α∥1.15 
+
+Proof. We prove the statement directly by providing a construction. Consider three registers: an n-qubit “data” register Hdata 
+
+and an N -dimensional “index” register Hidx (equivalently, a ⌈log 2(N )⌉-qubit register), and a 1-qubit “sign” register. Recall the notation αi = ∥α∥1sipi, where si = sign αi and pi = |αi|/∥α∥1. Calling the single-input oracle on the data register, we obtain the quantum state vector 
+
+U (x)|0⟩data |0⟩idx ,sign 7 → | ϕ(x)⟩data |0⟩idx ,sign . (A4) We refer to this state vector as | ˜ϕ(x)⟩data ,idx ,sign . We next introduce an observable fM(α, S ) which fulfills fα(x) =
+
+⟨ ˜ϕ(x)| fM(α, S )| ˜ϕ(x)⟩. It then follows that 
+
+⟨ ˜ϕ(x)| fM(α, S )| ˜ϕ(x)⟩ = ⟨ϕ(x)|M (α, S )|ϕ(x)⟩, (A5) where M(α, S ) is the observable defined in Theorem 7, and the r.h.s. expectation value is defined solely on the data register. To specify M(α, S ), we make use of three oracle calls, namely to the quantum-state coefficient oracle W (α), the training-set oracle O†(S), and the norm coefficient oracle ON (α). With these, it is sufficient to set 
+
+fM(α, S ) = ∥α∥1
+
+ O†(S)data ,idx · W (α)idx ,sign 
+
+† (|0⟩⟨ 0|data ⊗ Iidx ⊗ Zsign )  O†(S)data ,idx · W (α)idx ,sign 
+
+ . (A6) Intuitively, we recognized that the weighted sum over α can be instantiated using a construction reminiscent of the linear combination of unitaries (LCU) framework [CW12]. The extra sign register allows us to flexibly combine both positive and negative coefficients. We show that ⟨ ˜ϕ(x)| fM(α, S )| ˜ϕ(x)⟩ = fα(x). For clarity, as depicted in Fig. 3, instead of keeping the Heisenberg picture of fM(α, S ), we apply the unitary gates W (α) and O†(S) on the quantum state, one at a time, 
+
+ O†(S)data ,idx · W (α)idx ,sign 
+
+ | ˜ϕ(x)⟩ = O†(S)data ,idx |ϕ(x)⟩data ⊗
+
+> N
+
+X
+
+> i=1
+
+√pi|i⟩idx |si⟩sign 
+
+!! 
+
+(A7) 
+
+=
+
+
+
+> N
+
+X
+
+> j=1
+
+U †(xj )data ⊗ | j⟩⟨ j|idx 
+
+ |ϕ(x)⟩data ⊗
+
+> N
+
+X
+
+> i=1
+
+√pi|i⟩idx |si⟩sign 
+
+!! 
+
+=
+
+> N
+
+X
+
+> i,j =1
+
+√pi
+
+ U †(xj )|ϕ(x)⟩data 
+
+ ⊗
+
+|j⟩idx ⟨j|i⟩
+
+|{z} 
+
+> δi,j
+
+ ⊗ | si⟩sign 
+
+=
+
+> N
+
+X
+
+> i=1
+
+√pi
+
+ U †(xi)|ϕ(x)⟩data 
+
+ |i⟩idx |si⟩sign .
+
+We consider the expectation value of the fixed observable ∥α∥1 (|0⟩⟨ 0|data ⊗ Iidx ⊗ Zsign ) with respect to this quantum state, to get 
+
+> N
+
+X
+
+> i=1
+
+√pi
+
+ U †(xi)|ϕ(x)⟩data 
+
+ |i⟩idx |si⟩sign 
+
+!†
+
+∥α∥1 (|0⟩⟨ 0|data ⊗ Iidx ⊗ Zsign )
+
+
+
+> N
+
+X
+
+> j=1
+
+√pj
+
+ U †(xj )|ϕ(x)⟩data 
+
+ |j⟩idx |sj ⟩sign 
+
+
+
+= ∥α∥1
+
+> N
+
+X
+
+> i,j =1
+
+√pipj ⟨ϕ(x)| U (xi)|0⟩
+
+| {z }
+
+> |ϕ(xi)⟩
+
+⟨0|U †(xj )
+
+| {z } 
+
+> ⟨ϕ(xj)|
+
+|ϕ(x)⟩ ⟨ i|I|j⟩
+
+| {z } 
+
+> δi,j
+
+⟨si| Z|sj ⟩
+
+| {z }   
+
+> sj|sj⟩
+
+=
+
+> N
+
+X
+
+> i=1
+
+si ∥α∥1pi
+
+| {z } 
+
+> |αi|
+
+| {z }
+
+> αi
+
+|⟨ ϕ(x)|ϕ(xi)⟩| 2
+
+=
+
+> N
+
+X
+
+> i=1
+
+αik(x, x i) = fα(x). (A8) We next bound the operator norm of fM(α, S ). Making use of the invariance of norms under unitary transformations, the norm of fM(α, S ) is equal to the norm 
+
+∥ fM(α, S )∥∞ = ∥∥ α∥1 (|0⟩⟨ 0|data ⊗ Iidx ⊗ Zsign )∥∞ = ∥α∥1∥| 0⟩⟨ 0|∥ ∞∥I∥∞∥Z∥∞ = ∥α∥1 (A9) of the fixed observable. We exploit the factoring of norms under the tensor product in the second line. Indeed, the Hermitian observable M(α, S ) fulfills ∥M (α, S )∥∞ ≤ ∥ α∥1.These statements together prove Theorem 7. 16 
+
+Appendix B: A zoo of algorithms 
+
+Sampling Quantum amplitude estimation Section reference 
+
+List-and-sum fixed budget O
+
+ N ∥α∥22
+
+> ε2
+
+‡
+
+[Corollary B.2] O
+
+ N ∥α∥2
+
+> ε
+
+
+
+[Corollary B.4] [Sec. B 1] 
+
+List-and-sum optimal query allocation O
+
+ ∥α∥21
+
+> ε2
+
+
+
+[Corollary B.3] O
+
+ ∥α∥2/3
+
+> ε
+
+⋄
+
+[Corollary B.5] [Sec. B 1] 
+
+All-at-once O
+
+ ∥α∥21
+
+> ε2
+
+
+
+[Theorem B.6] O
+
+ ∥α∥1
+
+> ε
+
+⋆
+
+[Theorem B.7] [Sec. B 2] TABLE B.1. Total cost required to ensure ε additive precision for each of the algorithms below. We highlight list-and-sum with fixed budget via sampling as the naive approach ( ‡), all-at-once via quantum amplitude estimation as query-optimal (⋆), and list-and-sum with adaptive budget via quantum amplitude estimation as gate-optimal (⋄). 
+
+In this appendix, we provide detailed analyses and proofs for each of the algorithmic combinations presented in Algorithm 1 and summarized in Theorem 9. For each combination of choices – how to approximate the sum ( list-and-sum with fixed or 
+
+adaptive budget, or all-at-once ) and how to estimate expectation values ( sampling or quantum amplitude estimation ) – we state the corresponding algorithm, derive the optimal parameter choices where applicable, and prove the resulting runtime complexity. The results are collected in Table B.1. 
+
+1. List-and-sum 
+
+We first provide a template for all list-and-sum theorems and algorithms, in Theorem B.1 and Algorithm B.1. We next specialize the template into the four possible choices. We collect these results in Table B.2. 
+
+Theorem B.1 (List-and-sum algorithm template analysis) . Let X1, . . . , X N ∈ [0 , 1] and X = PNi=1 αiXi. Assume we have 
+
+Mi-query independent estimators ˆXi ∈ [0 , 1] with E ˆX [ ˆXi] = Xi and Var ˆX [ ˆXi] ≤ c/M ri , for some constant c > 0 and for 
+
+r ∈ { 1, 2}. Define the M -query estimator ˆX = PNi=1 αi ˆXi with M = PNi=1 Mi. Then, for any ε > 0, the following numbers of queries M are sufficient to ensure | ˆX − X| < ε with constant success probability: 1. With fixed budget Mi = M/N for all i ∈ { 1, . . . , M }: M ∈ O (ε−2/r N ∥α∥2/r 
+
+> 2
+
+).2. With optimal query allocation: Mi ∈ O (ε−2/r |αi|2/(r+1) ∥α∥2/(r(r+1)) 2/(r+1) ), which in turn yields M ∈ O (ε−2/r ∥α∥2/r
+
+> 2/(r+1)
+
+).For any δ ∈ (0 , 1) , by a median-of-means amplification (repeating the estimator O(log( δ−1)) times and taking the median), the failure probability can be reduced to δ without changing the ε-dependence of the query complexity. Proof. We prove this statement directly, leaving r ∈ { 1, 2} free. We define Z := ˆX − X = PNi=1 αi( ˆXi − Xi) as the estimation-error random variable, and quickly note that its mean is E ˆX [Z] = 0 . Also, we have ˆXi − Xi ∈ [−1, 1] and 
+
+αi( ˆXi − Xi) ∈ [−| αi|, |αi|]. From this boundedness, it follows that each αi( ˆXi − Xi) is a subgaussian random variable with parameter σ2 
+
+> i
+
+∼ α2
+
+> i
+
+/M ri .For completeness in the r = 2 case, we note that quantum amplitude estimation estimators are sub-exponential, rather than subgaussian. The concentration bound above is the variance-dominated regime of Bernstein’s inequality. A fully rigorous treat-ment requires checking the additional Bernstein condition ε · min i Mi/ max i|αi| ≳ log(1 /δ ), which for the optimal allocation reduces to a mild non-sparsity conditions on α. We use the variance-regime bound throughout as it yields the claimed asymptotic scaling. Under this consideration, the sum of independent subgaussian random variables is itself subgaussian, with parameters adding, so Z is subgaussian with parameter σ2 ∼ PNi=1 α2
+
+> i
+
+/M ri . From these, we can use a standard Chernoff tail bound 
+
+P[|Z| ≥ ε] ≤ 2 exp 
+
+ −ε2
+
+2σ2
+
+
+
+. (B1) For any δ ∈ (0 , 1) , we set 
+
+2 exp 
+
+ −ε2
+
+2σ2
+
+
+
+≤ δ, (B2) 
+
+− ε2
+
+2σ2 ≤ log 
+
+ δ
+
+2
+
+
+
+, (B3) 17 and, therefore, 
+
+ε2
+
+2σ2 ≥ log 
+
+ 2
+
+δ
+
+
+
+, (B4) 
+
+σ2 ≤ ε2
+
+2 log   2
+
+> δ
+
+ . (B5) Together with the variances of the individual terms, we obtain 
+
+σ2 ∼
+
+> N
+
+X
+
+> i=1
+
+α2
+
+> i
+
+M ri
+
+≤ ε2
+
+2 log   2
+
+> δ
+
+ . (B6) In the simpler case of fixed budget Mi = M/N for all i, we directly obtain 
+
+> N
+
+X
+
+> i=1
+
+α2
+
+> i
+
+M ri
+
+= N r
+
+M rNX
+
+> i=1
+
+α2 
+
+> i
+
+= N r ∥α∥22
+
+M r ≤ ε2
+
+2 log   2
+
+> δ
+
+ (B7) 
+
+M ∈ O N ∥α∥2/r
+
+> 2
+
+ε2/r
+
+!
+
+. (B8) To find the optimal query allocation (partly inspired by [RBM18]), we solve the optimization problem 
+
+min 
+
+> Mi≥1
+
+M =
+
+> N
+
+X
+
+> i=1
+
+Mi, (B9) s.t. 
+
+> N
+
+X
+
+> i=1
+
+α2
+
+> i
+
+M ri
+
+= ε2
+
+2 log   2
+
+> δ
+
+ . (B10) The Lagrangian of the problem is 
+
+L =
+
+> N
+
+X
+
+> i=1
+
+Mi + λ
+
+> N
+
+X
+
+> i=1
+
+α2
+
+> i
+
+M ri
+
+− C
+
+!
+
+, (B11) with C ∈ Θ( ε2
+
+/log( δ−1)). The first order condition yields 
+
+∂L
+
+∂M i
+
+= 1 − rλ α2
+
+> i
+
+M r+1 
+
+> i
+
+= 0 , (B12) 
+
+M r+1  
+
+> i
+
+= rλα 2 
+
+> i
+
+, (B13) 
+
+Mi =  rλα 2
+
+> i
+
+ 1(r+1) . (B14) Introducing this condition into the constraint, we obtain 
+
+> N
+
+X
+
+> i=1
+
+α2
+
+> i
+
+M ri
+
+=
+
+> N
+
+X
+
+> i=1
+
+α2
+
+> i
+
+(rλα 2 
+
+> i
+
+) rr+1 
+
+= 1(rλ ) rr+1 
+
+> N
+
+X
+
+> i=1
+
+ α2
+
+> i
+
+1− rr+1 =
+
+PNi=1 |αi| 2
+
+> r+1
+
+(rλ ) rr+1 
+
+= C, (B15) 
+
+PNi=1 |αi| 2
+
+> r+1
+
+Cr rr+1 
+
+= λ rr+1 , (B16) 
+
+λ =
+
+PNi=1 |αi| 2
+
+> r+1
+
+ r+1 
+
+> r
+
+rC r+1 
+
+> r
+
+. (B17) We can use the value of the multiplier λ to reach the final result given by 
+
+Mi =  rλα 2
+
+> i
+
+ 1 
+
+> r+1
+
+=
+
+r
+
+PNi=1 |αi| 2
+
+> r+1
+
+ r+1 
+
+> r
+
+rC r+1 
+
+> r
+
+α2
+
+> i
+
+
+
+> 1
+> r+1
+
+(B18) 
+
+= |αi| 2
+
+> r+1
+> r
+
+√C
+
+> N
+
+X
+
+> i=1
+
+|αi| 2
+
+> r+1
+
+! 1
+
+> r
+
+= |αi| 2
+
+> r+1
+> r
+
+√C ∥α∥ 2
+
+> r(r+1) 2
+> r+1
+
+.18 
+
+Sampling Quantum amplitude estimation (r = 1 ) (r = 2 )Fixed budget M ∈ O  ε−2N ∥α∥22
+
+ M ∈ O  ε−1N ∥α∥2
+
+
+
+Optimal query allocation Mi ∈ O  ε−2|αi|∥ α∥1
+
+ Mi ∈ O 
+
+
+
+ε−1|αi|2/3∥α∥1/32/3
+
+
+
+M ∈ O  ε−2∥α∥21
+
+ M ∈ O  ε−1∥α∥2/3
+
+
+
+TABLE B.2. Runtime scaling of list-and-sum algorithms 
+
+Spelling out the ε dependence of C, we obtain 
+
+Mi ∈ O 
+
+
+
+ε− 2 
+
+> r
+
+|αi| 2 
+
+> r+1
+
+∥α∥ 2
+
+> r(r+1) 2
+> r+1
+
+
+
+(B19) With this, we can reach the final result 
+
+M =
+
+> N
+
+X
+
+> i=1
+
+Mi = 1
+
+> r
+
+√C
+
+> N
+
+X
+
+> i=1
+
+|αi| 2
+
+> r+1
+
+!
+
+∥α∥ 2
+
+> r(r+1) 2
+> r+1
+
+(B20) 
+
+= 1
+
+> r
+
+√C
+
+> N
+
+X
+
+> i=1
+
+|αi| 2
+
+> r+1
+
+! NX
+
+> i=1
+
+|αi| 2
+
+> r+1
+
+! 1
+
+> r
+
+= 1
+
+> r
+
+√C
+
+> N
+
+X
+
+> i=1
+
+|αi| 2
+
+> r+1
+
+! r+1 
+
+> r
+
+=
+
+∥α∥ 2 
+
+> r2
+> r+1
+> r
+
+√C .
+
+The full expression including ε in turn becomes 
+
+M ∈ O 
+
+
+
+ε− 2 
+
+> r
+
+∥α∥ 2 
+
+> r2
+> r+1
+
+
+
+. (B21) 
+
+Algorithm B.1 List-and-sum algorithm template. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) to ε additive precision. ▷ Inference, Eq. (3). 
+
+1: for i ∈ { 1, . . . , N } do :
+
+2: Reading oracle OR(α, i ): αi
+
+3: Estimate k(x, x i) using Mi queries to single-input oracle: ˆk(Mi)(x, x i) ▷ Variance O(1/M ri ), with r ∈ { 1, 2}.
+
+4: Multiply ˆk(Mi)(x, x i) with the coefficient αi ▷ Variance O(|αi|2/M ri ).
+
+5: end for ▷ Total number of shots is M = PNi=1 Mi.
+
+6: return ˆf (M ) 
+
+> α
+
+(x) := PNi=1 αi ˆk(Mi)(x, x i) ▷ Total variance O(PNi=1 |αi|2/M ri ), sufficient: M ∈ O (ε−2/r ∥α∥2/r
+
+> 2/(r+1)
+
+).
+
+Below, we spell out the resulting costs for all four list-and-sum variants as corollaries of Theorem B.1. 
+
+Corollary B.2 (Fixed budget, sampling) . Consider Algorithm B.2 and the problem set-up in Definition 1. To estimate the quantum kernel model prediction in Eq. (3) to additive precision ε with constant success probability, the runtime scaling of Algorithm B.2 is dominated by the query complexity 
+
+M ∈ O 
+
+ N ∥α∥22
+
+ε2
+
+
+
+. (B22) 
+
+Proof. Immediate from Theorem B.1 with r = 1 .19 
+
+Algorithm B.2 List-and-sum with fixed budget, via sampling. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) ▷ Inference, Eq. (3).  
+
+> 1:
+
+for i ∈ { 1, . . . , N } do : 
+
+> 2:
+
+Reading oracle OR(α, i ): αi 
+
+> 3:
+
+Single-input oracle for U (x) and U †(xi): estimate k(x, x i) using M/N shots: ˆk(M/N )(x, x i). ▷ Variance O(N/M ). 
+
+> 4:
+
+Multiply ˆk(M/N )(x, x i) with the coefficient αi ▷ Variance O(N α 2
+
+> i
+
+/M ). 
+
+> 5:
+
+end for ▷ Total number of shots is M . 
+
+> 6:
+
+return ˆf (M ) 
+
+> α
+
+(x) = PNi=1 αi ˆk(M/N )(x, x i) ▷ Total variance O(N ∥α∥22/M ), sufficient M ∈ O (ε−2N ∥α∥22).
+
+Corollary B.3 (Adaptive budget, sampling) . Consider Algorithm B.3 and the problem set-up in Definition 1. To estimate the quantum kernel model prediction in Eq. (3) to additive precision ε with constant success probability, the runtime scaling of Algorithm B.3 is dominated by the query complexity 
+
+M ∈ O 
+
+ ∥α∥21
+
+ε2
+
+
+
+. (B23) 
+
+The optimal allocation of shots is 
+
+Mi ∈ O 
+
+ |αi|∥ α∥1
+
+ε2
+
+
+
+. (B24) 
+
+Proof. Immediate from Theorem B.1 with r = 1 .
+
+Algorithm B.3 List-and-sum with adaptive budget, via sampling. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) to ε additive precision. ▷ Inference, Eq. (3).  
+
+> 1:
+
+for i ∈ { 1, . . . , N } do : 
+
+> 2:
+
+Reading oracle OR(α, i ): αi 
+
+> 3:
+
+Single-input oracle for U (x) and U †(xi): estimate k(x, x i) using Mi shots: ˆk(Mi)(x, x i) ▷ Variance O(1/Mi). 
+
+> 4:
+
+Multiply ˆk(Mi)(x, x i) with the coefficient αi ▷ Variance O(α2
+
+> i
+
+/Mi). 
+
+> 5:
+
+end for ▷ Total number of shots is M = PNi=1 Mi. 
+
+> 6:
+
+return ˆf (M ) 
+
+> α
+
+(x) := PNi=1 αi ˆk(Mi)(x, x i) ▷ Total variance O(PNi=1 α2
+
+> i
+
+/Mi), sufficient M ∈ O (ε−2∥α∥21).
+
+Corollary B.4 (Fixed budget, quantum amplitude estimation) . Consider Algorithm B.4 and the problem set-up in Definition 1. To estimate the quantum kernel model prediction in Eq. (3) to additive precision ε with constant success probability, the runtime scaling of Algorithm B.4 is dominated by the query complexity 
+
+M ∈ O 
+
+ N ∥α∥2
+
+ε
+
+
+
+. (B25) 
+
+Proof. Immediate from Theorem B.1 with r = 2 .
+
+Algorithm B.4 List-and-sum with fixed budget, via quantum amplitude estimation. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) ▷ Inference, Eq. (3).  
+
+> 1:
+
+for i ∈ { 1, . . . , N } do : 
+
+> 2:
+
+Reading oracle OR(α, i ): αi 
+
+> 3:
+
+Single-input oracle for U (x) and U †(xi): estimate k(x, x i) using M/N queries: ˜k(M/N )(x, x i) ▷ Variance O(N 2/M 2). 
+
+> 4:
+
+Multiply ˜k(M/N )(x, x i) with the coefficient αi ▷ Variance O(N 2α2
+
+> i
+
+/M 2). 
+
+> 5:
+
+end for ▷ Total number of queries is M . 
+
+> 6:
+
+return ˜f (N M ) 
+
+> α
+
+(x) = PNi=1 αi ˜k(M/N )(x, x i) ▷ Total variance O N 2∥α∥22/M 2, sufficient M ∈ O (ε−1N ∥α∥2).20 
+
+Corollary B.5 (Adaptive budget, quantum amplitude estimation) . Consider Algorithm B.5 and the problem set-up in Defini-tion 1. To estimate the quantum kernel model prediction in Eq. (3) to additive precision ε with constant success probability, the runtime scaling of Algorithm B.5 is dominated by the query complexity 
+
+M ∈ O 
+
+ ∥α∥2/3
+
+ε
+
+
+
+. (B26) 
+
+The optimal allocation of queries is 
+
+Mi ∈ O 
+
+ |αi|2/3∥α∥1/32/3
+
+ε
+
+ . (B27) 
+
+Proof. Immediate from Theorem B.1 with r = 2 .
+
+Algorithm B.5 List-and-sum with adaptive budget, via quantum amplitude estimation. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) to ε additive precision. ▷ Inference, Eq. (3).  
+
+> 1:
+
+for i ∈ { 1, . . . , N } do : 
+
+> 2:
+
+Reading oracle OR(α, i ): αi. 
+
+> 3:
+
+Single-input oracle for U (x) and U †(xi): estimate k(x, x i) using Mi queries: ˜k(Mi)(x, x i) ▷ Variance O(1/M 2 
+
+> i
+
+). 
+
+> 4:
+
+Multiply ˜k(Mi)(x, x i) with the coefficient αi ▷ Variance O(α2
+
+> i
+
+/M 2 
+
+> i
+
+). 
+
+> 5:
+
+end for ▷ Total number of queries is M = PNi=1 Mi. 
+
+> 6:
+
+return ˜f (M ) 
+
+> α
+
+(x) = PNi=1 αi ˜k(Mi)(x, x i) ▷ Total variance O
+
+PNi=1 α2
+
+> i
+
+/M 2
+
+> i
+
+
+
+, sufficient M ∈ O (ε−1∥α∥2/3).
+
+2. All-at-once 
+
+We next provide the algorithms and analysis for the all-at-once approaches. Unlike for the case of list-and-sum, there is no single template from which all results follow, but rather we present each scenario individually. Several relevant definitions are in Section III A in the main text. 
+
+a. Via sampling 
+
+We now analyze the query complexity of estimating the all-at-once observable M(α, S ) introduced in Theorem 7 directly via sampling, using the circuit from Algorithm A.1. The resulting algorithm is specified in Algorithm B.6 and the resulting runtime in Theorem B.6. 
+
+Algorithm B.6 All-at-once via sampling. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) to ε additive precision. ▷ Inference, Eq. (3).  
+
+> 1:
+
+Single-input oracle U (x): |ϕ(x)⟩ 
+
+> 2:
+
+Estimate ⟨ϕ(x)| fM(α, S )|ϕ(x)⟩ via sampling (see Algorithm A.1), using M shots: ˆf (M ) 
+
+> α
+
+(x) ▷ Achieve precision O(∥ fM(α,S )∥∞/√M ). 
+
+> 3:
+
+return ˆf (M ) 
+
+> α
+
+(x) ▷ Total additive precision is in O(∥α∥1/√M ).
+
+Theorem B.6 (Query complexity of all-at-once via sampling) . Consider Algorithm B.6 and the problem set-up in Definition 1 for estimating the kernel model prediction in Eq. (3) to additive precision ε with constant success probability. The algorithm uses a total number of queries 
+
+M ∈ O 
+
+ ∥α∥21
+
+ε2
+
+
+
+. (B28) 21 
+
+Proof. Following Algorithms B.6 and A.1, as well as Lemma A.1, using M shots produces an estimate ˆf (M ) 
+
+> α
+
+(x) fulfilling 
+
+ˆf (M ) 
+
+> α
+
+(x) − fα(x) ∈ Θ
+
+ ∥α∥1
+
+√M
+
+
+
+. (B29) To achieve ε additive precision, it is thus sufficient to pick 
+
+M ∈ O 
+
+ ∥α∥21
+
+ε2
+
+
+
+. (B30) Since each shot constitutes three oracle queries (one execution of the circuit in Algorithm A.1), the total query complexity is 
+
+3M ∈ O  ∥α∥21/ε2
+
+.
+
+b. Via quantum amplitude estimation 
+
+We next provide a detailed description of the algorithm used to implement the amplitude-encoding unitary V from Definition 7, with accompanying analysis in Lemma 8. Below we analyze the query complexity of the all-at-once algorithm using quantum amplitude estimation. The procedure is specified in Algorithm B.8 and the resulting runtime in Theorem B.7. 
+
+Algorithm B.7 Amplitude-encoding unitary. 
+
+Input: x ∈ X ▷ New input. 
+
+Output: Amplitude-encoding unitary V ▷ From Definition 7. 
+
+1: Initialize |0⟩data |0⟩idx |0⟩sign |0, 0⟩QP . ▷ n + ⌈log 2(N )⌉ + 3 qubits. 
+
+2: Single-input oracle U (x)data : | ˜ϕ(x)⟩ = |ϕ(x)⟩data |0⟩idx |0⟩sign ▷ G gates. 
+
+3: Quantum-state coefficient oracle W (α)idx ,sign : |ϕ(x)⟩data |0⟩idx |0⟩sign 7 → PNi=1 
+
+√pi|ϕ(x)⟩data |i⟩idx |si⟩sign ▷ N gates. 
+
+4: Training-set oracle O†(S): PNi=1 
+
+√pi|ϕ(x)⟩data |i⟩idx |si⟩sign 7 → PNi=1 
+
+√piU †(xi)|ϕ(x)⟩data |i⟩idx |si⟩sign ▷ O(N (G + log N ) gates. 
+
+5: Project to |0⟩data onto the |0, 0⟩QP branch with a multi-control X: ▷ O(n) elementary gates 
+
+> N
+
+X
+
+> i=1
+
+√piU †(xi)|ϕ(x)⟩data |i⟩idx |si⟩sign |0, 0⟩QP 7 →
+
+> N
+
+X
+
+> i=1
+
+√pi|0⟩⟨ 0|U †(xi)|ϕ(x)⟩data |i⟩idx |si⟩sign |0, 0⟩QP + · · · | 1, 0⟩QP 
+
+=
+
+> N
+
+X
+
+> i=1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 0⟩QP + · · · | 1, 0⟩QP 
+
+6: Separate the positive and negative terms in the sum with a CNOT ▷ O(1) elementary gates. 
+
+> N
+
+X
+
+> i=1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 0⟩QP + · · · | 1, 0⟩QP 7 →
+
+> N
+
+X
+
+> i=1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 1 − si
+
+2 ⟩QP 
+
++ · · · | 1, 0⟩QP + · · · | 1, 1⟩QP 
+
+7: return PNi=1 
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 1−si 
+
+> 2
+
+⟩QP + · · · | 1, 0⟩QP + · · · | 1, 1⟩QP ▷ Number of gates O(N (G + log N ) + n).
+
+Lemma 8 (Single-observable encoded in amplitude) . Under the conditions of Theorem 7, there exists a quantum circuit using 
+
+n + ⌈log 2(N )⌉ + 3 qubits which implements the amplitude-encoding unitary in Definition 7. Proof. We refer to Fig. 4 as visual proof. The quantum circuit follows the principles from Lemma A.1, though replacing the observables |0⟩⟨ 0|data and Zsign with controlled bitflips on auxiliary qubits. We rigorously prove the statement, by following the steps of Algorithm B.7. Using the same notation as above for the different oracles, we now introduce two controlled operations as 
+
+C0Xdata, QP,trash = |0⟩⟨ 0|data ⊗ IQP,trash + ( I − | 0⟩⟨ 0|)data ⊗ XQP,trash , (B31) 
+
+CNOT sign, QP, ± = |1⟩⟨ 1|sign ⊗ IQP, ± + |− 1⟩⟨− 1|sign ⊗ XQP, ±. (B32) Recall we defined the sign register as the eigenbasis of the Pauli Z operator Z|si⟩ = si|si⟩. We claim that V is of the form 
+
+V = CNOT sign, QP, ± ·C0Xdata, QP,trash · O†(S)data,idx,sign · W (α)idx,sign · U (x)data , (B33) 22 as depicted in Fig. 4. We confirm this by applying a sequence of matrix-vector operations starting from the all-0 state, by performing the calculation 
+
+V |0⟩ = CNOT sign, QP, ± ·C0Xdata, QP,trash · O†(S)data,idx,sign · W (α)idx,sign · U (x)data |0⟩data,idx,sign,QP (B34) 
+
+= CNOT sign, QP, ± ·C0Xdata, QP,trash · O†(S)data,idx,sign 
+
+> N
+
+X
+
+> i=1
+
+√pi|ϕ(x)⟩data |i⟩idx |si⟩sign |0, 0⟩QP 
+
+!
+
+= CNOT sign, QP, ± ·C0Xdata, QP,trash 
+
+> N
+
+X
+
+> i=1
+
+√pi
+
+ U †(xi)|ϕ(x)⟩data 
+
+ |i⟩idx |si⟩sign |0, 0⟩QP 
+
+!
+
+= CNOT sign, QP, ±
+
+ |0⟩⟨ 0|data ⊗ IQP,trash + ( I − | 0⟩⟨ 0|)data ⊗ XQP,trash 
+
+ NX
+
+> i=1
+
+√pi
+
+ U †(xi)|ϕ(x)⟩data 
+
+ |i⟩idx |si⟩sign |0, 0⟩QP 
+
+!
+
+= CNOT sign, QP, ± |0⟩⟨ 0|data ⊗ IQP,trash 
+
+> N
+
+X
+
+> i=1
+
+√pi
+
+ U †(xi)|ϕ(x)⟩data 
+
+ |i⟩idx |si⟩sign |0, 0⟩QP 
+
+!
+
++ ( I − | 0⟩⟨ 0|)data ⊗ XQP,trash 
+
+> N
+
+X
+
+> i=1
+
+√pi
+
+ U †(xi)|ϕ(x)⟩data 
+
+ |i⟩idx |si⟩sign |0, 0⟩QP 
+
+!! 
+
+= CNOT sign, QP, ±
+
+
+
+> N
+
+X
+
+> i=1
+
+√pi ⟨0|U †(xi)
+
+| {z }
+
+> ⟨ϕ(xi)|
+
+|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign 
+
+ |0, 0⟩QP + · · · | 1, 0⟩QP 
+
+
+
+= ( |1⟩⟨ 1|sign ⊗ IQP, ± + |− 1⟩⟨− 1|sign ⊗ XQP, ±)
+
+
+
+> N
+
+X
+
+> i=1
+
+√pi ⟨0|U †(xi)
+
+| {z }
+
+> ⟨ϕ(xi)|
+
+|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign 
+
+ |0, 0⟩QP + · · · | 1, 0⟩QP 
+
+
+
+=
+
+> N
+
+X
+
+> i=1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 1 − si
+
+2 ⟩QP + · · · | 1, 0⟩QP + · · · | 1, 1⟩QP .
+
+According to our convention for the definition of the sign register, we have that 1−si 
+
+> 2
+
+is 0 if si = 1 , and 1 in the case si = −1. For us to confirm that the last line corresponds to the r.h.s. of Eq. (11), we must only compute its |0, 0⟩QP and |1, 0⟩QP components. We denote the projectors as P+ = Idata,idx,sign ⊗ | 0, 0⟩⟨ 0, 0|QP , and P− = Idata,idx,sign ⊗ | 0, 1⟩⟨ 01 |QP . Then, we find 
+
+P+
+
+> N
+
+X
+
+> i=1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 1 − si
+
+2 ⟩QP + · · · | 1, 0⟩QP + · · · | 1, 1⟩QP 
+
+!
+
+(B35) 
+
+=
+
+> N
+
+X
+
+> i=1
+
+δsi,1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 0⟩QP = |ψ+⟩data,idx,sign ,P−
+
+> N
+
+X
+
+> i=1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |0, 1 − si
+
+2 ⟩QP + · · · | 1, 0⟩QP + · · · | 1, 1⟩QP 
+
+!
+
+(B36) 
+
+=
+
+> N
+
+X
+
+> i=1
+
+δsi,−1
+
+√pi⟨ϕ(xi)|ϕ(x)⟩| 0⟩data |i⟩idx |si⟩sign |01 ⟩QP = |ψ−⟩data,idx,sign ,
+
+we also compute the measurement probability for each component 
+
+⟨ψ+|P+|ψ+⟩ =
+
+> N
+
+X
+
+> i,j =1
+
+δsi,1δsj ,1
+
+√pipj ⟨ϕ(xi)|ϕ(x)⟩⟨ ϕ(x)|ϕ(xj )⟩⟨ 0|0⟩data ⟨j|i⟩idx 
+
+| {z } 
+
+> δi,j
+
+⟨sj |si⟩sign ⟨0, 0|0, 0⟩QP (B37) 
+
+=
+
+> N
+
+X
+
+> i=1
+
+δsi,1pi |⟨ ϕ(xi)|ϕ(x)⟩| 2
+
+| {z }
+
+> k(x,x i)
+
+.23 We notice that the last line corresponds exactly to the definition of f+ from Definition 3. The same is true for f−:
+
+⟨ψ−|P−|ψ−⟩ =
+
+> N
+
+X
+
+> i,j =1
+
+δsi,−1δsj ,−1
+
+√pipj ⟨ϕ(xi)|ϕ(x)⟩⟨ ϕ(x)|ϕ(xj )⟩⟨ 0|0⟩data ⟨j|i⟩idx 
+
+| {z } 
+
+> δi,j
+
+⟨sj |si⟩sign ⟨01 |01 ⟩QP (B38) 
+
+=
+
+> N
+
+X
+
+> i=1
+
+δsi,−1pi |⟨ ϕ(xi)|ϕ(x)⟩| 2
+
+| {z }
+
+> k(x,x i)
+
+= f−.
+
+This completes the proof. 
+
+Remark Under the assumption that multi-controlled X gates with n controls require O(n) elementary gates, Algorithm B.7 uses O(N (G + log N ) + n) gates and 2 auxiliary qubits. 
+
+Algorithm B.8 All-at-once via quantum amplitude estimation. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) to ε additive precision ▷ Inference, Eq. (3).  
+
+> 1:
+
+Initialize |0⟩data |0⟩idx |0⟩sign |0, 0⟩QP . ▷ n + ⌈log 2(N )⌉ + 3 qubits.  
+
+> 2:
+
+˜a(M )+ ← M -query-Quantum amplitude estimation on V from Algorithm B.7 with |ψgood ⟩ = |ψ+⟩ ▷ Estimate √f+ to precision O(1/M ). 
+
+> 3:
+
+˜a(M ) 
+
+> −
+
+← M -query-Quantum amplitude estimation on V from Algorithm B.7 with |ψgood ⟩ = |ψ−⟩ ▷ Estimate √f− to precision O(1/M ). 
+
+> 4:
+
+Square estimates ˜f (M ) 
+
+> ±
+
+=
+
+
+
+˜a(M )
+
+> ±
+
+2
+
+. ▷ Estimate f± to precision O(1/M ). 
+
+> 5:
+
+Call the norm oracle ON (α) to obtain ∥α∥1. 
+
+> 6:
+
+return ˜f (2 M ) 
+
+> α
+
+(x) = ∥α∥1
+
+ ˜f (M )+ − ˜f (M )
+
+> −
+
+
+
+▷ Combined additive precision in O(∥α∥1/M ). The total number of queries is 2M .
+
+Our main contribution is the following result, which underpins the complexity of inference in quantum kernels via quantum amplitude estimation. 
+
+Theorem B.7 (Query complexity of all-at-once via quantum amplitude estimation) . Consider Algorithm B.8. To estimate the quantum kernel model prediction in Eq. (3) to additive precision ε with constant success probability, it suffices to choose M =Θ( ∥α∥1/ε). The algorithm uses 2M applications of V and V † in total. Proof. Algorithm B.8 evaluates Eq. (3) by using quantum amplitude estimation twice as a subroutine, once for the positive terms in the sum f+, and once for the negative terms f−. Recall we defined these terms as fα(x) = ∥α∥1 (f+ − f−), so that 
+
+f± ∈ [0 , 1] . Each of the two quantum amplitude estimation subroutines uses M applications of V and V †, for a total query count of 2M . By Theorem 3, M queries yield additive error O(1/M ) on each of the amplitudes pf±, so that 
+
+|˜a(M ) 
+
+> ±
+
+− pf±| ∈ O 
+
+ 1
+
+M
+
+
+
+. (B39) We recover estimates of f± by squaring: ˆf (M ) 
+
+> ±
+
+:= 
+
+
+
+˜a(M )
+
+> ±
+
+2
+
+. Since pf± ∈ [0 , 1] (as f± is a convex combination of kernel values in [0 , 1] ) and ˜a(M ) 
+
+> ±
+
+∈ [0 , 1] , we have that the factor |˜a(M ) 
+
+> ±
+
++ pf±| is upper bounded by 2. Therefore, 
+
+| ˆf (M ) 
+
+> ±
+
+− f±| = |˜a(M ) 
+
+> ±
+
+− pf±| · | ˜a(M ) 
+
+> ±
+
++ pf±|
+
+| {z }
+
+> ≤2
+
+≤ 2|˜a(M ) 
+
+> ±
+
+− pf±| ∈ O 
+
+ 1
+
+M
+
+
+
+. (B40) Taking the difference and applying the triangle inequality, we get 
+
+ ˆf (M )+ − ˆf (M )
+
+> −
+
+
+
+− (f+ − f−) ≤ | ˆf (M )+ − f+| + | ˆf (M ) 
+
+> −
+
+− f−| ∈ O 
+
+ 1
+
+M
+
+
+
+. (B41) Multiplying by ∥α∥1 to recover an estimate ˆf (2 M ) 
+
+> α
+
+(x) = ∥α∥1
+
+ ˆf (M )+ − ˆf (M )
+
+> −
+
+
+
+for our target function fα, we obtain 
+
+| ˆf (2 M ) 
+
+> α
+
+(x) − fα(x)| ∈ O 
+
+ ∥α∥1
+
+M
+
+
+
+. (B42) 24 To achieve a final precision ε, we, therefore, set 
+
+M ∈ Θ
+
+ ∥α∥1
+
+ε
+
+
+
+, (B43) which gives a total of 2M ∈ Θ( ∥α∥1/ε) applications of V and V †.
+
+Remark Algorithm B.8 does not require reading access to α as the positive and negative parts are separated implicitly inside the algorithm. 
+
+> Appendix C: Sample-and-average algorithms
+
+We introduce one final algorithmic choice along the axis of how to approximate the sum in Eq. (2), which we refer to as 
+
+sample-and-average . Having identified that we can express the sum as the expectation value of a quantum observable, we take a step back and notice we could have expressed it as the expectation value of a classical observable. Following the notation in Definition 3, we could re-write inference as 
+
+fα(x) = 
+
+> N
+
+X
+
+> i=1
+
+αik(x, x i) = ∥α∥1
+
+> N
+
+X
+
+> i=1
+
+pisik(x, x i) = ∥α∥1Ei∼p[sik(x, x i)] . (C1) Intuitively, we could now decide to approximate the expectation value on the right-most part of the equation via its finite-sample mean. In doing this, we recall that we defined k(x, x ′) = |⟨ ϕ(x)|ϕ(x′)⟩| 2 as a (quantum) expectation value itself, and hence this formula involves two sources of randomness: an inner source of randomness associated to estimating k(x, x i) for a given 
+
+i, and an outer source of randomness in selecting i from the distribution p. In the following, we give an algorithmic template as Algorithm C.1, where the inner source of randomness (evaluating the kernel, either via sampling or via quantum amplitude estimation), is wrapped by the outer source of randomness (evaluating the sum, via sampling). The template is given in terms of a free parameter r ∈ { 1, 2} which can be further specialized to r = 1 for sampling and r = 2 for quantum amplitude estimation. We analyze the sample complexity of Algorithm C.1 generically in Theorem C.1, and further provide Corollaries C.2 and C.3 for the specific runtimes using sampling and quantum amplitude estimation, respectively. 
+
+Theorem C.1 (Sample-and-average with fixed budget algorithm template analysis) . Let X1, . . . , X N ∈ [0 , 1] be fixed values, let a ∈ R be a normalization factor, let s = ( s1, . . . , s N ) ∈ {± 1}N be a vector of symbols, and let p = ( p1, . . . , p N ) be an 
+
+N -outcome probability distribution. Define F := aEi∼p[siXi]. Assume we have T -query independent estimators ˆX(T ) 
+
+> i
+
+with 
+
+E ˆX [ ˆX(T ) 
+
+> i
+
+] = Xi and Var ˆX [ ˆX(T ) 
+
+> i
+
+] ≤ c/T r , for some constant c > 0, and for r ∈ { 1, 2}. For L ∈ N, consider i.i.d. samples 
+
+i1, . . . , i L ∼ p, and define the intermediate T -query estimator ˆY (T ) 
+
+> ℓ
+
+corresponding to the ℓth sample: ˆY (T ) 
+
+> ℓ
+
+:= siℓ
+
+ˆX(T ) 
+
+> iℓ
+
+. Finally, define the M -query estimator ˆF (M ) = a PLℓ=1 ˆY (T ) 
+
+> ℓ
+
+/L, where M = LT . Then, for any ε > 0, to ensure | ˆF (M ) − F | < ε 
+
+with constant probability, it suffices to choose M ∈ O (a2
+
+/ε2) total queries, with T ∈ O (1) inner queries per sample. For any 
+
+δ ∈ (0 , 1) , by a median-of-means amplification (repeating the estimator O(log( δ−1)) times and taking the median), the failure probability can be reduced to δ without changing the ε-dependence of the query complexity. Proof. We prove the statement directly by first deriving the variance of the estimator ˆF (M ) and then optimizing over the possible values of T and L, with M = LT . We define the intermediate quantity ˆY (M ) = PLℓ=1 ˆY (T ) 
+
+> ℓ
+
+. From the independence of the estimators, it follows that 
+
+Var 
+
+ ˆF (M )
+
+= a2
+
+L2 Var 
+
+ ˆY (M )
+
+= a2
+
+L2
+
+> L
+
+X
+
+> ℓ=1
+
+Var 
+
+ ˆY (T )
+
+> ℓ
+
+
+
+= a2
+
+L2 · L · Var 
+
+ ˆY (T )
+
+> ℓ
+
+
+
+= a2
+
+L Var 
+
+ ˆY (T )
+
+> ℓ
+
+
+
+. (C2) By Chebyshev’s inequality, this implies that | ˆF (M ) − F | < ε with constant probability whenever Var( ˆF (M )) ∈ O (ε2). We next invoke the law of total variance, to obtain 
+
+Var 
+
+ ˆY (M )
+
+= Ei∼p
+
+h
+
+Var ˆX
+
+ ˆY (T ) 
+
+> i
+
+i
+
+i 
+
++ Var i∼p
+
+
+
+E ˆX
+
+h ˆY (T ) 
+
+> i
+
+i
+
+i 
+
+. (C3) We can relate each term to the estimators for the initial quantities as 
+
+Ei∼p
+
+h
+
+Var ˆX
+
+ ˆY (T ) 
+
+> i
+
+i
+
+i 
+
+= Ei∼p
+
+h
+
+Var ˆX
+
+ ˆX(T )
+
+> i
+
+i 
+
+≤ Ei∼p
+
+h cT r
+
+i
+
+= cT r , (C4) 
+
+Var i∼p
+
+
+
+E ˆX
+
+h ˆY (T ) 
+
+> i
+
+i
+
+i 
+
+= Var i∼p (siXi) ≤ 1. (C5) 25 Plugging these back in the previous formulas, we obtain 
+
+Var 
+
+ ˆF (M )
+
+≤ a2
+
+L
+
+
+
+1 + cT r
+
+
+
+. (C6) This formula holds in general, and we can exploit it to bound the required number of queries. By enforcing M = LT , we would like to minimize a2
+
+/L (1 + c/T r ). We start by substituting L = M/T , to get 
+
+a2TM
+
+
+
+1 + cT r
+
+
+
+= a2
+
+M
+
+
+
+T + cT r−1
+
+
+
+. (C7) To find the minimum with respect to T , we take the derivative 
+
+ddT
+
+ a2
+
+M
+
+
+
+T + cT r−1
+
+
+
+=
+
+( a2 
+
+> M
+
+if r = 1 ,
+
+> a2
+> M
+
+ 1 − cT 2
+
+ if r = 2 . (C8) In the case r = 1 , it follows that there are no local extrema, and the first derivative is always positive, hence the minimum is achieved at the lower limit of the domain, T = 1 . In the case r = 2 , the derivative nullifies when T = √c, which is a constant. Therefore, in both cases T ∈ O (1) achieves the optimal balance, for a total number of queries M ∈ O (a2
+
+/ε2).
+
+Algorithm C.1 Sample-and-average with fixed budget, template. 
+
+Input: x ∈ X ▷ New input. 
+
+Input: ε > 0 ▷ Required additive precision. 
+
+Output: fα(x) = PNi=1 αik(x, x i) to ε additive precision. ▷ Inference, Eq. (3).  
+
+> 1:
+
+for ℓ ∈ { 1, . . . , L } do : 
+
+> 2:
+
+Sampling oracle OC (α): iℓ ∼ p 
+
+> 3:
+
+Estimate k(x, x iℓ ) using T queries to the single-input oracle: ˆk(T )(x, x iℓ ) ▷ Variance O( 1  
+
+> Tr
+
+), with r ∈ { 1, 2}. 
+
+> 4:
+
+Multiply ˆk(T )(x, x iℓ ) with the sign siℓ : ˆY (T ) 
+
+> ℓ
+
+= siℓ ˆk(T )(x, x iℓ ). ▷ Variance remains O( 1  
+
+> Tr
+
+). 
+
+> 5:
+
+end for ▷ Total number of queries is M = LT . 
+
+> 6:
+
+Sum ˆY (M ) = PLℓ=1 ˆY (T ) 
+
+> ℓ
+
+▷ Variance O(1 + cT r ). 
+
+> 7:
+
+Norm oracle ON (α): ∥α∥1 
+
+> 8:
+
+Multiply ˆY (M ) by ∥α∥1/L : obtain ˆf (M ) 
+
+> α
+
+(x) = ∥α∥1 
+
+> L
+
+ˆY (M ). 
+
+> 9:
+
+return ˆf (M ) 
+
+> α
+
+(x) ▷ Total variance O( ∥α∥21 
+
+> L
+
+(1 + cT r )) , sufficient T ∈ O (1) and M ∈ O (ε−2∥α∥21).
+
+Corollary C.2 (Sampling) . Consider Algorithm C.1 with r = 1 and the problem set-up in Definition 1. To estimate the quantum kernel model prediction in Eq. (2) to additive precision ε with constant success probability, the runtime scaling is dominated by the query complexity 
+
+M ∈ O 
+
+ ∥α∥21
+
+ε2
+
+
+
+. (C9) 
+
+The optimal allocation of queries is T = 1 , L = M .Proof. Immediate from Theorem C.1. 
+
+Corollary C.3 (Quantum amplitude estimation) . Consider Algorithm C.1 with r = 2 and the problem set-up in Definition 1. To estimate the quantum kernel model prediction in Eq. (2) to additive precision ε with constant success probability, the runtime scaling is dominated by the query complexity: 
+
+M ∈ O 
+
+ ∥α∥21
+
+ε2
+
+
+
+. (C10) 
+
+The optimal allocation of queries is T ∈ O (1) , L ∈ O (M ).Proof. Immediate from Theorem C.1. In particular, as we see in Corollary C.3, quantum amplitude estimation provides no improvement over sampling in the sample-and-average framework (cf. Corollary C.2). 26 
+
+Sample-and-average recovers previous algorithms. The proof of Theorem C.1 confirms that the optimal balance between the inner and outer numbers of samples, T and L respectively, is struck by T ∈ O (1) (and even T = 1 for r = 1 ). Explicitly, this is independent of whether the inner estimator is based on sampling or quantum amplitude estimation r ∈ { 1, 2}. The resulting estimator achieves the same query complexity scaling as both all-at-once and list-and-sum with adaptive budget, via sampling. On the one hand, we can interpret Algorithm C.1 as the all-at-once observable where the linear combination over indices is instantiated as a classical expectation value, instead of a quantum superposition. On the other hand, we can also interpret it as the list-and-sum algorithm with adaptive budget, where the number of classical samples Mi for the ith entry is automatically selected by the probability distribution i ∼ p.
