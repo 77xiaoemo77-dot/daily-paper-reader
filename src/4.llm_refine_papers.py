@@ -1056,14 +1056,14 @@ def main() -> None:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=10,
-        help="batch size for 4o-mini.",
+        default=DEFAULT_FILTER_BATCH_SIZE,
+        help="batch size for LLM filtering. Can be overridden by DPR_FILTER_BATCH_SIZE.",
     )
     parser.add_argument(
         "--max-chars",
         type=int,
-        default=850,
-        help="max chars per doc (title+abstract).",
+        default=DEFAULT_MAX_CHARS,
+        help="max chars per doc (title+abstract). Can be overridden by DPR_MAX_CHARS.",
     )
     parser.add_argument(
         "--filter-model",
@@ -1074,14 +1074,14 @@ def main() -> None:
     parser.add_argument(
         "--max-output-tokens",
         type=int,
-        default=4096,
-        help="max tokens for model output (clamped to 4096 in llm.py).",
+        default=DEFAULT_MAX_OUTPUT_TOKENS,
+        help="max tokens for model output. Can be overridden by DPR_MAX_OUTPUT_TOKENS.",
     )
     parser.add_argument(
         "--filter-concurrency",
         type=int,
         default=DEFAULT_FILTER_CONCURRENCY,
-        help="concurrent LLM filter requests.",
+        help="concurrent LLM filter requests. Can be overridden by DPR_FILTER_CONCURRENCY.",
     )
 
     args = parser.parse_args()
