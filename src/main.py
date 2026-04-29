@@ -710,7 +710,18 @@ def main() -> None:
         print_trace_retrieval("RERANK", rerank_path, trace_ids)
     run_step(
         "Step 4 - LLM refine",
-        [python, os.path.join(SRC_DIR, "4.llm_refine_papers.py")],
+        [
+            python,
+            os.path.join(SRC_DIR, "4.llm_refine_papers.py"),
+            "--filter-concurrency",
+            os.getenv("DPR_FILTER_CONCURRENCY", "1"),
+            "--batch-size",
+            os.getenv("DPR_FILTER_BATCH_SIZE", "5"),
+            "--max-chars",
+            os.getenv("DPR_MAX_CHARS", "650"),
+            "--max-output-tokens",
+            os.getenv("DPR_MAX_OUTPUT_TOKENS", "2048"),
+        ],
     )
     if trace_ids:
         print_trace_llm("LLM", llm_path, trace_ids)
