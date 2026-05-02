@@ -198,12 +198,25 @@ window.SubscriptionsSmartQuery = (function () {
   };
   const toStableId = (value) => {
     const text = normalizeText(value).toLowerCase();
-    const slug = text
+    if (!text) return 'item';
+
+    const asciiSlug = text
+      .normalize('NFKC')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '')
       .trim();
-    return slug || 'item';
+
+    if (asciiSlug) return asciiSlug;
+
+    // Non-ASCII tags such as Chinese should not all collapse to "item".
+    // Generate a stable short hash instead.
+    let hash = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+    }
+
+    return `u-${Math.abs(hash).toString(36)}`;
   };
   const getProfileKey = (profileOrTag) => {
     if (!profileOrTag) return '';
