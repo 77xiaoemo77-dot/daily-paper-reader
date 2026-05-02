@@ -1,0 +1,1650 @@
+Title: Scalable Mean-Variance Portfolio Optimization via Subspace Embeddings and GPU-Friendly Nesterov-Accelerated Projected Gradient
+
+URL Source: https://arxiv.org/pdf/2604.02917v1
+
+Published Time: Mon, 06 Apr 2026 00:45:11 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+# Scalable Mean–Variance Portfolio Optimization via Subspace Embeddings and GPU-Friendly Nesterov-Accelerated Projected Gradient 
+
+Yi-Shuai Niu Beijing Institute of Mathematical Sciences and Applications (BIMSA) 
+
+niuyishuai@bimsa.cn 
+
+Yajuan Wang Beijing Institute of Mathematical Sciences and Applications (BIMSA) 
+
+wangyajuan@bimsa.cn 
+
+March 29, 2026 
+
+Abstract 
+
+We develop a sketch-based factor reduction and a Nesterov-accelerated projected gradient algorithm (NPGA) with GPU acceleration, yielding a doubly accelerated solver for large-scale constrained mean–variance portfolio optimization. Starting from the sample covariance factor 𝐿 , the method combines randomized sub-space embedding, spectral truncation, and ridge stabilization to construct an effective factor 𝐿 eff . It then solves the resulting constrained problem with a structured projection computed by scalar dual search and GPU-friendly matrix–vector kernels, yielding one computational pipeline for the baseline, sketched, and Sketch–Truncate– Ridge (STR)-regularized models. We also establish approximation, conditioning, and stability guarantees for the sketching and STR models, including explicit 𝑂 (𝜀 ) bounds for the covariance approximation, the optimal value error, and the solution perturbation under (𝜀, 𝛿 )-subspace embeddings. Experiments on synthetic and real equity-return data show that the method preserves objective accuracy while reducing runtime substantially. On a 5440-asset real-data benchmark with 48374 training periods, NPGA-GPU solves the unreduced full model in 2.80 seconds versus 64 .84 seconds for Gurobi, while the optimized compressed GPU variants remain in the low-single-digit-second regime. These results show that the full dense model is already practical on modern GPUs and that, after compression, the remaining bottleneck is projection rather than matrix–vector multiplication. 
+
+Keywords. Large-scale mean–variance portfolio optimization, subspace embedding, randomized sketching, accelerated projected gradient, GPU computing 
+
+MSC2020 subject classifications. 91G10, 90C20, 90C25, 90C06, 65K05, 65F55, 65Y05 
+
+# 1 Introduction 
+
+The mean–variance (MV) portfolio optimization model, first proposed in Markowitz (1952), remains a cornerstone of quantitative investment and risk management. By minimizing portfolio variance under expected-return and budget constraints, the MV framework offers a principled balance between risk and reward. Despite its conceptual simplicity, large-scale implementations in modern markets present both statistical and computational challenges. In today’s data-rich environments, the number of investable assets 𝑛 can reach thousands, while the historical or high-frequency sample length 𝑇 may span tens or hundreds of thousands, making classical QP methods memory-intensive and time-consuming. 
+
+Data structure and scaling regimes. Let 𝑅 ∈ R𝑛 ×𝑇 be the matrix of asset returns and μ := 1 
+
+> 𝑇
+
+𝑅 1𝑇 the sample mean vector, where 1𝑇 is a 𝑇 -dimensional vector of ones. Define the centered return (covariance factor) matrix 
+
+𝐿 := 𝑅 − μ1⊤
+
+> 𝑇
+
+√𝑇 − 1 ∈ R𝑛 ×𝑇 , Σ = 𝐿𝐿 ⊤.
+
+This formulation highlights the dependence of Σ on both the asset dimension 𝑛 and the sample length 𝑇 . When 
+
+𝑇 is comparable to or smaller than 𝑛 , Σ is typically ill-conditioned: small eigenvalues amplify estimation noise and produce unstable weights. When 𝑇 ≫ 𝑛 , the estimate is statistically more reliable, but the covariance matrix becomes dense and expensive to store and manipulate. When both 𝑛 and 𝑇 are large, these two difficulties appear at the same time. This is the statistical–computational double bottleneck that motivates the present work. 1
+
+> arXiv:2604.02917v1 [math.OC] 3 Apr 2026
+
+Mathematical formulation and challenges. A standard constrained mean–variance portfolio optimization problem is 
+
+min   
+
+> 𝑥 ∈𝐹
+
+𝑓 (𝑥 ) := 𝑥 ⊤Σ𝑥, (1) where 
+
+𝐹 := { 𝑥 ∈ R𝑛 : μ⊤𝑥 ≥ 𝑅 target , 1⊤𝑥 = 1, 𝑥 ≥ 0 }
+
+imposes the expected-return, budget, and nonnegativity constraints. Here, μ is the expected return vector, 𝑅 target 
+
+the target portfolio return, and 𝑥 the portfolio weights. From a computational viewpoint, forming Σ = 𝐿𝐿 ⊤ requires 𝑂 (𝑛 2𝑇 ) operations and 𝑂 (𝑛 2) storage, while each iteration of a QP solver (e.g., Gurobi , MOSEK , CPLEX ) involves dense matrix operations of size 𝑛 × 𝑛 ,leading to overall complexity around 𝑂 (𝑛 3.5). Even with modern hardware, these costs are prohibitive for real-time rebalancing or large-universe simulations. In short, large-scale MV optimization is difficult for two reasons. The first is statistical ill-conditioning, caused by limited samples or strong cross-sectional dependence. The second is computational cost, caused by dense quadratic structure and repeated factorizations in high dimensions. An effective solver must therefore be both statistically robust , in the sense of being insensitive to sampling noise, and computationally scalable , in the sense of making effective use of modern parallel hardware. 
+
+Existing approaches. Prior research on scaling mean–variance optimization has evolved along two comple-mentary directions: (i) statistically robust covariance estimation , and (ii) computationally scalable optimization algorithms . The latter encompasses both classical first-order and distributed methods as well as modern random-ized linear-algebra approaches that compress data before optimization. 
+
+Statistical regularization. Since Markowitz Markowitz (1952), numerous works have sought to improve covariance reliability in high dimensions. Shrinkage estimators toward structured targets provide well-conditioned estimates Ledoit and Wolf (2004), and nonlinear spectral shrinkage further refines eigenvalue dispersion Ledoit and Wolf (2012). Factor and sparsity-based models exploit low-rank market structures Fan et al. (2013), while portfolio constraints can act as implicit regularizers Jagannathan and Ma (2003). Robust formulations explicitly model uncertainty in μ and Σ to yield stable portfolios under worst-case scenarios Ben-Tal and Nemirovski (2000), Goldfarb and Iyengar (2003). Empirical studies also find that naive diversification may rival optimized portfolios under strong estimation noise De Miguel et al. (2009). 
+
+First-order and distributed optimization. To mitigate computational cost, first-order and splitting methods (e.g., accelerated gradient, proximal, and ADMM Nesterov (2004), Bertsekas (1999), Beck and Teboulle (2009), Boyd et al. (2011)) offer cheap, parallelizable iterations. Projection routines enforcing simplex or affine constraints are central submodules Duchi et al. (2008), Condat (2016), Bauschke and Borwein (1996). Nevertheless, commercial interior-point solvers such as Gurobi Gurobi Optimization, LLC (2023), MOSEK MOSEK ApS (2024), and CPLEX IBM Corporation (2024) remain memory- and factorization-bound for very large 𝑛 .
+
+Randomized numerical linear algebra. A complementary direction compresses the data before optimiza-tion. Johnson–Lindenstrauss projections Johnson and Lindenstrauss (1984) and subspace embeddings for re-gression Sarlós (2006), Clarkson and Woodruff (2017) preserve geometry while drastically reducing dimension. Surveys in Woodruff (2014), Drineas and Mahoney (2016) provide guarantees for low-rank approximation and covariance estimation. These insights motivate constructing a sketched factor ˜𝐿 = 𝐿 Φ such that ˜Σ = ˜𝐿 ˜𝐿 ⊤
+
+spectrally approximates Σ, lowering memory and iteration costs while improving conditioning. 
+
+Our approach and contributions. This paper develops a computational and theoretical framework for large-scale MV optimization in which approximation, conditioning, and first-order optimization are designed together rather than treated as separate steps. The central object is a structured effective factor 𝐿 eff obtained from the sample covariance factor 𝐿 through randomized sketching, spectral truncation, and ridge stabilization. Given 𝐿 eff ,we design a GPU-friendly Nesterov-accelerated projected gradient method that solves the MV problem without forming the dense covariance matrix explicitly. The paper makes four main contributions. First, we introduce a Sketch–Truncate–Ridge (STR) pipeline that compresses the temporal dimension while explicitly controlling conditioning, which addresses the practical failure of sketching alone on real financial spectra. Second, we develop a GPU-friendly Nesterov-accelerated projected gradient algorithm (NPGA) for the baseline, sketched, and STR models, together with factorized gradient formulas, a convergence analysis for the exact NPGA framework and a discussion of the projector-accuracy issues arising in 2implementation, and a GPU implementation path tailored to large dense portfolio instances. Third, we establish approximation, conditioning, and stability guarantees for the sketching, STR, and factorized models; in particular, under (𝜀, 𝛿 )-subspace embeddings we derive explicit 𝑂 (𝜀 ) bounds for the covariance approximation, the optimal value error, and the solution perturbation. Fourth, we provide empirical evidence on synthetic and real market datasets showing that the proposed pipeline preserves optimization accuracy, improves numerical conditioning, and reduces runtime relative to standard dense formulations. 
+
+Paper organization. Section 2 introduces the factor representation, real-spectrum motivation, STR pipeline, and factorized effective models that define the computational workflow. Section 3 presents the NPGA solver, its projection routine, convergence statement, and GPU implementation considerations. Section 4 then develops the theoretical analysis for the sketching and STR models, including approximation, conditioning, and stability guarantees. Section 5 reports numerical results on synthetic and real datasets, and Section 6 concludes with remarks on future directions. 
+
+# 2 Problem Setup and Computational Pipeline 
+
+This section presents the computational workflow used throughout the paper. We start from the factor representa-tion Σ = 𝐿𝐿 ⊤, explain why sketching alone is insufficient on real financial spectra, define the STR approximation that produces a structured effective factor 𝐿 eff , and show how that factorization leads directly to a scalable first-order solver. The supporting theoretical analysis is deferred to Section 4. The workflow is simple. We represent the sample covariance through the tall factor 𝐿 , compress the temporal dimension by randomized embedding to obtain ˜𝐿 = 𝐿 Φ, truncate noisy singular modes and add ridge regularization to obtain a numerically stable factor 𝐿 eff , and finally solve the constrained MV problem by NPGA using only matrix–vector products with 𝐿 eff and 𝐿 ⊤ 
+
+> eff
+
+.
+
+2.1 Sample Covariance and Factorization 
+
+Let 𝑅 ∈ R𝑛 ×𝑇 be the panel of historical (demeaned later) returns, and let 
+
+¯𝑟 = 1
+
+𝑇 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+𝑅 (:, 𝑡 ) ∈ R𝑛 , 𝑅 𝑐 = 𝑅 − ¯𝑟 1⊤ 
+
+> 𝑇
+
+∈ R𝑛 ×𝑇 .
+
+Define 
+
+𝐿 = 1
+
+√𝑇 − 1 𝑅 𝑐 ∈ R𝑛 ×𝑇 ,
+
+so that the (unbiased) sample covariance is represented exactly as 
+
+Σ = 1
+
+𝑇 − 1 𝑅 𝑐 𝑅 ⊤ 
+
+> 𝑐
+
+= 𝐿 𝐿 ⊤.
+
+Since centering removes at most one degree of freedom, we have 
+
+rank (Σ) = rank (𝐿𝐿 ⊤) ≤ rank (𝐿 ) ≤ min {𝑛, 𝑇 − 1}.
+
+When 𝑇 is large, explicitly storing 𝐿 or forming Σ is expensive: 𝑂 (𝑛𝑇 ) memory for 𝐿 , or 𝑂 (𝑛 2) for Σ, and 𝑂 (𝑛 2𝑇 )
+
+time to form 𝐿𝐿 ⊤.These observations motivate the need for structured approximations of the sample covariance that preserve the essential spectral information while reducing storage and computational cost. In the next subsection, we examine the spectrum of a real-world covariance matrix constructed from large-scale market data, which will guide our subsequent algorithmic design. 
+
+2.2 Spectral Characteristics of Real-World Covariance Matrices 
+
+We now examine the spectral properties of a large real-world covariance matrix of the form Σ = 𝐿𝐿 ⊤. In our empirical study, the raw intraday returns come from the RESSET database and cover 5-minute returns for A–share stocks listed on the Shanghai and Shenzhen exchanges from January 2, 2020 to June 30, 2025 . The vendor files 30 1000 2000 3000 4000 5000 6000      
+
+> Indexk
+> 10 -8
+> 10 -6
+> 10 -4
+> 10 -2
+> Eigenvalue 6k
+> Eigenvaluespectrumof'Figure 1: Eigenvalue spectrum of the real-world covariance matrix. The spectrum decays rapidly for the first few dozen components before entering a long, slowly decaying bulk spanning several thousand dimensions.
+
+are aligned to a common 5-minute trading grid, and missing return entries are filled with zero when the balanced panel is assembled. After removing assets with insufficient trading histories, the resulting cleaned matrix contains 
+
+(𝑛, 𝑇 ) = (5440 , 66412 ) observations, where 𝑇 is the total number of 5-minute intervals over the sample horizon. Let Σ = 𝑈 Λ𝑈 ⊤ be the eigen-decomposition, where Λ = diag (𝜆 1, . . . , 𝜆 𝑛 ) with 𝜆 1 ≥ · · · ≥ 𝜆 𝑛 ≥ 0. Figure 1 displays the eigenvalue spectrum of Σ on a logarithmic scale. The leading eigenvalues exhibit a sharp drop, corresponding to a small number of dominant market and industry factors. However, after the first few dozen components, the spectrum enters a very long and nearly flat bulk region extending over several thousand eigen-values. A geometric fit over this region yields an average decay factor of 0.9995 , indicating almost linearly in the log domain. Near the tail end of the spectrum, the eigenvalues collapse rapidly toward the numerical noise floor. This structure is characteristic of high-dimensional financial datasets: a handful of strong factors followed by a massive high-dimensional noise component. 
+
+Failure of energy-based rank truncation. A common approach for defining an effective rank is the cumulative explained variance 
+
+𝐸 (𝑟 ) =
+
+Í𝑟 𝑘 =1 𝜆 𝑘 
+
+Í𝑛 𝑘 =1 𝜆 𝑘 
+
+.
+
+However, the bulk region contributes substantial total energy due to its large dimensionality. For the present dataset, even a moderate threshold 𝜂 = 0.8 requires retaining 
+
+𝑟 𝜂 = min { 𝑟 : 𝐸 (𝑟 ) ≥ 𝜂 } = 2616 ,
+
+which accounts for nearly half the ambient dimension (see Figure 2). Such ranks are far too large to yield computational savings and do not meaningfully separate structural factors from high-dimensional noise. 
+
+Implications for numerical conditioning. The slow spectral decay of Σ results in severe ill-conditioning. Even when restricted to the first 𝑟 𝜂 = 2616 eigen-directions, the effective condition number remains 
+
+𝜅 eff = 𝜆 1
+
+𝜆 𝑟 𝜂 
+
+≈ 10 3,
+
+while the full covariance matrix of order 10 5 is substantially more ill-conditioned. Consequently, gradient-based optimization algorithms that rely on Σ𝑥 suffer from unstable search directions and slow convergence when applied directly to Σ or to high-rank approximations obtained via energy truncation. 4Rank r     
+
+> 1000 2000 3000 4000 5000
+> Cumulative variance E(r)
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+
+Cumulative explained variance of '
+
+## 2 = 0:8Figure 2: Cumulative explained variance 𝐸 (𝑟 ). Due to the extremely long noisy bulk, 80% of the total variance is reached only after more than 2500 eigenvalues, demonstrating the inadequacy of energy-based rank selection for real-world covariance matrices. 
+
+Motivation for structured approximation. The empirical spectrum reveals three distinct regions: a small number of significant factors at the head, an extremely long and slowly decaying noisy bulk, and a numerically unstable tail of near-zero eigenvalues. This structure cannot be captured by naive low-rank truncation or explained-variance criteria. Instead, an effective approximation must preserve the structural factor subspace, compress the bulk into a stable isotropic component, and regularize the spectral tail. These observations motivate the Sketch– Truncate–Ridge (STR) procedure introduced in the subsequent sections. 
+
+2.3 Randomized Subspace Embedding 
+
+As shown in subsection 2.2, the spectrum of Σ = 𝐿𝐿 ⊤ contains only a few informative directions, while the remaining thousands fall into a slowly decaying noisy bulk. To extract the factor subspace efficiently without explicitly forming 𝐿 or Σ, we employ randomized subspace embedding , which reduces the temporal dimension from 𝑇 to 𝑠 ≪ 𝑇 while preserving all quadratic forms 𝑥 ⊤ 𝐿𝐿 ⊤𝑥 . This reduction serves as the computational backbone for all subsequent approximation stages. To obtain such a compressed representation, we post-multiply 𝐿 ∈ R𝑛 ×𝑇 by a random sketching matrix 
+
+Φ ∈ R𝑇 ×𝑠 , yielding 
+
+˜𝐿 = 𝐿 Φ ∈ R𝑛 ×𝑠 , ˜Σ = ˜𝐿 ˜𝐿 ⊤ ≈ Σ.
+
+The sketching matrix Φ is chosen so that, with probability at least 1 − 𝛿 , it acts as an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤):
+
+(1 − 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22 ≤ ∥ ˜𝐿 ⊤𝑥 ∥22 ≤ (1 + 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22, ∀ 𝑥 ∈ R𝑛 .
+
+Thus, the Euclidean geometry of 𝐿 ⊤ and hence all quadratic forms 𝑥 ⊤Σ𝑥 is preserved up to a multiplicative distortion of (1 ± 𝜀 ).We employ two canonical constructions of Φ from randomized numerical linear algebra: 
+
+(1) Gaussian Johnson–Lindenstrauss (JL) projection Johnson and Lindenstrauss (1984). Each entry of Φ
+
+is drawn i.i.d. as Φ𝑖 𝑗 ∼ N ( 0, 1/𝑠 ). This dense random projection requires 𝑂 (𝑇 𝑠 ) time and 𝑂 (𝑇 𝑠 ) storage, and satisfies the Johnson–Lindenstrauss lemma: for any fixed finite set of vectors, Euclidean distances are preserved within a factor of (1 ± 𝜀 ) with probability at least 1 − 𝛿 when 
+
+𝑠 = 𝑂  𝜀 −2 log (1/𝛿 ).
+
+In practice, Gaussian JL sketches are simple to generate and yield tight theoretical error bounds, but may be computationally expensive for extremely large 𝑇 due to their dense structure. 5(2) Count–Sketch mapping Sarlós (2006), Woodruff (2014), Clarkson and Woodruff (2017). Count–Sketch offers a sparse and highly scalable alternative. Each row of Φ contains exactly one nonzero entry ±1 at a uniformly hashed column position: 
+
+Φ(𝑖, ℎ (𝑖 )) = 𝑠 𝑖 , 𝑖 = 1, . . . , 𝑇, 
+
+where ℎ : {1, . . . , 𝑇 } → { 1, . . . , 𝑠 } is a random hash function and 𝑠 𝑖 ∈ {± 1} are independent Rademacher signs. This structure yields only 𝑂 (𝑇 ) time and 𝑂 (𝑇 ) storage to generate and apply Φ, making it well suited for large-scale or streaming data. Count–Sketch achieves an (𝜀, 𝛿 )-subspace embedding for any 𝑟 -dimensional subspace with 
+
+𝑠 = 𝑂  (𝑟 + log (1/𝛿 ))/ 𝜀 2,
+
+up to modest constant factors compared with Gaussian JL. While the asymptotic dependence is the same, the sparse structure dramatically reduces memory footprint and multiplication cost. 
+
+Discussion. Both constructions guarantee that the resulting sketched matrix ˜𝐿 = 𝐿 Φ preserves the spectral geometry of 𝐿 with probability at least 1 − 𝛿 . Gaussian JL offers optimal theoretical distortion, whereas Count– Sketch trades a slightly looser constant for massive gains in efficiency and scalability. Throughout this paper, either choice of Φ is admissible, and all subsequent results on spectral approximation, robustness, and conditioning apply uniformly to both types of embeddings. The next subsection formalizes these properties through the Johnson– Lindenstrauss lemma and the (𝜀, 𝛿 )-subspace embedding theorem. These guarantees are essential because the STR procedure that follows relies on ˜𝐿 as a surrogate for 𝐿 in both spectral truncation and regularization. We therefore summarize the foundational results below. The empirical spectral evidence above motivates a conditioning mechanism beyond pure sketching. We next introduce the STR pipeline, which combines randomized embedding, spectral truncation, and ridge stabilization to produce a numerically stable effective factor for optimization. 
+
+2.4 STR: Overview and Motivation 
+
+The empirical study in Section 2.2 shows that real-world covariance matrices exhibit a highly unbalanced spectrum: a handful of dominant factors, followed by an extremely long, slowly decaying bulk and a numerically unstable tail. Such spectral geometry leads to severe ill-conditioning and renders gradient-based solvers inefficient or unstable. Randomized subspace embedding (Section 2.3) provides an efficient way to compress the temporal dimension while preserving all quadratic forms 𝑥 ⊤Σ𝑥 up to a factor of (1 ± 𝜀 ). However, sketching alone does not improve conditioning. Indeed, from the positive semidefinite (PSD) ordering 
+
+(1 − 𝜀 )Σ ⪯ ˜Σ ⪯ ( 1 + 𝜀 )Σ,
+
+one obtains 
+
+(1 − 𝜀 ) 𝜆 min (Σ) ≤ 𝜆 min ( ˜Σ) ≤ 𝜆 max ( ˜Σ) ≤ ( 1 + 𝜀 ) 𝜆 max (Σ).
+
+Consequently, the condition number satisfies 
+
+𝜅 ( ˜Σ) = 𝜆 max ( ˜Σ)
+
+𝜆 min ( ˜Σ) ≤ 1 + 𝜀 
+
+1 − 𝜀 𝜅 (Σ),
+
+which bounds the possible distortion but does not guarantee any reduction in 𝜅 (Σ). Thus the small singular modes of 𝐿 , which generate the long noisy bulk of Σ, continue to dominate numerical performance even after sketching. These observations motivate a structured procedure that not only preserves the geometry of 𝐿𝐿 ⊤ but also reshapes its spectrum into a numerically stable form. Since the eigenvalues of Σ are given by the squared singular values of 𝐿 ,
+
+𝜆 𝑖 (Σ) = 𝜎 𝑖 (𝐿 )2, 𝑖 = 1, . . . , rank (𝐿 ),
+
+the ill-conditioning of Σ originates directly from the singular-value spread of 𝐿 . Thus, improving the conditioning of Σ requires manipulating the singular spectrum of 𝐿 itself. 
+
+2.5 STR: Description of the Procedure 
+
+To this end, we introduce a three-stage conditioning framework, Sketch–Truncate–Ridge (STR) , which produces a well-conditioned and structurally faithful approximation of Σ.6(1) Sketch stage. Apply a Johnson–Lindenstrauss transform or a CountSketch matrix Φ ∈ R𝑇 ×𝑠 (𝑠 ≪ 𝑇 ) and form 
+
+˜𝐿 = 𝐿 Φ, ˜Σ = ˜𝐿 ˜𝐿 ⊤.
+
+This step compresses the temporal dimension and provides a (1 ± 𝜀 ) spectral approximation to Σ, but does not by itself improve conditioning. 
+
+(2) Truncation stage. Compute the thin singular value decomposition (SVD) 
+
+˜𝐿 = 𝑈𝑆𝑉 ⊤, 𝑆 = diag (𝜎 1, . . . , 𝜎 𝑟 ), 𝜎 1 ≥ · · · ≥ 𝜎 𝑟 > 0.
+
+Let 𝑈 ℓ , 𝑆 ℓ , 𝑉 ℓ denote the first ℓ singular components and construct the rank-ℓ approximation 
+
+˜𝐿 ℓ := 𝑈 ℓ 𝑆 ℓ𝑉 ⊤ 
+
+> ℓ
+
+.
+
+The truncation step removes small singular modes of ˜𝐿 and raises the smallest retained singular value from 𝜎 𝑟 
+
+to 𝜎 ℓ , thereby eliminating directions that would otherwise produce near-zero eigenvalues in Σ. In practice, ℓ is chosen at the end of the dominant spectral core of ˜𝐿 rather than by a cumulative-variance rule; a detailed selection rule and a computable truncation bound are given in Appendix D. 
+
+(3) Ridge stage. To restore full rank and ensure numerical stability, we apply a uniform spectral lift: 
+
+bΣ := ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 , 𝛾 > 0.
+
+The eigenvalues of bΣ are 
+
+{𝜎 21 + 𝛾, . . . , 𝜎 2 
+
+> ℓ
+
++ 𝛾, 𝛾, . . . , 𝛾 
+
+| {z }
+
+> 𝑛 −ℓ
+
+},
+
+so that 
+
+𝜆 min (bΣ) = 𝛾, 𝜅 (bΣ) = 𝜎 21 + 𝛾 𝛾 .
+
+The ridge term fills the zero spectrum created by truncation and guarantees uniform conditioning. Finally, note that 𝜎 21 ( ˜𝐿 ) is controlled by the embedding property: 
+
+𝜎 21 ( ˜𝐿 ) = 𝜆 max ( ˜Σ) ≤ ( 1 + 𝜀 )𝜆 max (Σ).
+
+Thus, ensuring 𝜅 (bΣ) < 𝜅 (Σ) requires choosing 
+
+𝛾 > (1 + 𝜀 )𝜆 min (Σ) 𝜆 max (Σ)
+
+𝜆 max (Σ) − ( 1 + 𝜀 )𝜆 min (Σ) ,
+
+which guarantees that STR strictly improves the conditioning of Σ.The STR procedure transforms the raw return matrix 𝑅 into a stable and well-conditioned covariance approx-imation through sketching, truncation, and ridge stabilization. A schematic summary of this pipeline is provided in Figure 5 in the appendix. The resulting approximation enters the optimization model only through factorized matrix–vector products. This viewpoint leads to reduced effective models and cheap gradients, which will be exploited directly by the solver in Section 3. The quadratic objective 𝑓 (𝑥 ) = 𝑥 ⊤Σ𝑥 in the MV problem (1) involves the dense covariance matrix Σ ∈ R𝑛 ×𝑛 .Directly manipulating Σ incurs 𝑂 (𝑛 2) storage and 𝑂 (𝑛 3) factorization cost. To expose the low-rank structure of 
+
+𝐿 , we introduce an auxiliary variable 𝑧 = 𝐿 ⊤𝑥 ∈ R𝑇 (or ˜𝑧 = ˜𝐿 ⊤𝑥 ∈ R𝑠 after sketching, ˆ𝑧 = ˜𝐿 ⊤ 
+
+> ℓ
+
+𝑥 ∈ Rℓ after STR). The MV problem can then be reformulated as 
+
+min ∥𝑧 ∥22 s.t. 𝐿 ⊤𝑥 = 𝑧, 𝑧 ∈ R𝑇 , 𝑥 ∈ 𝐹, (2) where 𝐹 = {𝑥 ∈ R𝑛 : μ⊤𝑥 ≥ 𝑅 target , 1⊤𝑥 = 1, 𝑥 ≥ 0} is the feasible set. This formulation replaces the dense quadratic term by a least-norm objective and an explicit linear coupling constraint. The problem remains convex because both ∥𝑧 ∥22 and the affine constraint are convex, and the feasible region of (𝑥, 𝑧 ) is polyhedral. The 𝐿 –𝑧 reformulation offers two main advantages: it enables dimensional separation between the asset and temporal spaces, and it preserves a factorized structure that allows efficient gradient computation under sketching and STR. 72.6 Dimensional separation and sketched models 
+
+The coupling 𝐿 ⊤𝑥 = 𝑧 explicitly separates the asset space (𝑥 ∈ R𝑛 ) and the temporal space (𝑧 ∈ R𝑇 ), allowing subspace embedding to be applied only on the temporal dimension. 
+
+(a) Sketched model. After applying a random projection Φ ∈ R𝑇 ×𝑠 with 𝑠 ≪ 𝑇 , we obtain the reduced formulation 
+
+min     
+
+> 𝑥 ∈𝐹, ˜𝑧 ∈R𝑠
+
+∥ ˜𝑧 ∥22 s.t. ˜𝐿 ⊤𝑥 = ˜𝑧, ˜𝐿 := 𝐿 Φ. (3) Eliminating ˜𝑧 gives the sketched quadratic form 
+
+min  
+
+> 𝑥 ∈𝐹
+
+˜𝑓 (𝑥 ) := 𝑥 ⊤ ˜Σ𝑥 = ∥ ˜𝐿 ⊤𝑥 ∥22, ˜Σ := ˜𝐿 ˜𝐿 ⊤.
+
+(b) STR model. If the STR procedure is applied, then 
+
+min     
+
+> 𝑥 ∈𝐹, ˆ𝑧 ∈R𝑘
+
+∥ ˆ𝑧 ∥22 + 𝛾 ∥𝑥 ∥22 s.t. ˜𝐿 ⊤ 
+
+> ℓ
+
+𝑥 = ˆ𝑧, (4) where ˜𝐿 ℓ ∈ R𝑛 ×ℓ is the truncated and regularized factor obtained from STR. Eliminating ˆ𝑧 yields the regularized quadratic form 
+
+min  
+
+> 𝑥 ∈𝐹
+
+b𝑓 (𝑥 ) := 𝑥 ⊤bΣ𝑥 = ∥ ˜𝐿 ⊤ 
+
+> ℓ
+
+𝑥 ∥22 + 𝛾 ∥𝑥 ∥22, bΣ := ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 .
+
+Hence STR reduces the temporal dimension from 𝑇 to ℓ and stabilizes the covariance spectrum through ridge lifting. 
+
+2.7 Structure-exploiting gradient 
+
+The factorized representation enables fast gradient computation for all three cases. 
+
+(a) Baseline (no sketch). For 𝑓 (𝑥 ) = 𝑥 ⊤Σ𝑥 with Σ = 𝐿𝐿 ⊤,
+
+∇ 𝑓 (𝑥 ) = 2𝐿𝐿 ⊤𝑥 = 2𝐿𝑧, 𝑧 = 𝐿 ⊤𝑥, 
+
+requiring two matrix–vector products with 𝐿 and 𝐿 ⊤, each of cost 𝑂 (𝑛𝑇 ).
+
+(b) Sketched gradient. For the sketched objective ˜𝑓 (𝑥 ) = 𝑥 ⊤ ˜Σ𝑥 with ˜Σ = ˜𝐿 ˜𝐿 ⊤,
+
+∇ ˜𝑓 (𝑥 ) = 2 ˜ 𝐿 ˜𝐿 ⊤𝑥 = 2 ˜ 𝐿 ˜𝑧, ˜𝑧 = ˜𝐿 ⊤𝑥. 
+
+This reduces the gradient cost from 𝑂 (𝑛𝑇 ) to 𝑂 (𝑛𝑠 ) since 𝑠 ≪ 𝑇 .
+
+(c) STR gradient. For the STR-regularized objective b𝑓 (𝑥 ) = 𝑥 ⊤bΣ𝑥 with bΣ = ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 ,
+
+∇ b𝑓 (𝑥 ) = 2 ˜ 𝐿 ℓ ( ˜𝐿 ⊤ 
+
+> ℓ
+
+𝑥 ) + 2𝛾𝑥 = 2 ˜ 𝐿 ℓ ˆ𝑧 + 2𝛾𝑥, ˆ𝑧 = ˜𝐿 ⊤ 
+
+> ℓ
+
+𝑥. 
+
+The cost per iteration is 𝑂 (𝑛ℓ ), dominated by two matrix–vector multiplications with ˜𝐿 ℓ and ˜𝐿 ⊤ 
+
+> ℓ
+
+. Compared with the baseline 𝑂 (𝑛𝑇 ) and sketched 𝑂 (𝑛𝑠 ), STR achieves the lowest complexity and improved conditioning. 
+
+# 3 GPU-Friendly Nesterov-Accelerated Projected Gradient Algorithm (NPGA) 
+
+3.1 NPGA: A Unified Scheme for Baseline, Sketch, and STR 
+
+We parameterize all three models (the 𝐿 –𝑧 equivalent formulation (2), its sketched-model (3) and STR-model (4)) by an effective factor 𝐿 eff and a ridge 𝛾 ≥ 0:
+
+𝐿 eff ∈ { 𝐿, ˜𝐿, ˜𝐿 ℓ }, 𝛾 ∈ { 0, 0, > 0}.
+
+The unified objective and gradient read 
+
+𝑓 (𝑥 ) = ∥𝐿 ⊤ 
+
+> eff
+
+𝑥 ∥22 + 𝛾 ∥𝑥 ∥22, ∇ 𝑓 (𝑥 ) = 2 𝐿 eff 
+
+ 𝐿 ⊤ 
+
+> eff
+
+𝑥  + 2𝛾𝑥. (5) 8Table 1: Per-iteration complexity of NPGA. 
+
+Model 𝐿 eff 𝛾 Cost / iter 
+
+Baseline (2) 𝐿 ∈ R𝑛 ×𝑇 0 𝑂 (𝑛𝑇 )
+
+Sketch (3) ˜𝐿 ∈ R𝑛 ×𝑠 0 𝑂 (𝑛𝑠 )
+
+STR (4) ˜𝐿 ℓ ∈ R𝑛 ×ℓ > 0 𝑂 (𝑛ℓ )
+
+Algorithm 1 NPGA: Nesterov–Accelerated Projected Gradient 
+
+Input: 𝐿 eff , ridge 𝛾 ≥ 0, initial 𝑥 0 ∈ 𝐹 , stepsizes {𝛼 𝑘 }, tolerance 𝜖 > 0.
+
+Output: 𝑥 𝑘 . 
+
+> 1:
+
+Initialize: 𝑦 0 = 𝑥 0, 𝑡 0 = 1, 𝑘 = 0. 
+
+> 2:
+
+while not converged do  
+
+> 3:
+
+Compute gradient: ∇ 𝑓 (𝑦 𝑘 ) = 2 𝐿 eff (𝐿 ⊤ 
+
+> eff
+
+𝑦 𝑘 ) + 2𝛾𝑦 𝑘 . 
+
+> 4:
+
+Gradient step: 𝑣 𝑘 = 𝑦 𝑘 − 𝛼 𝑘 ∇ 𝑓 (𝑦 𝑘 ). 
+
+> 5:
+
+Project onto feasible set: 𝑥 𝑘 +1 = Π 𝐹 (𝑣 𝑘 ). 
+
+> 6:
+
+Update momentum: 𝑡 𝑘 +1 = 1+√︃ 1+4𝑡 2 
+
+> 𝑘
+> 2
+
+, 𝛽 𝑘 = 𝑡 𝑘 −1 
+
+> 𝑡 𝑘 +1
+
+. 
+
+> 7:
+
+Extrapolation: 𝑦 𝑘 +1 = 𝑥 𝑘 +1 + 𝛽 𝑘 (𝑥 𝑘 +1 − 𝑥 𝑘 ). 
+
+> 8:
+
+𝑘 ← 𝑘 + 1. 
+
+> 9:
+
+end while 
+
+We now propose an efficient first-order algorithm, the GPU-Friendly Nesterov-Accelerated Projected Gradient Algorithm (NPGA), that fully exploits the problem structure revealed by the 𝐿 –𝑧 formulation. The proposed NPGA reads as in Algorithm 1. Let 𝛼 𝑘 denote the step size at iteration 𝑘 and 𝑦 𝑘 the extrapolated Nesterov point. The step sizes may be chosen either by a fixed Lipschitz-based rule or by an adaptive backtracking line search. In the general convex regime we use the standard FISTA-type momentum update, whereas in the strongly convex regime the same framework also admits the classical constant-momentum specialization discussed below. We terminate the main loop when the projected gradient residual satisfies 
+
+∥Π𝐹 (𝑥 𝑘 − 𝛼 𝑘 ∇ 𝑓 (𝑥 𝑘 )) − 𝑥 𝑘 ∥2 ≤ 𝜖 . 
+
+The final iterate 𝑥 𝑘 is then returned as the solution. By leveraging the factorized gradient representation (5), each iteration involves only two matrix–vector products with 𝐿 eff and 𝐿 ⊤ 
+
+> eff
+
+(plus an 𝑂 (𝑛 ) ridge term if present), operations that are fully parallelizable on modern GPUs. This structural efficiency enables the method to scale to large, high-dimensional portfolio problems where the covariance matrix is ill-conditioned and costly to form or store explicitly. To further accelerate convergence, we incorporate Nesterov’s extrapolation, which yields the standard 𝑂 (1/𝑘 2) guarantee for smooth convex objectives and also admits the usual linear-rate specialization in the strongly convex regime, while maintaining full GPU parallelization efficiency. Note that the NPGA framework can also be applied to the classical mean–variance model (1) with an explicit covariance matrix Σ in place of 𝐿 eff . In this case, the gradient is ∇ 𝑓 (𝑥 ) = 2Σ𝑥 , and each iteration requires 
+
+𝑂 (𝑛 2) operations. Hence, NPGA serves as a unified GPU-friendly solver for the full spectrum of mean–variance formulations. 
+
+Stepsize policy. Let 𝐿 𝑓 be the Lipschitz constant of ∇ 𝑓 :
+
+𝐿 𝑓 = 2 ∥𝐿 eff 𝐿 ⊤ 
+
+> eff
+
+∥2 + 2𝛾 = 2 ∥𝐿 eff ∥22 + 2𝛾. 
+
+The NPGA framework allows either a fixed-step policy or an adaptive backtracking policy, both expressed through the same model-dependent smoothness constant 𝐿 𝑓 . Algorithm 1 displays the default 𝑡 𝑘 -based FISTA update used in the convex regime and in the reported benchmarks. When a lower curvature bound 𝑚 𝑓 > 0 is available, the same projected-gradient framework also admits the classical constant-momentum specialization discussed below. 
+
+Fixed step. One may use a constant step size 𝛼 𝑘 ≡ 𝛼 with 0 < 𝛼 ≤ 1/𝐿 𝑓 . In practice, ∥𝐿 eff ∥2 is estimated either by the largest singular value or via a few iterations of the power method, which is GPU-friendly. When a certified 9admissible step is needed for the theorem, one may instead use any provable upper bound on 𝐿 𝑓 or invoke the backtracking rule below. 
+
+Adaptive backtracking. Alternatively, NPGA may use the standard accelerated proximal-gradient backtracking rule. Given an initial trial step 𝛼 (0) 
+
+> 𝑘
+
+> 0 and a shrinkage factor 𝜌 ∈ ( 0, 1), we decrease 𝛼 𝑘 geometrically until the accepted point 𝑥 𝑘 +1 = Π 𝐹 (𝑦 𝑘 − 𝛼 𝑘 ∇ 𝑓 (𝑦 𝑘 )) satisfies 
+
+𝑓 (𝑥 𝑘 +1) ≤ 𝑓 (𝑦 𝑘 ) + ⟨∇ 𝑓 (𝑦 𝑘 ), 𝑥 𝑘 +1 − 𝑦 𝑘 ⟩ + 12𝛼 𝑘 
+
+∥𝑥 𝑘 +1 − 𝑦 𝑘 ∥22.
+
+By 𝐿 𝑓 -smoothness, this condition is guaranteed whenever 𝛼 𝑘 ≤ 1/𝐿 𝑓 , so the accepted step sizes remain admissible. This gives a flexible variable-step implementation without changing the basic NPGA framework. 
+
+Strongly convex specialization. If a lower curvature bound 𝑚 𝑓 > 0 is also available, then the same NPGA framework admits the standard constant-momentum choice 
+
+𝛽 𝑘 ≡ 𝛽 := 1 − √𝛼𝑚 𝑓 
+
+1 + √𝛼𝑚 𝑓 
+
+,
+
+associated with any fixed admissible step 0 < 𝛼 ≤ 1/𝐿 𝑓 . This is the version that yields the linear-rate statement recorded in Theorem 2(b); Algorithm 1 itself shows the default 𝑡 𝑘 -based update used in part (a). 
+
+Remark 1 (Power method for estimating ∥𝐿 eff ∥2). The spectral norm ∥𝐿 eff ∥2 equals the largest singular value of 
+
+𝐿 eff , which can be efficiently estimated by the classical power method through the iterative update 
+
+𝑢 𝑡 +1 =
+
+𝐿 eff 
+
+
+
+𝐿 ⊤ 
+
+> eff
+
+𝑢 𝑡 
+
+
+
+𝐿 eff 
+
+
+
+𝐿 ⊤ 
+
+> eff
+
+𝑢 𝑡 
+
+
+
+> 2
+
+, 𝑢 0 = 𝑟 
+
+∥𝑟 ∥2
+
+, 𝑟 ∼ N ( 0, 𝐼 𝑛 ).
+
+The associated Rayleigh quotient ∥𝐿 ⊤ 
+
+> eff
+
+𝑢 𝑡 ∥2 monotonically increases and converges to ∥𝐿 eff ∥2 when 𝐿 eff has a nonzero spectral gap. Each iteration involves two matrix–vector products, whose cost per iteration is summarized in Table 1 and is readily parallelizable on GPUs. Empirically, 5–10 iterations are sufficient to obtain a reliable spectral proxy. In the fixed-step implementation this yields an inexpensive practical step-size estimate, while the theorem itself may instead rely on any certified upper bound or on the backtracking rule. 
+
+Projection onto 𝐹 . The feasible set 
+
+𝐹 = {𝑥 ∈ R𝑛 : μ⊤𝑥 ≥ 𝑅 target , 1⊤𝑥 = 1, 𝑥 ≥ 0}
+
+can be written as the intersection 
+
+𝐹 = Δ ∩ 𝐻, Δ = {𝑥 ∈ R𝑛 : 𝑥 ≥ 0, 1⊤𝑥 = 1}, 𝐻 = {𝑥 ∈ R𝑛 : μ⊤𝑥 ≥ 𝑅 target }.
+
+We compute Π𝐹 (𝑣 ) by exploiting the fact that 𝐹 is a simplex intersected with a single return halfspace. Let 
+
+𝑥 Δ = Π Δ (𝑣 ). If μ⊤𝑥 Δ ≥ 𝑅 target , then 𝑥 Δ is already feasible for 𝐹 and therefore coincides with Π𝐹 (𝑣 ). The nontrivial case is when 𝑥 Δ violates the return constraint, in which case the halfspace constraint is active at the projector. 
+
+Projection onto the simplex. We first project onto Δ. The simplex projection admits the closed form (Duchi et al. 2008, Condat 2016): find the threshold 𝜏 satisfying 
+
+> 𝑛
+
+∑︁ 
+
+> 𝑖 =1
+
+max {𝑣 𝑖 − 𝜏, 0} = 1, (6) and set 
+
+(ΠΔ (𝑣 )) 𝑖 = max {𝑣 𝑖 − 𝜏, 0}, 𝑖 = 1, . . . , 𝑛. (7) 10 The threshold 𝜏 can be obtained by sorting 𝑣 in descending order and identifying the largest index 𝑗 such that 
+
+𝑣 𝑗 − 1
+
+𝑗 
+
+ 𝑗 ∑︁ 
+
+> 𝑖 =1
+
+𝑣 𝑖 − 1
+
+
+
+> 0,
+
+then 𝜏 = 1
+
+𝑗 
+
+ 𝑗 ∑︁ 
+
+> 𝑖 =1
+
+𝑣 𝑖 − 1
+
+
+
+. This step costs 𝑂 (𝑛 log 𝑛 ) because of sorting. 
+
+Projection onto the return halfspace. The halfspace projection has the closed form 
+
+Π𝐻 (𝑦 ) =
+
+
+
+𝑦, if μ⊤ 𝑦 ≥ 𝑅 target ,𝑦 + 𝑅 target − μ⊤ 𝑦 
+
+∥μ∥22
+
+μ, otherwise. (8) This update costs 𝑂 (𝑛 ).
+
+Exact projection onto 𝐹 via a scalar dual search. When μ⊤𝑥 Δ < 𝑅 target , the KKT conditions imply that the projector lies on the active face μ⊤𝑥 = 𝑅 target . Introducing a Lagrange multiplier 𝜈 ≥ 0 for the halfspace constraint gives the one-parameter family 
+
+𝑥 (𝜈 ) = argmin  
+
+> 𝑥 ∈Δ
+
+ 12 ∥𝑥 − 𝑣 ∥22 + 𝜈  𝑅 target − μ⊤𝑥 
+
+= Π Δ (𝑣 + 𝜈 μ). (9) Define 
+
+𝜙 (𝜈 ) := μ⊤𝑥 (𝜈 ) = μ⊤ΠΔ (𝑣 + 𝜈 μ), 𝜈 ≥ 0.
+
+The map 𝜙 is continuous and nondecreasing. Hence, whenever 𝑅 target ≤ max 𝑖 𝜇 𝑖 , there exists 𝜈 ★ ≥ 0 such that 
+
+μ⊤𝑥 (𝜈 ★) = 𝑅 target , Π𝐹 (𝑣 ) = 𝑥 (𝜈 ★).
+
+Our implementation first brackets 𝜈 ★ by geometric expansion 𝜈 = 1, 2, 4, . . . until 𝜙 (𝜈 ) ≥ 𝑅 target , and then applies bisection on the bracket. The iteration terminates once 
+
+𝜙 (𝜈 ) − 𝑅 target ≤ 𝜏 proj max {1, |𝑅 target |} .
+
+Each evaluation of 𝜙 (𝜈 ) requires one simplex projection and one dot product, so the dominant cost remains the 
+
+𝑂 (𝑛 log 𝑛 ) simplex sort. After bracketing, the total work is 𝑂 (𝑛 log 𝑛 log (1/𝜏 proj )) , while the projection itself is exact up to the scalar-search tolerance. As a safeguarded fallback, we retain a Dykstra-style alternating-projection method (Bauschke and Borwein 1996) that combines ΠΔ and Π𝐻 if the bracketing phase does not succeed within the prescribed iteration budget. In our experiments this safeguard is rarely triggered; the default path is the structured scalar-search projector above. 
+
+Stopping condition. We stop when the projected-gradient residual 
+
+∥Π𝐹 (𝑥 𝑘 − 𝛼 ∇ 𝑓 (𝑥 𝑘 )) − 𝑥 𝑘 ∥2 ≤ 𝜖, 
+
+which is equivalent to requiring that the current iterate 𝑥 𝑘 approximately satisfies the KKT conditions. For any fixed stepsize 𝛼 > 0, define the projected gradient mapping 𝐺 𝛼 (𝑥 ) = 1
+
+> 𝛼
+
+ 𝑥 − Π𝐹 (𝑥 − 𝛼 ∇ 𝑓 (𝑥 )) . In convex optimization, 𝑥 ★ is optimal if and only if 0 ∈ ∇ 𝑓 (𝑥 ★) + 𝑁 𝐹 (𝑥 ★), where 𝑁 𝐹 (𝑥 ★) is the normal cone to 𝐹 at 𝑥 ★.This condition can be rewritten as Π𝐹 (𝑥 ★ − 𝛼 ∇ 𝑓 (𝑥 ★)) = 𝑥 ★ for any 𝛼 > 0, i.e., 𝐺 𝛼 (𝑥 ★) = 0. Hence ∥𝐺 𝛼 (𝑥 )∥ 2
+
+measures the violation of the KKT stationarity condition, and vanishes exactly at an optimal point. The practical criterion ∥Π𝐹 (𝑥 𝑘 − 𝛼 ∇ 𝑓 (𝑥 𝑘 )) − 𝑥 𝑘 ∥2 ≤ 𝜖 thus ensures that both the gradient balance and the projected feasibility residuals are below the prescribed tolerance 𝜖 , providing a computable and KKT-consistent stopping rule. 11 3.2 Convergence and Complexity Analysis 
+
+Write the constrained problem as min 𝑥 Φ(𝑥 ) := 𝑓 (𝑥 ) + 𝜒 𝐹 (𝑥 ), where 𝜒 𝐹 is the indicator of the closed convex set 𝐹 . Since Π𝐹 (𝑧 ) = argmin 𝑥 { 𝜒 𝐹 (𝑥 ) + 12 ∥𝑥 − 𝑧 ∥22}, NPGA is an accelerated proximal-gradient method for 
+
+Φ = 𝑓 + 𝜒 𝐹 , with the proximal map computed by the structured projector from Section 3. The theorem below specializes standard accelerated proximal-gradient theory to the variables used throughout this paper, namely 𝐿 eff ,
+
+𝛾 , and the step-size sequence {𝛼 𝑘 }. Part (a) corresponds to Algorithm 1 as written, whereas part (b) records the classical strongly convex constant-momentum specialization of the same framework; see Beck and Teboulle (2009), Nesterov (2004). 
+
+Theorem 2 (Convergence of NPGA) . Let 𝑓 (𝑥 ) = ∥𝐿 ⊤ 
+
+> eff
+
+𝑥 ∥22 + 𝛾 ∥𝑥 ∥22, where 𝐿 eff and 𝛾 ≥ 0 specify the Baseline, Sketch, or STR model. Define 
+
+𝐿 𝑓 = 2 ∥𝐿 eff ∥22 + 𝛾 , 𝑚 𝑓 = 2 𝜆 min (𝐿 eff 𝐿 ⊤ 
+
+> eff
+
+) + 𝛾 ,
+
+and apply NPGA to min 𝑥 ∈𝐹 𝑓 (𝑥 ) with exact projected steps 𝑥 𝑘 +1 = Π 𝐹 
+
+ 𝑦 𝑘 − 𝛼 𝑘 ∇ 𝑓 (𝑦 𝑘 ). Let 𝑥 ★ be any minimizer of 𝑓 over 𝐹 . Then: 
+
+(a) Convex case. Suppose 𝑚 𝑓 = 0. If NPGA uses the standard FISTA update 𝑡 0 = 1, 𝑡 𝑘 +1 = (1 +√︃ 1 + 4𝑡 2 
+
+> 𝑘
+
+)/ 2,
+
+𝛽 𝑘 = (𝑡 𝑘 − 1)/ 𝑡 𝑘 +1, together with either a fixed step 0 < 𝛼 𝑘 ≡ 𝛼 ≤ 1/𝐿 𝑓 or the standard accelerated proximal-gradient backtracking rule, then there exists 𝐶 cvx ≥ 0, depending only on the initial point and the accepted step sequence, such that 
+
+𝑓 (𝑥 𝑘 ) − 𝑓 (𝑥 ★) ≤ 𝐶 cvx 
+
+(𝑘 + 1)2 , 𝑘 ≥ 1.
+
+(b) Strongly convex case. Suppose 𝑚 𝑓 > 0. If NPGA uses a fixed step 0 < 𝛼 ≤ 1/𝐿 𝑓 and the constant momentum 
+
+𝛽 𝑘 ≡ 𝛽 := 1 − √𝛼𝑚 𝑓 
+
+1 + √𝛼𝑚 𝑓 
+
+,
+
+then there exists 𝐶 lin ≥ 0, depending only on the initial point, such that 
+
+𝑓 (𝑥 𝑘 ) − 𝑓 (𝑥 ★) ≤ 𝐶 lin 
+
+ 1 − √𝛼𝑚 𝑓 
+
+ 𝑘 , 𝑘 ≥ 1.
+
+Thus the same exact-projection statement applies uniformly to the Baseline, Sketch, and STR models through 
+
+𝐿 eff . When 𝛾 > 0, one has 𝑚 𝑓 ≥ 2𝛾 > 0, so ridge stabilization is precisely what moves the reduced model into the strongly convex linear-rate regime. 
+
+This theorem is not claimed as a new first-order proof in itself. Its role is to express the standard smoothness and curvature constants directly through the factor representation 𝐿 𝑓 = 2(∥ 𝐿 eff ∥22 + 𝛾 ) and 𝑚 𝑓 = 2(𝜆 min (𝐿 eff 𝐿 ⊤ 
+
+> eff
+
+) + 𝛾 ),so the same solver statement covers the Baseline, Sketch, and STR models. In particular, part (a) is the FISTA-type guarantee for Algorithm 1 itself, whereas part (b) records the standard linear-rate specialization available once 
+
+𝑚 𝑓 > 0. Existing inexact variants such as Schmidt et al. (2011) already treat proximal-subproblem errors; what they do not directly encode is the implementation-level stopping rule of our structured projector, which controls the scalar dual search for 𝑥 (𝜈 ) = Π Δ (𝑧 + 𝜈 μ). Appendix A summarizes this distinction in more detail. 
+
+Remark 3 (Optimization error versus model error) . For a fixed reduced model 𝑀 , Theorem 2 gives the solver error bound 𝑓 𝑀 ( ˆ𝑥 𝑀 ) − 𝑓 𝑀 (𝑥 ★𝑀 ) ≤ 𝛿 𝑘 , with 𝛿 𝑘 = 𝑂 (𝑘 −2) in part (a) and 𝛿 𝑘 = 𝑂 (𝜗 𝑘 ) in part (b). This is distinct from the modeling error caused by replacing the full factor 𝐿 with a sketched or STR surrogate. If 
+
+sup 𝑥 ∈𝐹 | 𝑓 𝑀 (𝑥 ) − 𝑓 full (𝑥 )| ≤ Δ𝑀 , then 𝑓 full ( ˆ𝑥 𝑀 ) − 𝑓 full (𝑥 ★
+
+> full
+
+) ≤ 𝛿 𝑘 + 2Δ𝑀 . Section 4 provides exactly this Δ𝑀 -type control for the Sketch and STR models. 
+
+3.3 GPU Parallelization Strategy 
+
+The matrix–vector products in (5) are the dominant computational cost. Because 𝐿 eff is stored in column-major GPU memory, both 𝐿 ⊤ 
+
+> eff
+
+𝑥 and 𝐿 eff (𝐿 ⊤ 
+
+> eff
+
+𝑥 ) can be computed using level-2 Basic Linear Algebra Subprograms (BLAS) kernels. In practice, we fuse these two operations to minimize memory traffic, where both multiplications are parallelized over rows and columns using CUDA streams or batched general matrix–vector multiplication 12 (GEMV) operations. The projection Π𝐹 (𝑣 𝑘 ) is not coordinatewise separable, but it is built from GPU-friendly bulk primitives: sorting, prefix sums, saxpy-style vector updates, and dot products. In the active-constraint regime, each projection call evaluates 𝑥 (𝜈 ) = Π Δ (𝑣 𝑘 + 𝜈 μ) a small number of times inside a scalar bracketing/bisection loop. This avoids large sparse factorizations and keeps the projection step compatible with device-resident parallel kernels. The key point here is structural rather than hardware-specific. Once 𝐿 eff is resident in device memory, each NPGA iteration is dominated by two regular dense matrix–vector products and one projection step. This makes the method well suited to BLAS- and sort-based GPU execution. Actual runtime comparisons are reported later in Section 5. 
+
+# 4 Theoretical Guarantees 
+
+Section 3 controlled the optimization error of NPGA for any fixed factor model 𝐿 eff . This section supplies the complementary model-error bounds for the sketching and STR constructions, including approximation, condi-tioning, and stability guarantees. Taken together, the two sections yield the end-to-end accuracy decomposition used later in the numerical experiments. Detailed proofs are given in Appendices B–C. 
+
+4.1 Subspace Embedding and Approximation Guarantees 
+
+We summarize the standard theorems that underpin our use of ˜𝐿 in place of 𝐿 .
+
+Definition 4 (Subspace embedding) . Let 𝑈 ∈ R𝑇 ×𝑟 have orthonormal columns spanning Im (𝐿 ⊤), i.e., 𝑈 ⊤𝑈 = 𝐼 𝑟 
+
+and 𝑟 = rank (𝐿 ). A random matrix Φ ∈ R𝑇 ×𝑠 is an (𝜀, 𝛿 )-subspace embedding for 𝑈 if 
+
+Pr  (Φ⊤𝑈 )⊤ (Φ⊤𝑈 ) − 𝐼 𝑟 2 ≤ 𝜀  ≥ 1 − 𝛿. 
+
+Remark 5. The random matrix Φ in this definition does not depend on the specific choice of the orthonormal basis 𝑈 for Im (𝐿 ⊤), but only on the subspace itself. This is because for any two orthonormal bases 𝑈 and 𝑈 ′ of 
+
+Im (𝐿 ⊤), there exists an orthogonal matrix 𝑄 such that 𝑈 ′ = 𝑈𝑄 , and we have: 
+
+(Φ⊤𝑈 ′)⊤ (Φ⊤𝑈 ′) = 𝑄 ⊤ (Φ⊤𝑈 )⊤ (Φ⊤𝑈 )𝑄. 
+
+Since orthogonal transformations preserve the spectral norm ( ∥𝑄 ⊤ 𝐴𝑄 ∥2 = ∥ 𝐴 ∥2 for any orthogonal 𝑄 ), the embedding condition is invariant under the choice of basis. Therefore, Φ serves as a subspace embedding for the entire subspace Im (𝐿 ⊤) regardless of the specific basis representation. 
+
+Lemma 6 (Johnson–Lindenstrauss case Johnson and Lindenstrauss (1984)) . For 𝑈 ∈ R𝑇 ×1 with ∥𝑈 ∥2 = 1,suppose 𝑠 = 𝑂  𝜀 −2 log (1/𝛿 ). Then, with probability at least 1 − 𝛿 , ∥Φ⊤𝑈 ∥22 − 1 ≤ 𝜀 .
+
+Theorem 7 (General subspace embedding Sarlós (2006), Clarkson and Woodruff (2017)) . Let 𝑈 ∈ R𝑇 ×𝑟 with 
+
+𝑈 ⊤𝑈 = 𝐼 𝑟 , and suppose 𝑠 = 𝑂  (𝑟 +log (1/𝛿 ))/ 𝜀 2. Then, with probability at least 1−𝛿 , (Φ⊤𝑈 )⊤ (Φ⊤𝑈 )− 𝐼 𝑟 2 ≤ 𝜀 .
+
+Corollary 8 (Geometry preservation on Im (𝐿 ⊤)). Let ˜𝐿 = 𝐿 Φ. Assume that Φ is an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤). Then, with probability at least 1 − 𝛿 ,
+
+(1 − 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22 ≤ ∥ ˜𝐿 ⊤𝑥 ∥22 ≤ ( 1 + 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22, ∀ 𝑥 ∈ R𝑛 .
+
+A detailed proof is given in Appendix B. 
+
+Remark 9 (Geometric interpretation) . Corollary 8 states that the sketch preserves the norm of all vectors in the column space of 𝐿 ⊤ up to relative error 𝜀 . Equivalently, ˜Σ = ˜𝐿 ˜𝐿 ⊤ is a spectral approximation to Σ = 𝐿𝐿 ⊤ when restricted to that subspace. This guarantees that replacing 𝐿 with ˜𝐿 preserves all quadratic forms associated with Σ, which is the key requirement for covariance approximation and downstream optimization. 13 4.2 Error and Robustness Analysis 
+
+We first control the spectral error between the original and sketched covariances. Such a bound is essential to justify using ˜Σ in place of Σ for optimization, conditioning analysis, and regularization. 
+
+Corollary 10 (Spectral error of the covariance approximation) . If Φ is an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤),then with probability at least 1 − 𝛿 ,
+
+∥ ˜Σ − Σ∥2 ≤ 𝜀 ∥Σ∥2, ˜Σ = ˜𝐿 ˜𝐿 ⊤, Σ = 𝐿𝐿 ⊤.
+
+In other words, ˜Σ spectrally approximates Σ within a multiplicative factor of (1 ± 𝜀 ), preserving its eigenvalue structure up to 𝑂 (𝜀 ) distortion. 
+
+A detailed proof is given in Appendix B. Corollary 10 further provides quantitative insight into how the subspace embedding affects the eigenvalues of the covariance matrix. 
+
+Corollary 11 (Positive definiteness preservation under subspace embedding) . Let Σ = 𝐿𝐿 ⊤ be positive definite, with condition number 𝜅 (Σ) = 𝜆 max (Σ)/ 𝜆 min (Σ), and let ˜Σ = ˜𝐿 ˜𝐿 ⊤ be obtained by an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤). If 𝜀 < 1/𝜅 (Σ), then with probability at least 1 − 𝛿 , ˜Σ remains positive definite. 
+
+A detailed proof is given in Appendix B. 
+
+Theorem 12 (Optimal value error and solution sensitivity) . Let 𝑣 ★ = min 𝑥 ∈𝐹 𝑥 ⊤Σ𝑥 and ˜𝑣 ★ = min 𝑥 ∈𝐹 𝑥 ⊤ ˜Σ𝑥 . If Φ
+
+is an (𝜀, 𝛿 )-subspace embedding, then with probability at least 1 − 𝛿 :
+
+˜𝑣 ★ − 𝑣 ★ ≤ 𝜀 ∥Σ∥2.
+
+If, in addition, Σ is positive definite and 𝑥 ★, ˜𝑥 ★ are minimizers for Σ and ˜Σ, respectively, then 
+
+∥ ˜𝑥 ★ − 𝑥 ★∥2 ≤ 𝜀𝜅 (Σ).
+
+A detailed proof is given in Appendix C. The appendix also records a restricted-strong-convexity extension of this stability result for nearly singular covariance matrices. 
+
+4.3 STR Conditioning and Approximation Guarantees 
+
+Let Σ = 𝑄 Λ𝑄 ⊤ with eigenvalues 𝜆 1 ≥ · · · ≥ 𝜆 𝑛 ≥ 0, and let Σℓ := 𝑄 ℓ Λℓ 𝑄 ⊤ 
+
+> ℓ
+
+denote the best rank-ℓ approximation of Σ in spectral norm. By the Eckart–Young–Mirsky theorem (Horn and Johnson 2012), 
+
+∥Σ − Σℓ ∥2 = 𝜆 ℓ+1. (10) The next theorem quantifies the spectral distortion of STR and gives a sufficient condition for strict conditioning improvement. 
+
+Theorem 13 (Conditioning improvement via STR) . Let ˜𝐿 = 𝐿 Φ be obtained by an (𝜀, 𝛿 )-subspace embedding, and let ˜𝐿 = 𝑈𝑆𝑉 ⊤ be its thin SVD with 𝑆 = diag (𝜎 1, . . . , 𝜎 𝑟 ), 𝜎 1 ≥ · · · ≥ 𝜎 𝑟 ≥ 0. Define the truncated factor 
+
+˜𝐿 ℓ := 𝑈 ℓ 𝑆 ℓ𝑉 ⊤ 
+
+> ℓ
+
+, 𝑈 ℓ := 𝑈 [:,1: ℓ ] , 𝑉 ℓ := 𝑉 [:,1: ℓ ] , 𝑆 ℓ = diag (𝜎 1, . . . , 𝜎 ℓ ).
+
+Let 
+
+bΣ := ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 , 𝛾 > 0.
+
+Then, with probability at least 1 − 𝛿 , the following hold: 
+
+(a) Spectral approximation bound. 
+
+∥Σ − bΣ∥2 ≤ ∥Σ − Σℓ ∥2 + 2𝜀 ∥Σ∥2 + 𝛾, (11) 
+
+where Σℓ is the best rank-ℓ approximation of Σ in spectral norm. 
+
+(b) Conditioning improvement on the covariance. Let 
+
+𝛾 > (1 + 𝜀 ) 𝜆 min (Σ) 𝜆 max (Σ)
+
+𝜆 max (Σ) − ( 1 + 𝜀 )𝜆 min (Σ) . (12) 
+
+then 
+
+𝜅 (bΣ) < 𝜅 (Σ). (13) A detailed proof is given in Appendix C. For any positive definite Σ, adding 𝛾𝐼 𝑛 lowers the condition number because (𝜆 max + 𝛾 )/( 𝜆 min + 𝛾 ) < 𝜅 (Σ) for every 𝛾 > 0. The extra condition (12) is needed only because bΣ is built from the perturbed low-rank proxy ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
+. A practical discussion of choosing 𝛾 is given in Appendix D. 14 4.4 Stability of the Factorized Models 
+
+We now analyze how approximating 𝐿 by sketching or STR affects the optimal value and solution stability of the 𝐿 –𝑧 formulation. Let (𝑥 ★, 𝑧 ★), ( ˜𝑥 ★, ˜𝑧 ★), and (b𝑥 ★, b𝑧 ★) be the minimizers of the baseline, sketched, and STR-regularized problems, respectively: 
+
+𝑣 ★ = ∥𝐿 ⊤𝑥 ★∥22, ˜𝑣 ★ = ∥ ˜𝐿 ⊤ ˜𝑥 ★∥22, b𝑣 ★ = ∥ ˜𝐿 ⊤ 
+
+> ℓ
+
+b𝑥 ★∥22 + 𝛾 ∥b𝑥 ★∥22.
+
+(1) Stability under subspace embedding. From Corollary 10 and Theorem 12, if Φ is an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤), then with probability at least 1 − 𝛿 ,
+
+˜𝑣 ★ − 𝑣 ★ ≤ 𝜀 ∥Σ∥2, ∥ ˜𝑥 ★ − 𝑥 ★∥2 ≤ 𝜀𝜅 (Σ). (14) These bounds ensure that subspace embedding preserves both the optimal value and the optimal solution up to 
+
+𝑂 (𝜀 ) accuracy. 
+
+(2) Stability under STR refinement. Theorem 14 (Stability under STR approximation) . Let Σ = 𝐿𝐿 ⊤, ˜𝐿 = 𝐿 Φ ∈ R𝑛 ×𝑠 , and bΣ = ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 , where 
+
+Φ is an (𝜀, 𝛿 )-subspace embedding, ˜𝐿 ℓ is the top-ℓ truncation of ˜𝐿 , and 𝛾 > 0 is the ridge parameter. Then with probability at least 1 − 𝛿 , the following spectral-norm stability bound holds: 
+
+∥bΣ − Σ∥2 ≤ 2𝜀 ∥Σ∥2 + ˜𝜆 ℓ+1
+
+1 − 𝜀 + 𝛾, (15) 
+
+where ˜𝜆 ℓ+1 is the (ℓ+1)-th eigenvalue of ˜Σ = ˜𝐿 ˜𝐿 ⊤. Consequently, the optimal value and optimal solution of the STR model (4) satisfy 
+
+b𝑣 ★ − 𝑣 ★ ≤ ∥bΣ − Σ∥2, ∥b𝑥 ★ − 𝑥 ★∥2 ≤ ∥bΣ − Σ∥2
+
+𝑚 , (16) 
+
+whenever Σ ⪰ 𝑚𝐼 𝑛 . Equivalently, 
+
+∥b𝑥 ★ − 𝑥 ★∥2 ≤ 𝜅 (Σ)
+
+
+
+2𝜀 +  
+
+> ˜𝜆 ℓ+1
+> 1−𝜀
+
++ 𝛾 
+
+∥Σ∥2
+
+
+
+.
+
+A detailed proof is given in Appendix C. 
+
+Remark 15 (Computational and numerical significance) . The 𝐿 –𝑧 factorization converts a dense quadratic form into a sparse least-norm system that scales linearly in 𝑛 . After sketching or STR, each iteration uses only thin matrices ( 𝑛 × 𝑠 or 𝑛 × ℓ) and two matrix–vector products. This reduces per-iteration complexity from 𝑂 (𝑛𝑇 )
+
+to 𝑂 (𝑛𝑠 ) (sketch) or 𝑂 (𝑛ℓ ) (STR), while (14)–(16) guarantee that the resulting solution and objective remain accurate. 
+
+# 5 Numerical Experiments 
+
+The numerical study asks three questions: how much approximation error do sketching and STR introduce, how strongly does ridge improve conditioning, and once the model is fixed, how competitive is NPGA against Gurobi on CPU and GPU? We answer them through synthetic diagnostics, solver benchmarks, and full-scale real-data tests. 
+
+5.1 Experimental Design 
+
+Section 5.3 addresses the first two questions on synthetic data. It measures relative spectral error, full-objective gap, and ridge-induced conditioning changes in order to connect the theory in Section 4 to observable numerical behavior. These tests are model-diagnostics experiments rather than throughput benchmarks. Section 5.4 then isolates the solver itself. On synthetic instances we compare NPGA with Gurobi on the same training models, which lets us separate first-order solver error from approximation error and examine when GPU acceleration becomes materially useful. Section 5.5 turns to the real 5-minute Chinese A-share data. We first run subset benchmarks as a calibration step on moderate problem sizes, where Gurobi is still comfortable. We then move to the full 5440-asset instance, where the real computational value of the full, sketched, and STR pipelines can be compared directly. 15 5.2 Common Setup 
+
+Synthetic instances are generated from the controlled-spectrum model used throughout the experiments. Unless stated otherwise, the factor singular values decay geometrically, the synthetic return matrix has dimensions 𝑛 = 600 
+
+and 𝑇 = 2400 , and the effective rank is controlled by the retained-energy level 𝜂 and the oversampling ratio 𝑠 /ℓ.Approximation errors are measured against the empirical covariance Σ = (1/𝑇 )𝑅𝑅 ⊤. For a model 𝑀 , solver gaps are reported as 
+
+gap 𝑀 ( ˆ𝑥 ) = max { 𝑓 𝑀 ( ˆ𝑥 ) − 𝑓 𝑀 (𝑥 𝐺 𝑀 ), 0}
+
+max {| 𝑓 𝑀 (𝑥 𝐺 𝑀 )| , 10 −12 } ,
+
+where 𝑓 𝑀 is the regularized in-sample objective and 𝑥 𝐺 𝑀 is the corresponding exact Gurobi solution. In Section 5.3, where the model itself changes, the reported full-objective gap instead evaluates the approximate-model optimizer in the unreduced objective 𝑓 full ; the “Full-model gap” column in Table 5 is defined analogously. The real-data experiments use a cleaned RESSET 5-minute A–share panel from January 2, 2020 to June 30, 2025. Missing vendor entries are filled with zero, and assets with insufficient trading histories are removed, leaving a balanced matrix with 𝑛 = 5440 stocks and 𝑇 = 66412 time periods. We split the sample at January 1, 2024, which yields 48374 training periods and 18038 test periods. Covariances are estimated from demeaned training returns, expected returns from the raw training means, and the return threshold is set to the 60 th percentile of the in-sample asset means. Test-period portfolio statistics are annualized with 48 × 244 = 11712 5-minute intervals per trading year. All experiments are implemented in MATLAB R2023b, and exact QP benchmarks use Gurobi 11.0.0. Runs were executed on a Dell Precision 3660 workstation running Windows 11 with an Intel Core i9-12900K CPU, 128 GB RAM, and an NVIDIA GeForce RTX 4090 GPU with 24 GB memory. The real-data panel comes from the proprietary RESSET database. Runtime statistics are reported as wall-clock times: when repeated timing runs are available, we discard one warmup solve and report repeated-median timings, and in the real-subset study each table entry averages three independently sampled subsets. The approximation and conditioning diagnostics in Section 5.3 are computed on the CPU, whereas GPU acceleration is evaluated only in the solver benchmarks. We terminate NPGA when ∥Π𝐹 (𝑥 𝑘 − 𝛼 𝑘 ∇ 𝑓 (𝑥 𝑘 )) − 𝑥 𝑘 ∥2 falls below the prescribed tolerance. For runtime benchmarks, timing runs use projection tolerance 10 −8 and recompute the KKT residual every five iterations, whereas convergence traces retain per-iteration diagnostics. All reported NPGA benchmarks use the fixed-step implementation based on the practical spectral estimate described in Section 3; the backtracking option is part of the framework but is not separately benchmarked here. 
+
+5.3 Synthetic Approximation and Conditioning 
+
+Figure 3 reports the relative spectral error and the resulting training-objective gap as functions of 𝑠 /ℓ for both JL and CountSketch embeddings. These experiments are CPU diagnostics rather than GPU benchmarks: they are designed to isolate approximation quality and ridge stabilization before solver throughput enters the picture. The main message is that the sketch dimension acts as a usable accuracy knob rather than as a fragile heuristic. The trends are monotone in the expected direction: larger 𝑠 /ℓ and larger retained energy 𝜂 both reduce distortion. At the representative setting 𝜂 = 0.98 and 𝑠 /ℓ = 2, the two sketches are nearly indistinguishable, with relative spectral error about 0.12 and relative objective gap about 7.3% ; see Table 2. At the more conservative setting 𝜂 = 0.995 
+
+and 𝑠 /ℓ = 4, the mean objective gap drops below 3% for both sketch families. This behavior is consistent with the perturbation bounds in Section 4: once the ridge term stabilizes the problem, covariance distortion translates into a controlled and predictable loss in portfolio quality rather than an erratic degradation.        
+
+> Table 2: Synthetic approximation quality at 𝜂 =0.98 and 𝑠 /ℓ=2.
+
+Sketch Rel. spec. err. Rel. obj. gap JL 0.1212 0.0736 CountSketch 0.1192 0.0731 Ridge regularization also improves conditioning markedly on a representative CountSketch instance with 
+
+𝜂 = 0.98 and 𝑠 /ℓ = 2. The sketched model starts with condition number of order 10 8 at 𝛾 /∥ Σ∥2 = 10 −8, but this collapses to about 10 3 once 𝛾 /∥ Σ∥2 reaches 10 −3, while 𝜆 min increases by roughly five orders of magnitude. This 16 1 1.5 2 2.5 3 3.5 4         
+
+> s=`
+> 0.05 0.1 0.15 0.2 0.25 0.3 0.35
+> Relative spectral error
+> JL sketch
+> 11.5 22.5 33.5 4
+> s=`
+> 0.1 0.15 0.2 0.25 0.3 0.35
+> Relative spectral error
+> CountSketch sketch
+> 2= 0 :950
+> 2= 0 :980
+> 2= 0 :995
+
+(a) Relative spectral error. 1 1.5 2 2.5 3 3.5 4         
+
+> s=`
+> 0.04 0.06 0.08 0.1 0.12 0.14
+> Relative objective gap
+> JL sketch
+> 11.5 22.5 33.5 4
+> s=`
+> 0.05 0.1 0.15
+> Relative objective gap
+> CountSketch sketch
+> 2= 0 :950
+> 2= 0 :980
+> 2= 0 :995
+
+(b) Relative full-objective gap. Figure 3: Approximation quality on synthetic instances as the sketch size grows. Both metrics improve as 𝑠 /ℓ increases, and JL and CountSketch behave similarly once the retained energy level is fixed. 
+
+is exactly the numerical mechanism behind the strong-convexity regime analyzed in Section 3: the ridge term is not merely a technical device for the proofs, but the practical lever that turns an unstable low-rank surrogate into a well-conditioned optimization model. Detailed conditioning curves are reported in Figure 6 in the appendix. 
+
+5.4 Solver Accuracy and Scaling on Synthetic Problems 
+
+Figure 4a plots the NPGA residual for the computed iterates in a convex case and in a ridge-stabilized strongly convex case. The observed curves track the reference 𝑘 −2 benchmark in the convex case and the linear-rate benchmark in the ridge-stabilized strongly convex case. This matches the two regimes highlighted by Theorem 2: part (a) for the convex FISTA update, and part (b) as the strong-convexity benchmark made available once ridge stabilization yields 𝑚 𝑓 > 0. In the reported runs we use the fixed-step FISTA implementation, so the linear curve should be read as the benchmark associated with the strongly convex regime rather than as a separate constant-momentum benchmark. Figure 4b reports runtime scaling. GPU acceleration becomes decisive once the unreduced factor is wide enough: at 𝑛 = 4000 and 𝑇 = 16000 , NPGA-GPU solves the problem in 0.64 seconds versus 8.23 seconds for NPGA-CPU, so even the unreduced dense model becomes a subsecond-scale solve. On the compressed STR model, STR-NPGA-GPU needs 0.42 seconds versus 2.43 seconds for STR-NPGA-CPU at this largest size, although the smaller instances still show visible device-side overhead. The practical implication is that GPU acceleration is most valuable while the factor is still wide enough for dense linear algebra to dominate the iteration cost. Table 3 isolates solver accuracy from approximation error by comparing NPGA and Gurobi on the same training models. Once the problem size is large enough, NPGA-GPU overtakes Gurobi decisively: at 𝑛 = 2000 , Gurobi takes 2.59 seconds, while NPGA-GPU needs 0.33 seconds with relative objective gap 2.3 × 10 −3; at 𝑛 = 4000 ,the gap widens to 19 .69 seconds versus 0.64 seconds. The same-model gap remains below 1.1 × 10 −2 throughout the table, so the optimization error stays small relative to the modeling error introduced later by sketching or truncation. STR-NPGA-GPU is slightly slower than NPGA-GPU at 𝑛 = 500 , 1000 , 2000 , but becomes faster at 
+
+𝑛 = 4000 because the reduced factor finally compensates for the extra projection overhead. These numbers show that the first-order solver is not the weak link of the pipeline: once the model is fixed, NPGA reaches essentially 17 10 0 10 1 10 2 10 3 10 4           
+
+> Iteration
+> 10 -14
+> 10 -12
+> 10 -10
+> 10 -8
+> 10 -6
+> 10 -4
+> f (xk ) ! f ?
+> Convex regime
+> NPGA
+> k!2reference
+> 0500 1000 1500 2000 2500 3000 3500 4000 4500
+> Iteration
+> 10 -25
+> 10 -20
+> 10 -15
+> 10 -10
+> 10 -5
+> f (xk ) ! f ?
+> Strongly convex regime
+> NPGA
+> ;k!1reference
+
+(a) Residual decay on log scales. 500 1000 1500 2000 2500 3000 3500 4000 
+
+> n
+> 0510 15 20
+> Solve time (s)
+
+Runtime scaling 
+
+> Gurobi NPGA-CPU NPGA-GPU STR-NPGA-CPU STR-NPGA-GPU
+
+(b) Runtime scaling on log-log axes. Figure 4: Synthetic solver behavior. The convex case follows the 𝑘 −2 benchmark, the ridge-stabilized case is close to the linear-rate benchmark, and GPU acceleration becomes substantial on large unreduced factors. 
+
+the same objective level as a commercial QP solver on the dense full model at substantially lower cost. 
+
+Table 3: Synthetic solver benchmark against Gurobi on the same training problems. 
+
+𝑛 Gurobi (s) NPGA-GPU (s) NPGA gap STR-NPGA-GPU (s) STR gap 500 0.16 0.47 0.0006 0.59 0.0014 1000 0.56 0.37 0.0012 0.50 0.0025 2000 2.59 0.33 0.0023 0.42 0.0047 4000 19.69 0.64 0.0065 0.42 0.0108 
+
+5.5 Real-Data Benchmarks 
+
+We first compare against Gurobi on random asset subsets drawn from the 5-minute Chinese A-share return data set. This subset experiment is only a calibration step. Its role is to verify that NPGA tracks the exact Gurobi solution closely on moderate instances where a general-purpose QP solver is still comfortable on the dense full model. Each entry averages over three random subsets. In Table 4, “NPGA gap” and “STR gap” both denote the relative increase of the full-model in-sample objective above the Gurobi benchmark on the same subset. The columns “STR annualized return” and “STR annualized volatility” report the out-of-sample annualized return and volatility of the compressed STR portfolio; we only show these out-of-sample statistics for STR because the main purpose of this subset test is to quantify the approximation penalty of compression. The table conveys two points. First, NPGA-CPU is numerically reliable on the unreduced full model: its in-sample objective stays within 0.25% 
+
+to 0.53% of Gurobi, so the optimization error is already negligible on real covariance structure even before GPU 18 acceleration enters. Although on these moderate subsets Gurobi remains faster, the attained objective values are essentially the same. Second, STR-NPGA-CPU already cuts solve time below Gurobi on every subset size, but it does so by accepting a visible approximation error, with in-sample gaps between 6.7% and 13 .5% . Out of sample, however, the degradation is milder: the STR portfolios have annualized test volatility of 14 .66% , 14 .26% , and 
+
+12 .79% for 𝑛 = 300 , 600 , 1000 , which remains close to the corresponding Gurobi references. The subset study therefore cleanly separates the two error sources: solver error stays small, whereas the visible loss comes from model compression. 
+
+Table 4: Subset benchmarks on the real 5-minute A-share data.                             
+
+> 𝑛 Gurobi (s) NPGA-CPU (s) NPGA gap STR-NPGA-CPU (s) STR gap STR annualized return (%) STR annualized volatility (%) 300 0.22 1.28 0.0025 0.03 0.1348 36.15 14.66 600 0.62 2.10 0.0053 0.07 0.0937 39.30 14.26 1000 1.78 4.22 0.0045 0.12 0.0675 39.99 12.79
+
+The full-scale benchmark is the decisive test because it is the setting that motivates the paper. Here the training factor has 48374 columns, whereas the STR surrogate keeps only ℓ = 474 directions and uses a sketch of size 
+
+𝑠 = 948 before truncation, so the final STR factor is more than 100 × smaller than the original one. Table 5 now conveys three complementary messages. First, on exactly the same 5440 -asset training problem, NPGA-GPU solves the unreduced full model in 2.80 seconds, versus 64 .84 seconds for Gurobi and 26 .77 seconds for NPGA-CPU, while keeping the full-model gap at 0.0080 and essentially matching the Gurobi out-of-sample portfolio statistics. This is the strongest evidence that the NPGA solver itself is both accurate and fast on the original dense QP: the full model is not merely solvable in principle, but operationally practical at this scale. Second, the compressed GPU implementation improves materially once the runtime benchmark uses the lighter projection configuration described above. Sketch-NPGA-GPU drops to 3.68 seconds end to end, and STR-NPGA-GPU drops to 3.31 seconds. These times indicate that, after compression, the dominant GPU cost is not the matrix–vector products. It comes mainly from repeated projections and synchronization around the projector. Third, compression still changes the computational regime. STR-NPGA-CPU remains the fastest end-to-end pipeline on this instance at 1.99 seconds including the sketch-and-truncate stage, and even the tuned compressed GPU rows remain slower than full-model NPGA-GPU. Once the factor is reduced to 948 or 474 columns, the dense matvecs are no longer the dominant kernels; the remaining cost is projection-dominated. Truncation nevertheless matters: reducing the factor from 948 to 474 columns lowers the compressed GPU total time from 3.68 to 3.31 
+
+seconds. The compressed surrogates remain approximate rather than exact, with full-model objective gaps 0.2380 
+
+for Sketch and 0.3203 for STR, but their out-of-sample return–volatility pairs remain close to the exact reference. Additional convergence diagnostics in the appendix show the same separation from two angles in Figure 7: the iteration counts stay of the same order, whereas the solve times separate once projection cost dominates the compressed models. The practical reading is therefore nuanced but favorable: if near-exact full-model accuracy is the priority, NPGA-GPU is the strongest option; if the goal is the fastest end-to-end reduced pipeline on this instance, STR-NPGA-CPU still wins. 
+
+Table 5: Full-scale benchmark on the 5-minute A-share data with 𝑛 = 5440 assets and 𝑇 = 48374 periods.                                                  
+
+> Method Factor cols Build (s) Solve (s) Total (s) Full-model gap Annualized return (%) Annualized volatility (%) Gurobi 48374 0.00 64.84 64.84 0.0000 36.04 11.00 NPGA-CPU 48374 0.00 26.77 26.77 0.0095 36.02 11.12 NPGA-GPU 48374 0.00 2.80 2.80 0.0080 36.04 11.12 Sketch-NPGA-GPU 948 1.15 2.53 3.68 0.2380 35.09 11.32 STR-NPGA-CPU 474 1.15 0.83 1.99 0.3203 35.24 11.17 STR-NPGA-GPU 474 1.15 2.16 3.31 0.3203 35.24 11.17
+
+Taken together, the experiments support three conclusions. First, sketching plus truncation provides a con-trollable accuracy–conditioning tradeoff rather than an ad hoc reduction: moderate sketches keep the loss in solution quality predictable, while ridge regularization makes the reduced models numerically stable. Second, NPGA is accurate enough that solver error is not the dominant source of loss, and NPGA-GPU already makes the unreduced dense full model practical at the scale of the 5440-asset real-data benchmark. Third, once the model is compressed aggressively, the computational bottleneck shifts from dense linear algebra to projection and 19 synchronization, which identifies the next implementation target for further GPU gains. 
+
+# 6 Conclusion and Future Work 
+
+This paper presents a unified and scalable framework for large-scale mean–variance portfolio optimization that in-tegrates subspace embeddings, 𝐿 –𝑧 factorization, theoretical guarantees, and a GPU-friendly Nesterov-accelerated projected gradient solver. The main message is threefold. First, sketching, truncation, and ridge regularization provide a controllable approximation–conditioning tradeoff on ill-conditioned return panels. Second, the theoret-ical analysis establishes explicit approximation, conditioning, and stability guarantees for the sketching and STR models, including 𝑂 (𝜀 ) bounds for covariance approximation, objective value error, and solution perturbation under subspace embeddings. Third, NPGA is accurate enough that the unreduced dense full model itself becomes practical on modern GPUs: on the 5440-asset real-data benchmark, NPGA-GPU solves the full model in 2.80 
+
+seconds versus 64 .84 seconds for Gurobi while preserving essentially the same out-of-sample portfolio statistics. The compressed GPU experiments further show that, once the implementation is tuned, the remaining bottleneck is projection and synchronization rather than the factorized matrix–vector products. Future work includes stronger GPU projection kernels, extensions to multi-factor or sparse portfolio models, online or streaming settings, and dynamic state-estimation frameworks such as the Yau–Yau filtering framework (Yau and Niu 2025, Yau and Yau 2000, 2008). 
+
+# Acknowledgments 
+
+The first author was supported by the National Natural Science Foundation of China [Grant No. 42450242] and China’s National Program of Overseas High-Level Talent. Both authors also gratefully acknowledge institutional support from the Beijing Institute of Mathematical Sciences and Applications (BIMSA). 
+
+# References 
+
+Heinz H. Bauschke and Jonathan M. Borwein. On projection algorithms for solving convex feasibility problems. SIAM Review , 38(3):367–426, 1996. Amir Beck and Marc Teboulle. A fast iterative shrinkage-thresholding algorithm for linear inverse problems. SIAM Journal on Imaging Sciences , 2(1):183–202, 2009. doi: 10.1137/080716542. Aharon Ben-Tal and Arkadi Nemirovski. Robust solutions of linear programming problems contaminated with uncertain data. Mathematical Programming , 88(3):411–424, 2000. Dimitri P. Bertsekas. Nonlinear Programming . Athena Scientific, 2nd edition, 1999. Stephen Boyd, Neal Parikh, Eric Chu, Borja Peleato, and Jonathan Eckstein. Distributed optimization and statistical learning via the alternating direction method of multipliers. Foundations and Trends in Machine Learning , 3(1):1–122, 2011. Kenneth L. Clarkson and David P. Woodruff. Low-rank approximation and regression in input sparsity time. Journal of the ACM , 63(6):54:1–54:45, 2017. Laurent Condat. Fast projection onto the simplex and the ℓ1 ball. Mathematical Programming , 158(1–2):575–585, 2016. Victor De Miguel, Lorenzo Garlappi, and Raman Uppal. Optimal versus naive diversification: How inefficient is the 1/N portfolio strategy? The Review of Financial Studies , 22(5):1915–1953, 2009. doi: 10.1093/rfs/hhm075. Petros Drineas and Michael W. Mahoney. RandNLA: Randomized numerical linear algebra. Communications of the ACM ,59(6):80–90, 2016. John Duchi, Shai Shalev-Shwartz, Yoram Singer, and Tushar Chandra. Efficient projections onto the ℓ1-ball for learning in high dimensions. In Proceedings of the 25th International Conference on Machine Learning (ICML) , pages 272–279, 2008. Jianqing Fan, Yuan Liao, and Martina Mincheva. Large covariance estimation by thresholding principal orthogonal comple-ments. Journal of the Royal Statistical Society: Series B , 75(4):603–680, 2013. Donald Goldfarb and Garud Iyengar. Robust portfolio selection problems. Mathematics of Operations Research , 28(1):1–38, 2003. Gurobi Optimization, LLC. Gurobi Optimizer Reference Manual, Version 11.0 . Gurobi Optimization, LLC, 2023. Available at https://www.gurobi.com .Roger A. Horn and Charles R. Johnson. Matrix Analysis . Cambridge University Press, Cambridge, 2nd edition, 2012. 
+
+20 IBM Corporation. IBM ILOG CPLEX Optimization Studio: CPLEX User’s Manual . IBM Corporation, 2024. Available at 
+
+https://www.ibm.com/analytics/cplex-optimizer .Ravi Jagannathan and Tongshu Ma. Risk reduction in large portfolios: Why imposing the wrong constraints helps. The Journal of Finance , 58(4):1651–1684, 2003. William B. Johnson and Joram Lindenstrauss. Extensions of Lipschitz mappings into a Hilbert space. In Conference in Modern Analysis and Probability (Contemporary Mathematics, vol. 26) , pages 189–206, 1984. Olivier Ledoit and Michael Wolf. A well-conditioned estimator for large-dimensional covariance matrices. Journal of Multivariate Analysis , 88(2):365–411, 2004. Olivier Ledoit and Michael Wolf. Nonlinear shrinkage estimation of large-dimensional covariance matrices. The Annals of Statistics , 40(2):1024–1060, 2012. Harry Markowitz. Portfolio selection. The Journal of Finance , 7(1):77–91, 1952. MOSEK ApS. MOSEK Optimization Toolbox for MATLAB User’s Guide . MOSEK ApS, 2024. Available at https: //www.mosek.com .Yurii Nesterov. Introductory Lectures on Convex Optimization: A Basic Course . Springer, 2004. Tamás Sarlós. Improved approximation algorithms for large matrices via random projections. In Proceedings of the 47th Annual IEEE Symposium on Foundations of Computer Science (FOCS) , pages 143–152, 2006. Mark Schmidt, Nicolas Le Roux, and Francis R. Bach. Convergence rates of inexact proximal-gradient methods for convex optimization. In Advances in Neural Information Processing Systems 24 , pages 1458–1466, 2011. URL https: //papers.nips.cc/paper_files/paper/2011/file/8f7d807e1f53eff5f9efbe5cb81090fb-Paper.pdf .David P. Woodruff. Sketching as a tool for numerical linear algebra. Foundations and Trends in Theoretical Computer Science , 10(1–2):1–157, 2014. Shing-Tung Yau and Yi-Shuai Niu. An improved Yau–Yau algorithm for high dimensional nonlinear filtering problems. Pure and Applied Mathematics Quarterly , 21(6):2369–2423, 2025. doi: 10.4310/PAMQ.251222233358. Shing-Tung Yau and Stephen S.-T. Yau. Real time solution of nonlinear filtering problem without memory I. Mathematical Research Letters , 7(5–6):671–693, 2000. Shing-Tung Yau and Stephen S.-T. Yau. Real time solution of the nonlinear filtering problem without memory II. SIAM Journal on Control and Optimization , 47(1):163–195, 2008. doi: 10.1137/050648353. 
+
+# A Relation of NPGA to Existing Accelerated Proximal-Gradient Theory 
+
+Write the constrained objective as 
+
+Φ(𝑥 ) := 𝑓 (𝑥 ) + 𝜒 𝐹 (𝑥 ),
+
+where 𝜒 𝐹 is the indicator of the closed convex feasible set 𝐹 . For each extrapolated point 𝑦 𝑘 , define the proximal subproblem objective 
+
+Ψ𝑘 (𝑥 ) := ⟨∇ 𝑓 (𝑦 𝑘 ), 𝑥 − 𝑦 𝑘 ⟩ + 12𝛼 𝑘 
+
+∥𝑥 − 𝑦 𝑘 ∥22 + 𝜒 𝐹 (𝑥 ).
+
+The exact projected NPGA step 
+
+𝑥 𝑘 +1 = Π 𝐹 
+
+ 𝑦 𝑘 − 𝛼 𝑘 ∇ 𝑓 (𝑦 𝑘 )
+
+is exactly the proximal update for Φ with stepsize 𝛼 𝑘 . In the convex regime, Algorithm 1 therefore coincides with the standard accelerated proximal-gradient / FISTA scheme applied to the composite objective Φ = 𝑓 + 𝜒 𝐹 , either with a fixed admissible step 0 < 𝛼 ≤ 1/𝐿 𝑓 or with the standard backtracking rule described in the main text. The 
+
+𝑂 (𝑘 −2) bound in Theorem 2(a) is exactly the classical FISTA rate specialized to ℎ = 𝜒 𝐹 ; see Beck and Teboulle (2009). When 𝑚 𝑓 > 0, the model is strongly convex. If one switches from the 𝑡 𝑘 -based momentum to the classical constant-momentum choice 
+
+𝛽 = 1 − √𝛼𝑚 𝑓 
+
+1 + √𝛼𝑚 𝑓 
+
+with a fixed admissible step 0 < 𝛼 ≤ 1/𝐿 𝑓 , then one obtains the linear-rate specialization recorded in Theorem 2(b). This is again a standard accelerated proximal-gradient result; see Nesterov (2004) and Schmidt, Le Roux, and Bach (2011). The main paper does not claim a new accelerated-gradient proof here. Its specific contribution is to express the smoothness and curvature conditions directly through the factor representation 
+
+𝐿 𝑓 = 2(∥ 𝐿 eff ∥22 + 𝛾 ), 𝑚 𝑓 = 2(𝜆 min (𝐿 eff 𝐿 ⊤ 
+
+> eff
+
+) + 𝛾 ),
+
+21 so that the same solver statement covers the Baseline, Sketch, and STR quadratic models in one notation. The point that is specific to the present paper is the structured projector. General inexact accelerated proximal-gradient results, such as those of Schmidt, Le Roux, and Bach (2011), are stated in terms of proximal-subproblem errors. Concretely, they assume that the computed point 𝑥 𝑘 +1 satisfies 
+
+Ψ𝑘 (𝑥 𝑘 +1) ≤ inf  
+
+> 𝑥
+
+Ψ𝑘 (𝑥 ) + 𝜖 𝑘 .
+
+Under such a condition, the standard inexact theory already gives perturbed versions of the same FISTA-type rates, and likewise of the strongly convex accelerated variants just mentioned. Our implementation-level stopping rule is expressed differently. When the return constraint is active, the projector is computed by scalar dual search in 
+
+𝑥 (𝜈 ) = Π Δ (𝑧 + 𝜈 μ),
+
+and the inner loop is terminated once the one-dimensional residual 
+
+μ⊤𝑥 (𝜈 ) − 𝑅 target 
+
+falls below the prescribed scalar-search tolerance. This is a control on the dual root-finding residual of the structured projector, not on the proximal objective gap Ψ𝑘 (𝑥 𝑘 +1) − inf 𝑥 Ψ𝑘 (𝑥 ) that appears explicitly in the generic inexact accelerated proximal-gradient theory. Therefore, the only step not covered verbatim by the cited general results is the projector-specific conversion from the scalar-search tolerance to a proximal-subproblem error bound. One would need an additional lemma of the form 
+
+Ψ𝑘 
+
+ 𝑥 ( ˆ𝜈 𝑘 ) − inf  
+
+> 𝑥
+
+Ψ𝑘 (𝑥 ) ≤ 𝜖 𝑘 (𝜏 𝑘 ),
+
+where 𝜏 𝑘 denotes the scalar-search tolerance used to stop the dual search. Once such a bound is available, the generic inexact accelerated proximal-gradient results apply without further modification. A useful first observation is that Ψ𝑘 is (1/𝛼 𝑘 )-strongly convex, so if 𝑝 𝑘 = argmin 𝑥 Ψ𝑘 (𝑥 ), then every feasible point 𝑥 satisfies 
+
+Ψ𝑘 (𝑥 ) − Ψ𝑘 ( 𝑝 𝑘 ) ≥ 12𝛼 𝑘 
+
+∥𝑥 − 𝑝 𝑘 ∥22.
+
+Hence any projector-specific estimate that bounds the proximal-objective gap also immediately controls the distance to the exact proximal point. This reduction is the only algorithm-specific ingredient missing from the standard references, and it is not needed for the reported experiments because the numerical runs in the main paper operate in the near-exact projection regime. The full bibliographic details for these standard references appear in the main paper. 
+
+# B Proofs for Embedding and Covariance Approximation 
+
+Proof of Corollary 8 
+
+Let 𝑈 ∈ R𝑇 ×𝑟 be an orthonormal basis for the column space of 𝐿 ⊤, i.e., 𝑈 ⊤𝑈 = 𝐼 𝑟 . Since 𝐿 ⊤𝑥 ∈ Im (𝐿 ⊤), there exists a unique 𝑧 ∈ R𝑟 such that 
+
+𝐿 ⊤𝑥 = 𝑈𝑧, 𝑧 = 𝑈 ⊤ 𝐿 ⊤𝑥. 
+
+If Φ is an (𝜀, 𝛿 )-subspace embedding for 𝑈 , then Theorem 7 shows that with probability at least 1 − 𝛿 ,
+
+(Φ⊤𝑈 )⊤ (Φ⊤𝑈 ) − 𝐼 𝑟 2 ≤ 𝜀. 
+
+Hence 
+
+|𝑧 ⊤  (Φ⊤𝑈 )⊤ (Φ⊤𝑈 ) − 𝐼 𝑟 
+
+ 𝑧 | ≤ (Φ⊤𝑈 )⊤ (Φ⊤𝑈 ) − 𝐼 𝑟 2 ∥𝑧 ∥22 ≤ 𝜀 ∥𝑧 ∥22, ∀𝑧 ∈ R𝑟 .
+
+It follows that 
+
+|∥ Φ⊤𝑈𝑧 ∥22 − ∥ 𝑧 ∥22 | ≤ 𝜀 ∥𝑧 ∥22, ∀𝑧 ∈ R𝑟 ,
+
+thus 
+
+(1 − 𝜀 ) ∥ 𝑧 ∥22 ≤ ∥ Φ⊤𝑈𝑧 ∥22 ≤ ( 1 + 𝜀 ) ∥ 𝑧 ∥22, ∀ 𝑧 ∈ R𝑟 .
+
+22 Substituting 𝑧 = 𝑈 ⊤ 𝐿 ⊤𝑥 gives 
+
+Φ⊤𝑈𝑧 = Φ ⊤ 𝐿 ⊤𝑥 = (𝐿 Φ)⊤𝑥 = ˜𝐿 ⊤𝑥, ∥𝑧 ∥22 = ∥𝑈 ⊤ 𝐿 ⊤𝑥 ∥22 = ∥𝐿 ⊤𝑥 ∥22.
+
+Hence, with probability at least 1 − 𝛿 ,
+
+(1 − 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22 ≤ ∥ ˜𝐿 ⊤𝑥 ∥22 ≤ ( 1 + 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22, ∀ 𝑥 ∈ R𝑛 .
+
+□
+
+Proof of Corollary 10 
+
+Let Δ := ˜Σ − Σ = ˜𝐿 ˜𝐿 ⊤ − 𝐿𝐿 ⊤. By the variational characterization of the spectral norm, 
+
+∥Δ∥2 = sup   
+
+> ∥𝑦 ∥2=1
+
+𝑦 ⊤Δ 𝑦 = sup   
+
+> ∥𝑦 ∥2=1
+
+∥ ˜𝐿 ⊤ 𝑦 ∥22 − ∥ 𝐿 ⊤ 𝑦 ∥22 .
+
+Assume that Φ is an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤). By Corollary 8, with probability at least 1 − 𝛿 we have for all 𝑥 ∈ R𝑛 ,
+
+(1 − 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22 ≤ ∥ ˜𝐿 ⊤𝑥 ∥22 ≤ (1 + 𝜀 ) ∥ 𝐿 ⊤𝑥 ∥22.
+
+Applying this inequality with 𝑥 = 𝑦 for any unit vector 𝑦 yields 
+
+∥ ˜𝐿 ⊤ 𝑦 ∥22 − ∥ 𝐿 ⊤ 𝑦 ∥22 ≤ 𝜀 ∥𝐿 ⊤ 𝑦 ∥22 = 𝜀 𝑦 ⊤ (𝐿𝐿 ⊤)𝑦 = 𝜀 𝑦 ⊤Σ 𝑦. 
+
+Taking the supremum over all ∥𝑦 ∥2 = 1 gives 
+
+∥Δ∥2 = sup   
+
+> ∥𝑦 ∥2=1
+
+𝑦 ⊤Δ 𝑦 ≤ 𝜀 sup   
+
+> ∥𝑦 ∥2=1
+
+𝑦 ⊤Σ 𝑦 = 𝜀 ∥Σ∥2.
+
+Therefore, with probability at least 1 − 𝛿 ,
+
+∥ ˜Σ − Σ∥2 ≤ 𝜀 ∥Σ∥2.
+
+Equivalently, 
+
+(1 − 𝜀 )Σ ⪯ ˜Σ ⪯ ( 1 + 𝜀 )Σ.
+
+□
+
+Proof of Corollary 11 
+
+By Weyl’s inequality and Corollary 10, for all 𝑖 = 1, . . . , 𝑛 , with probability at least 1 − 𝛿 ,
+
+𝜆 𝑖 ( ˜Σ) − 𝜆 𝑖 (Σ) ≤ ∥ ˜Σ − Σ∥2 ≤ 𝜀 ∥Σ∥2 = 𝜀 𝜆 max (Σ).
+
+Consequently, 
+
+𝜆 min ( ˜Σ) ≥ 𝜆 min (Σ) − 𝜀 𝜆 max (Σ), 𝜆 max ( ˜Σ) ≤ 𝜆 max (Σ) + 𝜀 𝜆 max (Σ).
+
+If Σ is positive definite and 𝜀 < 𝜆 min (Σ)/ 𝜆 max (Σ) = 1/𝜅 (Σ), then 𝜆 min ( ˜Σ) > 0, ensuring that the sketched covariance ˜Σ remains positive definite. □
+
+# C Proofs for Robustness and Stability 
+
+Proof of Theorem 12 
+
+Let Δ := ˜Σ − Σ. By Corollary 10, if Φ is an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤), then with probability at least 
+
+1 − 𝛿 ,
+
+∥Δ∥2 = ∥ ˜Σ − Σ∥2 ≤ 𝜀 ∥Σ∥2. (17) 23 (i) Optimal value error. Fix any 𝑥 ∈ 𝐹 . Since 𝑥 ≥ 0 and 1⊤𝑥 = 1, we have ∥𝑥 ∥2 ≤ ∥ 𝑥 ∥1 = 1. Then 
+
+𝑥 ⊤ ˜Σ𝑥 − 𝑥 ⊤Σ𝑥 = 𝑥 ⊤Δ𝑥 ≤ ∥Δ∥2 ∥𝑥 ∥22 ≤ 𝜀 ∥Σ∥2,
+
+where we used (17). Let 𝑥 ★ ∈ argmin 𝑥 ∈𝐹 𝑥 ⊤Σ𝑥 and ˜𝑥 ★ ∈ argmin 𝑥 ∈𝐹 𝑥 ⊤ ˜Σ𝑥 . Evaluating the above bound at 𝑥 ★ and 
+
+˜𝑥 ★, we obtain 
+
+˜𝑣 ★ = ˜𝑥 ★⊤ ˜Σ ˜𝑥 ★ ≤ ˜𝑥 ★⊤Σ ˜𝑥 ★ + 𝜀 ∥Σ∥2 ≤ 𝑥 ★⊤Σ𝑥 ★ + 𝜀 ∥Σ∥2 = 𝑣 ★ + 𝜀 ∥Σ∥2,
+
+and similarly, 
+
+𝑣 ★ = 𝑥 ★⊤Σ𝑥 ★ ≤ 𝑥 ★⊤ ˜Σ𝑥 ★ + 𝜀 ∥Σ∥2 ≤ ˜𝑥 ★⊤ ˜Σ ˜𝑥 ★ + 𝜀 ∥Σ∥2 = ˜𝑣 ★ + 𝜀 ∥Σ∥2.
+
+Combining the two displays yields 
+
+˜𝑣 ★ − 𝑣 ★ ≤ 𝜀 ∥Σ∥2.
+
+(ii) Solution sensitivity under strong convexity. Assume Σ ⪰ 𝑚𝐼 with 𝑚 := 𝜆 min (Σ) > 0. Define 
+
+𝑓 (𝑥 ) := 𝑥 ⊤Σ𝑥, ˜𝑓 (𝑥 ) := 𝑥 ⊤ ˜Σ𝑥 = 𝑓 (𝑥 ) + 𝑥 ⊤Δ𝑥. 
+
+Then ∇ 𝑓 (𝑥 ) = 2Σ𝑥 and ∇ ˜𝑓 (𝑥 ) = 2 ˜ Σ𝑥 = ∇ 𝑓 (𝑥 ) + 2Δ𝑥 . By first-order optimality for convex optimization over the closed convex set 𝐹 ,
+
+∇ 𝑓 (𝑥 ★)⊤ (𝑥 − 𝑥 ★) ≥ 0, ∇ ˜𝑓 ( ˜𝑥 ★)⊤ (𝑥 − ˜𝑥 ★) ≥ 0, ∀𝑥 ∈ 𝐹. (18) Choose 𝑥 = ˜𝑥 ★ in the first inequality of (18) and 𝑥 = 𝑥 ★ in the second, and add the two: 
+
+0 ≤ ∇ 𝑓 (𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★) + ∇ ˜𝑓 ( ˜𝑥 ★)⊤ (𝑥 ★ − ˜𝑥 ★)
+
+=  ∇ 𝑓 (𝑥 ★) − ∇ 𝑓 ( ˜𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★) −  ∇ ˜𝑓 ( ˜𝑥 ★) − ∇ 𝑓 ( ˜𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★)
+
+=  ∇ 𝑓 (𝑥 ★) − ∇ 𝑓 ( ˜𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★) −  2Δ ˜𝑥 ★⊤ ( ˜𝑥 ★ − 𝑥 ★).
+
+Rearranging gives  ∇ 𝑓 ( ˜𝑥 ★) − ∇ 𝑓 (𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★) ≤ − 2 (Δ ˜𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★). (19) Applying Cauchy–Schwarz and (17) to the right-hand side of (19), 
+
+2 (Δ ˜𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★) ≤ 2 ∥Δ∥2 ∥ ˜𝑥 ★∥2 ∥ ˜𝑥 ★ − 𝑥 ★∥2 ≤ 2 𝜀 ∥Σ∥2 ∥ ˜𝑥 ★ − 𝑥 ★∥2, (20) where we used ∥ ˜𝑥 ★∥2 ≤ ∥ ˜𝑥 ★∥1 = 1 since ˜𝑥 ★ ∈ 𝐹 . By 2𝑚 -strong convexity of 𝑓 ,
+
+ ∇ 𝑓 ( ˜𝑥 ★) − ∇ 𝑓 (𝑥 ★)⊤ ( ˜𝑥 ★ − 𝑥 ★) ≥ 2𝑚 ∥ ˜𝑥 ★ − 𝑥 ★∥22. (21) Combining (19), (20), and (21) yields 
+
+2𝑚 ∥ ˜𝑥 ★ − 𝑥 ★∥22 ≤ 2 𝜀 ∥Σ∥2 ∥ ˜𝑥 ★ − 𝑥 ★∥2,
+
+and hence, if ˜𝑥 ★ ≠ 𝑥 ★,
+
+∥ ˜𝑥 ★ − 𝑥 ★∥2 ≤ 𝜀 ∥Σ∥2
+
+𝑚 = 𝜀𝜆 max (Σ)
+
+𝜆 min (Σ) = 𝜀𝜅 (Σ).
+
+The bound is trivial when ˜𝑥 ★ = 𝑥 ★. □
+
+Restricted Strong Convexity Discussion 
+
+When 𝜆 min (Σ) is small or zero, the objective 𝑓 (𝑥 ) = 𝑥 ⊤Σ𝑥 is not globally strongly convex and the minimizer of (1) may be nonunique along flat directions. Nevertheless, many structured problems exhibit restricted strong convexity on a subset of directions that are relevant to the feasible set or to the true solution. Formally, 𝑓 is said to satisfy an 𝑚 -restricted strong convexity condition with respect to a cone C ⊆ R𝑛 if 
+
+𝑓 (𝑥 + ℎ) − 𝑓 (𝑥 ) − ∇ 𝑓 (𝑥 )⊤ ℎ ≥ 𝑚 
+
+2 ∥ℎ∥22, ∀ ℎ ∈ C .
+
+Under RSC with parameter 𝑚 > 0, the stability conclusion in Theorem 12 continues to hold within C: for perturbations ˜Σ = Σ + Δ satisfying ∥Δ∥2 ≤ 𝜀 ∥Σ∥2,
+
+∥ ˜𝑥 ★ − 𝑥 ★∥2 ≤ 𝜀 ∥Σ∥2
+
+𝑚 , for ˜𝑥 ★ − 𝑥 ★ ∈ C .
+
+24 Proof of Theorem 13 
+
+(a) Write Σ = 𝐿𝐿 ⊤, ˜𝐿 = 𝐿 Φ, and ˜Σ = ˜𝐿 ˜𝐿 ⊤. Let ( ˜Σ)ℓ denote the best rank-ℓ approximation to ˜Σ. By the triangle inequality, 
+
+∥Σ − bΣ∥2 ≤ ∥ Σ − ˜Σ∥2
+
+| {z }
+
+> (I)
+
++ ∥ ˜Σ − ( ˜Σ)ℓ ∥2
+
+| {z }
+
+> (II)
+
++ ∥( ˜Σ)ℓ − bΣ∥2
+
+| {z }
+
+> (III)
+
+.
+
+Term (I). Since Φ is an (𝜀, 𝛿 )-subspace embedding for Im (𝐿 ⊤), Corollary 10 implies, with probability at least 
+
+1 − 𝛿 ,
+
+∥Σ − ˜Σ∥2 ≤ 𝜀 ∥Σ∥2. (22) 
+
+Term (II). By optimality of ( ˜Σ)ℓ as the best rank-ℓ approximation to ˜Σ,
+
+∥ ˜Σ − ( ˜Σ)ℓ ∥2 ≤ ∥ ˜Σ − Σℓ ∥2 ≤ ∥ ˜Σ − Σ∥2 + ∥ Σ − Σℓ ∥2,
+
+whence, using (22), 
+
+∥ ˜Σ − ( ˜Σ)ℓ ∥2 ≤ 𝜀 ∥Σ∥2 + ∥ Σ − Σℓ ∥2. (23) 
+
+Term (III). Since ( ˜Σ)ℓ = ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
+and bΣ = ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 , we have 
+
+( ˜Σ)ℓ − bΣ = − 𝛾𝐼 𝑛 ⇒ ∥( ˜Σ)ℓ − bΣ∥2 = 𝛾. 
+
+Combining (22)–(23) with the above yields (11) with probability at least 1 − 𝛿 .(b) The eigenvalues of bΣ are {𝜎 21 + 𝛾, . . . , 𝜎 2 
+
+> ℓ
+
++ 𝛾, 𝛾, . . . , 𝛾 
+
+| {z }
+
+> 𝑛 −ℓ
+
+}, hence 
+
+𝜅 (bΣ) = 𝜆 max (bΣ)
+
+𝜆 min (bΣ) = 𝜎 21 + 𝛾 𝛾 .
+
+Ensuring 𝜅 (bΣ) < 𝜅 (Σ) is equivalent to 
+
+𝜎 21 + 𝛾 𝛾 < 𝜆 max (Σ)
+
+𝜆 min (Σ) ⇐⇒ 𝛾 > 𝜆 min (Σ) 𝜎 21
+
+𝜆 max (Σ) − 𝜆 min (Σ) .
+
+Under an (𝜀, 𝛿 )-subspace embedding we have the spectral bound 𝜎 21 ( ˜𝐿 ) ≤ ( 1 + 𝜀 )𝜆 max (Σ) (with probability 
+
+≥ 1 − 𝛿 ), which yields the following simpler sufficient condition: 
+
+𝛾 > (1 + 𝜀 ) 𝜆 max (Σ) 𝜆 min (Σ)
+
+𝜆 max (Σ) − ( 1 + 𝜀 )𝜆 min (Σ) (24) Then 
+
+𝜅 (bΣ) = 𝜎 21 + 𝛾 𝛾 < 𝜅 (Σ),
+
+where the strict inequality is ensured by (24) after rearrangement. □
+
+Proof of Theorem 14 
+
+Combining (11) and (25), we obtain the composite stability bound (15) 
+
+∥Σ − bΣ∥2 ≤ ∥Σ − Σℓ ∥2 + 2𝜀 ∥Σ∥2 + 𝛾 ≤ ˜𝜆 ℓ+1
+
+1 − 𝜀 + 2𝜀 ∥Σ∥2 + 𝛾. 
+
+Applying Theorem 12 with Δ = bΣ − Σ gives 
+
+|b𝑣 ★ − 𝑣 ★| ≤ ∥ Δ∥2, ∥b𝑥 ★ − 𝑥 ★∥2 ≤ ∥ Δ∥2/𝑚, 
+
+whenever Σ ⪰ 𝑚𝐼 𝑛 . Combining with (15) gives the stated results. □
+
+25 D Additional Discussion on STR 
+
+D.1 Practical Selection of the Truncation Level ℓ
+
+The truncation parameter ℓ determines the spectral split between the signal-dominant directions and the noise-dominated bulk of the covariance matrix. Instead of an energy-based rule, which is ineffective for real-world financial covariances due to the extremely long, slowly decaying bulk, our STR construction adopts a geometry-driven truncation principle derived from the sketched factor matrix ˜𝐿 . Let 
+
+˜𝜆 𝑖 := 𝜎 2 
+
+> 𝑖
+
+( ˜𝐿 ), 𝜆 𝑖 := 𝜎 2 
+
+> 𝑖
+
+(𝐿 ),
+
+sorted nonincreasingly. Under an (𝜀, 𝛿 )-subspace embedding, the singular values satisfy the spectral sandwich 
+
+(1 − 𝜀 )𝜆 𝑖 ≤ ˜𝜆 𝑖 ≤ ( 1 + 𝜀 )𝜆 𝑖 , 𝑖 = 1, . . . , 𝑟. 
+
+Thus the behavior of { ˜𝜆 𝑖 } reflects the latent structure of {𝜆 𝑖 } up to (1 ± 𝜀 ) distortion. Empirically, { ˜𝜆 𝑖 } exhibits a clear core–bulk–tail pattern: the first few singular values are factor-dominant and decay quickly, the middle of the spectrum forms a long plateau associated with high-dimensional noise, and the tail drops sharply toward the numerical floor. We therefore choose ℓ at the end of the dominant core region, using the practical rule 
+
+ℓ = max 
+
+
+
+𝑖 : ˜𝜆 𝑖 
+
+˜𝜆 1
+
+≥ 𝜏, ˜𝜆 𝑖 +1
+
+˜𝜆 𝑖 
+
+≤ 𝜌 
+
+
+
+,
+
+where 𝜏 controls the minimum signal-to-noise ratio and 𝜌 < 1 detects the spectral knee separating the core from the bulk. Typical values 𝜏 ∈ [ 10 −3, 10 −2] and 𝜌 ∈ [ 0.8, 0.95 ] reliably identify the factor-dominant directions in our experiments. This criterion is stable under sketching because relative gaps ˜𝜆 𝑖 +1/ ˜𝜆 𝑖 are preserved up to 
+
+1 ± 𝑂 (𝜀 ).Once ℓ is selected, the Eckart–Young–Mirsky theorem and the (𝜀, 𝛿 )-subspace embedding yield the computable upper bound with probability at least 1 − 𝛿 ,
+
+∥Σ − Σℓ ∥2 = 𝜆 ℓ+1 ≤ ˜𝜆 ℓ+1
+
+1 − 𝜀 . (25) Thus the truncation error of STR can be controlled directly through the observable sketched singular values without relying on total-variance criteria. 
+
+D.2 Choice of the ridge parameter 𝛾 
+
+Once ℓ is fixed, the STR covariance bΣ = ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 has condition number 
+
+𝜅 (bΣ) = 𝜎 21 ( ˜𝐿 ℓ ) + 𝛾 𝛾 .
+
+Hence, if a target condition number 𝜅 tar > 1 is prescribed, one may choose 
+
+𝛾 = 𝜎 21 ( ˜𝐿 ℓ )
+
+𝜅 tar − 1 ,
+
+which guarantees 𝜅 (bΣ) ≤ 𝜅 tar . In the real data experiments, values such as 𝜅 tar ∈ [ 10 2, 10 3] already produce a substantial conditioning improvement while keeping the covariance perturbation moderate. 
+
+Remark 16 (Coupling between ℓ and 𝛾 ). The truncation level ℓ determines the smallest retained singular value 
+
+𝜎 ℓ , while the ridge parameter 𝛾 controls how much the spectral floor is lifted. Since 
+
+𝜅 (bΣ) = 𝜎 21 + 𝛾 𝛾 ,
+
+a smaller 𝜎 ℓ (corresponding to a larger ℓ) requires a larger 𝛾 to achieve any prescribed conditioning target. Therefore, ℓ and 𝛾 are complementary parameters: truncation filters noise-dominated directions, and ridge regularization stabilizes the remaining spectrum. 26 D.3 Relation between STR and sketching 
+
+The STR procedure can be interpreted as a structured sketching scheme that extends classical randomized em-beddings by incorporating deterministic spectral regularization. Combining the randomized sketch stage with the subsequent truncation and ridge stages, STR can be viewed conceptually as a single well-conditioned low-rank sketching framework of the original factor 𝐿 :
+
+b𝐿 =  𝐿 Φ𝑉 ℓ , √𝛾 𝐼 𝑛 
+
+ ∈ R𝑛 × ( ℓ+𝑛 ) ,
+
+so that 
+
+b𝐿 b𝐿 ⊤ = (𝐿 Φ𝑉 ℓ )( 𝐿 Φ𝑉 ℓ )⊤ + 𝛾𝐼 𝑛 
+
+= 𝑈𝑆  𝑉 ⊤𝑉 ℓ𝑉 ⊤ 
+
+> ℓ
+
+𝑉 𝑆𝑈 ⊤ + 𝛾𝐼 𝑛 
+
+= 𝑈 ℓ 𝑆 2
+
+> ℓ
+
+𝑈 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 = ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 = bΣ.
+
+Remark 17 (Effect of STR on the sketch dimension 𝑠 ). In the basic subspace embedding theory, the sketch size 
+
+𝑠 = 𝑂 
+
+ 𝑟 + ln (1/𝛿 )
+
+𝜀 2
+
+
+
+ensures (𝜀, 𝛿 )-spectral approximation for the 𝑟 -dimensional column space of 𝐿 ⊤. When STR is applied, the subsequent truncation and ridge steps operate only on the leading ℓ singular directions of ˜𝐿 . Therefore, the required sketch dimension depends on the effective rank ℓ rather than the full rank 𝑟 :
+
+𝑠 = 𝑂 
+
+ ℓ + ln (1/𝛿 )
+
+𝜀 2
+
+
+
+, ℓ ≤ 𝑟. 
+
+D.4 Computational complexity of STR 
+
+In large-scale settings, the effective rank ℓ and the true rank 𝑟 are typically much smaller than the embedding dimension 𝑠 , which in turn is far smaller than the ambient dimensions 𝑛 and 𝑇 :
+
+ℓ ≤ 𝑟 ≤ 𝑠 ≪ min {𝑛, 𝑇 }.
+
+Here 𝑛 denotes the asset dimension, 𝑇 the sample length, 𝑠 the embedding size, 𝑟 = rank ( ˜𝐿 ) the numerical rank of the sketched factor, and ℓ the retained truncation level. The first step constructs ˜𝐿 = 𝐿 Φ with a sketching matrix Φ ∈ R𝑇 ×𝑠 , where 𝑠 ≪ min {𝑛, 𝑇 }. Its cost depends on the structure of Φ:Gaussian JL: 𝑂 (𝑛𝑇 𝑠 ) (dense projection) ;
+
+CountSketch: 𝑂 (nnz (𝐿 )) (typically 𝑂 (𝑛𝑇 )) (sparse, hash-based) .
+
+The memory cost is 𝑂 (𝑛𝑠 ) to store ˜𝐿 (plus 𝑂 (𝑇 𝑠 ) for a dense Φ). Computing the thin SVD ˜𝐿 = 𝑈𝑆𝑉 ⊤ requires 𝑂 (𝑛𝑠 2) flops and 𝑂 (𝑛𝑠 ) memory. Truncating to the top-ℓ
+
+components (𝑈 ℓ , 𝑆 ℓ , 𝑉 ℓ ) introduces negligible extra cost. For large-scale implementations, one may instead compute a partial SVD via randomized or Lanczos iterations, which scales as 𝑂 (𝑛𝑠ℓ ).Forming bΣ = ˜𝐿 ℓ ˜𝐿 ⊤ 
+
+> ℓ
+
++ 𝛾𝐼 𝑛 is conceptually 𝑂 (𝑛ℓ 2), but in practice the covariance is never explicitly constructed. Overall, the one-shot STR cost is 
+
+𝑂 (𝑛𝑇 ·cost (Φ)
+
+| {z }
+
+> sketching
+
++ 𝑛𝑠 2
+
+|{z} 
+
+> SVD/truncation
+
+),
+
+where cost (Φ) ∈ { 𝑠, 1} for Gaussian JL and CountSketch, respectively. 
+
+# E Appendix Figures 
+
+This section collects the schematic and diagnostic plots referenced from the main paper. 27 Raw Returns 
+
+𝑅 ∈ R𝑛 ×𝑇 
+
+Centering 
+
+𝐿 = 1√𝑇 −1 (𝑅 − ¯𝑟 1⊤) Sketch (JL / CountSketch) 
+
+˜𝐿 = 𝐿 Φ
+
+Thin SVD of ˜𝐿 :
+
+˜𝐿 = 𝑈𝑆𝑉 ⊤
+
+Truncation 
+
+˜𝐿 ℓ = 𝑈 ℓ 𝑆 ℓ𝑉 ⊤
+
+ℓ
+
+Ridge Stabilization 
+
+bΣ = ˜𝐿 ℓ ˜𝐿 ⊤
+
+ℓ + 𝛾𝐼 𝑛 
+
+Figure 5: The Sketch–Truncate–Ridge (STR) pipeline for constructing a stable covariance approximation. 10 -8 10 -7 10 -6 10 -5 10 -4 10 -3      
+
+> .=k'k2
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> 10 6
+> 10 7
+> 10 8
+> 10 9
+> Condition number
+> Conditioning under ridge regularization
+> Full Sketch STR
+> 10 -8 10 -7 10 -6 10 -5 10 -4 10 -3
+> .=k'k2
+> 10 -9
+> 10 -8
+> 10 -7
+> 10 -6
+> 10 -5
+> 10 -4
+> 10 -3
+> 10 -2
+> 6min
+> Smallest eigenvalue uplift
+> Full Sketch/STR
+
+Figure 6: Condition number and smallest-eigenvalue uplift under ridge regularization on a representative synthetic instance. The Sketch and STR curves coincide on this instance and therefore appear as a single trajectory. NPGA-GPU Sketch-NPGA-GPU STR-NPGA-GPU 
+
+0
+
+50 
+
+100 
+
+121 126 126 
+
+> Iterations to tolerance
+
+(a) Outer iterations needed to reach the stopping tolerance. NPGA-GPU Sketch-NPGA-GPU STR-NPGA-GPU 
+
+0
+
+1
+
+2
+
+3 2.8 2.53 
+
+2.16 
+
+> Solve time to tolerance (s)
+
+(b) Benchmark solve time to reach the stopping tolerance. Figure 7: Convergence behavior of the GPU variants on the full 5440-asset real-data problem. The three GPU variants require nearly the same number of outer iterations, whereas their wall-clock times differ substantially. 
+
+28

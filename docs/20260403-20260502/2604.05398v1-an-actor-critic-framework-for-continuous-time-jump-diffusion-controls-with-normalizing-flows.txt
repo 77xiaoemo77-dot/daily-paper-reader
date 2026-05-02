@@ -1,0 +1,2998 @@
+Title: An Actor-Critic Framework for Continuous-Time Jump-Diffusion Controls with Normalizing Flows
+
+URL Source: https://arxiv.org/pdf/2604.05398v1
+
+Published Time: Wed, 08 Apr 2026 00:33:34 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# An Actor-Critic Framework for Continuous-Time Jump-Diffusion Controls with Normalizing Flows 
+
+Liya Guo ∗ Ruimeng Hu † Xu Yang ‡ Yi Zhu §
+
+Abstract 
+
+Continuous-time stochastic control with time-inhomogeneous jump–diffusion dynamics is central in finance and economics, but computing optimal policies is difficult under explicit time dependence, discontinuous shocks, and high dimensionality. We propose an actor–critic framework that serves as a mesh-free solver for entropy-regularized control problems and stochastic games with jumps. The approach is built on a time-inhomogeneous “little” 𝑞 -function and an appropriate occupation measure, yielding a policy-gradient representation that accommodates time-dependent drift, volatility, and jump terms. To represent expressive stochastic policies in continuous-action spaces, we parameterize the actor using conditional normalizing flows, enabling flexible non-Gaussian policies while retaining exact likelihood evaluation for entropy regularization and policy optimization. We validate the method on time-inhomogeneous linear–quadratic control, Merton portfolio optimization, and a multi-agent portfolio game, using explicit solutions or high-accuracy benchmarks. Numerical results demonstrate stable learning under jump discontinuities, accurate approximation of optimal stochastic policies, and favorable scaling with respect to dimension and number of agents. 
+
+# 1 Introduction 
+
+Continuous-time stochastic control provides a mathematical framework for dynamical decision making in finance and economics [ 33 ]. Many problems such as portfolio selection [ 12 , 29 ] can be formulated as controlling stochastic differential equations to maximize (or minimizing) an expected discounted objective. From a computational standpoint, however, classical approaches based on dynamic programming or stochastic maximum principles become difficult to implement when the state dimension is large [ 10 ], and when the underlying dynamics are unknown or only partially specified. These challenges have motivated the development of continuous-time reinforcement learning (RL) methods [ 23 , 24 , 38 , 39 ] that combined with neural networks, aiming to learn near-optimal control directly from interaction with the environment without requiring explicit model structure and with improved scalability to higher dimensions. A growing literature has developed continuous-time analogs of policy evaluation and policy improvement. For policy evaluation, temporal-difference type schemes are derived in [ 14 , 23 ], providing practical methods for approximating value function directly in continuous time. For policy improvement, [ 24 ] exploits martingale structure to rewrite policy-gradient objectives as policy-evaluation problems, yielding implementable update 
+
+> ∗
+
+Yau Mathematical Sciences Center, Tsinghua University, Beijing 100084, China; and Department of Mathematics, Tsinghua University, Beijing 100084, China. Email: gly22@mails.tsinghua.edu.cn .
+
+> †
+
+Department of Mathematics, and Department of Statistics and Applied Probability, University of California, Santa Barbara, CA 93106-3080, USA. Email: rhu@ucsb.edu .
+
+> ‡
+
+Department of Mathematics, University of California, Santa Barbara, CA 93106-3080, USA. Email: xuyang@math.ucsb.edu .
+
+> §
+
+Yau Mathematical Sciences Center, Tsinghua University, Beijing 100084, China; and Yanqi Lake Beijing Institute of Mathematical Sciences and Applications, Beijing 101408, China. Email: yizhu@tsinghua.edu.cn .
+
+1
+
+> arXiv:2604.05398v1 [math.OC] 7 Apr 2026
+
+rules. From an action-value viewpoint, [ 25 ] studies continuous-time 𝑞 learning and introduces a first-order surrogate, the “little” 𝑞 -function, to avoid the degeneracy of the conventional “big” 𝑄 -function in the continuous-time limit [ 37 ]. Most of these developments are focused on finite-horizon criteria, with related extensions to mean-field control in [ 40 ]. Infinite-horizon continuous-time policy-gradient formulas have appeared more recently, for example in [41]. In many financial settings, pure diffusion models are inadequate because asset prices and economic factors may exhibit abrupt movements driven by liquidity shocks or macroeconomic events [ 3, 31 ]. Incorporating jumps is therefore essential for capturing heavy tails, discontinuities, and jump risk premia for markets [4 , 6 ]. This has motivated a growing body of work on deep learning and RL for jump-diffusion dynamics [8 , 11 , 13 , 17 , 18 , 27 , 28 ]. Motivated by the little-𝑞 methodology, [ 8, 17 ] extend continuous-time q-learning ideas to stochastic policies and entropy regularization in jump-diffusion settings, while [ 28 ] develops an actor-critic method for deterministic controls in finite-horizon jump-diffusion games, and [ 13 ] considers optimal switching problems under jump dynamics. Most existing formulations, however, remain tied to finite-horizon objectives and often adopt Gaussian policy parameterizations in practice. In many situations, the optimal stochastic policy is non-Gaussian; see, for example, [ 8]. This paper addresses these gaps by developing a learning framework for discounted infinite-horizon control of time-inhomogeneous jump-diffusions under general stochastic (possibly non-Gaussian) policies. Our first contribution is the introduction of a continuous-time little 𝑞 -function and a time-dependent discounted occupation measure, and the establishment of structural properties that connect these objects to policy improvement. These results lead to a policy-gradient representation valid for general time-inhomogeneous jump-diffusions on an infinite horizon. To clarify the relationship with prior work, we provide a comparative summary of continuous-time 𝑞 -function formulations in Table 1. Table 1: Comparison continuous-time 𝑄 /𝑞 -function formulations.                                                 
+
+> Work Time setting State dynamics Learning objects Role of 𝑞 function Policy class [25] Continuous, finite horizon Diffusion 𝑉 𝜓 (𝑡, 𝒙 ),
+> 𝑞 𝜃 (𝑡, 𝒙 ,𝒖 )𝜋 ∗(𝒖 |𝑡, 𝒙 ) ∝ exp
+> n1
+> 𝛾 𝑞 ∗(𝑡, 𝒙 ,𝒖 )
+> o
+> 𝑞 Learned via martingale orthogonality Gaussian [8, 17] Jump-diffusion 𝑉 𝜓 (𝑡, 𝒙 ),
+> 𝑞 𝜃 (𝑡, 𝒙 ,𝒖 )
+> [41] Continuous, time-homog., infinite horizon Diffusion 𝑉 𝜓 (𝒙 ),
+> 𝜋 𝜃 (𝒙 )
+> Policy gradient thm for 𝜋 ∗
+> 𝑞 approximated by GAE Gaussian This work Continuous, time-inhomog., infinite horizon Jump-diffusion 𝑉 𝜓 (𝑡, 𝒙 ),
+> 𝜋 𝜃 (𝑡, 𝒙 )
+> Policy gradient thm for 𝜋 ∗
+> 𝑞 approximated by GAE General (normalizing flow)
+
+Our second contribution is to provide tractable benchmarks by deriving explicit solutions in several canonical specifications, including linear-quadratic control, the Merton problem with jumps, and multi-agent games with jump-driven CARA utilities, together with representative time-inhomogeneous variants. These closed-form policies serve as ground truth for assessing numerical accuracy. Finally, we propose an implementable actor–critic algorithm that combines the derived policy-gradient representation with a conditional normalizing-flow parameterization of stochastic policies. The flow-based construction enables expressive, non-Gaussian distributions for controls while preserving tractable likelihoods and gradients, which is essential in the presence of entropy regularization and policy-gradient-type theorems. Numerical experiments in both low- and high-dimensional regimes demonstrate stable learning behavior across a range of time-dependent jump-diffusion models. 2The rest of the paper is organized as follows. Section 2 introduces the problem setting, including the classical jump-diffusion stochastic control problem and its entropy-regularized formulation. Section 3 presents the proposed actor-critic framework: Section 3.1 develops policy evaluation for the critic, Section 3.2 introduces the “little” 𝑞 -function and the occupation measure, and develops policy improvement for the actor with its theoretical justification, and Section 3.3 details the conditional normalizing flow parameterization for the actor. Section 4 states explicit solutions for several canonical problems and reports numerical experiments. We conclude in Section 5. 
+
+# 2 Problem Setup 
+
+Let (Ω, F , F := (F 𝑡 )𝑡 ≥0, P) be a filtered probability space satisfying the usual conditions. Let 𝑾 = (𝑾 𝑡 )𝑡 ≥0 be a 𝑑 -dimensional Brownian motion, 𝑁 (d𝑡, d𝒛 ) be a Poisson random measure corresponding to a L ´evy process 
+
+( 𝑳 𝑡 )𝑡 ≥0, and 𝜈 be the L ´evy measure on R𝑑 satisfying the integrability condition ∫ 
+
+> R𝑑
+
+min {| 𝒛 |2, 1}𝜈 (d𝒛 ) < ∞
+
+[15 ]. The associated compensated Poisson random measure is defined as ˜𝑁 (d𝑡, d𝒛 ) := 𝑁 (d𝑡, d𝒛 ) − 𝜈 (d𝒛 ) d𝑡 
+
+and we assume that 𝑾 and 𝑁 are independent. We are interested in finding an optimal control policy 𝜋 (· | 𝑡, 𝒙 ) ∈ P (A) that maximizes an infinite-horizon discounted reward based on the controlled state process 𝑿 = ( 𝑿 𝜋 𝑡 )𝑡 ≥0 ∈ R𝑑 , which is formally described by the Itˆ o-L´ evy process d𝑿 𝜋 𝑡 = 𝒃 (𝑡, 𝑿 𝜋 𝑡 − , 𝒖 𝑡 ) d𝑡 + 𝝈 (𝑡, 𝑿 𝜋 𝑡 − , 𝒖 𝑡 ) d𝑾 𝑡 +
+
+∫
+
+> R𝑑
+
+𝜶 (𝑡, 𝑿 𝜋 𝑡 − , 𝒖 𝑡 , 𝒛 ) ˜𝑁 (d𝑡, d𝒛 ) , (2.1) where the coefficients are measurable maps (𝒃 , 𝝈 ) : [0, ∞) × R𝑑 × A → ( R𝑑 , R𝑑 ×𝑑 ), 𝜶 : [0, ∞) × R𝑑 ×A × R𝑑 → R𝑑 , and the control 𝒖 𝑡 is intended to follow the randomized feedback law 𝜋 (· | 𝑡, 𝒙 ). We assume standard Lipschitz and linear growth conditions on (𝒃 , 𝝈 , 𝜶 ), so that the corresponding SDE admits a unique strong solution for every admissible control process (cf. [ 31 ]). With this state dynamics, we consider the following entropy-regularized reward: ˜𝑓 (𝑠, 𝒚 ; 𝜋 ) :=
+
+∫
+
+> A
+
+  𝑓 (𝑠, 𝒚 , 𝒖 ) − 𝛾 log 𝜋 (𝒖 | 𝑠, 𝒚 ) 𝜋 (𝒖 | 𝑠, 𝒚 )d𝒖 , (2.2) where 𝑓 is the standard running cost and we consider S  𝜋 (· | 𝑠, 𝒚 ) := − ∫ 
+
+> A
+
+𝜋 (𝒖 | 𝑠, 𝒚 ) log 𝜋 (𝒖 | 𝑠, 𝒚 ) d𝒖 ,the Shannon entropy, which encourages exploration and improves numerical stability. For long-term control, let 𝛽 > 0 be a discount factor. We then define the entropy-regularized expected discounted reward by 
+
+𝐽 (𝑡, 𝒙 ; 𝜋 ) := E
+
+h ∫ ∞
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) ˜𝑓  𝑠, 𝑿 𝜋 𝑠 ; 𝜋  d𝑠 | 𝑿 𝜋 𝑡 = 𝒙 
+
+i
+
+, (2.3) where 𝑿 𝜋 𝑠 solves the exploratory dynamics (2.10), and 𝛾 > 0 characterizes the intensity of regularization. For a fixed policy 𝜋 , the function 𝐽 (𝑡, 𝒙 ; 𝜋 ) satisfies (cf. [24, Lemma 3]) 0 = 𝜕 𝑡 𝐽 (𝑡, 𝒙 ; 𝜋 ) + L 𝜋 𝐽 (𝑡, 𝒙 ; 𝜋 ) + ˜𝑓 (𝑡, 𝒙 ; 𝜋 ) − 𝛽𝐽 (𝑡, 𝒙 ; 𝜋 ), (2.4) where L 𝜋 is the 𝜋 -averaged infinitesimal generator 
+
+(L 𝜋 𝜑 )( 𝑡, 𝒙 ) :=
+
+∫
+
+> A
+
+(L 𝒖 𝜑 )( 𝑡, 𝒙 ) 𝜋 (𝒖 | 𝑡, 𝒙 )d𝒖 , 𝜑 ∈ 𝐶 1,2 
+
+> 𝑐
+
+([ 0, 𝑇 ] × R𝑑 ), ∀ 𝑇 > 0 , (2.5) and L𝒖 is the generator for fixed control sampling 
+
+(L 𝒖 𝜑 )( 𝑡, 𝒙 ) = 𝒃 (𝑡, 𝒙 , 𝒖 ) · ∇ 𝒙 𝜑 (𝑡, 𝒙 ) + 12 Tr  𝝈 (𝑡, 𝒙 , 𝒖 )𝝈 (𝑡, 𝒙 , 𝒖 )⊤∇2 
+
+> 𝒙
+
+𝜑 (𝑡, 𝒙 )
+
++
+
+∫
+
+> R𝑑
+
+ 𝜑  𝑡, 𝒙 + 𝜶 (𝑡, 𝒙 , 𝒖 , 𝒛 ) − 𝜑 (𝑡, 𝒙 ) − 𝜶 (𝑡, 𝒙 , 𝒖 , 𝒛 ) · ∇ 𝒙 𝜑 (𝑡, 𝒙 ) 𝜈 (d𝒛 ). (2.6) 3The optimal value function is 
+
+𝑉 (𝑡, 𝒙 ) := sup 
+
+> 𝜋
+
+𝐽 (𝑡, 𝒙 ; 𝜋 ) = sup 
+
+> 𝜋
+
+E
+
+h ∫ ∞
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) ˜𝑓  𝑠, 𝑿 𝜋 𝑠 ; 𝜋  d𝑠 | 𝑿 𝜋 𝑡 = 𝒙 
+
+i
+
+, (2.7) which satisfies the entropy-regularized Hamilton-Jacobi-Bellman (HJB) equation by dynamic programming (cf. [31]) 0 = 𝜕 𝑡 𝑉 (𝑡, 𝒙 ) + sup   
+
+> 𝜋 (· | 𝑡 , 𝒙 )
+
+∫
+
+> A
+
+h
+
+H  𝑡, 𝒙 , 𝒖 , ∇𝒙 𝑉 (𝑡, 𝒙 ), ∇2
+
+> 𝒙
+
+𝑉 (𝑡, 𝒙 ) − 𝛾 log 𝜋 (𝒖 | 𝑡, 𝒙 )
+
+i
+
+𝜋 (𝒖 | 𝑡, 𝒙 )d𝒖 − 𝛽𝑉 (𝑡, 𝒙 ).
+
+(2.8) Here H : [0, ∞) × R𝑑 × A × R𝑑 × S𝑑 → R is the Hamiltonian defined by 
+
+H (𝑡, 𝒙 , 𝒖 , ∇𝒙 𝑉 (𝑡, 𝒙 ), ∇2
+
+> 𝒙
+
+𝑉 (𝑡, 𝒙 )) := 𝒃 (𝑡, 𝒙 , 𝒖 ) · ∇ 𝒙 𝑉 (𝑡, 𝒙 ) + 12 Tr  𝝈 (𝑡, 𝒙 , 𝒖 )𝝈 (𝑡, 𝒙 , 𝒖 )⊤∇2
+
+> 𝒙
+
+𝑉 (𝑡, 𝒙 )
+
++
+
+∫
+
+> R𝑑
+
+ 𝑉  𝑡, 𝒙 + 𝜶 (𝑡, 𝒙 , 𝒖 , 𝒛 ) − 𝑉 (𝑡, 𝒙 ) − 𝜶 (𝑡, 𝒙 , 𝒖 , 𝒛 ) · ∇ 𝒙 𝑉 (𝑡, 𝒙 ) 𝜈 (d𝒛 ) + 𝑓 (𝑡, 𝒙 , 𝒖 ) , (2.9) and S𝑑 denotes the space of real 𝑑 × 𝑑 symmetric matrices. Therefore, the optimal policy 𝜋 ∗ is solved as a maximizer of the sup part in (2.8). It is worth noting that, for (2.1) , interpreting a randomized feedback law 𝜋 (· | 𝑡, 𝒙 ) as a continuously sampled control 𝒖 𝑡 ∼ 𝜋 (· | 𝑡, 𝑿 𝑡 ) is subtle in continuous time. As discussed in [ 22 , 26 ], a measurability issue arises: to make (2.1) well posed, one needs a process 𝒖 that is F -progressively measurable and satisfies 
+
+𝒖 𝑡 | ( 𝑿 𝑡 = 𝒙 ) ∼ 𝜋 (· | 𝑡, 𝒙 ) for each 𝑡 . Such a construction is not immediate on a fixed stochastic basis, since time is uncountable and one cannot literally “sample independently at every instant”. To avoid this issue, following [22, 26], we work with the exploratory state process d ˜ 𝑿 𝜋 𝑡 = ˜𝒃 (𝑡, ˜𝑿 𝜋 𝑡 − ; 𝜋 ) d𝑡 + ˜𝝈 (𝑡, ˜𝑿 𝜋 𝑡 − ; 𝜋 ) d𝑾 𝑡 +
+
+∫ 
+
+> R𝑑 ×[ 0,1]𝑚
+
+𝜶  𝑡, ˜𝑿 𝜋 𝑡 − , 𝐺 𝜋 (𝑡, ˜𝑿 𝜋 𝑡 − , 𝒓 ), 𝒛  ˜𝑁 (d𝑡, d𝒛 , d𝒓 ), (2.10) where 𝐺 𝜋 : [0, ∞) × R𝑑 × [ 0, 1]𝑚 → A is a measurable function such that (𝐺 𝜋 (𝑡, 𝒙 , ·)) #U
+
+= 𝜋 (· | 𝑡, 𝒙 ), when U is the Lebesgue probability measure on [0, 1]𝑚 , 𝑁 (d𝑡, d𝒛 , d𝒓 ) is a Poisson random measure on (0, ∞) × R𝑑 × [ 0, 1]𝑚 with compensator 𝜈 (d𝒛 ) U ( d𝒓 ) d𝑡 , independent of the Brownian motion 
+
+𝑾 , ˜ 𝑁 (d𝑡, d𝒛 , d𝒓 ) := 𝑁 (d𝑡, d𝒛 , d𝒓 ) − 𝜈 (d𝒛 ) U ( d𝒓 ) d𝑡 is the compensated measure, and ˜ 𝒃 , ˜𝚺 are defined as ˜𝒃 (𝑡, 𝒙 ; 𝜋 ) :=
+
+∫
+
+> A
+
+𝒃 (𝑡, 𝒙 , 𝒖 ) 𝜋 (𝒖 | 𝑡, 𝒙 )d𝒖 , ˜𝚺 = ˜𝝈 2 (𝑡, 𝒙 ; 𝜋 ) :=
+
+∫
+
+> A
+
+𝝈 (𝑡, 𝒙 , 𝒖 )𝝈 (𝑡, 𝒙 , 𝒖 )⊤ 𝜋 (𝒖 | 𝑡, 𝒙 )d𝒖 .
+
+(2.11) In what follows, we take the exploratory SDE in (2.10) (associated with the generator L 𝜋 ) as the definition of the state process under the stochastic policy 𝜋 , and we drop the tilde when no confusion arises. Note that when 𝛾 = 0 in (2.2) , the stochastic control problem reduces to the standard problem with deterministic control. In this case, the state process is governed by the classical controlled It ˆo–L ´evy SDE with an admissible progressively measurable control process 𝒖 = (𝒖 𝑠 )𝑠 ≥𝑡 , taking values in A ⊂ R𝑚 , and the associated HJB equation becomes 0 = 𝜕 𝑡 𝑉 (𝑡, 𝒙 ) + sup 
+
+> 𝒖 ∈ A
+
+(L 𝒖 𝑉 )( 𝑡, 𝒙 ) + 𝑓 (𝑡, 𝒙 , 𝒖 ) − 𝛽𝑉 (𝑡, 𝒙 ) , (2.12) where the generator L𝒖 is defined as (2.6). 43 Actor-Critic for Time Inhomogeneous Jump Diffusion Control 
+
+We solve the infinite-horizon stochastic control problem via reinforcement learning (RL) using an actor-critic framework [ 5 ]. In RL, the actor usually refers to the randomized policy 𝜋 and the critic refers to the value 
+
+𝐽 (· ; 𝜋 ), used to evaluate the goodness of the current policy 𝜋 . The actor-critic method consists of two steps: policy evaluations for the critic and policy improvement for the actor. By performing them interactively, one hopes to reach the optimal policy and value function 𝑉 .Most existing continuous-time RL work is developed for finite horizons and/or dynamics driven only by Brownian motions [ 23 –25 , 38 ]. In the infinite-horizon setting considered here, the policy update step cannot be reduced to maximizing a finite-interval objective in the same manner as in finite-horizon formulations [ 28 ]. This necessitates a policy improvement principle that is consistent with discounting and time inhomogeneity, and that remains valid under jump-diffusion dynamics. The resulting actor update scheme is developed in Section 3.2, while the critic is introduced firstly below. 
+
+3.1 Critic: Policy Evaluation 
+
+Consider the critic 𝑉 𝜓 , parameterized by 𝜓 . Our goal is to learn an accurate value approximation from incremental samples, without explicitly solving the PIDE (2.4) . To this end, we use the continuous-time Bellman principle [ 23 ], which leads to temporal-difference learning: we update the critic by minimizing TD errors computed along sampled trajectories. 
+
+Bellman equation and TD error. Fix a stochastic feedback policy 𝜋 . Recall the entropy-regularized performance functional 𝐽 in (2.3) and the entropy-regularized reward ˜𝑓 (· ; 𝜋 ) in (2.2) . For any fixed deterministic 𝛿 𝑡 > 0, by the law of total expectation and the Markov property under 𝜋 , the discounted performance 𝐽 satisfies the Bellman equation 
+
+𝐽 (𝑡, 𝑿 𝜋 𝑡 ; 𝜋 ) = E
+
+h ∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )
+
+∫
+
+> A
+
+  𝑓 (𝑠, 𝑿 𝜋 𝑠 −, 𝒖 ) − 𝛾 log 𝜋 (𝒖 | 𝑠, 𝑿 𝜋 𝑠 − ) 𝜋 (𝒖 | 𝑠, 𝑿 𝜋 𝑠 − )d𝒖 d𝑠 
+
++ 𝑒 −𝛽 𝛿 𝑡 𝐽 (𝑡 + 𝛿 𝑡 , 𝑿 𝜋 𝑡 + 𝛿 𝑡 ; 𝜋 ) F𝑡 
+
+i
+
+.
+
+(3.1) We then define the one-step TD error over [𝑡, 𝑡 + 𝛿 𝑡 ) by 
+
+𝛿 𝑡  
+
+> TD
+
+:=
+
+∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )
+
+∫
+
+> A
+
+  𝑓 (𝑠, 𝑿 𝜋 𝑠 − , 𝒖 ) − 𝛾 log 𝜋 (𝒖 | 𝑠, 𝑿 𝜋 𝑠 − ) 𝜋 (𝒖 | 𝑠, 𝑿 𝜋 𝑠 − )d𝒖 d𝑠 
+
++ 𝑒 −𝛽 𝛿 𝑡 𝑉 𝜓 (𝑡 + 𝛿 𝑡 , 𝑿 𝜋 𝑡 + 𝛿 𝑡 ; 𝜋 ) − 𝑉 𝜓 (𝑡, 𝑿 𝜋 𝑡 ; 𝜋 ),
+
+(3.2) and (3.1) implies that, for the critic 𝑉 𝜓 that evaluates 𝐽 exactly, E𝛿 𝑡  
+
+> TD
+
+| F 𝑡 
+
+ = 0.
+
+Martingale-corrected TD error. By It ˆo’s formula, the last two terms in the one-step TD error admit the decomposition 
+
+𝑒 −𝛽 𝛿 𝑡 𝑉 𝜓 (𝑡 + 𝛿 𝑡 , 𝑿 𝜋 𝑡 + 𝛿 𝑡 ; 𝜋 ) − 𝑉 𝜓 (𝑡, 𝑿 𝜋 𝑡 ; 𝜋 ) = ∫ 𝑡 + 𝛿 𝑡  
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )  𝜕 𝑠 𝑉 𝜓 + L 𝜋 𝑉 𝜓 − 𝛽𝑉 𝜓 
+
+ (𝑠, 𝑿 𝜋 𝑠 − ; 𝜋 ) d𝑠 + I 𝜋 𝑡 ,𝑡 + 𝛿 𝑡 ,
+
+where I 𝜋 𝑡 ,𝑡 + 𝛿 𝑡 defined as 
+
+I 𝜋 𝑡 ,𝑡 + 𝛿 𝑡 :=
+
+∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )  𝝈 (𝑠, 𝑿 𝜋 𝑠 − , 𝒖 𝑠 )⊤∇𝑥 𝑉 𝜓 (𝑠, 𝑿 𝜋 𝑠 − ; 𝜋 )⊤d𝑾 𝑠 
+
++
+
+∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+∫
+
+> R𝑑
+
+𝑒 −𝛽 (𝑠 −𝑡 ) 𝑉 𝜓 
+
+ 𝑠, 𝑿 𝜋 𝑠 − + 𝜶 (𝑠, 𝑿 𝜋 𝑠 − , 𝒖 𝑠 , 𝒛 ); 𝜋  − 𝑉 𝜓 (𝑠, 𝑿 𝜋 𝑠 − ; 𝜋 ) ˜𝑁 (d𝑠, d𝒛 ),
+
+(3.3) 5captures the instantaneous fluctuations induced by Brownian and jump noises. As discussed in [ 28 , 42 ], it has mean zero but adds extra variance to the learning signal. Therefore, subtracting I 𝜋 𝑡 ,𝑡 + 𝛿 𝑡 from the one-step TD error reduces variance while preserving unbiasedness. Accordingly, we define the martingale-corrected TD error by: ˜𝛿 𝑡  
+
+> TD
+
+:= 𝛿 𝑡  
+
+> TD
+
+− I 𝜋 𝑡 ,𝑡 + 𝛿 𝑡 =
+
+∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )   ˜𝑓 (𝑠, 𝑿 𝜋 𝑠 − ; 𝜋 ) + 𝜕 𝑠 𝑉 𝜓 + L 𝜋 𝑉 𝜓 − 𝛽𝑉 𝜓 
+
+ (𝑠, 𝑿 𝜋 𝑠 − ; 𝜋 ) d𝑠. (3.4) If the critic 𝑉 𝜓 evaluates 𝐽 exactly, i.e., it solves the PIDE (2.4), then ˜ 𝛿 𝑡  
+
+> TD
+
+= 0 almost surely. 
+
+3.2 Actor: Policy Improvement 
+
+Policy improvement updates the actor using the critic’s value information to increase the expected discounted reward. A popular approach is policy gradient: the actor is parameterized (for example by neural networks), and the critic is used to construct an estimator of the gradient of the objective with respect to the actor parameters, which then drives the actor update. In discrete-time with state/action space, the action-value 𝑄 function is a common choice for this purpose. In continuous time and state/action space, however, a direct analogue of discrete-time 𝑄 -learning is intrinsically delicate: the standard (“capital” 𝑄 ) action-value function degenerates to the value function, and na ¨ıve discretization-based updates can be highly sensitive to the time step [ 25 , 35 ]. These issues motivate the “little” 
+
+𝑞 -formulation advocated in [8, 25, 41]. Following this line, we introduce a time-inhomogeneous “little” 𝑞 -function for infinite-horizon jump-diffusion control (Section 3.2.1) and derive the corresponding policy gradient theorem (Theorem 3.1 in Section 3.2.2). Because the resulting gradient depends on 𝑞 (· ; 𝜋 ) and is not directly implementable from data, we adopt a generalized advantage estimator justified by Lemma 3.3. We remark that the extension to the time-inhomogeneous case is not trivial, as while the critic can be extended via standard time-augmented evaluation, the actor update is not a trivial “add 𝑡 ” modification in the infinite-horizon jump-diffusion setting: explicit time dependence interacts with discounting and changes the relevant occupation measure on 
+
+[𝑡, ∞) × R𝑑 . This motivates deriving a time-inhomogeneous “little” 𝑞 -function (including the 𝜕𝐽 𝜕𝑡 term) and a corresponding policy gradient theorem. We emphasize that the time-inhomogeneous extension is nontrivial: although the critic can be handled via time augmentation, explicit time dependence interacts with discounting and alters the discounted occupation measure on [𝑡, ∞) × R𝑑 , so the actor update is not obtained by a simple “add 𝑡 ” modification. This motivates deriving the time-derivative term in 𝑞 and the accompanying policy gradient identity. 
+
+3.2.1 Occupation Measure and 𝑞 -Function 
+
+To accommodate possible time inhomogeneity in the infinite-horizon setting, we first define a discounted occupation measure on [𝑡, ∞) × R𝑑 , extending [ 41 , Def. 2]. This definition is the 𝛽 -potential of 𝑿 𝜋 and characterizes the discounted visitation frequencies of the time-state process starting from (𝑡, 𝒙 ).
+
+Definition 3.1 Fix 𝛽 > 0. Let ( 𝑿 𝜋 𝑠 )𝑠 ≥𝑡 denote the exploratory dynamics (2.10) under a stochastic policy 𝜋 
+
+starting at 𝑿 𝜋 𝑡 = 𝒙 . The 𝛽 -discounted occupation measure of 𝑿 𝜋 is defined by 
+
+𝜇 𝜋,𝑡 , 𝒙 ( 𝐴 ) := E
+
+h ∫ ∞
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) 1{ ( 𝑠, 𝑿 𝜋 𝑠 ) ∈ 𝐴 } d𝑠 
+
+i
+
+, 𝐴 ∈ B([ 𝑡, ∞) × R𝑑 ). (3.5) 
+
+This is a finite measure on [𝑡, ∞) × R𝑑 with total mass 𝜇 𝜋,𝑡 , 𝒙  [𝑡, ∞) × R𝑑  = E[∫ ∞ 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) d𝑠 ] =
+
+∫ ∞ 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) d𝑠 = 𝛽 −1. Unless otherwise stated, expectations are taken under the path measure induced by the policy currently under discussion. 
+
+6We next derive the little 𝑞 -function 𝑞 (𝑡, 𝒙 , 𝒖 ; 𝜋 ), which quantifies the instantaneous advantage of taking action 𝒖 at (𝑡, 𝒙 ) and then reverting to the current policy 𝜋 . We sketch the main idea and defer the details to Section B.1 in the supplementary materials. Fix 𝛿 𝑡 > 0 , 𝒖 ∈ A , and a baseline policy 𝜋 . We consider a perturbed control: on the short interval 
+
+[𝑡, 𝑡 + 𝛿 𝑡 ), we apply the constant action 𝒖 , and for 𝑠 ≥ 𝑡 + 𝛿 𝑡 , we follow 𝜋 . Let ( 𝑿 𝒖  
+
+> 𝑠
+
+)𝑠 ≥𝑡 denote the resulting state process with 𝑿 𝒖  
+
+> 𝑡
+
+= 𝒙 (i.e., it solves the strict-control SDE (2.1) on [𝑡, 𝑡 + 𝛿 𝑡 ) with action 𝒖 and then the exploratory SDE (2.10) under 𝜋 on [𝑡 + 𝛿 𝑡 , ∞) , initialized at (𝑡 + 𝛿 𝑡 , 𝑿 𝒖   
+
+> 𝑡 +𝛿 𝑡
+
+)). Define the corresponding discounted reward 𝑄 𝛿 𝑡 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) by 
+
+𝑄 𝛿 𝑡 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) := E
+
+h ∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) 𝑓  𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+, 𝒖  d𝑠 +
+
+∫ ∞ 
+
+> 𝑡 +𝛿 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) ˜𝑓  𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋  d𝑠 | 𝑿 𝒖  
+
+> 𝑡
+
+= 𝒙 
+
+i
+
+, (3.6) A first-order expansion (see Section B.1 in the supplementary materials) yields 
+
+𝑄 𝛿 𝑡 
+
+ 𝑡, 𝒙 , 𝒖 ; 𝜋  = 𝐽  𝑡, 𝒙 ; 𝜋  +
+
+
+
+𝜕 𝑡 𝐽  𝑡, 𝒙 ; 𝜋  + H  𝑡, 𝒙 , 𝒖 , ∇𝑥 𝐽  𝑡, 𝒙 ; 𝜋 , ∇2 
+
+> 𝑥
+
+𝐽  𝑡, 𝒙 ; 𝜋  − 𝛽𝐽  𝑡, 𝒙 ; 𝜋 
+
+𝛿 𝑡 + 𝑜 (𝛿 𝑡 ),
+
+(3.7) where H is the Hamiltonian defined in (2.9). This motivates the definition of the (little) 𝑞 -function: 
+
+𝑞 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) := 𝜕 𝑡 𝐽 (𝑡, 𝒙 ; 𝜋 ) + H  𝑡, 𝒙 , 𝒖 , ∇𝑥 𝐽 (𝑡, 𝒙 ; 𝜋 ), ∇2 
+
+> 𝑥
+
+𝐽 (𝑡, 𝒙 ; 𝜋 ) − 𝛽𝐽 (𝑡, 𝒙 ; 𝜋 ). (3.8) Indeed, 𝑞 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) is the leading-order marginal gain per unit time of deviating from 𝜋 to 𝒖 .Compared with [ 41 ], our definition includes the additional time-derivative term 𝜕𝐽 𝜕𝑡 arising from time inhomogeneity. Compared with [ 25 ], we incorporate jump-diffusion dynamics and an infinite-horizon discounted objective through the Hamiltonian. Closely related jump extensions of the little-𝑞 framework include [ 8 , 17 ]; [ 8] focuses on Poisson point processes with Tsallis entropy regularization, while [ 17 ] considers a different use of the 𝑞 -function for policy updates. 
+
+3.2.2 Policy Gradient 
+
+With the time–inhomogeneous 𝑞 -function introduced, we are now ready to derive a policy gradient formula in our infinite-horizon jump-diffusion setting. We begin with two lemmas. 
+
+Lemma 3.1 Under the conditions in Definition 3.1, for any measurable function 𝜑 : [0, ∞) × R𝑑 → R such that E∫ ∞ 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) |𝜑 (𝑠, 𝑿 𝜋 𝑠 )| d𝑠  < ∞, we have 
+
+E
+
+h ∫ ∞
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) 𝜑 (𝑠, 𝑿 𝜋 𝑠 ) d𝑠 
+
+i
+
+=
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+𝜑 (𝑠, 𝒚 ) 𝜇 𝜋,𝑡 , 𝒙 (d𝑠, d𝒚 ) . (3.9) This lemma extends [ 41 , Lemma 1] to our time-inhomogeneous setting and follows from the occupation time formula. It states that any discounted pathwise reward 𝜑 (𝑠, 𝑿 𝜋 𝑠 ) can be expressed as an integral of 𝜑 with respect to the discounted time-state occupation measure 𝜇 𝜋,𝑡 , 𝒙 . This identity will allow us to pass between expectations along trajectories and integrals over time-state space, which is crucial for writing performance differences in a concise integral form. 
+
+Lemma 3.2 Let 𝜑 ∈ 𝐶 1,2 ([ 0, ∞) × R𝑑 ) be bounded and ( 𝑿 𝜋 𝑠 )𝑠 ≥𝑡 follow the exploratory dynamics (2.10) 
+
+under a stochastic policy 𝜋 with 𝑿 𝜋 𝑡 = 𝒙 . Then for all 𝑡 ≥ 0 and 𝒙 ∈ R𝑑 ,
+
+E
+
+h ∫ ∞
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )   − 𝜕 𝑠 𝜑 − L 𝜋 𝜑 + 𝛽𝜑  (𝑠, 𝑿 𝜋 𝑠 ) d𝑠 
+
+i
+
+= 𝜑 (𝑡, 𝒙 ), (3.10) 
+
+where L 𝜋 is the infinitesimal generator of 𝑿 𝜋 defined in (2.5) .
+
+7The proof follows the same argument as [ 41 , Lemma 8], with the addition of 𝜕 𝑠 𝜑 to account for the time inhomogeneity and a modified generator L 𝜋 to incorporate the jump terms. For brevity, the detailed proof is omitted. Since Lemma 3.2 holds for any 𝜑 ∈ 𝐶 1,2, we may replace 𝜑 by 𝜑 = 𝐽 (· , ·; ˆ 𝜋 ) that depends on a different stochastic control ˆ𝜋 , whenever it is regular enough. Therefore, quantities defined under ˆ𝜋 can be represented using the generator L 𝜋 while expectations are taken along trajectories induced by 𝜋 . This device is used below to compare 𝐽 (· ; 𝜋 ) and 𝐽 (· ; ˆ 𝜋 ).
+
+Theorem 3.1 (Policy gradient) Let 𝜋 and ˆ𝜋 be two stochastic policies, and let 𝜇 ˆ𝜋,𝑡 , 𝒙 be the discounted occupation measure induced by ˆ𝜋 starting from (𝑡, 𝒙 ). Let 𝐽 (𝑡, 𝒙 ; 𝜋 ) be the value function under 𝜋 , and let 
+
+𝑞 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) be the corresponding time-inhomogeneous 𝑞 -function defined in (3.8) . Then 
+
+𝐽 (𝑡, 𝒙 ; ˆ 𝜋 ) − 𝐽 (𝑡, 𝒙 ; 𝜋 ) = 1
+
+𝛽 E(𝑠, 𝑿 ˆ𝜋 𝑠 )∼ 𝛽𝜇 ˆ𝜋,𝑡, 𝒙 , 𝒖 ∼ ˆ𝜋 (· | 𝑠, 𝑿 ˆ𝜋 𝑠 )
+
+h
+
+𝑞 (𝑠, 𝑿 ˆ𝜋 𝑠 , 𝒖 ; 𝜋 ) − 𝛾 log ˆ 𝜋 (𝒖 | 𝑠, 𝑿 ˆ𝜋 𝑠 )
+
+i
+
+. (3.11) 
+
+Now let {𝜋 𝜃 (𝒖 | 𝑡, 𝒙 )} 𝜃 ∈Θ be a family of parameterized stochastic policies, and fix 𝜃 0 ∈ Θ. For each 𝜃 , let 
+
+𝜇 𝜃 ,𝑡 , 𝒙 denote the discounted occupation measure of ( 𝑿 𝜋 𝜃  
+
+> 𝑠
+
+)𝑠 ≥𝑡 under 𝜋 𝜃 with 𝑿 𝑡 = 𝒙 , and let 𝑞 (· ; 𝜋 𝜃 ) be the associated 𝑞 -function. With the baseline policy 𝜋 = 𝜋 𝜃 0 and the comparison policy ˆ𝜋 = 𝜋 𝜃 , differentiating the identity 𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 ) − 𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 0 ) by (3.11) with respect to 𝜃 at 𝜃 = 𝜃 0, we obtain 
+
+∇𝜃 𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 ) 𝜃 =𝜃 0 = 1
+
+𝛽 E(𝑠, 𝒚 )∼ 𝛽𝜇 𝜃 0 ,𝑡, 𝒙 , 𝒖 ∼ 𝜋 𝜃 0 (· | 𝑠, 𝒚 )
+
+h
+
+∇𝜃 log 𝜋 𝜃 (𝒖 | 𝑠, 𝒚 ) 𝜃 =𝜃 0 𝐴 ent (𝑠, 𝒚 , 𝒖 ; 𝜃 0)
+
+i
+
+, (3.12) 
+
+where the exploratory advantage is defined by 
+
+𝐴 ent (𝑠, 𝒚 , 𝒖 ; 𝜃 0) := 𝑞 (𝑠, 𝒚 , 𝒖 ; 𝜋 𝜃 0 ) − 𝛾 log 𝜋 𝜃 0 (𝒖 | 𝑠, 𝒚 ). (3.13) The proof of the policy-gradient formula (3.12) is given in Section B.2 in the supplementary materials. This argument extends [ 41 , Theorem 3]. In particular, when 𝛾 = 0, (3.12) reduces to the classical policy-gradient formula [30, 36]. Once Theorem 3.1 is established, we obtain an explicit representation of the policy gradient and can, in principle, learn the optimal policy via reinforcement learning. However, the 𝑞 -function is primarily a formal object: evaluating it may require derivatives such as ∇𝒙 𝐽 and ∇2 
+
+> 𝒙
+
+𝐽 , which is computationally expensive and numerically delicate. Moreover, in model-free settings the SDE coefficients (𝒃 , 𝝈 , 𝜶 ) are unknown, so the Hamiltonian terms cannot be computed directly. Therefore, practical implementations must rely on tractable approximations of 𝑞 . Two main approaches have been explored. First, [ 8 , 25 ] approximate 𝑞 by neural networks and learn it via martingale properties, then update the policy via the Gibbs form implied by the 
+
+𝑞 -function. Second, [ 41 ] relates 𝑞 -function with 𝐽 without requiring derivatives, yielding an estimator akin to the generalized advantage estimation (GAE) [ 37 ]. Our approach follows the latter and leads to the next result under our setting with proof presented in Section B.3 in the supplementary materials. 
+
+Lemma 3.3 (Approximation of 𝑞 -function) Fix 𝛽 > 0 and a stochastic policy 𝜋 . Let 𝐽 (· , ·; 𝜋 ) denote the corresponding discounted reward. Assume 𝐽 ∈ 𝐶 1,2 ([ 0, ∞) × R𝑑 ) and that there exists 𝛿 0 > 0 such that, for every 𝑡 ≥ 0 and every 𝛿 𝑡 ∈ ( 0, 𝛿 0], E
+
+h
+
+sup 𝑠 ∈ [ 𝑡 ,𝑡 + 𝛿 𝑡 )
+
+ |𝐽 (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 )| + | 𝜕𝐽 𝜕𝑡 (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 )| + |∇ 𝑥 𝐽 (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 )| + ∥∇ 2 
+
+> 𝑥
+
+𝐽 (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 )∥ 
+
+F𝑡 
+
+i
+
+< ∞, where ( 𝑿 𝒖  
+
+> 𝑠
+
+)𝑠 ≥𝑡 is defined before (3.6) with 𝑿 𝒖  
+
+> 𝑡
+
+= 𝒙 . Define the quantity 
+
+˜𝑞 𝛿 𝑡 (𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+, 𝒖 ; 𝜋 ) := 1
+
+𝛿 𝑡 
+
+ 𝑓 (𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+, 𝒖 ) 𝛿 𝑡 + 𝑒 −𝛽 𝛿 𝑡 𝐽  𝑡 + 𝛿 𝑡 , 𝑿 𝒖   
+
+> 𝑡 +𝛿 𝑡
+
+; 𝜋  − 𝐽  𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+; 𝜋  . (3.14) 
+
+Then, as 𝛿 𝑡 → 0,
+
+E ˜𝑞 𝛿 𝑡 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) F𝑡 
+
+ = 𝑞  𝑡, 𝒙 , 𝒖 ; 𝜋  + 𝑜 (1). (3.15) 
+
+Therefore, ˜𝑞 𝛿 𝑡 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) is a first-order asymptotically unbiased estimator of the 𝑞 -function. 
+
+8Therefore, when updating the actor using (3.12) –(3.13) , we replace 𝑞 by ˜𝑞 𝛿 𝑡 , and correspondingly approximate 𝐴 ent (𝑠, 𝒚 , 𝒖 ; 𝜃 0) by ˜ 𝑞 𝛿 𝑡 (𝑠, 𝒚 , 𝒖 ; 𝜋 𝜃 0 ) − 𝛾 log 𝜋 𝜃 0 (𝒖 | 𝑠, 𝒚 ).
+
+Remark 3.1 In particular, for the reward functionals considered here, the quantities 𝐽 , 𝜕 𝑡 𝐽 , ∇𝑥 𝐽 , and ∇2 
+
+> 𝑥
+
+𝐽 
+
+are polynomially bounded (or bounded) in 𝑥 . Together with standard moment estimates for jump-diffusions under local Lipschitz and linear-growth conditions on (𝑏, 𝜎, 𝜆, 𝛼 ), the condition of 𝐽 in Lemma 3.3 holds, see e.g., in [17, Proposition 2] and [31, Theorem 1.19]. 
+
+3.3 The Online Actor-Critic Scheme 
+
+We describe the proposed online actor-critic scheme for time-inhomogeneous jump diffusion control problems. Fix a deterministic step size 𝛿 𝑡 and consider the uniform grid 0 = 𝑡 0 < 𝑡 1 < · · · < 𝑡 𝐾 with 𝑡 𝑘 = 𝑘 𝛿 𝑡 . We parameterize the actor and critic by neural networks, denoted by 𝜋 𝜃 (𝒖 | 𝑡, 𝒙 ) and 𝑉 𝜓 (𝑡, 𝒙 ), and update (𝜃, 𝜓 )
+
+iteratively via policy gradient and policy evaluation. At each iteration, a minibatch of 𝐿 trajectories is sampled, which we denote by {𝑿 (ℓ ) 
+
+> 𝑘
+
+}𝐾 𝑘 =0, ℓ = 1, . . . , 𝐿 . Specifically, at time 𝑡 𝑘 , we sample an action 𝒖 (ℓ ) 
+
+> 𝑘
+
+from the current policy 𝜋 𝜃 (· | 𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
+), evolve the dynamics using the Euler scheme of (2.10) , and obtain the next state 
+
+𝑿 (ℓ )
+
+> 𝑘 +1
+
+. The discounted reward 𝑓 𝑘,ℓ accumulated over [𝑡 𝑘 , 𝑡 𝑘 +1] is approximated by 𝑓 𝑘,ℓ := 𝑓 (𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
+, 𝒖 (ℓ ) 
+
+> 𝑘
+
+) 𝛿 𝑡 .
+
+Critic. To update the critic parameters 𝜓 in 𝑉 𝜓 (𝑡, 𝒙 ), we construct the TD error (3.2) (or the martingale-corrected TD error (3.4) ) along sampled trajectories using ¯𝑉 ¯𝜓 for the bootstrapped next-state target. The target network ¯𝑉 ¯𝜓 decouples the bootstrapping target from the online critic being optimized, thereby reducing target drift and improving stability during training, following the target-network idea used in soft actor-critic (SAC) [19]. Specifically, for trajectory ℓ at time 𝑡 𝑘 , define 
+
+𝛿 (ℓ ) 
+
+> TD ,𝑘
+
+:= 𝑓 𝑘,ℓ + 𝑒 −𝛽 𝛿 𝑡 ¯𝑉 ¯𝜓 
+
+ 𝑡 𝑘 +1, 𝑿 (ℓ )
+
+> 𝑘 +1
+
+ − 𝑉 𝜓 
+
+ 𝑡 𝑘 , 𝑿 (ℓ )
+
+> 𝑘
+
+, (3.16) ˜𝛿 (ℓ ) 
+
+> TD ,𝑘
+
+:= 𝛿 (ℓ ) 
+
+> TD ,𝑘
+
+−  ∇𝑥 𝑉 𝜓 
+
+ 𝑡 𝑘 , 𝑿 (ℓ )
+
+> 𝑘
+
+⊤𝝈  𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
+, 𝒖 (ℓ )
+
+> 𝑘
+
+ Δ𝑾 (ℓ ) 
+
+> 𝑘
+
+(3.17) 
+
+−
+
+ 𝑁 (ℓ)
+
+> 𝑡 𝑘 +1
+
+∑︁   
+
+> 𝑖 =𝑁 (ℓ)
+> 𝑡 𝑘 +1
+
+𝑉 𝜓 
+
+ 𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
++ 𝜶 (𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
+, 𝒖 (ℓ ) 
+
+> 𝑘
+
+, 𝒛 (ℓ ) 
+
+> 𝑖
+
+) − 𝑉 𝜓 
+
+ 𝑡 𝑘 , 𝑿 (ℓ )
+
+> 𝑘
+
+ − 𝛿 𝑡 𝑉 non 
+
+ 𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
+, 𝒖 (ℓ )
+
+> 𝑘
+
+
+
+.
+
+where Δ𝑾 (ℓ ) 
+
+> 𝑘
+
+:= 𝑾 (ℓ ) 
+
+> 𝑡 𝑘 +1
+
+− 𝑾 (ℓ ) 
+
+> 𝑡 𝑘
+
+∼ N ( 0, 𝛿 𝑡 𝑰 𝑑 ), 𝑁 (ℓ ) 
+
+> 𝑡 𝑘
+
+counts the number of jumps on the trajectory ℓ,
+
+{𝒛 (ℓ ) 
+
+> 𝑖
+
+}𝑖 ≥1 are the corresponding jump sizes, and 𝑉 non (𝑡, 𝒙 , 𝒖 ) approximates the (non-local) compensator term ∫
+
+> R𝑑
+
+𝑉 𝜓 
+
+ 𝑡, 𝒙 + 𝜶 (𝑡, 𝒙 , 𝒖 , 𝒛 ) − 𝑉 𝜓 (𝑡, 𝒙 ) 𝜈 (d𝒛 ). A practical challenge is the efficient evaluation of this term; see [28, Section 3.1] for further discussion. Given a minibatch of 𝐿 trajectories and 𝐾 critic time steps, we update 𝜓 by minimizing the empirical mean-squared (martingale-corrected) TD error 
+
+𝐿 critic (𝜓 ) = 1
+
+𝐿𝐾 critic 
+
+> 𝐿
+
+∑︁  
+
+> ℓ=1
+> 𝐾 critic −1
+
+∑︁ 
+
+> 𝑘 =0
+
+( ˜𝛿 (ℓ ) 
+
+> TD ,𝑘
+
+)2 . (3.18) The target critic parameters are then updated by Polyak averaging ¯𝜓 ← 𝜌 𝑐 ¯𝜓 + ( 1 − 𝜌 𝑐 ) 𝜓, 𝜌 𝑐 ∈ ( 0, 1), where 
+
+𝜌 𝑐 is a prescribed averaging weight [19]. 
+
+Actor. We parameterize the stochastic policy 𝜋 𝜃 as a conditional normalizing flow [9, 32]. Specifically, the policy is defined as the pushforward of a Gaussian distribution N𝜃 ∗
+
+𝒛 0 ∼ N 𝜃 (· | 𝑡, 𝒙 ) = N   ¯𝝁 𝜃 (𝑡, 𝒙 ), Std 2 
+
+> 𝜃
+
+(𝑡, 𝒙 ), (3.19)    
+
+> ∗Even in the unregularized case ( 𝛾 =0), where the optimal control is deterministic, we still adopt a Gaussian policy parameterization. This choice is supported by [ 30 ,38 ], which establish the convergence of policy-gradient methods with stochastic policies and show that, in terms of solvability, they are equivalent to the corresponding standard control problem.
+
+9through a learnable invertible normalizing flow 𝐹 𝜃 (· ; 𝑡, 𝒙 ), followed by an optional differentiable squashing map 𝑆 (e.g., a sigmoid or tanh ) that enforces control constraints when needed. The log-density of the resulting control sample is computed exactly by the change-of-variables formula, log 𝜋 𝜃 (𝒖 | 𝑡, 𝒙 ) = log 𝑝 N𝜃 
+
+ 𝒛 0 | ¯𝝁 𝜃 (𝑡, 𝒙 ), Std 𝜃 (𝑡, 𝒙 ) − log det 𝐽 𝐹 (𝒛 0; 𝑡, 𝒙 ) − log det 𝐽 𝑆 (𝐹 𝜃 (𝒛 0)) , (3.20) where 𝐽 𝐹 and 𝐽 𝑆 denote the Jacobians of the flow 𝐹 and the squashing map 𝑆 , respectively. This construction defines a flexible stochastic policy class that includes Gaussian policies as a special case †, while retaining exact likelihood evaluation required for entropy regularization and policy-gradient optimization. In implementation, samples of 𝜋 𝜃 (· | 𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
+) are generated using 
+
+𝒛 (ℓ ) 
+
+> 0,𝑘
+
+= ¯𝝁 𝜃 
+
+ 𝑡 𝑘 , 𝑿 (ℓ )
+
+> 𝑘
+
+ + Std 𝜃 
+
+ 𝑡 𝑘 , 𝑿 (ℓ )
+
+> 𝑘
+
+ ⊙ 𝜺 (ℓ ) 
+
+> 𝑘
+
+, 𝜺 (ℓ ) 
+
+> 𝑘
+
+∼ N ( 0, 𝑰 𝑚 ), (3.21) 
+
+𝒛 (ℓ ) 
+
+> 𝐹,𝑘
+
+= 𝐹 𝜃 
+
+ 𝒛 (ℓ ) 
+
+> 0,𝑘
+
+; 𝑡 𝑘 , 𝑿 (ℓ )
+
+> 𝑘
+
+, 𝒖 (ℓ ) 
+
+> 𝑘
+
+= 𝑆 (𝒛 (ℓ ) 
+
+> 𝐹,𝑘
+
+) ∈ [ 𝒖 min , 𝒖 max ]𝑚 .
+
+To update the actor parameters 𝜃 , we form the one-step advantage estimator using (3.13) and Lemma 3.3: ˆ𝐴 (ℓ ) 
+
+> 𝑘
+
+:= 1
+
+𝛿 𝑡 
+
+
+
+𝑓 𝑘,ℓ + 𝑒 −𝛽 𝛿 𝑡 𝑉 𝜓 
+
+ 𝑡 𝑘 +1, 𝑿 (ℓ )
+
+> 𝑘 +1
+
+ − 𝑉 𝜓 
+
+ 𝑡 𝑘 , 𝑿 (ℓ )
+
+> 𝑘
+
+
+
+− 𝛾 log 𝜋 (ℓ ) 
+
+> 𝜃
+
+(𝑡 𝑘 ), (3.22) where log 𝜋 (ℓ ) 
+
+> 𝜃
+
+(𝑡 𝑘 ) := log 𝜋 𝜃 (𝒖 (ℓ ) 
+
+> 𝑘
+
+| 𝑡 𝑘 , 𝑿 (ℓ ) 
+
+> 𝑘
+
+) using (3.20) . Given a minibatch of 𝐿 trajectories and 𝐾 actor 
+
+time steps, we update 𝜃 by minimizing the policy-gradient surrogate 
+
+𝐿 actor (𝜃 ) = − 1
+
+𝛽𝐿𝐾 actor 
+
+> 𝐿
+
+∑︁  
+
+> ℓ=1
+> 𝐾 actor −1
+
+∑︁ 
+
+> 𝑘 =0
+
+log 𝜋 (ℓ ) 
+
+> 𝜃
+
+(𝑡 𝑘 ) stopgrad   ˆ𝐴 (ℓ )
+
+> 𝑘
+
+, (3.23) where stopgrad (·) indicates that ˆ𝐴 (ℓ ) 
+
+> 𝑘
+
+is treated as constant when differentiating with respect to 𝜃 , consistent with Theorem 3.1. Combining (3.18) and (3.23) yields the online time-inhomogeneous actor-critic procedure summarized in Alg. 1. We note that the underlying control problem is infinite-horizon: the finite sum over 𝑘 corresponds to an optimization window used for stability and variance reduction, and does not impose a finite terminal time. 
+
+# 4 Numerical Experiments 
+
+In this section, we illustrate the proposed online actor-critic framework through a set of representative numerical examples. We consider three problems of increasing complexity: a linear-quadratic (LQ) control problem with jump diffusion (Section 4.1), the Merton portfolio optimization problem (Section 4.2), and a multi-agent portfolio game (Section 4.3). These examples are chosen to demonstrate the flexibility of the method across settings with known analytical structure, nonlinear dynamics, and strategic interactions, as well as to assess its empirical stability and performance in time-inhomogeneous jump-diffusion environments. 
+
+Metrics. We assess the learned actor and critic networks using trajectory-level metrics. For each experiment, we analyze the learned (i) state trajectory ˆ𝑿 𝑡 , (ii) value function ˆ𝑉 (𝑡, ˆ𝑿 𝑡 ), and (iii) control process (the feedback control ˆ 𝒖 (𝑡, ˆ𝑿 𝑡 ) when 𝛾 = 0, or the mean of ˆ 𝒖 𝑡 ∼ ˆ𝜋 (· | 𝑡, ˆ𝑿 𝑡 ) in the exploratory case 𝛾 > 0). When a benchmark solution (𝒖 ∗, 𝑉, 𝑿 ) is available, we report time-averaged relative mean-square errors (RMSEs) on [0, 𝑇 eval ]:
+
+E𝑋 (𝑇 eval ) :=
+
+∫ 𝑇 eval  
+
+> 0
+
+∥ ˆ𝑿 𝑡 − 𝑿 𝑡 ∥2 d𝑡 
+
+∫ 𝑇 eval  
+
+> 0
+
+∥ 𝑿 𝑡 ∥2 d𝑡 + 𝜀 𝑋 
+
+, E𝑉 (𝑇 eval ) :=
+
+∫ 𝑇 eval  
+
+> 0
+
+| ˆ𝑉 (𝑡, ˆ𝑿 𝑡 ) − 𝑉 (𝑡, 𝑿 𝑡 )| 2 d𝑡 
+
+∫ 𝑇 eval  
+
+> 0
+
+|𝑉 (𝑡, 𝑿 𝑡 )| 2 d𝑡 + 𝜀 𝑉 
+
+. (4.1)              
+
+> †When the Hamiltonian His quadratic in 𝒖 , the optimal randomized policy 𝜋 ∗(𝒖 |𝑡, 𝒙 ) ∝ exp (H(𝑡, 𝒙 ,𝒖 )/ 𝛾 )is Gaussian; if the control domain is unconstrained, we may also omit the squashing map, so that only the first term in (3.20) remains.
+
+10 Algorithm 1 Online time-inhomogeneous actor-critic for infinite-horizon jump-diffusion 
+
+Require: Step size 𝛿 𝑡 ; discount 𝛽 ; entropy weight 𝛾 ; number of time points 𝐾 ; update periods 𝐾 critic , 𝐾 actor ;iterations 𝑁 itr ; minibatch 𝐿 ; value net 𝑉 𝜓 (𝑡, 𝒙 ); target net ¯𝑉 ¯𝜓 (𝑡, 𝒙 ); Polyak coefficient 𝜌 𝑐 ∈ ( 0, 1);stochastic policy 𝜋 𝜃 (· | 𝑡, 𝒙 ). 
+
+> 1:
+
+for it = 1 to 𝑁 itr do  
+
+> 2:
+
+Set initial time 𝑡 ← 0 and initial states 𝑿 0 ← 𝑿 init . 
+
+> 3:
+
+𝑉 ← 𝑉 𝜓 (𝑡, 𝑿 ). 
+
+> 4:
+
+Lcritic ← 0, 𝑛 critic ← 0; Lactor ← 0, 𝑛 actor ← 0. 
+
+> 5:
+
+for 𝑘 = 0 to 𝐾 − 1 do  
+
+> 6:
+
+Sample 𝒖 (ℓ ) 
+
+> 𝑘
+
+according to (3.21).  
+
+> 7:
+
+Calculate the log-density log 𝜋 (ℓ ) 
+
+> 𝜃
+
+(𝑡 𝑘 ) via (3.20).  
+
+> 8:
+
+Evolve 𝑿 (ℓ ) 
+
+> 𝑘 +1
+
+from 𝑿 (ℓ ) 
+
+> 𝑘
+
+via Euler scheme.  
+
+> 9:
+
+Compute the TD error 𝛿 (ℓ ) 
+
+> TD ,𝑘
+
+using (3.16) or (3.17).  
+
+> 10:
+
+Lcritic ← L critic + P𝐿 ℓ=1 ∥𝛿 (ℓ ) 
+
+> TD ,𝑘
+
+∥22; 𝑛 critic ← 𝑛 critic + 1.  
+
+> 11:
+
+if 𝑛 critic mod 𝐾 critic = 0 then  
+
+> 12:
+
+Update 𝜓 by one optimizer step on Lcritic /𝐿𝐾 critic . ⊲ critic objective (3.18)  
+
+> 13:
+
+¯𝜓 ← 𝜌 𝑐 ¯𝜓 + ( 1 − 𝜌 𝑐 ) 𝜓 . 
+
+> 14:
+
+Lcritic ← 0; 𝑛 critic ← 0.  
+
+> 15:
+
+end if  
+
+> 16:
+
+Compute the GAE estimator ˆ 𝐴 (ℓ ) 
+
+> 𝑘
+
+according to (3.22)  
+
+> 17:
+
+Lactor ← L actor − 𝛽 −1 P𝐿 ℓ=1 log 𝜋 (ℓ ) 
+
+> 𝜃
+
+(𝑡 𝑘 ) stopgrad ( ˆ𝐴 (ℓ ) 
+
+> 𝑘
+
+); 𝑛 actor ← 𝑛 actor + 1.  
+
+> 18:
+
+if 𝑛 actor mod 𝐾 actor = 0 then  
+
+> 19:
+
+Update 𝜃 by one optimizer step on Lactor /𝐿𝐾 actor . ⊲ actor objective (3.23)  
+
+> 20:
+
+Lactor ← 0; 𝑛 actor ← 0.  
+
+> 21:
+
+end if  
+
+> 22:
+
+end for  
+
+> 23:
+
+end for 
+
+For the learned control, we use the RMSE when 𝛾 = 0, and a distributional discrepancy when 𝛾 > 0: 
+
+E𝑢 (𝑇 eval ) :=
+
+∫ 𝑇 eval  
+
+> 0
+
+∥ ˆ𝒖 (𝑡, ˆ𝑿 𝑡 ) − 𝒖 ∗ (𝑡, 𝑿 𝑡 )∥ 2 d𝑡 
+
+∫ 𝑇 eval  
+
+> 0
+
+∥𝒖 ∗ (𝑡, 𝑿 𝑡 )∥ 2 d𝑡 + 𝜀 𝑢 
+
+, 𝛾 = 0,
+
+1
+
+𝑇 eval 
+
+∫ 𝑇 eval 
+
+> 0
+
+KL  𝜋 ∗ (· | 𝑡, ˆ𝑿 𝑡 ) ˆ𝜋 (· | 𝑡, ˆ𝑿 𝑡 ) d𝑡, 𝛾 > 0,
+
+(4.2) since for 𝛾 > 0, both the benchmark and learned controls are stochastic policies, denoted by 𝜋 ∗ (· | 𝑡, 𝒙 ) and ˆ𝜋 (· | 𝑡, 𝒙 ). The constants 𝜀 𝑋 , 𝜀 𝑉 , 𝜀 𝑢 > 0 are small stabilizers included to avoid division by zero. 
+
+Poisson jump specification. In the experiments, we consider a discrete L ´evy measure corresponding to Poisson jumps: 𝜈 (d𝒛 ) = P𝑑 𝑖 =1 𝜆 𝑖 𝛿 𝒆 𝑖 (d𝒛 ), where 𝜆 𝑖 > 0 and 𝒆 𝑖 is the 𝑖 -th canonical basis vector in 
+
+R𝑑 . Under this specification, the jump measure is represented by independent Poisson processes 𝑁 (𝑖 )
+
+> 𝑡
+
+with rates 𝜆 𝑖 , so that 𝑁 (d𝑡, 𝒆 𝑖 ) = d𝑁 (𝑖 ) 
+
+> 𝑡
+
+. Let 𝑀 (𝑖 ) 
+
+> 𝑡
+
+:= 𝑁 (𝑖 ) 
+
+> 𝑡
+
+− 𝜆 𝑖 𝑡 be the compensated Poisson process, namely d𝑀 (𝑖 ) 
+
+> 𝑡
+
+= d𝑁 (𝑖 ) 
+
+> 𝑡
+
+− 𝜆 𝑖 d𝑡 . Then the jump term in (2.1) becomes ∫ 
+
+> R𝑑
+
+𝜶  𝑡, 𝑿 𝜋 𝑡 − , 𝒖 𝑡 , 𝒛  ˜𝑁 (d𝑡, d𝒛 ) =
+
+P𝑑 𝑖 =1 𝜶  𝑡, 𝑿 𝜋 𝑡 − , 𝒖 𝑡 , 𝒆 𝑖 
+
+ d𝑀 (𝑖 ) 
+
+> 𝑡
+
+. Accordingly, the nonlocal integral term in the Hamiltonian (2.9) and the generator L𝒖 in (2.6) reduces to P𝑑 𝑖 =1 𝜆 𝑖 
+
+h
+
+𝑉  𝑡, 𝒙 + 𝜶 (𝑡, 𝒙 , 𝒖 , 𝒆 𝑖 ) − 𝑉 (𝑡, 𝒙 ) − 𝜶 (𝑡, 𝒙 , 𝒖 , 𝒆 𝑖 ) · ∇ 𝒙 𝑉 (𝑡, 𝒙 )
+
+i
+
+.11 In each of the following sections, we (i) specify the control or game formulation, (ii) give the analytical solution when available, or present how benchmark solutions are obtained, and (iii) present the numerical results. All implementation details and model parameters are provided in Appendix A. Some benchmark derivations are standard in the stochastic control literature, and are included in the supplementary materials for completeness. All experiments are implemented in PyTorch and run on an NVIDIA RTX 4090 GPU. The code is available upon request and will be made public upon publication. 
+
+4.1 Linear-Quadratic Control with Jump Diffusions 
+
+We first consider a 𝑑 -dimensional state 𝑿 𝑡 ∈ R𝑑 and a 𝑚 -dimensional control 𝒖 𝑡 ∈ R𝑚 , governed by the controlled jump-diffusion d𝑿 𝑡 = 𝑩 (𝑡 ) 𝒖 𝑡 d𝑡 + 𝚺 (𝑡 ) d𝑾 𝑡 +
+
+> 𝑑
+
+∑︁ 
+
+> 𝑖 =1
+
+𝛼 𝑖 (𝑡 ) 𝒆 𝑖 d𝑀 (𝑖 ) 
+
+> 𝑡
+
+, 𝑡 ≥ 0, (4.3) where 𝑩 (𝑡 ) ∈ R𝑑 ×𝑚 , 𝚺 (𝑡 ) ∈ R𝑑 ×𝑑 , 𝜶 (𝑡 ) := (𝛼 1 (𝑡 ), . . . , 𝛼 𝑑 (𝑡 )) ⊤ ∈ R𝑑 , and 𝒆 𝑖 is the 𝑖 th canonical basis vector in R𝑑 . The running reward is quadratic 𝑓 (𝑡, 𝒙 , 𝒖 ) = −( 𝒖 ⊤ 𝑹 (𝑡 ) 𝒖 + 𝒙 ⊤𝑸 (𝑡 ) 𝒙 ), with 𝑹 (𝑡 ) ∈ S𝑚 and 
+
+𝑸 (𝑡 ) ∈ S𝑑 positive definite. Recall that the value function satisfies (2.12) for the standard control (𝛾 = 0) and (2.8) under entropy-regularization, with the integral term replaced by P𝑑 𝑖 =1 𝜆 𝑖 (𝑡 )  𝜑 (𝑡, 
+
+𝒙 + 𝛼 𝑖 (𝑡 )𝒆 𝑖 ) − 𝜑 (𝑡, 𝒙 ) − 𝛼 𝑖 (𝑡 ) 𝜕 𝑥 𝑖 𝜑 (𝑡, 𝒙 ). Therefore, the optimal policy and value function satisfy 
+
+𝜋 ∗ (𝒖 | 𝑡, 𝒙 ) = N
+
+
+
+𝑹 (𝑡 )−1 𝑩 (𝑡 )⊤ 𝑯 (𝑡 )𝒙 , 𝛾 
+
+2 𝑹 (𝑡 )−1
+
+, 𝑉 (𝑡, 𝒙 ) = 𝒙 ⊤ 𝑯 (𝑡 )𝒙 + 𝑔 𝛾 (𝑡 ) , (4.4) where 𝑯 (𝑡 ) ∈ S𝑑 and 𝑔 𝛾 (𝑡 ) ∈ R solve 
+
+𝑯 ′ (𝑡 ) = 𝛽 𝑯 (𝑡 ) + 𝑸 (𝑡 ) − 𝑯 (𝑡 ) 𝑩 (𝑡 ) 𝑹 (𝑡 )−1 𝑩 (𝑡 )⊤ 𝑯 (𝑡 ),𝑔 ′ 
+
+> 𝛾
+
+(𝑡 ) = 𝛽𝑔 𝛾 (𝑡 ) − Tr  𝚺 (𝑡 )𝚺 (𝑡 )⊤ 𝑯 (𝑡 ) − Tr 
+
+
+
+𝚲 (𝑡 ) diag (𝜶 (𝑡 )) 𝑯 (𝑡 ) diag (𝜶 (𝑡 )) 
+
+
+
+− 𝑐 𝛾 (𝑡 ), (4.5) with 𝑐 𝛾 (𝑡 ) = 𝛾 
+
+> 2
+
+ 𝑚 log (𝜋𝛾 ) − log det 𝑹 (𝑡 ), 𝚲 (𝑡 ) := diag (𝜆 𝑖 (𝑡 )) . The proof for the analytical solution is presented in supplemental material. In the classical case 𝛾 = 0, by standard derivation, the optimal stochastic policy degenerates to the feedback control 
+
+𝒖 ∗ (𝑡, 𝒙 ) = 𝑹 (𝑡 )−1 𝑩 (𝑡 )⊤ 𝑯 (𝑡 )𝒙 . (4.6) 
+
+4.1.1 Time-Homogeneous Case 
+
+We start with the time-homogeneous case, i.e., 𝑩 (𝑡 ) ≡ 𝑩 , 𝚺 (𝑡 ) ≡ 𝚺 , 𝜶 (𝑡 ) ≡ 𝜶 , 𝚲 (𝑡 ) ≡ 𝚲 , 𝑹 (𝑡 ) ≡ 𝑹 and 
+
+𝑸 (𝑡 ) ≡ 𝑸 . In this case, there exists a stationary pair (𝑯 , 𝑔 𝛾 ) that solves the following. 
+
+0 = 𝛽 𝑯 + 𝑸 − 𝑯𝑩𝑹 −1 𝑩 ⊤ 𝑯 , 𝛽𝑔 𝛾 = Tr  𝚺𝚺 ⊤ 𝑯  + Tr 
+
+
+
+𝚲 diag (𝜶 ) 𝑯 diag (𝜶 )
+
+
+
++ 𝛾 
+
+2
+
+ 𝑚 log (𝜋𝛾 ) − log det 𝑹 .
+
+(4.7) The optimal stochastic policy remains Gaussian with mean 𝑹 −1 𝑩 ⊤ 𝑯𝒙 and covariance 𝛾  
+
+> 2
+
+𝑹 −1, and the standard case follows by setting 𝑐 𝛾 = 0. 
+
+Standard LQ problem ( 𝛾 = 0). We first solve a 5-dimensional LQ control problem, and train the actor and critic networks (𝜋 𝜃 , 𝑉 𝜓 ) using Algorithm 1 for 𝑁 itr = 1,000 iterations, with horizons 𝑇 ∈ { 10 , 100 }. We then freeze all networks and generate the approximated state trajectories ˆ𝑿 𝑡 , value function ˆ𝑉 and the feedback 12 0.0 2.5 5.0 7.5 10.0 
+
+t (Time)                 
+
+> 0.6
+> 0.4
+> 0.2
+> 0.0
+> 0.2
+> u(t, Xt)
+> (a)
+> Approx. u(t,Xt)
+> Exact u*(t,Xt)
+> Jump
+> u*(T,XT)
+> u*(0, X0)
+> 0.0 2.5 5.0 7.5 10.0
+
+t (Time)            
+
+> 20
+> 40
+> 60
+> 80
+> v(t, Xt)
+> (b) Approx. v(t,Xt)
+> Exact v(t,Xt)
+> Jump
+> v(T,XT)
+> v(0, X0)
+> 0.0 2.5 5.0 7.5 10.0
+
+t (Time)            
+
+> 2
+> 3
+> 4
+> 5
+> Xt
+> (c)
+> Approx. Xtby u
+> Exact Xtby u*
+> Jump
+> XT
+> X0025 50 75 100
+
+t (Time)                 
+
+> 0.5
+> 0.0
+> 0.5
+> u(t, Xt)
+> (a)
+> Approx. u(t,Xt)
+> Exact u*(t,Xt)
+> Jump
+> u*(T,XT)
+> u*(0, X0)
+> 025 50 75 100
+
+t (Time)            
+
+> 25
+> 50
+> 75
+> 100
+> v(t, Xt)
+> (b) Approx. v(t,Xt)
+> Exact v(t,Xt)
+> Jump
+> v(T,XT)
+> v(0, X0)
+> 025 50 75 100
+
+t (Time)        
+
+> 5
+> 0
+> 5
+> Xt
+> (c)
+> Approx. Xtby u
+> Exact Xtby u*
+> Jump
+> XT
+> X0
+
+Figure 1: Predicted (a) optimal control, (b) value function, and (c) state trajectory for the standard LQ problem with 𝑑 = 5 on horizon 𝑇 = 10 (top) and 𝑇 = 100 (bottom). Parameters: 𝛾 = 0, 𝑩 = 0.5𝑰 𝑑 , 𝚺 = 0.3𝑰 𝑑 ,
+
+𝑹 = 5𝑰 𝑑 , 𝑸 = 0.5𝑰 𝑑 , 𝜆 𝑖 = 0.2 + 𝑖 −1
+
+𝑑 −1 (0.3 − 0.2) and 𝛼 𝑖 = 0.3 − 𝑖 −1
+
+𝑑 −1 (0.3 − 0.2) for 𝑖 = 1, . . . , 𝑑 .control ˆ𝒖 using step size 𝛿 𝑡 = 0.01 . Figure 1 shows that the learned values are consistent with the analytical solution, and remain numerically stable even over the long horizon 𝑇 = 100. 
+
+Entropy-regularized LQ problem ( 𝛾 > 0). We next consider the entropy-regularized variant with 𝛾 = 0.05 under the same problem setup and evaluation procedure. For the LQ problem, the Hamiltonian H is quadratic in 𝒖 , so the optimal entropy-regularized policy is Gaussian. Accordingly, when parameterizing the actor we may treat the flow map as the identity and use only the Gaussian policy in (3.19) . Equivalently, sampling actions reduces to setting 𝒖 to the base variable in (3.21) , i.e., 𝒖 = 𝒛 0. Figure 2 reports the mean of stochastic control as well as the approximated state and value trajectories, showing that Alg. 1 remains numerically stable and accurate under exploration. 0.0 2.5 5.0 7.5 10.0 
+
+t (Time)                
+
+> 0.6
+> 0.4
+> 0.2
+> 0.0
+> 0.2
+> Mean of  (t, Xt)
+> (a)
+> Approx. Mean of (t,Xt)
+> Exact Mean of *(t,Xt)
+> Jump
+> Mean of *(T,XT)
+> Mean of *(0, X0)
+> 0.0 2.5 5.0 7.5 10.0
+
+t (Time)           
+
+> 20
+> 40
+> 60
+> 80
+> v(t, Xt)
+> (b)
+> Approx. v(t,Xt)
+> Exact v(t,Xt)
+> Jump
+> v(T,XT)
+> v(0, X0)
+> 0.0 2.5 5.0 7.5 10.0
+
+t (Time)        
+
+> 2
+> 3
+> 4
+> 5
+> Xt
+> (c)
+> Approx. Xtby u
+> Exact Xtby u*
+> Jump
+> XT
+> X0
+
+Figure 2: Predicted (a) mean of stochastic policy, (b) value function, and (c) state trajectory for the entropy-regularized LQ problem with 𝑑 = 5 and 𝛾 = 0.05 . All remaining parameters and the evaluation protocol are the same as in Fig. 1, with horizon 𝑇 = 10. To test scalability in the state dimension, we repeat the entropy-regularized experiment ( 𝛾 = 0.05 ) for 
+
+𝑑 ∈ { 1, 5, 20 , 50 }. Table 2 reports the RMSE for the value and control over three seeds. The value error E𝑉 
+
+13 stays small across dimensions, whereas the control error E𝑢 increases linearly with 𝑑 , consistent with the greater difficulty of learning high-dimensional feedback under exploration noise. Table 2: Training errors for the entropy-regularized ( 𝛾 = 0.05 ) LQ problem across state dimensions 𝑑 . All runs use 𝑁 itr = 1,000 iterations and results are averaged over three random seeds.                    
+
+> 𝑑 =1𝑑 =5𝑑 =20 𝑑 =50
+> E𝑢 0.1441 0.3992 1.9205 4.9366
+> E𝑉 0.0034 0.0036 0.0046 0.0038
+
+4.1.2 Time-Inhomogeneous Case Convergent coefficients. We next consider a time-inhomogeneous LQ problem such that as 𝑡 → ∞ ,
+
+𝑩 (𝑡 ) → 𝑩 ∞, 𝚺 (𝑡 ) → 𝚺 ∞, 𝜶 (𝑡 ) → 𝜶 ∞, 𝚲 (𝑡 ) → 𝚲 ∞, 𝑸 (𝑡 ) → 𝑸 ∞, 𝑹 (𝑡 ) → 𝑹 ∞,
+
+with sufficiently fast convergence so that the discounted reward is well defined. The computation of the benchmark solution is less direct than in the time-homogeneous case, since the ODE system (4.5) does not come with an explicit terminal boundary condition. For the present choice of convergent coefficients, the terminal boundary can be approximated by introducing a sufficiently large terminal time 𝑇 ∞ and using the limiting stationary solution there as an approximate boundary condition. In our implementation, we take 𝑇 ∞ = 3𝑇 . The control process is considered on the interval [0, 𝑇 ], while the 
+
+(𝑯 (𝑡 ), 𝑔 𝛾 (𝑡 )) pairs are numerically recovered by applying the Euler method [ 20 ] to integrate (4.5) backward over [0, 𝑇 ∞]. The limiting pair (𝑯 ∞, 𝑔 𝛾, ∞) is determined from the stationary version of (4.7) , where (𝑯 , 𝑔 𝛾 )
+
+is replaced by (𝑯 ∞, 𝑔 𝛾, ∞), and the time-dependent coefficients 𝑹 and 𝑸 are replaced by their limiting values 
+
+𝑹 ∞ and 𝑸 ∞.
+
+Periodic coefficients. We now turn to the periodic setting, i.e., let the following coefficients be 𝑃 -periodic for some 𝑃 > 0: 
+
+𝑩 (𝑡 + 𝑃 ) = 𝑩 (𝑡 ), 𝚺 (𝑡 + 𝑃 ) = 𝚺 (𝑡 ), 𝜶 (𝑡 + 𝑃 ) = 𝜶 (𝑡 ), 𝚲 (𝑡 + 𝑃 ) = 𝚲 (𝑡 ), 𝑸 (𝑡 + 𝑃 ) = 𝑸 (𝑡 ), 𝑹 (𝑡 + 𝑃 ) = 𝑹 (𝑡 ).
+
+(4.8) In this case, we seek the periodic solution (𝑯 , 𝑔 𝛾 ) of (4.4) -(4.5) , with boundary conditions 𝑯 (𝑡 +𝑃 ) = 𝑯 (𝑡 ),and 𝑔 𝛾 (𝑡 + 𝑃 ) = 𝑔 𝛾 (𝑡 ). Generally, iteration methods can be applied to solve the initial value 𝑯 (0), and here we turn (4.4) into a shooting problem [ 7]. Then 𝑯 (𝑡 ) on [0, 𝑃 ] can be calculated. Once the periodic function 
+
+𝑯 (𝑡 ) is determined, 𝑔 𝛾 can be constructed via 𝑔 𝛾 (𝑡 ) = 11−𝑒 −𝛽𝑃 
+
+∫ 𝑃  
+
+> 0
+
+𝑒 −𝛽 𝜏 
+
+
+
+Tr  𝚺 (𝑡 + 𝜏 )𝚺 (𝑡 + 𝜏 )⊤ 𝑯 (𝑡 + 𝜏 ) +
+
+Tr (𝚲 (𝑡 + 𝜏 )diag (𝜶 (𝑡 + 𝜏 )) 𝑯 (𝑡 + 𝜏 )diag (𝜶 (𝑡 + 𝜏 ))) + 𝑐 𝛾 (𝑡 + 𝜏 )
+
+
+
+d𝜏. 
+
+We validate the method in two time-inhomogeneous settings: one with exponentially decaying coefficients and one with sinusoidally varying coefficients ( 𝑃 = 10 ); see Table 4 for detailed parameter choices. In both cases, we train for 𝑁 itr = 3, 000 iterations on [0, 20 ], using step size 𝛿 𝑡 = 0.01 . The periodic case uses exploration intensity 𝛾 = 0.05 and the other case does not. Figure 3 compares the learned actor and critic with the benchmark solution: the learned mean control tracks the reference feedback (panel (a)), the value trajectory aligns with the benchmark (panel (b)), and the state paths nearly coincide, including around jump times (panel (c)), demonstrating good agreement despite explicit time inhomogeneity and regardless of exploratory intensities. 14 0 5 10 15 20 
+
+t (Time)                   
+
+> 0.3
+> 0.2
+> 0.1
+> 0.0
+> u(t, Xt)
+> (a)
+> Approx. u(t,Xt)
+> Benchmark u*(t,Xt)
+> Jump
+> Benchmark u*(T,XT)
+> Benchmark u*(0, X0)
+> 0510 15 20
+
+t (Time)              
+
+> 1
+> 2
+> 3
+> 4
+> v(t, Xt)
+> (b) Approx. v(t,Xt)
+> Benchmark v(t,Xt)
+> Jump
+> Benchmark v(T,XT)
+> Benchmark v(0, X0)
+> 0510 15 20
+
+t (Time)         
+
+> 3
+> 4
+> 5
+> Xt
+> (c)
+> Approx. Xtby u
+> Benchmark Xt
+> Jump
+> XT
+> X00510 15 20
+
+t (Time)                
+
+> 0.4
+> 0.2
+> 0.0
+> Mean of  (t, Xt)
+> (a)
+> Approx. Mean of (t,Xt)
+> Mean of benchmark *(t,Xt)
+> Jump
+> Mean of benchmark *(T,XT)
+> Mean of benchmark *(0, X0)
+> 0510 15 20
+
+t (Time)              
+
+> 0
+> 10
+> 20
+> 30
+> v(t, Xt)
+> (b) Approx. v(t,Xt)
+> Benchmark v(t,Xt)
+> Jump
+> Benchmark v(T,XT)
+> Benchmark v(0, X0)
+> 0510 15 20
+
+t (Time)     
+
+> 0
+> 5
+> 10
+> Xt
+> (c)
+> Approx. Xtby u
+> Benchmark Xt
+> Jump
+> XT
+> X0
+
+Figure 3: Predicted (a) optimal control / mean of stochastic policy, (b) value function, and (c) state trajectory for time-inhomogeneous LQ problem on horizon 𝑇 = 20 : convergent coefficients (top) and periodic coefficients (bottom). Parameters: 𝑁 itr = 3,000 and 𝛿 𝑡 = 0.01, with intensity 𝛾 = 0 (top) and 𝛾 = 0.05 (bottom). 
+
+4.2 Merton Problem in a Jump-diffusion Market 
+
+We consider Merton’s portfolio optimization problem in a jump-diffusion market. The investor chooses a strategy (𝑢 𝑡 )𝑡 ≥0 to allocate the fraction of the current wealth invested in the risky asset and of a risk-free asset with interest rate 𝑟 > 0. The resulting controlled wealth process (𝑋 𝑡 )𝑡 ≥0 satisfies d𝑋 𝑡 =  𝑟 + 𝑢 𝑡 (𝜇 − 𝑟 ) 𝑋 𝑡 d𝑡 + 𝜎𝑢 𝑡 𝑋 𝑡 d𝑊 𝑡 + 𝛼𝑢 𝑡 𝑋 𝑡 d𝑀 𝑡 . (4.9) Suppose that the investor has a reward function 𝑓 (𝑥 ) = 𝑥 𝑝 
+
+𝑝 with 0 < 𝑝 < 1 (i.e., CRRA utility), and seeks to maximize the expected discounted reward. Since the model parameters (𝑟, 𝜇, 𝜎, 𝜆, 𝛼 ) and the running reward 
+
+𝑓 are time-homogeneous, the problem admits a stationary solution. 
+
+Standard Merton problem ( 𝛾 = 0). In this case, the optimal investment fraction 𝑢 ∗ can be solved by 
+
+(𝜇 − 𝑟 ) + ( 𝑝 − 1)𝜎 2𝑢 ∗ + 𝜆𝛼 
+
+
+
+(1 + 𝛼𝑢 ∗) 𝑝 −1 − 1
+
+
+
+= 0 provided that 1 + 𝛼𝑢 ∗ > 0, and the analytical value function 
+
+𝑉 (𝑡, 𝑥 ) = 𝑉 (𝑥 ) = ℎ∗
+
+𝑝 𝑥 𝑝 , where ℎ∗ satisfies ℎ∗ 𝑝  𝑟 + ( 𝜇 − 𝑟 )𝑢 ∗ + 12 𝑝 ( 𝑝 − 1)𝜎 2 (𝑢 ∗)2 + 𝜆  (1 + 𝛼𝑢 ∗) 𝑝 − 1 −
+
+𝑝𝛼𝑢 ∗ − 𝛽  + 1 = 0. Based on this analytical benchmark, Figure 4 compares the learned optimal control, value function, and state trajectories with the solution. Close agreement confirms that Alg. 1 accurately recovers the classical Merton solution in this jump–diffusion setting. 
+
+Entropy-regularized Merton problem ( 𝛾 > 0). According to (2.2) , the running reward is given by ˜𝑓 (𝑥 ; 𝜋 ) = 𝑥 𝑝 
+
+𝑝 + 𝛾 S( 𝜋 ). The value function 𝑉 satisfies the entropy-regularized HJB equation in (2.8) , which can be simplified as 
+
+𝑉 (𝑥 ) = 𝛾 𝛽 log 
+
+∫
+
+A
+
+exp 
+
+ 1
+
+𝛾 H (𝑥, 𝑢, ∇𝑥 𝑉, ∇2
+
+𝑥 𝑉 )
+
+
+
+d𝑢 (4.10) together with the Gibbs-type optimal policy 𝜋 ∗ (𝑢 | 𝑥 ) ∝ exp  H /𝛾 ; see the supplementary material for a brief derivation. In general, the optimal policy 𝜋 ∗ is not Gaussian, since the Hamiltonian in the present Merton setting is not quadratic in 𝑢 , unlike in the LQ case. As a result, under entropy regularization, the optimal 15 0.0 2.5 5.0 7.5 10.0                                     
+
+> t(Time)
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> u(t, Xt)
+> (a)
+> Approx. u(t,Xt)
+> Exact u*(t,Xt)
+> Jump
+> u*(T,XT)
+> u*(0, X0)
+> 0.0 2.5 5.0 7.5 10.0
+> t(Time)
+> 5
+> 6
+> 7
+> 8
+> v(t, Xt)
+> (b)
+> Approx. v(t,Xt)
+> Exact v(t,Xt)
+> Jump
+> v(T,XT)
+> v(0, X0)
+> 0.0 2.5 5.0 7.5 10.0
+> t(Time)
+> 7.5
+> 10.0
+> 12.5
+> 15.0
+> Xt
+> (c) Approx. Xtby u
+> Exact Xtby u*
+> Jump
+> XT
+> X0
+
+Figure 4: Predicted (a) optimal control, (b) value function, and (c) state trajectories for the standard Merton problem ( 𝛾 = 0.0) on horizon 𝑇 = 10 . Parameters: 𝜇 = 0.05 , 𝑟 = 0.03 , 𝜎 = 0.4, 𝜆 = 0.2 , 𝛼 = 0.3, with total iterations 𝑁 itr = 2,000 and 𝛿 𝑡 = 0.01. policy is typically non-Gaussian, which leads to two main challenges: first, the policy distribution can no longer be accurately captured by a simple Gaussian family; second, in the absence of an explicit expression for the optimal policy, the value function 𝑉 generally does not admit a closed-form characterization. Fortunately, 
+
+𝑉 can be computed numerically to high accuracy via a physics-informed neural network (PINN) solver [ 34 ]applied to (4.10) . The resulting numerical approximation of the value function can then be used to recover the corresponding optimal policy, thereby providing a benchmark solution. Full implementation details of the PINN solver are deferred to Appendix A.1. With such a benchmark, our parameterization of 𝜋 𝜃 using conditional normalizing flows, introduced in Section 3.3, provides a flexible framework for representing general non-Gaussian distributions. Figure 5 compares the conditional policy distributions at different time points, the value function, and the state trajectories. The parameter settings are reported in Table 4, while the trajectory construction is described in Appendix A.1. The close agreement with the PINN benchmark demonstrates the effectiveness of our algorithm and of the flow-based policy parameterization. 
+
+4.3 Multi-Agent Portfolio Game in Jump-diffusion Market 
+
+Our final example considers a game-theoretic extension of the Merton problem presented in Section 4.2, where each agent’s reward depends on performance relative to the population average. This example serves two purposes: it demonstrates that the proposed algorithm scales well to high-dimensional systems and that it remains effective in the presence of strategic interactions. We consider 𝑛 agents, indexed by 𝑖 ∈ { 1, . . . , 𝑛 }, each choosing a control process 𝑢 𝑖 to maximize their own expected discounted reward. The wealth process of agent 𝑖 evolves as 
+
+𝑑𝑋 𝑖 𝑡 = 𝑢 𝑖 
+
+ 𝑏 𝑖 d𝑡 + 𝜂 𝑖 d𝑊 𝑖 𝑡 + 𝜎 𝑖 d𝑊 0 
+
+> 𝑡
+
++ 𝛼 𝑖 d𝑀 𝑖 𝑡 + 𝜉 𝑖 d𝑀 0
+
+> 𝑡
+
+, (4.11) where 𝑊 𝑖 is the idiosyncratic Brownian motion of agent 𝑖 , 𝑊 0 is the common Brownian motion shared by all agents, 𝑀 𝑖 is the compensated Poisson jump process specific to agent 𝑖 , and 𝑀 0 represents common jump shocks. Fixing the strategies 𝒖 −𝑖 of all other agents, agent 𝑖 chooses 𝑢 𝑖 to maximize 
+
+𝐽 𝑖 (𝑡, 𝑥, 𝑦 ; 𝑢 𝑖 , 𝒖 −𝑖 ) := E
+
+h ∫ ∞
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 ) 𝑓 𝑖 
+
+ 𝑋 𝑖 𝑠 , 𝑌 𝑖 𝑠 
+
+ d𝑠 𝑋 𝑖 𝑡 = 𝑥, 𝑌 𝑖 𝑡 = 𝑦 
+
+i
+
+, (4.12) 
+
+where 𝑌 𝑖 𝑡 := 1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑋 𝑗 𝑡 represents the average wealth of the other agents, and reward 𝑓 𝑖 (𝑥, 𝑦 ) = − exp 
+
+
+
+−
+
+> 1
+> 𝜚 𝑖
+
+ 1 − 𝜛 𝑖 
+
+> 𝑛
+
+𝑥 − 𝜛 𝑖 𝑦 
+
+ 
+
+measures relative performance, with risk-tolerance parameter 𝜚 𝑖 > 0 and competition weight 𝜛 𝑖 ∈ R.16 2 0 2
+
+u
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> p(u t, x)
+> (a)
+
+t = T/4, x=12.3605   
+
+> PINN sol of (4.10)
+> Flownet (samples)
+> 202
+
+u
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> p(u t, x)
+
+t = T/2, x=13.8822   
+
+> PINN sol of (4.10)
+> Flownet (samples)
+> 0510
+
+t (Time)       
+
+> 2
+> 4
+> 6
+> 8
+> v(t, Xt)
+> (b)
+> Approx. v(t,Xt)
+> Benchmark v(t,Xt) (PINN)
+> Jump
+> 202
+
+u
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> p(u t, x)
+
+t = 3 T/4, x=16.1018   
+
+> PINN sol of (4.10)
+> Flownet (samples)
+> 202
+
+u
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> p(u t, x)
+
+t = T, x=18.5848   
+
+> PINN sol of (4.10)
+> Flownet (samples)
+> 0510
+
+t (Time)       
+
+> 5
+> 10
+> 15
+> 20
+> Xt
+> (c) Approx. Xtby
+> Benchmark Xtby PINN u
+> Jump
+
+Figure 5: Plots of (a) densities 𝑝 (𝑢 | 𝑡, 𝒙 ) of the stochastic policy 𝜋 (𝑢 |𝑡, 𝒙 ) at 𝑡 = 𝑇 /4, 𝑇 /2, 3𝑇 /4, 𝑇 and some 
+
+𝒙 , (b) value function, and (c) state trajectories for the entropy-regularized Merton problem ( 𝛾 = 0.05 ) on horizon 𝑇 = 10. The total iterations is 𝑁 itr = 2,000 and 𝛿 𝑡 = 0.05. The goal of this multi-agent game is to find a Nash equilibrium, namely a collection of controls 
+
+𝒖 ∗ = (𝑢 ∗
+
+> 1
+
+, . . . , 𝑢 ∗
+
+> 𝑛
+
+) such that no agent can improve its own objective by deviating unilaterally while the others keep their strategies fixed. In other words, for every agent 𝑖 , the control 𝑢 ∗ 
+
+> 𝑖
+
+is an optimal response to 𝒖 ∗−𝑖 . To characterize such an equilibrium, we first solve the best-response problem of a representative agent and then impose consistency across all agents. Fixing the strategies 𝑢 𝑗 of all agents 𝑗 ≠ 𝑖 , we define the best-response value function of agent 𝑖 by 
+
+𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) := sup  
+
+> (𝑢 𝑖 (𝑠 ) ) 𝑠 ≥𝑡
+
+𝐽 𝑖 (𝑡, 𝑥, 𝑦 ; 𝑢 𝑖 , 𝒖 −𝑖 ). (4.13) For this portfolio game, the analytical benchmark is characterized by a coupled first-order system: the equilibrium investment strategy 𝒖 ∗ = (𝑢 ∗
+
+> 1
+
+, . . . , 𝑢 ∗
+
+> 𝑛
+
+) satisfies Ψ′ 
+
+> 𝑖
+
+(𝑢 ∗ 
+
+> 𝑖
+
+) = 0, 𝑖 = 1, 2, . . . , 𝑛, where Ψ𝑖 (𝑢 ) =
+
+−𝜒 𝑖 𝑏 𝑖 𝑢 + 12 𝜒 2 
+
+> 𝑖
+
+(𝜂 2 
+
+> 𝑖
+
++ 𝜎 2 
+
+> 𝑖
+
+)𝑢 2 − 𝜒 𝑖 𝜌 𝑖 𝜎 𝑖 c𝑢𝜎 𝑢 + 𝜆 𝑖 
+
+ 𝑒 −𝜒 𝑖 𝛼 𝑖 𝑢 − 1 + 𝜒 𝑖 𝛼 𝑖 𝑢  + 𝜆 0
+
+
+
+𝑒 −𝜒 𝑖 𝜉 𝑖 𝑢 +𝜌 𝑖 c𝑢 𝜉 + 𝜒 𝑖 𝜉 𝑖 𝑢 
+
+
+
+, with c𝑢𝜎 :=
+
+> 1
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 𝑗 𝜎 𝑗 , c𝑢𝜉 := 1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 𝑗 𝜉 𝑗 , 𝜒 𝑖 := 1− 𝜛 𝑖 /𝑛 𝜚 𝑖 , 𝜌 𝑖 := 𝜛 𝑖  
+
+> 𝜚 𝑖
+
+. Correspondingly, the value function of agent 𝑖 
+
+takes the form 
+
+𝑉 𝑖 (𝑥, 𝑦 ) = − 1
+
+𝛽 − Λ∗
+
+> 𝑖
+
+exp   − 1
+
+𝜚 𝑖 
+
+   1 − 𝜛 𝑖 
+
+> 𝑛
+
+𝑥 − 𝜛 𝑖 𝑦  , (4.14) 
+
+provided that 𝛽 > Λ∗ 
+
+> 𝑖
+
+, where Λ∗ 
+
+> 𝑖
+
+:= Ψ 𝑖 (𝑢 ∗ 
+
+> 𝑖
+
+) + 𝐶 𝑖 , and 𝐶 𝑖 = 𝜌 𝑖 c𝑢𝑏 + 12 𝜌 2
+
+> 𝑖
+
+  1
+
+> 𝑛 2
+
+P 𝑗 ≠𝑖 (𝑢 𝑗 𝜂 𝑗 )2
+
++   1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 𝑗 𝜎 𝑗 
+
+2 + P 𝑗 ≠𝑖 𝜆 𝑗 
+
+  exp   𝜛 𝑖   
+
+> 𝜚 𝑖
+> 𝑢 𝑗 𝛼 𝑗
+> 𝑛
+
+ − 1 − 𝜛 𝑖   
+
+> 𝜚 𝑖
+> 𝑢 𝑗 𝛼 𝑗
+> 𝑛
+
+ − 𝜆 0 𝜌 𝑖 c𝑢𝜉 is independent of 𝑢 𝑖 . Here c𝑢𝑏 :=
+
+> 1
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 𝑗 𝑏 𝑗 . The proof of the above characterization can be found in the supplementary material Section C.2; we use it as the analytical baseline when evaluating our numerical method. Figures 6–7 illustrate the numerical results with 𝑛 = 25 agents. We consider a heterogeneous setting where agent 1 faces a different market and preference parameters, while agents 2, . . . , 𝑛 are homogeneous. The full parameter settings are reported in Appendix A Table 4. All plots are generated after 𝑁 itr = 1, 000 training iterations with time step 𝛿 𝑡 = 0.02 . Figure 6 depicts the predicted control, value function, and state 17 0.0 2.5 5.0 7.5 10.0 
+
+t (Time)              
+
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> u1(t, Xt)
+> (a) Approx. u1(t,Xt)
+> Exact u*1(t,Xt)
+> Jump
+> u*1
+> u*1
+> 0.0 2.5 5.0 7.5 10.0
+
+t (Time)             
+
+> 0.15
+> 0.10
+> 0.05
+> 0.00
+> V1(t, Xt)
+> (b)
+> Approx. V1(t,Xt)
+> Exact V*1(t,Xt)
+> Jump
+> V1(T,XT)
+> V1(0, X0)
+> 0.0 2.5 5.0 7.5 10.0
+
+t (Time)   
+
+> 4
+> 5
+> 6
+> X1
+> t
+> (c)
+> Approx. X1
+> t
+> Exact X1
+> t
+> Jump
+> X1
+> T
+> X10
+
+Figure 6: Comparison of (a) optimal control, (b) value function and (c) state trajectories vs. benchmarks for agent 1 in the Merton portfolio game. Results are shown after 𝑁 itr = 1, 000 training iterations with 𝛿 𝑡 = 0.02 .trajectories for agent 1. Figure 7 displays the RMSEs of the control and the value function for each agent, together with the averaged training loss of all agents. Overall, the close alignment with the benchmarks, together with the small RMSEs and stable training loss, indicates that our method achieves promising and stable performance even in high dimensions and in the presence of strategic interactions. 0 200 400        
+
+> Time Point Index
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> L2 relative error of  ut agent 1
+> agent 2~10
+> agent 11~25
+> 0200 400
+> Time Point Index
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> L2 relative error of  Vt agent 1
+> agent 2~10
+> agent 11~25
+> 0250 500 750 1000
+> iteration
+> 10 4
+> CriticLoss
+> CriticLoss
+> ActorLoss
+> 0.0027
+> 0.0882
+> 0.1792
+> ActorLoss
+
+Figure 7: RMSEs of the learned control and value functions across agents ( 𝑛 = 25 ), together with the training loss. The full parameter setting is reported in Table 4. Table 3 reports the runtime and RMSEs (Eqs. (4.1) – (4.2) ) for different choices of time step 𝛿 𝑡 and number of agents 𝑛 . The runtime increases approximately linearly with 𝑛 , indicating favorable scalability with respect to the problem dimension. The errors remain comparable across these configurations, indicating stable performance as the problem size grows. Table 3: Runtime and last-iteration relative errors for different (number of time points, number of agents) pairs = (𝐾, 𝑛 ) of our algorithm for multi-agent game. 
+
+𝑛 =2 𝑛 =5 𝑛 =10 𝑛 =25 
+
+𝐾 = 100 Runtime (min) 18.98 40.67 76.03 205.76 
+
+E𝑉 0.1853 0.1866 0.1490 0.1767 
+
+Eu 0.0300 0.0201 0.0330 0.0318 
+
+𝐾 = 500 Runtime (min) 94.72 202.19 400.77 1050.64 
+
+E𝑉 0.0617 0.0355 0.0447 0.0476 
+
+Eu 0.0081 0.00137 0.0176 0.0261 
+
+18 5 Conclusions and Discussions 
+
+This paper develops a reinforcement learning framework for infinite-horizon time-inhomogeneous stochastic control problem subject to jump-diffusion and entropy regularization. We introduce a continuous-time little 
+
+𝑞 -function, define an appropriate time-dependent occupation measure, and establish its structural properties. This representation leads to a general policy gradient formula, and we design an actor-critic algorithm tailored to general time-inhomogeneous jump-diffusion dynamics and non-Gaussian stochastic policies via conditional normalizing flow. We also derive explicit solutions for the value function and the optimal (stochastic) policy for several canonical specifications, including LQ control, the Merton portfolio problem, and multi-agent portfolio game with CARA utilities in jump-diffusion markets. These closed-form characterizations provide ground-truth benchmarks for evaluating RMSEs of the proposed algorithm. Our method is validated on a suite of low- and high-dimensional experiments, including settings with jump components and time-dependent coefficients. Across multiple evaluation metrics, the learned policies closely track the analytic solutions when available, and our algorithm exhibits strong performance broadly. There are several natural directions for future work. Building on the proposed actor-critic framework, it would be interesting to study how alternative entropy regularizers affect the control problem, for example the Tsallis entropy considered in [ 8 ]. However, its structure typically precludes closed-form optimal stochastic policies, making benchmarking more challenging. On the theoretical side, extending the little 𝑞 -framework and occupation measure to partially observed models or mean-field interaction structures would further bridge continuous-time RL and modern stochastic control with jumps. On the algorithmic side, scaling our approach to very high-dimensional problems and integrating it with large language models or agent-based architectures are promising directions; recent progress on agent-based methods and DFA-type accelerators suggests substantial potential for speeding up RL in complex control environments [1, 2]. 
+
+Acknowledgments. Y.Z. and L.G. were partially supported by the National Key R&D Program of China (grant 2021YFA0719200). R.H. was partially supported by the ONR grant N00014-24-1-2432, the Simons Foundation (MP-TSM-00002783), and the NSF grant DMS-2420988. 
+
+# References 
+
+[1] Shayan Meshkat Alsadat, Jean-Rapha ¨el Gaglione, Daniel Neider, Ufuk Topcu, and Zhe Xu. Using large language models to automate and expedite reinforcement learning with reward machine. In 2025 American Control Conference (ACC) , pages 206–211. IEEE, 2025. [2] Shayan Meshkat Alsadat and Zhe Xu. Multi-agent reinforcement learning in non-cooperative stochastic games using large language models. IEEE Control Systems Letters , 8:2757–2762, 2024. [3] David Applebaum. L´ evy Processes and Stochastic Calculus . Cambridge University Press, 2009. [4] Burcu Aydo ˘gan and Mogens Steffensen. Optimal investment strategies under the relative performance in jump-diffusion markets. Decisions in Economics and Finance , 48(1):179–204, 2025. [5] Andrew G Barto, Richard S Sutton, and Charles W Anderson. Neuronlike adaptive elements that can solve difficult learning control problems. IEEE Transactions on Systems, Man, and Cybernetics ,(5):834–846, 2012. [6] Christian Bender and Nguyen Tran Thuan. Entropy-regularized mean-variance portfolio optimization with jumps. arXiv preprint arXiv:2312.13409 , 2023. [7] Sergio Bittanti, Patrizio Colaneri, and Giuseppe De Nicolao. The periodic riccati equation. In The Riccati Equation , pages 127–162. Springer, 1991. 19 [8] Lijun Bo, Yijie Huang, Xiang Yu, and Tingting Zhang. Continuous-time q-learning for jump-diffusion models under tsallis entropy. arXiv preprint arXiv:2407.03888 , 2024. [9] Janaka Brahmanage, Jiajing Ling, and Akshat Kumar. Flowpg: action-constrained policy gradient with normalizing flows. Advances in Neural Information Processing Systems , 36:20118–20132, 2023. [10] Wei Cai, Shuixin Fang, Wenzhong Zhang, and Tao Zhou. Martingale deep learning for very high dimensional quasi-linear partial differential equations and stochastic optimal controls. arXiv preprint arXiv:2408.14395 , 2024. [11] Patrick Cheridito, Jean-Loup Dupret, and Donatien Hainaut. Deep learning for continuous-time stochastic control with jumps. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [12] Min Dai, Yuchao Dong, and Yanwei Jia. Learning equilibrium mean-variance strategy. Mathematical Finance , 33(4):1166–1212, 2023. [13] Robert Denkert, Huy ˆen Pham, and Xavier Warin. Control randomisation approach for policy gradient and application to reinforcement learning in optimal switching. Applied Mathematics & Optimization ,91(1):9, 2025. [14] Kenji Doya. Reinforcement learning in continuous time and space. Neural Computation , 12(1):219–245, 2000. [15] Jinqiao Duan. An Introduction to Stochastic Dynamics . Cambridge University Press, Cambridge, 2015. [16] Conor Durkan, Artur Bekasov, Iain Murray, and George Papamakarios. Neural spline flows. Advances in Neural Information Processing Systems , 32, 2019. [17] Xuefeng Gao, Lingfei Li, and Xun Yu Zhou. Reinforcement learning for jump-diffusions, with financial applications. Mathematical Finance , 2026. [18] Xin Guo, Anran Hu, and Yufei Zhang. Reinforcement learning for linear-convex models with jumps via stability analysis of feedback controls. SIAM Journal on Control and Optimization , 61(2):755–787, 2023. [19] Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International conference on machine learning , pages 1861–1870. Pmlr, 2018. [20] Ernst Hairer, Gerhard Wanner, and Syvert P Nørsett. Solving ordinary differential equations I: Nonstiff problems . Springer, 1993. [21] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 770–778, 2016. [22] Yanwei Jia, Du Ouyang, and Yufei Zhang. Accuracy of discretely sampled stochastic policies in continuous-time reinforcement learning. arXiv preprint arXiv:2503.09981 , 2025. [23] Yanwei Jia and Xun Yu Zhou. Policy evaluation and temporal-difference learning in continuous time and space: A martingale approach. Journal of Machine Learning Research , 23(154):1–55, 2022. 20 [24] Yanwei Jia and Xun Yu Zhou. Policy gradient and actor-critic learning in continuous time and space: Theory and algorithms. Journal of Machine Learning Research , 23(275):1–50, 2022. [25] Yanwei Jia and Xun Yu Zhou. q-learning in continuous time. Journal of Machine Learning Research ,24(161):1–61, 2023. [26] Yanwei Jia and Xun Yu Zhou. Erratum to “q-learning in continuous time”. Journal of Machine Learning Research , 2025. [27] Chenyang Jiang, Donggyu Kim, Alejandra Quintos, and Yazhen Wang. Robust reinforcement learning under diffusion models for data with jumps. arXiv preprint arXiv:2411.11697 , 2024. [28] Liwei Lu, Ruimeng Hu, Xu Yang, and Yi Zhu. Multiagent relative investment games in a jump diffusion market with deep reinforcement learning algorithm. SIAM Journal on Financial Mathematics ,16(2):707–746, 2025. [29] Robert C. Merton. Optimum consumption and portfolio rules in a continuous-time model. Journal of Economic Theory , 3(4):373–413, 1971. [30] Alessandro Montenegro, Marco Mussi, Alberto Maria Metelli, and Matteo Papini. Learning optimal deterministic policies with stochastic policy gradients. In Ruslan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp, editors, Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 36160–36211. PMLR, 2024. [31] Bernt Øksendal and Agnes Sulem. Applied Stochastic Control of Jump Diffusions , volume 3. Springer, 2007. [32] George Papamakarios, Eric Nalisnick, Danilo Jimenez Rezende, Shakir Mohamed, and Balaji Lakshmi-narayanan. Normalizing flows for probabilistic modeling and inference. Journal of Machine Learning Research , 22(57):1–64, 2021. [33] Huy ˆen Pham. Continuous-Time Stochastic Control and Optimization with Financial Applications ,volume 61. Springer Science & Business Media, 2009. [34] Maziar Raissi, Paris Perdikaris, and George E Karniadakis. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational Physics , 378:686–707, 2019. [35] John Schulman, Philipp Moritz, Sergey Levine, Michael I. Jordan, and Pieter Abbeel. High-dimensional continuous control using generalized advantage estimation. In Proceedings of the International Conference on Learning Representations (ICLR) , 2016. Poster. [36] Richard S Sutton, David McAllester, Satinder Singh, and Yishay Mansour. Policy gradient methods for reinforcement learning with function approximation. Advances in Neural Information Processing Systems , 12, 1999. [37] Corentin Tallec, L ´eonard Blier, and Yann Ollivier. Making deep q-learning methods robust to time discretization. In International Conference on Machine Learning , pages 6096–6104. PMLR, 2019. [38] Haoran Wang, Thaleia Zariphopoulou, and Xun Yu Zhou. Reinforcement learning in continuous time and space: A stochastic control approach. Journal of Machine Learning Research , 21(198):1–34, 2020. 21 [39] Haoran Wang and Xun Yu Zhou. Continuous-time mean–variance portfolio selection: A reinforcement learning framework. Mathematical Finance , 30(4):1273–1308, 2020. [40] Xiaoli Wei and Xiang Yu. Continuous time q-learning for mean-field control problems. Applied Mathematics & Optimization , 91(1):10, 2025. [41] Hanyang Zhao, Wenpin Tang, and David Yao. Policy optimization for continuous reinforcement learning. 
+
+Advances in Neural Information Processing Systems , 36:13637–13663, 2023. [42] Mo Zhou, Jiequn Han, and Jianfeng Lu. Actor-critic method for high dimensional static hamilton– jacobi–bellman partial differential equations based on neural networks. SIAM Journal on Scientific Computing , 43(6):A4043–A4066, 2021. 
+
+# A More Numerical Details 
+
+A.1 Neural Network (NN) Architectures and Experimental Details 
+
+Critic network. We parameterize the critic 𝑉 𝜓 : (𝑡, 𝒙 ) ↦ → R by a ResNet [ 21 ] of depth 3 , with input dimension 
+
+𝑑 + 1, hidden width 𝑑 + 10 , tanh activations, and a scalar linear readout. All critic networks are optimized with Adam (learning rate 10 −3) and a fixed random seed ( 2025 ). For the LQ cases and the multi-player game we decay the learning rate with a multi-step schedule; for the Merton problem with flow layers we use a 
+
+CosineAnnealingWarmUp schedule. 
+
+Actor network. We parameterize the actor 𝜋 𝜃 (· | 𝑡, 𝒙 ) as a conditional normalizing flow. Given (𝑡, 𝒙 ), a ResNet with tanh activations, depth 3, and hidden width 𝑑 + 10 outputs the parameters of the Gaussian base distribution in (3.19) . For the standard case with 𝛾 = 0, we use a fixed standard deviation Std = 0.1 instead of a learnable Std 𝜃 . This follows [ 30 ], where fixing the exploration scale is found to improve stability when stochastic policies are used to learn an underlying deterministic optimal control, while still being sufficient for convergence. This applies to all LQ cases and the multi-player Merton game. The actor is optimized with Adam using learning rate 10 −3 for time-homogeneous problems and 5 × 10 −4 for time-inhomogeneous problems, together with a multi-step learning-rate schedule. For the entropy-regularized Merton problem, samples from the Gaussian base distribution are further transformed by an invertible flow map 𝐹 𝜃 . Specifically, we employ a conditional rational-quadratic spline coupling flow [ 16 ] on R𝑚 for 𝐹 𝜃 , where each coordinate transformation is represented by a piecewise rational-quadratic spline. We use 𝐾 bin = 6 bins with identity tails outside [− 𝐵 flow , 𝐵 flow ] = [− 2.5, 2.5]. The spline parameters are produced by a ResNet with tanh activations, depth 2, and hidden width 32 . To improve stability in early training, we initialize the flow close to the identity map and freeze its parameters for the first 30 actor updates. After this warm-up stage, the flow is applied directly, i.e., 𝒛 𝐾 = 𝐹 𝜃 (𝒛 0). Bounded actions are enforced through a temperature-controlled sigmoid squashing function 𝒖 = 𝑆 (𝒛 𝐾 ; 𝜏 ). We anneal 𝜏 from 2.0 to 1.0 over the first 30 squash-delay steps so that the squashing is milder during warm-up and actions are less likely to saturate near the boundaries. When the flow 𝐹 𝜃 is enabled, the actor’s base network and the spline flow layers are trained using a single Adam optimizer with two parameter groups. The base network uses learning rate 6 × 10 −5, while the flow layers use learning rate 1 × 10 −5. We choose a smaller learning rate for the flow because the spline–squash composition is more sensitive to parameter updates, and a lower step size improves training stability. Both parameter groups are scheduled jointly by a single CosineAnnealingWarmUp scheduler. 
+
+PINN approach for Merton’s problem. We compute a reference solution by solving simplified HJB equation (4.10) on uniform grids 𝑥 grid ⊂ [ 𝑥 min , 𝑥 max ] and 𝑢 grid ⊂ [ 𝑢 min , 𝑢 max ], with 𝑛 𝑥 = 500 grid points 22 for 𝑥 and 𝑛 𝑢 = 400 grid points for 𝑢 . The value function is parameterized by a feedforward NN 𝑉 𝜙 (𝑥 )
+
+with 5 hidden layers, each of width 256 , and tanh activations. All first- and second-order derivatives of 𝑉 𝜙 entering the Hamiltonian H (𝑥, 𝑢, ∇𝑥 𝑉 𝜙 , ∇2
+
+> 𝑥
+
+𝑉 𝜙 ) are computed via automatic differentiation. To approximate the integral in (4.10) , we use the trapezoidal quadrature on 𝑢 grid , denoted by Q𝑢 [·] . For each 
+
+(𝑥 𝑖 , 𝑢 𝑗 ), let 𝐻 𝑖 𝑗 = H  𝑥 𝑖 , 𝑢 𝑗 , ∇𝑥 𝑉 𝜙 (𝑥 𝑖 ), ∇2
+
+> 𝑥
+
+𝑉 𝜙 (𝑥 𝑖 ). Then the right-hand side of (4.10) is approximated by 
+
+𝑉 rhs (𝑥 𝑖 ) = 𝛾 𝛽 log  Q𝑢 [exp (𝐻 𝑖 𝑗 /𝛾 )] . In practice, for numerical stability, we evaluate it through a log-sum-exp implementation of the quadrature. The network parameters 𝜙 are trained by minimizing the mean squared residual LPINN (𝜙 ) = 1
+
+> 𝑛 𝑥
+
+P𝑛 𝑥 
+
+> 𝑖 =1
+
+ 𝑉 𝜙 (𝑥 𝑖 ) − 𝑉 rhs (𝑥 𝑖 )2, using Adam with learning rate 5×10 −4 for 2, 000 iterations. After obtaining the PINN approximation of the value function, we recover the optimal policy on the grid 
+
+𝑢 grid as the Gibbs distribution induced by the same quadrature normalization, 𝜋 𝑖 𝑗 = 𝑤 𝑗 exp (𝐻 𝑖 𝑗 /𝛾 )    
+
+> P𝑛𝑢 𝑘 =1𝑤 𝑘 exp (𝐻 𝑖𝑘 /𝛾 )
+
+, where 
+
+{𝑤 𝑗 }𝑛 𝑢  
+
+> 𝑗 =1
+
+are the trapezoidal weights. 
+
+A.2 Parameter Setting 
+
+Table 4 records parameters in our experiments. 
+
+# B Proof of Theoretical Results 
+
+B.1 Derivation of the 𝑞 -Function (3.8) 
+
+We derive (3.7) , which leads to the definition of the little 𝑞 -function (3.8) , via a short-time expansion of 𝑄 𝛿 𝑡 
+
+defined in (3.6) . Fix 𝛿 𝑡 > 0, 𝑡 ≥ 0 , 𝒙 ∈ R𝑑 , and 𝒖 ∈ A , and recall ( 𝑿 𝒖  
+
+> 𝑠
+
+)𝑠 ≥𝑡 from Section 3.2.1. By the tower property and 𝑒 −𝛽 (𝑠 −𝑡 ) = 𝑒 −𝛽 𝛿 𝑡 𝑒 −𝛽 (𝑠 − ( 𝑡 + 𝛿 𝑡 ) ) , 𝑄 𝛿 𝑡 can be rewritten as 
+
+𝑄 𝛿 𝑡 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) = E
+
+h ∫ 𝛿 𝑡 
+
+> 0
+
+𝑒 −𝛽𝑠 𝑓  𝑡 + 𝑠, 𝑿 𝒖 
+
+> 𝑡 +𝑠
+
+, 𝒖  d𝑠 + 𝑒 −𝛽 𝛿 𝑡 𝐽  𝑡 + 𝛿 𝑡 , 𝑿 𝒖   
+
+> 𝑡 +𝛿 𝑡
+
+; 𝜋  𝑿 𝒖  
+
+> 𝑡
+
+= 𝒙 
+
+i
+
+=: 𝐼 1 + 𝐼 2. (B.1) Since 𝑓 is continous at (𝑡, 𝒙 ) and ( 𝑿 𝒖  
+
+> 𝑠
+
+)𝑠 ≥𝑡 is c `adl `ag, by dominated convergence theorem, one has lim 𝛿 𝑡 ↓0 1 
+
+> 𝛿 𝑡
+
+E[∫ 𝛿 𝑡  
+
+> 0
+
+𝑒 −𝛽𝑠 𝑓 (𝑡 + 𝑠, 𝑿 𝒖 
+
+> 𝑡 +𝑠
+
+, 𝒖 ) d𝑠 | 𝑿 𝒖  
+
+> 𝑡
+
+= 𝒙 ] = 𝑓 (𝑡, 𝒙 , 𝒖 ), and hence 
+
+𝐼 1 = 𝑓 (𝑡, 𝒙 , 𝒖 ) 𝛿 𝑡 + 𝑜 (𝛿 𝑡 ), (𝛿 𝑡 ↓ 0). (B.2) For 𝐼 2, applying It ˆo’s formula to 𝑒 −𝛽 (ℎ−𝑡 ) 𝐽 (ℎ, 𝑿 𝒖  
+
+> ℎ
+
+; 𝜋 ) and integrating over [𝑡, 𝑡 + 𝛿 𝑡 ) gives 𝑒 −𝛽 𝛿 𝑡 𝐽  𝑡 +
+
+𝛿 𝑡 , 𝑿 𝒖   
+
+> 𝑡 +𝛿 𝑡
+
+; 𝜋  = 𝐽  𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+; 𝜋  + ∫ 𝑡 + 𝛿 𝑡  
+
+> 𝑡
+
+𝑒 −𝛽 (ℎ−𝑡 ) 𝜕 𝑡 𝐽  ℎ, 𝑿 𝒖  
+
+> ℎ
+
+; 𝜋  + L 𝒖 𝐽  ℎ, 𝑿 𝒖  
+
+> ℎ
+
+; 𝜋  − 𝛽𝐽  ℎ, 𝑿 𝒖  
+
+> ℎ
+
+; 𝜋  dℎ +  𝑀 𝑡 + 𝛿 𝑡 −
+
+𝑀 𝑡 
+
+, where L𝒖 is the generator associated with 𝒖 , and (𝑀 ℎ)ℎ≥𝑡 is a martingale with E[𝑀 𝑡 + 𝛿 𝑡 − 𝑀 𝑡 | 𝑿 𝒖  
+
+> 𝑡
+
+=
+
+𝒙 ] = 0. Thus, 
+
+𝐼 2 = 𝐽 (𝑡, 𝒙 ; 𝜋 ) + E
+
+h ∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (ℎ−𝑡 ) 𝜕 𝑡 𝐽  ℎ, 𝑿 𝒖  
+
+> ℎ
+
+; 𝜋  + L 𝒖 𝐽  ℎ, 𝑿 𝒖  
+
+> ℎ
+
+; 𝜋  − 𝛽𝐽  ℎ, 𝑿 𝒖  
+
+> ℎ
+
+; 𝜋  dℎ 𝑿 𝒖  
+
+> 𝑡
+
+= 𝒙 
+
+i
+
+.
+
+By the regularity of 𝐽 and 𝑿 𝒖  
+
+> 𝑠
+
+, as 𝛿 𝑡 → 0 we obtain 
+
+𝐼 2 = 𝐽 (𝑡, 𝒙 ; 𝜋 ) + 𝜕 𝑡 𝐽 (𝑡, 𝒙 ; 𝜋 ) + L 𝒖 𝐽 (𝑡, 𝒙 ; 𝜋 ) − 𝛽𝐽 (𝑡, 𝒙 ; 𝜋 ) 𝛿 𝑡 + 𝑜 (𝛿 𝑡 ). (B.3) Combining (B.2) and (B.3), we conclude that 
+
+𝑄 𝛿 𝑡 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) = 𝐽 (𝑡, 𝒙 ; 𝜋 ) + 𝜕 𝑡 𝐽 (𝑡, 𝒙 ; 𝜋 ) + 𝑓 (𝑡, 𝒙 , 𝒖 ) + L 𝒖 𝐽 (𝑡, 𝒙 ; 𝜋 ) − 𝛽𝐽 (𝑡, 𝒙 ; 𝜋 ) 𝛿 𝑡 + 𝑜 (𝛿 𝑡 ).
+
+Recall the Hamiltonian H (𝑡, 𝒙 , 𝒖 ; 𝜋 ) := 𝑓 (𝑡, 𝒙 , 𝒖 ) + L 𝒖 𝐽 (𝑡, 𝒙 ; 𝜋 ) and the definition 𝑞 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) :=
+
+lim 𝛿 𝑡 ↓0 𝑄 𝛿𝑡 (𝑡 , 𝒙 ,𝒖 ; 𝜋 ) − 𝐽 (𝑡 , 𝒙 ; 𝜋 ) 
+
+> 𝛿 𝑡
+
+, we achieve the desired expression (3.8). 23 Table 4: Parameter settings in numerical experiments. 
+
+> Time-inhomogeneous LQ  LQ (Homo.)  Merton  Multi-Agent CARA Convergent  Periodic  Standard  Entropy
+> Dim / agent  𝑑  = 1 𝑑  = 1, 5, 20 , 50  𝑑  = 1 𝑛  = 25 Drift coeff.
+> 𝐵 𝑡  𝑢 𝑡  = 𝑏 (𝑡 ) 𝑢 𝑡  ,𝑏 (𝑡 ) = 𝑏 ∞ + ( 𝑏 0 − 𝑏 ∞)𝑒 −𝜅 𝑏  𝑡
+> 𝑏 0 = 0.6, 𝑏 ∞ = 0.5, 𝜅 𝑏  = 1.0
+> 𝐵 𝑡  𝑢 𝑡  = 𝑏 (𝑡 ) 𝑢 𝑡  ,𝑏 (𝑡 ) = 𝑏 bar  + 𝑏 amp  sin   2 𝜋𝑡 𝑃 𝑏  + 𝜙 𝑏
+> 
+> 𝑏 bar  = 0.12 , 𝑏 amp  = 0.06 ,𝑃 𝑏  = 10 .0, 𝜙 𝑏  = 0.0
+> 𝐵 u𝑡  = 0.5 I u 𝑡
+> (𝑟  + 𝑢 𝑡  (𝜇  − 𝑟 ))  𝑋 𝑡
+> 𝜇  = 0.05  𝜇  = 0.1
+> 𝑟  = 0.03  𝑟  = 0.05
+> 𝑏 𝑖  =
+> (
+> 0.05 , 𝑖  = 1,
+> 0.02 , 2 ≤ 𝑖  ≤ 𝑛
+> Diffusion coeff.
+> Σ𝑡  = 𝜎 (𝑡 ),𝜎 (𝑡 ) = 𝜎 ∞ + ( 𝜎 0 − 𝜎 ∞)𝑒 −𝜅 𝜎  𝑡
+> 𝜎 0 = 0.3, 𝜎 ∞ = 0.2, 𝜅 𝜎  = 1.0
+> Σ𝑡  = 𝜎 (𝑡 ),𝜎 (𝑡 ) = 𝜎 bar  + 𝜎 amp  sin   2 𝜋𝑡 𝑃 𝜎  + 𝜙 𝜎
+> 
+> 𝜎 bar  = 0.2, 𝜎 amp  = 0.1,𝑃 𝜎  = 10 .0, 𝜙 𝜎  = 0.0
+> 𝚺  = 0.3 I 𝜎  = 0.4
+> 𝜂 𝑖  =
+> (
+> 0.08 , 𝑖  = 1,
+> 0.05 , 2 ≤ 𝑖  ≤ 𝑛 𝜎 𝑖  =
+> (
+> 0.5, 𝑖  = 1,
+> 0.4, 2 ≤ 𝑖  ≤ 𝑛
+> Jump intensity  𝜆 𝑡  ≡ 𝜆, 𝜆  = 0.2 𝝀  = linspace (0.2, 0.3, 𝐷 ) 𝜆  = 0.2 𝜆  = 0.3 𝜆 𝑖  ≡ 0.2
+> 𝜆 0 = 0.25 Jump sizes / coeff.
+> 𝛼 𝑡  = 𝛼 (𝑡 ),𝛼 (𝑡 ) = 𝛼 ∞ + ( 𝛼 0 − 𝛼 ∞)𝑒 −𝜅 𝛼  𝑡
+> 𝛼 0 = 0.3, 𝛼 ∞ = 0.2, 𝜅 𝛼  = 1.0
+> 𝛼 𝑡  = 𝛼 (𝑡 ),𝛼 (𝑡 ) = 𝛼 bar  + 𝛼 amp  sin   2 𝜋𝑡 𝑃 𝛼  + 𝜙 𝛼
+> 
+> 𝛼 bar  = 0.2, 𝛼 amp  = 0.1,𝑃 𝛼  = 10 .0, 𝜙 𝛼  = 0.0
+> 𝜶  = linspace (0.3, 0.2, 𝐷 ) 𝛼  = 0.3 𝛼  = 0.1 𝛼 𝑖  ≡ 0.2
+> 𝜉 𝑖  ≡ 0.2Discount factor  𝛽  = 1.0 𝛽  = 1.0 𝛽  = 1.0 𝛽  = 1.0Exploration intensity  𝛾  𝛾  = 0.0 𝛾  = 0.05  𝛾  = 0 or 0 .05  𝛾  = 0 𝛾  = 0.05  𝛾  = 0Learning rate (actor)  5 × 10 −4 10 −3 10 −3 6 × 10 −5 10 −3
+> Learning rate (critic)  10 −3 10 −3 10 −3 10 −3
+> Iterations  𝑁 itr  = 3000  1,000  2,000  2,000  1,000 Time step size /  𝛿 𝑡  𝑇  = 20 , 𝐾  = 2000 , 𝛿 𝑡  = 𝑇 /𝐾  = 0.01  𝛿 𝑡  = 0.01  𝛿 𝑡  = 0.01  𝛿 𝑡  = 0.05  𝛿 𝑡  = 0.02 Minibatch size  𝐿  = 100  𝐿  = 100  𝐿  = 500  𝐿  = 200  𝐿  = 100 Note  𝑹  = 2𝑰 𝑑  , 𝑸  = 0.1𝑰 𝑑
+> 𝐾 actor  = 15 , 𝐾 critic  = 5
+> 𝑹  = 5𝑰 𝑑  , 𝑸  = 0.5𝑰 𝑑
+> 𝐾 actor  = 20 , 𝐾 critic  = 5
+> 𝑝  = 0.5
+> 𝐾 actor  = 20 , 𝐾 critic  = 5
+> 𝜛 𝑖  ≡ 0.2
+> 𝜚 𝑖  =
+> (
+> 1.5, 𝑖  = 1,
+> 2.0, 2 ≤ 𝑖  ≤ 𝑛 𝐾 actor  = 30 , 𝐾 critic  = 10 Riccati reference solve  𝑁 riccati  = 3000 , d𝑡 ODE  = 10 −3, 𝑇 trunc  = 3𝑇  – – –
+
+24 B.2 Proof of Theorem 3.1 
+
+We first prove the performance-difference identity (3.11) , following the idea of [ 41 , Theorem 2] and adapting it to the present time-inhomogeneous jump-diffusion setting. We then apply this identity to a perturbed policy family and differentiate at the reference parameter. This yields the policy-gradient formula and completes the proof of Theorem 3.1. To proceed, we first state the following identity, which follows [41, Lemma 9]. 
+
+Lemma B.1 Let 𝜋 and ˆ𝜋 be two stochastic policies, 𝐽 (· , ·; 𝜋 ) be the value function under 𝜋 . Let L 𝜋 denote the generator under policy 𝜋 . Then, for all (𝑡, 𝒙 ),
+
+˜𝑓 (𝑡, 𝒙 , ˆ𝜋 ) − ˜𝑓 (𝑡, 𝒙 , 𝜋 ) +  L ˆ𝜋 − L 𝜋  𝐽 (𝑡, 𝒙 ; 𝜋 ) =
+
+∫
+
+> A
+
+ 𝑞 (𝑡, 𝒙 , 𝒖 ; 𝜋 ) − 𝛾 log ˆ 𝜋 (𝒖 | 𝑡, 𝒙 ) ˆ𝜋 (𝒖 | 𝑡, 𝒙 )d𝒖 . (B.4) 
+
+Proof of performance-difference (3.11) . Recall 𝜇 ˆ𝜋,𝑡 , 𝒙 for the discounted occupation measure induced by ˆ𝜋 
+
+starting from (𝑡, 𝒙 ). Apply Lemma 3.2 to 𝐽 (𝑠, 𝒚 ; 𝜋 ) gives 
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+  − 𝜕 𝑠 𝐽 (· , ·; 𝜋 ) − L ˆ𝜋 𝐽 (· , ·; 𝜋 ) + 𝛽𝐽 (· , ·; 𝜋 ) (𝑠, 𝒚 ) 𝜇 ˆ𝜋,𝑡 , 𝒙 (d𝑠, d𝒚 ) = 𝐽 (𝑡, 𝒙 ; 𝜋 ). (B.5) On the other hand, since 𝐽 (· , ·; 𝜋 ) is the value function under 𝜋 , it satisfies (2.4) . Integrating it against the measure 𝜇 ˆ𝜋,𝑡 , 𝒙 gives 0 =
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+ 𝜕 𝑠 𝐽 (· , ·; 𝜋 ) + L 𝜋 𝐽 (· , ·; 𝜋 ) + ˜𝑓 (· , ·; 𝜋 ) − 𝛽𝐽 (· , ·; 𝜋 ) (𝑠, 𝒚 ) 𝜇 ˆ𝜋,𝑡 , 𝒙 (d𝑠, d𝒚 ). (B.6) Adding (B.6) to (B.5) produces 
+
+𝐽 (𝑡, 𝒙 ; 𝜋 ) =
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+ ˜𝑓 (𝑠, 𝒚 ; 𝜋 ) +  L 𝜋 − L ˆ𝜋  𝐽 (𝑠, 𝒚 ; 𝜋 ) 𝜇 ˆ𝜋,𝑡 , 𝒙 (d𝑠, d𝒚 ). (B.7) By the definition of 𝐽 (𝑡, 𝒙 ; ˆ 𝜋 ) and Lemma 3.1, we also have 𝐽 (𝑡, 𝒙 ; ˆ 𝜋 ) = ∫ 
+
+> [𝑡 , ∞) × R𝑑
+
+˜𝑓 (𝑠, 𝒚 ; ˆ 𝜋 ) 𝜇 ˆ𝜋,𝑡 , 𝒙 (d𝑠, d𝒚 ).
+
+Subtracting it from (B.7), 
+
+𝐽 (𝑡, 𝒙 ; ˆ 𝜋 ) − 𝐽 (𝑡, 𝒙 ; 𝜋 ) =
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+  ˜𝑓 (𝑠, 𝒚 ; ˆ 𝜋 ) − ˜𝑓 (𝑠, 𝒚 ; 𝜋 ) +  L ˆ𝜋 − L 𝜋  𝐽 (𝑠, 𝒚 ; 𝜋 ) 𝜇 ˆ𝜋,𝑡 , 𝒙 (d𝑠, d𝒚 ). (B.8) By Lemma B.1, 
+
+𝐽 (𝑡, 𝒙 ; ˆ 𝜋 ) − 𝐽 (𝑡, 𝒙 ; 𝜋 ) =
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+∫
+
+> A
+
+ 𝑞 (𝑠, 𝒚 , 𝒖 ; 𝜋 ) − 𝛾 log ˆ 𝜋 (𝒖 | 𝑠, 𝒚 ) ˆ𝜋 (𝒖 | 𝑠, 𝒚 ) d𝒖 𝜇 ˆ𝜋,𝑡 , 𝒙 (d𝑠, d𝒚 ).
+
+This proves the performance-difference formula. We now prove the policy-gradient formula. Fix (𝑡, 𝒙 ) ∈ [ 0, ∞) × R𝑑 and a reference parameter 𝜃 0. It suffices to prove for any ℎ
+
+dd𝜀 𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 0+𝜀ℎ ) 𝜀 =0 =
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+∫
+
+> A
+
+ℎ, ∇𝜃 log 𝜋 𝜃 (𝒖 | 𝑠, 𝒚 ) 𝜃 =𝜃 0 (B.9) 
+
+ 𝑞 (𝑠, 𝒚 , 𝒖 ; 𝜋 𝜃 0 ) − 𝛾 log 𝜋 𝜃 0 (𝒖 | 𝑠, 𝒚 ) 𝜋 𝜃 0 (𝒖 | 𝑠, 𝒚 ) d𝒖 𝜇 𝜃 0 ,𝑡 , 𝒙 (d𝑠, d𝒚 ) ,
+
+then normalizing 𝛽𝜇 𝜃 0 ,𝑡 , 𝒙 yields the expectation form in the theorem. Apply the performance-difference formula with baseline 𝜋 𝜃 0 and perturbed policy 𝜋 𝜃 0+𝜀ℎ yields 
+
+𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 0+𝜀ℎ ) − 𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 0 ) =
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+𝜐 (𝜀 ; 𝑠, 𝒚 ) 𝜇 𝜃 0+𝜀ℎ,𝑡 , 𝒙 (d𝑠, d𝒚 ), (B.10) 25 where 𝜐 (𝜀 ; 𝑠, 𝒚 ) is defined as, 
+
+𝜐 (𝜀 ; 𝑠, 𝒚 ) :=
+
+∫
+
+> A
+
+𝜋 𝜃 0+𝜀ℎ (𝒖 | 𝑠, 𝒚 )
+
+
+
+𝑞 (𝑠, 𝒚 , 𝒖 ; 𝜋 𝜃 0 ) − 𝛾 log 𝜋 𝜃 0+𝜀ℎ (𝒖 | 𝑠, 𝒚 )
+
+
+
+d𝒖 . (B.11) Note that 𝜐 (0; 𝑠, 𝒚 ) = 0 for all (𝑠, 𝒚 ) due to the definition (3.8) of 𝑞 and the PDE (2.4) satisfied by 𝐽 (· , ·; 𝜋 𝜃 0 ).Consequently, add and subtract 𝜇 𝜃 0 ,𝑡 , 𝒙 from the right hand side of (B.10) gives: 
+
+𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 0+𝜀ℎ ) − 𝐽 (𝑡, 𝒙 ; 𝜋 𝜃 0 ) =
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+ 𝜐 (𝜀 ; 𝑠, 𝒚 ) − 𝜐 (0; 𝑠, 𝒚 ) 𝜇 𝜃 0+𝜀ℎ,𝑡 , 𝒙 (d𝑠, d𝒚 )
+
+=
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+ 𝜐 (𝜀 ; 𝑠, 𝒚 ) − 𝜐 (0; 𝑠, 𝒚 ) 𝜇 𝜃 0 ,𝑡 , 𝒙 (d𝑠, d𝒚 )+
+
+∫
+
+> [𝑡 , ∞) × R𝑑
+
+ 𝜐 (𝜀 ; 𝑠, 𝒚 ) − 𝜐 (0; 𝑠, 𝒚 )   𝜇 𝜃 0+𝜀ℎ,𝑡 , 𝒙 (d𝑠, d𝒚 ) − 𝜇 𝜃 0 ,𝑡 , 𝒙 (d𝑠, d𝒚 ). (B.12) Next, differentiating (B.11) and setting 𝜀 = 0 provides: dd𝜀 𝜐 (𝜀 ; 𝑠, 𝒚 ) 𝜀 =0 =
+
+∫
+
+> A
+
+ℎ, ∇𝜃 𝜋 𝜃 (𝒖 | 𝑠, 𝒚 ) 𝜃 =𝜃 0
+
+ 𝑞 (𝑠, 𝑦, 𝒖 ; 𝜋 𝜃 0 ) − 𝛾 log 𝜋 𝜃 0 (𝒖 | 𝑠, 𝒚 ) d𝒖 
+
+− 𝛾 
+
+∫
+
+> A
+
+𝜋 𝜃 0 (𝒖 | 𝑠, 𝒚 ) ℎ, ∇𝜃 log 𝜋 𝜃 (𝒖 | 𝑠, 𝒚 ) 𝜃 =𝜃 0 d𝒖 . (B.13) Using ∇𝜃 𝜋 𝜃 = 𝜋 𝜃 ∇𝜃 log 𝜋 𝜃 and the normalization ∫ 
+
+> A
+
+𝜋 𝜃 (𝒖 ) d𝒖 = 1 (hence ∫ 
+
+> A
+
+∇𝜃 𝜋 𝜃 (𝒖 )
+
+d𝒖 = 0), the second term vanishes and (B.13) can be written as dd𝜀 𝜐 (𝜀 ; 𝑠, 𝒚 ) 𝜀 =0 =
+
+∫
+
+> A
+
+ℎ, ∇𝜃 log 𝜋 𝜃 (𝒖 | 𝑠, 𝒚 ) 𝜃 =𝜃 0
+
+ 𝑞 (𝑠, 𝑦, 𝒖 ; 𝜋 𝜃 0 ) − 𝛾 log 𝜋 𝜃 0 (𝒖 | 𝑠, 𝒚 ) 𝜋 𝜃 (𝒖 | 𝑠, 𝒚 ) d𝒖 .
+
+(B.14) Dividing both sides of (B.12) by 𝜀 , noticing that the second term is 𝑜 (𝜀 ), letting 𝜀 → 0 and using (B.14) gives (3.12). Normalizing 𝛽𝜇 𝜃 0 ,𝑡 , 𝒙 then yields the expectation form stated in the theorem. □
+
+B.3 Derivation of Lemma 3.3 
+
+Proof. Fix 𝛿 𝑡 > 0, 𝑡 ≥ 0, 𝒙 ∈ R𝑑 , and 𝒖 ∈ A , and recall ( 𝑿 𝒖  
+
+> 𝑠
+
+)𝑠 ≥𝑡 from Section 3.2.1. Apply the It ˆo-L ´evy formula to 𝑒 −𝛽 (𝑠 −𝑡 ) 𝐽 (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 ) on [𝑡, 𝑡 + 𝛿 𝑡 ), we obtain 
+
+𝑒 −𝛽 𝛿 𝑡 𝐽  𝑡 + 𝛿 𝑡 , 𝑿 𝒖   
+
+> 𝑡 +𝛿 𝑡
+
+; 𝜋  − 𝐽  𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+; 𝜋 
+
+=
+
+∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )  𝜕 𝑠 𝐽 + L 𝒖 𝐽 − 𝛽𝐽  (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 ) d𝑠 + ˜𝑀 𝑡 + 𝛿 𝑡 − ˜𝑀 𝑡 , (B.15) where ˜𝑀 collects the stochastic integrals with respect to the Brownian motion and the compensated Poisson random measure. Taking conditional expectation with respect to F𝑡 and using the integrability assumption in Lemma 3.3 (which ensures the local martingale term is a true martingale on [𝑡, 𝑡 + 𝛿 𝑡 )), we get 
+
+E𝑒 −𝛽 𝛿 𝑡 𝐽  𝑡 + 𝛿 𝑡 , 𝑿 𝒖   
+
+> 𝑡 +𝛿 𝑡
+
+; 𝜋  − 𝐽  𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+; 𝜋  | F 𝑡 
+
+ = E
+
+h ∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )  𝜕 𝑠 𝐽 + L 𝒖 𝐽 − 𝛽𝐽  (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 ) d𝑠 F𝑡 
+
+i
+
+.
+
+(B.16) By continuity of 𝐽 and the coefficients, together with dominated convergence (using the integrability assumption in Lemma 3.3), as 𝛿 𝑡 → 0, 
+
+E
+
+h ∫ 𝑡 + 𝛿 𝑡 
+
+> 𝑡
+
+𝑒 −𝛽 (𝑠 −𝑡 )  𝜕 𝑠 𝐽 + L 𝒖 𝐽 − 𝛽𝐽  (𝑠, 𝑿 𝒖  
+
+> 𝑠
+
+; 𝜋 ) d𝑠 F𝑡 
+
+i
+
+=  𝜕 𝑡 𝐽 + L 𝒖 𝐽 − 𝛽𝐽  (𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+; 𝜋 ) 𝛿 𝑡 + 𝑜 (𝛿 𝑡 ).
+
+26 Since 𝑓 (𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+, 𝒖 ) is F𝑡 -measurable, one has 
+
+E 𝑓 (𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+, 𝒖 ) 𝛿 𝑡 + 𝑒 −𝛽 𝛿 𝑡 𝐽  𝑡 + 𝛿 𝑡 , 𝑿 𝒖   
+
+> 𝑡 +𝛿 𝑡
+
+; 𝜋  − 𝐽  𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+; 𝜋  |F 𝑡 
+
+ =  𝜕 𝑡 𝐽 + L 𝒖 𝐽 − 𝛽𝐽 + 𝑓  (𝑡, 𝑿 𝒖  
+
+> 𝑡
+
+, 𝒖 ; 𝜋 ) 𝛿 𝑡 + 𝑜 (𝛿 𝑡 ).
+
+(B.17) Dividing it by 𝛿 𝑡 and using (3.14) and the definition (3.8) of 𝑞 -function gives (3.15). □
+
+B.4 Proof for (4.10) 
+
+Proof. Let H (𝑢 ) := H (𝑥, 𝑢, ∇𝑥 𝑉, ∇2
+
+> 𝑥
+
+𝑉 ), 𝑍 (𝑥 ) := ∫ 
+
+> A
+
+exp 
+
+ 1 
+
+> 𝛾
+
+H ( ˜𝑢 )
+
+
+
+𝑑 ˜𝑢. By the Gibbs representation of the optimal policy, 𝜋 ∗ (𝑢 | 𝑥 ) = exp       
+
+> 1
+> 𝛾 H(𝑢 )
+> 
+> 𝑍 (𝑥 )
+
+. Hence log 𝜋 ∗ (𝑢 | 𝑥 ) = 1 
+
+> 𝛾
+
+H (𝑢 ) − log 𝑍 (𝑥 ), which implies 
+
+H (𝑢 ) − 𝛾 log 𝜋 ∗ (𝑢 | 𝑥 ) = 𝛾 log 𝑍 (𝑥 ). For the entropy-regularized HJB equation, 
+
+𝛽𝑉 (𝑥 ) =
+
+∫
+
+> A
+
+ H (𝑢 ) − 𝛾 log 𝜋 ∗ (𝑢 | 𝑥 ) 𝜋 ∗ (𝑢 | 𝑥 ) 𝑑𝑢 , 
+
+substituting 𝜋 ∗ into HJB and using the normalization ∫ 
+
+> A
+
+𝜋 ∗ (𝑢 | 𝑥 ) 𝑑𝑢 = 1 yields 
+
+𝛽𝑉 (𝑥 ) = 𝛾 log 𝑍 (𝑥 ) = 𝛾 log 
+
+∫
+
+> A
+
+exp 
+
+ 1
+
+𝛾 H (𝑥, 𝑢, ∇𝑥 𝑉, ∇2
+
+> 𝑥
+
+𝑉 )
+
+
+
+𝑑𝑢. 
+
+which is exactly (4.10). □
+
+# C Proof For Benchmarks 
+
+C.1 Closed-form Solution in the LQ Case 
+
+For the linear-quadratic problem, we adopt the quadratic ansatz 
+
+𝑉 (𝑡, 𝒙 ) = 𝒙 ⊤ 𝑯 (𝑡 )𝒙 + 𝑔 𝛾 (𝑡 ), 𝑯 (𝑡 ) ∈ S𝑑 , 𝑔 𝛾 (𝑡 ) ∈ R. (C.1) We show that, under this ansatz, the entropy-regularized HJB admits an explicit Gaussian optimizer and reduces to a Riccati–scalar ODE system. 
+
+Proof. Recall that 𝑓 (𝑡, 𝒙 , 𝒖 ) = −( 𝒖 ⊤ 𝑹 (𝑡 )𝒖 + 𝒙 ⊤𝑸 (𝑡 )𝒙 ), 𝑹 (𝑡 ) ≻ 0, 𝑸 (𝑡 ) ⪰ 0. Substituting (C.1) into the entropy-regularized HJB, the policy-dependent part becomes sup   
+
+> 𝜋 (· | 𝑡 , 𝒙 )
+
+E𝜋 [− 𝒖 ⊤ 𝑹 (𝑡 )𝒖 + 2 𝒖 ⊤ 𝑩 (𝑡 )⊤ 𝑯 (𝑡 )𝒙 ] + 𝛾 E𝜋 [− log 𝜋 (𝒖 | 𝑡, 𝒙 )] ,
+
+By the optimizer is of Gibbs form, 𝜋 ∗ (𝒖 | 𝑡, 𝒙 ) ∝ exp 
+
+ H (𝑡 , 𝒙 ,𝒖 )
+
+> 𝛾
+
+
+
+= N  𝑹 (𝑡 )−1 𝑩 (𝑡 )⊤ 𝑯 (𝑡 )𝒙 , 𝛾  
+
+> 2
+
+𝑹 (𝑡 )−1, and 
+
+E𝜋 ∗ [𝒖 | 𝑡, 𝒙 ] = 𝑹 (𝑡 )−1 𝑩 (𝑡 )⊤ 𝑯 (𝑡 )𝒙 , Var 𝜋 ∗ (𝒖 | 𝑡, 𝒙 ) = 𝛾  
+
+> 2
+
+𝑹 (𝑡 )−1, matching the coefficients in HJB, we obtain 
+
+𝑯 ′ (𝑡 ) = 𝛽 𝑯 (𝑡 ) + 𝑸 (𝑡 ) − 𝑯 (𝑡 ) 𝑩 (𝑡 ) 𝑹 (𝑡 )−1 𝑩 (𝑡 )⊤ 𝑯 (𝑡 ), (C.2) and 
+
+𝑔 ′ 
+
+> 𝛾
+
+(𝑡 ) = 𝛽𝑔 𝛾 (𝑡 ) − Tr  𝚺 (𝑡 )𝚺 (𝑡 )⊤ 𝑯 (𝑡 ) − Tr  𝚲 (𝑡 ) diag (𝜶 (𝑡 )) 𝑯 (𝑡 ) diag (𝜶 (𝑡 ))  − 𝑐 𝛾 (𝑡 ), (C.3) where 
+
+𝑐 𝛾 (𝑡 ) = 𝛾 
+
+2
+
+ 𝑚 log (𝜋𝛾 ) − log det 𝑹 (𝑡 ), 𝚲 (𝑡 ) := diag (𝜆 𝑖 (𝑡 )) .
+
+Hence the value function is obtained. 27 In the standard case 𝛾 = 0, the entropy term disappears and the optimal stochastic policy collapses to the deterministic feedback control 
+
+𝒖 ∗ (𝑡, 𝒙 ) = 𝑹 (𝑡 )−1 𝑩 (𝑡 )⊤ 𝑯 (𝑡 )𝒙 , (C.4) which is exactly the mean of optimal policy when 𝛾 > 0 , and it can be obtained directly from the first-order optimality condition. Accordingly, (C.2) remains unchanged, while (C.3) reduces to the same scalar equation without the entropy correction term 𝑐 𝛾 (𝑡 ).Finally, the ODE system above determines the candidate solution, and the admissible branch is selected by the coefficient class. If the coefficients converge as 𝑡 → ∞ , we impose lim  
+
+> 𝑡 →∞
+
+𝑯 (𝑡 ) = 𝑯 ∞, lim  
+
+> 𝑡 →∞
+
+𝑔 𝛾 (𝑡 ) = 𝑔 𝛾 
+
+> ∞
+
+,
+
+where 𝑯 ∞ solves the limiting algebraic Riccati equation and 𝑔 𝛾  
+
+> ∞
+
+is determined by the corresponding stationary scalar balance. If the coefficients are 𝑃 -periodic, then we impose the periodic boundary condition 
+
+𝑯 (𝑡 + 𝑃 ) = 𝑯 (𝑡 ), 𝑔 𝛾 (𝑡 + 𝑃 ) = 𝑔 𝛾 (𝑡 ).
+
+In the time-homogeneous case, 𝑯 ′ (𝑡 ) = 0 and 𝑔 ′ 
+
+> 𝛾
+
+(𝑡 ) = 0 , so the system reduces to the associated algebraic Riccati equation together with the stationary scalar equation. □
+
+C.2 Closed-form Solution of Multi-agent Game 
+
+Proof. Recall that 𝑌 𝑖 𝑡 := 1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑋 𝑗 𝑡 represents the average wealth of other agents, and that 𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) is defined in (4.15). Then 𝑌 𝑖 𝑡 satisfies d𝑌 𝑖 𝑡 = c𝑢𝑏 d𝑡 + c𝑢𝜎 d𝑊 0 
+
+> 𝑡
+
++ 1
+
+𝑛 ∑︁ 𝑗 ≠𝑖 
+
+𝑢 𝑗 𝜂 𝑗 d𝑊 𝑗 𝑡 + 1
+
+𝑛 ∑︁ 𝑗 ≠𝑖 
+
+𝑢 𝑗 𝛼 𝑗 d𝑀 𝑗 𝑡 + c𝑢𝜉 d𝑀 0 
+
+> 𝑡
+
+, (C.5) where c𝑢𝑏 := 1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 𝑗 𝑏 𝑗 , c𝑢𝜎 := 1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 𝑗 𝜎 𝑗 , d𝑢 2𝜂 2 := 1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 2 
+
+> 𝑗
+
+𝜂 2 
+
+> 𝑗
+
+, c𝑢𝜉 := 1
+
+> 𝑛
+
+P 𝑗 ≠𝑖 𝑢 𝑗 𝜉 𝑗 . By the dynamic programming principle, 𝑉 𝑖 satisfies the HJB equation 
+
+𝜕 𝑡 𝑉 𝑖 + sup  
+
+> 𝑢 𝑖 ∈R
+
+L𝑖,𝑢 𝑖 𝑉 𝑖 + 𝑓 𝑖 − 𝛽𝑉 𝑖 = 0, (C.6) where L𝑖,𝑢 𝑖 is the generator of the pair (𝑋 𝑖 𝑡 , 𝑌 𝑖 𝑡 ) under the control 𝑢 𝑖 for agent 𝑖 , with the controls 𝑢 𝑗 , 𝑗 ≠ 𝑖 
+
+held fixed. A direct computation yields 
+
+L𝑖,𝑢 𝑖 𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) = 𝑢 𝑖 𝑏 𝑖 𝑉 𝑖 𝑥 + c𝑢𝑏 𝑉 𝑖 𝑦 + 12 (𝜂 2 
+
+> 𝑖
+
++ 𝜎 2 
+
+> 𝑖
+
+)𝑢 2 
+
+> 𝑖
+
+𝑉 𝑖 𝑥 𝑥 + 12
+
+ ( c𝑢𝜎 )2 + 1 
+
+> 𝑛
+
+d𝑢 2𝜂 2𝑉 𝑖 𝑦𝑦 + 𝑢 𝑖 𝜎 𝑖 c𝑢𝜎 𝑉 𝑖 𝑥 𝑦 
+
+
+
+> (𝑡 ,𝑥,𝑦 )
+
++ 𝜆 𝑖 
+
+ 𝑉 𝑖 (𝑡, 𝑥 + 𝑢 𝑖 𝛼 𝑖 , 𝑦 ) − 𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) − 𝑢 𝑖 𝛼 𝑖 𝑉 𝑖 𝑥 (𝑡, 𝑥, 𝑦 )
+
++∑︁ 𝑗 ≠𝑖 
+
+𝜆 𝑗 
+
+ 𝑉 𝑖  𝑡, 𝑥, 𝑦 + 𝑢 𝑗 𝛼 𝑗 
+
+> 𝑛
+
+ − 𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) − 𝑢 𝑗 𝛼 𝑗  
+
+> 𝑛
+
+𝑉 𝑖 𝑦 (𝑡, 𝑥, 𝑦 )
+
++ 𝜆 0
+
+ 𝑉 𝑖 (𝑡, 𝑥 + 𝑢 𝑖 𝜉 𝑖 , 𝑦 + c𝑢𝜉 ) − 𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) − 𝑢 𝑖 𝜉 𝑖 𝑉 𝑖 𝑥 (𝑡, 𝑥, 𝑦 ) − c𝑢𝜉 𝑉 𝑖 𝑦 (𝑡, 𝑥, 𝑦 ). (C.7) We seek solutions of the form 
+
+𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) = − 1
+
+𝐾 𝑖 (𝑡 ) exp   − 1
+
+𝜚 𝑖 
+
+ (1 − 𝜛 𝑖 
+
+𝑛 )𝑥 − 𝜛 𝑖 𝑦  . (C.8) Define 𝜒 𝑖 = 1− 𝜛 𝑖 /𝑛 𝜚 𝑖 , and 𝜌 𝑖 = 𝜛 𝑖  
+
+> 𝜚 𝑖
+
+. Substituting the ansatz into (C.7) and dividing by 𝑉 𝑖 < 0, the 𝑢 𝑖 -dependent terms from the drift and diffusion are 1
+
+> 𝑉 𝑖
+
+
+
+𝑢 𝑖 𝑏 𝑖 𝑉 𝑖 𝑥 + 12 (𝜂 2 
+
+> 𝑖
+
++ 𝜎 2 
+
+> 𝑖
+
+)𝑢 2 
+
+> 𝑖
+
+𝑉 𝑖 𝑥 𝑥 + 𝑢 𝑖 𝜎 𝑖 c𝑢𝜎 𝑉 𝑖 𝑥 𝑦 
+
+
+
+= −𝜒 𝑖 𝑏 𝑖 𝑢 𝑖 + 12 𝜒 2 
+
+> 𝑖
+
+(𝜂 2 
+
+> 𝑖
+
++
+
+28 𝜎 2 
+
+> 𝑖
+
+)𝑢 2 
+
+> 𝑖
+
+− 𝜒 𝑖 𝜌 𝑖 𝜎 𝑖 c𝑢𝜎 𝑢 𝑖 . The jump terms contribute 𝜆 𝑖 
+
+> 𝑉 𝑖
+
+ 𝑉 𝑖 (𝑡, 𝑥 + 𝑢 𝑖 𝛼 𝑖 , 𝑦 ) − 𝑉 𝑖 (𝑡, 𝑥, 𝑦 ) − 𝑢 𝑖 𝛼 𝑖 𝑉 𝑖 𝑥 
+
+ = 𝜆 𝑖 
+
+ 𝑒 −𝜒 𝑖 𝛼 𝑖 𝑢 𝑖 −
+
+1+ 𝜒 𝑖 𝛼 𝑖 𝑢 𝑖 
+
+, and 𝜆 0
+
+> 𝑉 𝑖
+
+ 𝑉 𝑖 (𝑡, 𝑥 +𝑢 𝑖 𝜉 𝑖 , 𝑦 +c𝑢𝜉 )− 𝑉 𝑖 (𝑡, 𝑥, 𝑦 )− 𝑢 𝑖 𝜉 𝑖 𝑉 𝑖 𝑥 −c𝑢𝜉𝑉 𝑖 𝑦 
+
+ = 𝜆 0
+
+ 𝑒 −𝜒 𝑖 𝜉 𝑖 𝑢 𝑖 +𝜌 𝑖 c𝑢 𝜉 −1+ 𝜒 𝑖 𝜉 𝑖 𝑢 𝑖 −𝜌 𝑖 c𝑢𝜉 .
+
+Collecting all 𝑢 𝑖 -dependent terms defines the function Ψ𝑖 :
+
+Ψ𝑖 (𝑢 ) = −𝜒 𝑖 𝑏 𝑖 𝑢 + 12 𝜒 2 
+
+> 𝑖
+
+(𝜂 2 
+
+> 𝑖
+
++ 𝜎 2 
+
+> 𝑖
+
+)𝑢 2 − 𝜒 𝑖 𝜌 𝑖 𝜎 𝑖 c𝑢𝜎 𝑢 + 𝜆 𝑖 
+
+ 𝑒 −𝜒 𝑖 𝛼 𝑖 𝑢 − 1 + 𝜒 𝑖 𝛼 𝑖 𝑢  + 𝜆 0
+
+
+
+𝑒 −𝜒 𝑖 𝜉 𝑖 𝑢 +𝜌 𝑖 c𝑢 𝜉 + 𝜒 𝑖 𝜉 𝑖 𝑢 
+
+
+
+.
+
+(C.9) The first order condition Ψ′ 
+
+> 𝑖
+
+(𝑢 ) = 0 gives a candidate optimal control for agent 𝑖 . Since Ψ𝑖 is strictly convex in 𝑢 , this maximizer is unique. Consequently, a collection of feedback controls 𝒖 ∗ = (𝑢 ∗
+
+> 1
+
+, . . . , 𝑢 ∗
+
+> 𝑛
+
+) forms a Markovian Nash equilibrium if and only if it solves the coupled system Ψ′ 
+
+> 𝑖
+
+(𝑢 ∗ 
+
+> 𝑖
+
+) = 0, 𝑖 = 1, 2, . . . , 𝑛 . This proves the first part of the proposition. Matching the coefficients and using time homogeneity gives Ψ𝑖 (𝑢 ∗ 
+
+> 𝑖
+
+) + 𝐾 𝑖 (𝑡 ) + 𝐶 𝑖 − 𝛽 = 0 , where 𝐶 𝑖 is independent of 𝑢 𝑖 and given by 
+
+𝐶 𝑖 = 𝜌 𝑖 c𝑢𝑏 + 12 𝜌 2
+
+> 𝑖
+
+  1
+
+𝑛 2∑︁ 𝑗 ≠𝑖 
+
+(𝑢 𝑗 𝜂 𝑗 )2 +   1
+
+𝑛 ∑︁ 𝑗 ≠𝑖 
+
+𝑢 𝑗 𝜎 𝑗 
+
+2 +∑︁ 𝑗 ≠𝑖 
+
+𝜆 𝑗 
+
+  exp   𝜛 𝑖 
+
+𝜚 𝑖 
+
+𝑢 𝑗 𝛼 𝑗 
+
+𝑛 
+
+ − 1 − 𝜛 𝑖 
+
+𝜚 𝑖 
+
+𝑢 𝑗 𝛼 𝑗 
+
+𝑛 
+
+ − 𝜆 0 𝜌 𝑖 c𝑢𝜉. 
+
+(C.10) Hence 𝐾 ∗ 
+
+> 𝑖
+
+= 𝛽 − Ψ𝑖 (𝑢 ∗ 
+
+> 𝑖
+
+) − 𝐶 𝑖 , and the value function of agent 𝑖 is 
+
+𝑉 𝑖 (𝑥, 𝑦 ) = − 1
+
+𝛽 − Λ∗
+
+> 𝑖
+
+exp 
+
+
+
+− 1
+
+𝜚 𝑖 
+
+ 1 − 𝜛 𝑖 
+
+> 𝑛
+
+𝑥 − 𝜛 𝑖 𝑦 
+
+
+
+, (C.11) where Λ∗ 
+
+> 𝑖
+
+:= Ψ 𝑖 (𝑢 ∗ 
+
+> 𝑖
+
+) + 𝐶 𝑖 , and 𝛽 > Λ∗ 
+
+> 𝑖
+
+ensures the concavity. □
+
+29

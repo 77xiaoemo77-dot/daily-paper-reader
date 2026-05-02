@@ -1,0 +1,847 @@
+Title: ACT: Anti-Crosstalk Learning for Cross-Sectional Stock Ranking via Temporal Disentanglement and Structural Purification
+
+URL Source: https://arxiv.org/pdf/2604.20204v1
+
+Published Time: Thu, 23 Apr 2026 00:31:08 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# ACT: Anti-Crosstalk Learning for Cross-Sectional Stock Ranking via Temporal Disentanglement and Structural Purification 
+
+Juntao Li ∗ Liang Zhang †‡ 
+
+Abstract. Cross-sectional stock ranking is a fun-damental task in quantitative investment, relying on both temporal modeling of individual stocks and the capture of inter-stock dependencies. While existing deep learning models leverage graph-based approaches to enhance ranking accuracy by propagating informa-tion over relational graphs, they suffer from a key chal-lenge: crosstalk, namely unintended information in-terference across predictive factors. We identify two forms of crosstalk: temporal-scale crosstalk, where trends, fluctuations, and shocks are entangled in ashared representation and non-transferable local pat-terns contaminate cross-stock learning; and structural crosstalk, where heterogeneous relations are indiscrimi-nately fused and relation-specific predictive signals are obscured. To address both issues, we propose the Anti-CrossTalk (ACT) framework for cross-sectional stock ranking via temporal disentanglement and structural purification. Specifically, ACT first decomposes each stock sequence into trend, fluctuation, and shock com-ponents, then extracts component-specific information through dedicated branches, which effectively decouples non-transferable local patterns. ACT further introduces a Progressive Structural Purification Encoder to sequen-tially purify structural crosstalk on the trend component after mitigating temporal-scale crosstalk. An adaptive fusion module finally integrates all branch representa-tions for ranking. Experiments on CSI 300 and CSI 500 demonstrate that ACT achieves state-of-the-art rank-ing accuracy and superior portfolio performance, with improvements of up to 74.25% on the CSI300 dataset. 
+
+1 Introduction. Cross-sectional stock ranking aims to predict the relative return ordering of stocks at each trading day, serving as a fundamental task in quantitative investment [12, 20, 35, 27]. Early ap-proaches rely on hand-crafted indicators such as moving averages [3] and price-to-earnings ratios [18], which are             
+
+> ∗School of Computing and Data Science, University of Hong Kong, Hong Kong SAR. Email: juntao.li@connect.hku.hk
+> †Thrust of Financial Technology, Hong Kong University of Science and Technology (Guangzhou), China. Email: liangzhang@hkust-gz.edu.cn
+> ‡Corresponding author.
+
+often limited in capturing complex market dynamics. To address this, deep learning models have been intro-duced to learn representations directly from data. Re-current architectures such as LSTM [13] and GRU [4], as well as Transformer-based models [37, 19], have demon-strated strong capability in modeling temporal depen-dencies, while time-series decomposition [8] further im-proves predictive performance by decomposing underly-ing patterns. Beyond temporal modeling, recent work emphasizes the importance of explicitly capturing inter-stock relationships. Graph neural networks (GNNs), in-cluding GCN [16] and GAT [38, 26], construct relational graphs to encode dependencies among stocks, while spa-tiotemporal graph models integrate both temporal and spatial interactions [31, 25, 39]. Despite these advances, existing graph-based mod-els still suffer from a fundamental challenge, which we refer to as crosstalk – unintended information inter-ference across predictive factors [32]. In cross-stock graph learning, this issue typically arises because mod-els first encode stock sequences into unified embeddings and then propagate them over one or multiple relational graphs. As illustrated in Figure 1.1, existing methods follow a two-stage paradigm: unified temporal encoding followed by graph propagation, where information that should remain isolated becomes entangled during cross-stock interaction modeling. We formalize this challenge through two distinct forms of crosstalk. 
+
+Challenge 1: Temporal-scale Crosstalk. Fi-nancial time series are inherently multi-scale: a stock sequence superposes long-range trends, short-horizon fluctuations, and event-driven shocks [8]. These com-ponents carry distinct predictive semantics: trends are transferable across related stocks [36, 34], while fluc-tuations capture local market dynamics and shocks are largely stock-specific. However, existing methods encode the entire sequence into a unified representa-tion [44, 17], inducing temporal-scale crosstalk that al-lows asset-specific dynamics to propagate across the stock universe during subsequent graph-based interac-tion modeling. 
+
+Challenge 2: Structural Crosstalk. Stocks are connected through multiple qualitatively different rela-  
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+> arXiv:2604.20204v1 [cs.LG] 22 Apr 2026 (a) Existing methods: Crosstalk
+> (b) ACT Framework: Crosstalk Mitigated
+> Raw Stock Sequences
+> Unified Encoder
+> Temporal-scale Crosstalk
+> Structural Crosstalk
+> Raw Stock Sequences
+> TCD
+> PSPE
+> FCI
+> SCI
+> ACF
+> Stock Ranking &
+> Return Forecasting
+> Low Accuracy &
+> Low Returns
+
+Figure 1.1: (a) Existing methods induce crosstalk by entangling heterogeneous temporal dynamics and re-lational structures within unified representations. (b) The ACT framework mitigates leakage via TCD-based disentanglement and dedicated pathway encoding (PSPE/FCI/SCI) before adaptive fusion (ACF). tions (e.g., industry, region, latent co-movement) [10, 1, 6, 29]. Existing methods either construct a single un-differentiated graph or naïvely fuse multiple adjacency matrices [26, 47], obscuring the distinct predictive signal of each individual structure. Therefore, to systematically mitigate both forms of crosstalk, we propose the Anti-CrossTalk ( ACT )framework (Figure 1.1) for cross-sectional stock rank-ing via temporal disentanglement and structural pu-rification. ACT first introduces Temporal Compo-nent Decomposition (TCD) to disentangle each stock sequence into trend, fluctuation, and shock com-ponents. The fluctuation and shock components then use FCI (temporal convolution for short-horizon os-cillations) and SCI (counterfactual buffer for event-driven deviations) to extract component-specific local information and decouple non-transferable dynamics from cross-stock propagation. On the trend branch, 
+
+PSPE performs progressive structural purification over multi-relational graphs to isolate relation-specific sig-nals and mitigate structural crosstalk. Finally, ACF 
+
+adaptively recombines all branch representations for ranking and forecasting. Extensive experiments on two representative datasets demonstrate that ACT signif-icantly outperforms 16 competitive baselines in both cross-sectional ranking accuracy and portfolio return, achieving improvements of up to 74.25% on the CSI300 dataset. Our main contributions are summarized below. 
+
+• Conceptually: For the first time, we identify Crosstalk as a key bottleneck in graph-based cross-sectional stock ranking, and systematically charac-terize it from both temporal-scale and structural per-spectives. 
+
+• Methodologically: We propose the ACT frame-work, which mitigates two forms of crosstalk through temporal disentanglement (TCD with ded-icated FCI/SCI branches) and structural purification (PSPE). 
+
+• Empirically: Extensive experiments on CSI 300/500 demonstrate that ACT achieves state-of-the-art rank-ing accuracy and superior portfolio performance, with comprehensive ablation studies further validating the necessity of each anti-crosstalk design. 
+
+2 Related Work. We review two research lines most relevant to our ACT framework: graph-based cross-sectional stock ranking and time-series decompo-sition for financial forecasting. Together, these stud-ies motivate our anti-crosstalk perspective on structural and temporal interference. 
+
+2.1 Graph-Based Cross-Sectional Stock Ranking. Graph neural networks (GNNs) have be-come a mainstream paradigm for modeling cross-stock dependence. Early works use static graphs based on predefined relations, such as industry classification [36] and supply-chain links [21], with GCN-based prop-agation [16] for representation learning. Subsequent studies further introduce attention [38], spatio-temporal architectures [31, 25, 39, 46], hierarchical aggregation [44, 47], temporal graph modeling [41, 6], and multi-relational structures [29, 9] to better cap-ture cross-stock dependencies. More recent works also consider richer graph constructions, including anomaly-aware graphs [22], state-based models [14], hidden-concept discovery in HIST [45], and histori-cal/future pattern modeling in DishFT-GNN [24]. However, these methods either collapse heteroge-neous relations into a single graph or naïvely fuse mul-tiple adjacency matrices without resolving their mutual interference [26]. We identify this issue as Crosstalk 
+
+and propose a principled anti-crosstalk framework. 
+
+2.2 Time-Series Decomposition in Finan-cial Forecasting. Time-series decomposition sepa-rates an observed sequence into interpretable compo-nents. Classical models such as ARIMA [33] use mov-ing averages and differencing, and related filters remain common in econometrics [3]. Recent deep learning mod-els incorporate learnable decomposition into neural ar-chitectures [43, 51], and later studies extend it to guided temporal adaptation [8, 42]. In finance, decomposition is also used to extract economically meaningful patterns from market sequences [11]. However, existing decomposition methods mainly aim at improving sequence encoding quality and rarely consider how decomposed components interact with downstream cross-stock propagation. In contrast, our   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+
+method uses decomposition as an information identifica-tion and routing mechanism: rather than only improv-ing component-wise encoding, it separates signals with different transfer characteristics into dedicated path-ways to mitigate temporal-scale crosstalk. 
+
+3 Preliminaries. 
+
+Definition 3.1 (Multivariate Stock Time Series). 
+
+Let U = {u1, . . . , u N } denotes the set of N target stocks. At time step t, the market state is represented by a feature matrix Xt ∈ RN ×F , where F is the number of features. Over a look-back window of length T , the historical observation tensor is defined as 
+
+(3.1) X = [ Xt−T +1 , . . . , Xt] ∈ RT ×N ×F .
+
+Definition 3.2 (Heterogeneous Stock Graph). To model cross-stock interactions, we define a heteroge-neous graph G = (U, E, R). Its static relation set is Rs = {ind , reg }, corresponding to an industry graph Aind ∈ { 0, 1}N ×N and a region graph Areg ∈{0, 1}N ×N . These two adjacency matrices encode whether two stocks belong to the same industry sector or the same registration region. In addition, a dynamic adjacency matrix Ad ∈ RN ×N is constructed adaptively from projected node representations to capture residual cross-stock dependencies not explained by static rela-tions. 
+
+Definition 3.3 (Cross-Sectional Stock Ranking). 
+
+Given X and G, the goal is to learn a mapping function 
+
+fθ that predicts next-step returns and ranks stocks on each trade day. Following standard practice, returns are computed from the volume-weighted average price (VWAP), where VWAP t = PKk=1 p(t) 
+
+> k
+
+v(t) 
+
+> k
+
+/ PKk=1 v(t) 
+
+> k
+
+.The prediction target and model output are 
+
+(3.2) yi,t +1 = VWAP i,t +1 − VWAP i,t 
+
+VWAP i,t 
+
+(3.3) ˆYt+1 = fθ (X , G) ∈ RN
+
+and the final induced cross-sectional stock ranking is obtained by 
+
+(3.4) πt+1 = Rank 
+
+ ˆYt+1 
+
+
+
+.
+
+Here, πt+1 denotes the ranking permutation over all stocks at time t+1 , which preserves the relative ordering of stocks for downstream portfolio selection. 
+
+4 The ACT Framework. As illustrated in Figure 4.1, ACT processes the input tensor X ∈
+
+RB×T ×N ×F through five modules. A TCD module first decomposes each stock sequence into trend, fluctuation, and shock components, which are then routed to three dedicated branches: PSPE resolves structural crosstalk in the trend component, FCI isolates short-horizon oscil-latory dynamics via temporal convolution, and SCI cap-tures stock-specific event disturbances through a coun-terfactual buffer. Finally, an Adaptive Component Fu-sion (ACF) layer dynamically weights the three repre-sentations for return forecasting and stock ranking. 
+
+4.1 Temporal Component Decomposition (TCD). To mitigate temporal-scale crosstalk at its source, we perform a principled decomposition of the stock sequence X into trend, fluctuation, and shock components via recursive causal moving averages: (4.1) X(·) 
+
+> t
+
+= 1min( t+1 , w )
+
+> t
+
+X
+
+> k=max(0 , t −w+1)
+
+Sk,
+
+where (·) = trend with w = τ and S = X , while 
+
+(·) = fluct with w = σ and S = Xdet , where 
+
+Xdet  
+
+> t
+
+= Xt − Xtrend  
+
+> t
+
+, represents detrend component. The shock component is the residual Xshock  
+
+> t
+
+= Xt −
+
+Xtrend  
+
+> t
+
+− Xfluct  
+
+> t
+
+. Boundary NaN values are set to zero. This decomposition separates heterogeneous temporal semantics before cross-stock interaction is modeled. 
+
+4.2 Progressive Structural Purification En-coder (PSPE). PSPE encodes the trend component through three steps: Static Relation Purification, Dy-namic Structural Refinement, and Adaptive Fusion. Let 
+
+ϕ(·) denotes LeakyReLU activation function and let 
+
+Rs = {ind , reg } denotes the set of static relation types. Note that our method is flexible and can be easily ex-tended to accommodate more relations. In the first step, the final trend snapshot is pro-jected into the hidden space: (4.2) x0 = LN   Proj( Xtrend  
+
+> T
+
+)
+
+and filtered by bidirectional residual purification mech-anism: (4.3) 
+
+hr = ϕ  GCN r (x0, Ar ), r ∈ R s
+
+fr = ϕ(W fr hr ), br = W br hr ,
+
+u = x0 − X
+
+> r∈R s
+
+br , zs = Ws[find ∥freg ].
+
+Here, industry and region graphs are treated as two instances of the same static purification mechanism. For each relation type r, PSPE produces a forward output fr to preserve useful relation-aware signals and a backward output br to estimate structural interference; the backward output is subtracted from x0 to form the purified residual u, while fr is retained as the      
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited 𝑿 ∈𝑅 ஻×்×ே×ி
+> Stock Feature
+> Sequences
+
+TCD 
+
+PSPE 
+
+FCI 
+
+SCI 
+
+> Stacking
+
+ACF      
+
+> Linear
+> Tanh
+> Linear
+> Softmax
+> Predictor
+> Prediction
+> Progressive Structural Purification Encoder
+> (PSPE) Fluctuation Isolation
+> (FCI)
+> Shock Isolation
+> (SCI)
+> 𝜺 𝒊𝒏𝒅
+> 𝜺 𝒊𝒏𝒅
+> 𝜺 𝒊𝒏𝒅 𝜺 𝒓𝒆𝒈 𝜺 𝒓𝒆𝒈
+> 𝜺 𝒓𝒆𝒈
+> 𝜺 𝒓𝒆𝒈
+> 𝜺 𝒓𝒆𝒈
+> 𝜺 𝒅𝒚𝒏
+> 𝜺 𝒅𝒚𝒏
+> 𝜺 𝒅𝒚𝒏
+> 𝜺 𝒅𝒚𝒏
+> 𝜺 𝒅𝒚𝒏
+> 𝜺 𝒅𝒚𝒏
+> 𝜺 𝒅𝒚𝒏 𝜺 𝒅𝒚𝒏
+> 𝑮𝒓𝒂𝒑𝒉 𝟏
+> 𝑮𝒓𝒂𝒑𝒉 𝟐
+> 𝑮𝒓𝒂𝒑𝒉 𝟑
+> 𝒌𝑵𝑵 𝑮𝑨𝑻
+> ...
+> Gate Fusion
+> ...
+> [𝑓 ௜௡ௗ ；𝑓 ௥௘௚ ]
+> Linear
+> 𝜎
+> ℎௗ௬௡
+> Layernorm  ...
+> 𝑧 ௧௥௘௡ௗ
+> ...
+> 𝑿 𝒕𝒓𝒆𝒏𝒅
+> 𝑿 𝒇𝒍𝒖𝒄𝒕
+> 𝑿 𝒔𝒉𝒐𝒄𝒌
+> 𝒙 𝒇𝒍𝒖𝒄𝒕
+> Linear
+> ...
+> ...
+> ...
+> ...
+> ...
+> TCN Layers
+> Layernorm+Reshape
+> ReLU + Dropout
+> ...
+> 𝒛 𝒇𝒍𝒖𝒄𝒕
+> 𝒙 𝒔𝒉𝒐𝒄𝒌
+> Linear
+> Layernorm
+> ... ...
+> 𝒙 𝒓𝒂𝒘
+> 𝒙 𝒔𝒉𝒐𝒄𝒌
+> 𝒙 𝒄𝒐𝒖𝒏𝒕𝒆𝒓
+> Concat
+> Linear + LeakyReLU
+> Dropout+ Linear
+> ...
+> 𝒛 𝒔𝒉𝒐𝒄𝒌
+
+Figure 4.1: Overall architecture of the ACT framework. The input is decomposed into trend, fluctuation, and shock components via TCD. The trend component is processed by the Progressive Structural Purification Encoder (PSPE), while fluctuation and shock are routed to dedicated isolation branches (FCI and SCI). All representations are recombined by Adaptive Component Fusion (ACF) for final forecasting. output in zs for fusion. This bidirectional residual design reduces interference, as the backward branch models the relation-specific representation under each static graph, and the subtraction operation ensures that signals explained by a given graph (e.g., industry) do not propagate to other graphs (e.g, region) or into subsequent dynamic graph refinement. In the second step, a dynamic graph supplements residual cross-stock patterns not explained by the static relations. We first project the purified residual as 
+
+˜u = ϕ(Wdu) and compute pairwise cosine similarities: (4.4) sij = ˜u⊤
+
+i ˜uj
+
+∥˜ui∥2 ∥˜uj ∥2
+
+.
+
+A dynamic k-NN graph Ad is then constructed by retaining, for each stock i, the top-k neighbors with the largest similarity scores: (4.5) 
+
+Adij =
+
+(
+
+1, j ∈ TopK k(si, :),
+
+0, otherwise , Nd(i) = {j | Adij = 1 }.
+
+On this sparse graph, we use attention-based GAT( ·, ·)
+
+to pass message on the dynamic k-NN graph: (4.6) 
+
+eij = ϕ a⊤[W˜ui∥W˜uj ],αij = exp( eij )
+
+P
+
+j′∈N d(i) exp( eij ′ ) , j ∈ N d(i),
+
+Hd = GAT(˜ u, Ad)
+
+Here, a is a learnable attention vector and is distinct from the dynamic adjacency matrix Ad. The dynamic representation is then obtained by: (4.7) (zd)i = ϕ
+
+Wo
+
+X
+
+j∈N d(i)
+
+αij W˜uj
+
+ ,
+
+or equivalently zd = ϕ(WoHd).Finally, static and dynamic representations are adaptively fused to obtain the purified trend embedding: (4.8) g = σ  MLP([ zs∥zd]) ,
+
+ztrend = LN  zs + g ⊙ zd
+
+.
+
+This design preserves complementary static priors while allowing dynamic relations to recover residual market structure. 
+
+4.3 Fluctuation Component Isolation (FCI). FCI captures short-horizon oscillatory dy-namics through a stock-local temporal convolutional pathway, preventing them from leaking into graph propagation. The fluctuation sequence is first projected and reshaped as: (4.9) F = Reshape   LN(Proj( Xfluct ))  ∈ RN ×d×T .
+
+Copyright © 2026 by SIAM Unauthorized reproduction of this article is prohibited We employ a gated Temporal Convolutional Network (TCN) to capture oscillatory patterns: (4.10) 
+
+P = Conv 1(F), Q = σ  Conv 2(F), R = Conv 3(F),
+
+Z = Drop   ReLU( P ⊙ Q + R), zfluct = Z:,:,T .
+
+Because the convolutions are applied independently to each stock, local oscillations remain isolated from cross-stock message passing. 
+
+4.4 Shock Component Isolation (SCI). SCI models stock-specific event disturbances through a com-pact counterfactual buffer. Since shock signals are often sparse and high-variance, directly encoding them may lead to overfitting to transient outliers. We therefore introduce a smoothed counterfactual sequence that ap-proximates the underlying pattern in the absence of ex-treme shocks, and learn it jointly with the raw shock sequence. This contrastive design enables the model to better identify and capture extreme event signals through their deviation from the smoothed baseline. Let 
+
+St = Xshock  
+
+> t
+
+denote the shock sequence. We first con-struct a smoothed counterfactual sequence: (4.11) ¯St = 1min( t+1 , w s)
+
+> t
+
+X
+
+> k=max(0 , t −ws+1)
+
+Sk,
+
+where ws is the smoothing window. The raw and counterfactual embeddings are then obtained by: (4.12) x = LN   Proj( ST ),
+
+x′ = LN   Proj( ¯ST ).
+
+The final shock representation is produced by a two-layer stock-local MLP: (4.13) zshock = W2 Drop  ϕ(W1[x∥x′]) .
+
+This design enables the model to jointly learn each stock’s current state and a no-shock counterfactual rep-resentation, making the component robust to outlier magnitudes while preventing event noise from contami-nating stock graph learning. 
+
+4.5 Adaptive Component Fusion (ACF). 
+
+The three branch representations are stacked as: (4.14) C = [ ztrend , zfluct , zshock ] ∈ RN ×3×d.
+
+For stock i and component c ∈ { 1, 2, 3}, a two-layer attention MLP computes: 
+
+si,c = W a 
+
+> 2
+
+tanh  W a 
+
+> 1
+
+Ci,c, : + ba
+
+> 1
+
+
+
+(4.15) The attention weights are then obtained via softmax function over components, and the final representation is computed as a weighted aggregation: (4.16) 
+
+αi,c = exp( si,c )
+
+P3 
+
+> c′=1
+
+exp( si,c ′ ) ,
+
+zi =
+
+> 3
+
+X
+
+> c=1
+
+αi,c Ci,c, :,
+
+ˆyi = Wout zi
+
+This adaptive fusion allows each stock to weight trend, fluctuation, and shock information differently. 
+
+4.6 Loss Function. For each batch, let Ω = {i |
+
+yi is observed } and define yci = clip( yi, −0.1, 0.1) . We combine IC loss and MSE loss so that the model learns both correct cross-sectional ranking and reasonable re-turn magnitude calibration. The primary objective is the IC loss: (4.17) 
+
+LIC = 1 −
+
+P
+
+> i∈Ω
+
+(ˆ yi − ¯ˆy)( yci − ¯yc)
+
+qP
+
+> i∈Ω
+
+(ˆ yi − ¯ˆy)2 + ϵ pP 
+
+> i∈Ω
+
+(yci − ¯yc)2 + ϵ,
+
+where ¯ˆy and ¯yc are means over Ω. The auxiliary loss is: (4.18) LMSE = 1
+
+|Ω|
+
+X
+
+> i∈Ω
+
+(ˆ yi − yci )2
+
+which provides auxiliary supervision on return magni-tude and complements the IC-based objective, thereby helping further improve cross-sectional ranking perfor-mance. The final objective function is defined as: (4.19) L = LIC + λLMSE , λ ∈ [0 , 1] 
+
+4.7 Inference. During inference, a sliding win-dow of length T is applied over the test horizon. For each window, ACT outputs a score vector ˆy ∈ RN for the final timestamp within the window. The resulting daily scores are then flattened into a prediction series in-dexed by (datetime , instrument) for downstream cross-sectional stock ranking evaluation. Table 5.1: Dataset Details          
+
+> CSI300 CSI500 Stock number 300 500 Training period 04/01/2010–31/12/2020 04/01/2010–31/12/2020 Validation period 01/01/2021–31/12/2022 01/01/2021–31/12/2022 Testing period 01/01/2023–30/09/2025 01/01/2023–30/09/2025
+
+5 Experiments. In this section, we evaluate ACT from five perspectives: overall comparison with representative baselines (section 5.2), contribution of the anti-crosstalk modules (section 5.3), portfolio back-testing performance (section 5.4), alpha robustness and factor mining (section 5.5), and subgroup analysis for validity of relation structure (Appendix A.3).   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+
+Table 5.2: Performance Comparison on CSI300 and CSI500 Datasets, with the best value bold and the suboptimal value underlined. Improvement (%) is relative to the suboptimal baseline. 
+
+Model CSI300 CSI500 IC ↑ ICIR ↑ RankIC ↑ RankICIR ↑ IC ↑ ICIR ↑ RankIC ↑ RankICIR ↑
+
+LSTM 0.0276 0.2239 0.0347 0.3312 0.0466 0.4623 0.0522 0.5500 GRU 0.0310 0.2708 0.0399 0.3756 0.0578 0.5608 0.0646 0.6971 Transformer 0.0329 0.2809 0.0394 0.3650 0.0529 0.4706 0.0523 0.5693 ALSTM 0.0355 0.3108 0.0395 0.3712 0.0506 0.4625 0.0580 0.5784 SFM 0.0340 0.2959 0.0306 0.3009 0.0274 0.2449 0.0304 0.3362 GAT 0.0346 0.2609 0.0216 0.1835 0.0450 0.3195 0.0382 0.3045 TCN 0.0349 0.3109 0.0410 0.3739 0.0593 0.5971 0.0523 0.5653 TabNet 0.0294 0.2478 0.0326 0.3089 0.0320 0.3069 0.0331 0.3620 Localformer 0.0285 0.2439 0.0399 0.3728 0.0466 0.4275 0.0554 0.5901 XGBoost 0.0528 0.4338 0.0476 0.4482 0.0601 0.5484 0.0540 0.6102 CatBoost 0.0350 0.2991 0.0360 0.3491 0.0449 0.3707 0.0410 0.4336 LightGBM 0.0360 0.3024 0.0371 0.3453 0.0442 0.3604 0.0409 0.4266 DoubleEnsemble 0.0270 0.2239 0.0332 0.3117 0.0331 0.2802 0.0340 0.3343 iTransformer 0.0456 0.3390 0.0301 0.2508 0.0845 0.6325 0.0707 0.5858 TimeMixer 0.0234 0.1899 0.0137 0.1135 0.0349 0.2670 0.0384 0.3133 FreqCycle 0.0325 0.2519 0.0253 0.2136 0.0348 0.2634 0.0344 0.2664 
+
+ACT 0.0692 0.6955 0.0786 0.7810 0.0877 0.8522 0.0907 0.9216 
+
+Improvement (%) 31.06 60.33 65.13 74.25 3.79 34.74 28.29 32.20 
+
+5.1 Experiment Setting. We summarize the experimental protocol, including the datasets, com-pared baselines, and evaluation metrics used throughout all experiments in this section. 
+
+5.1.1 Dataset. We evaluate our ACT framework on two publicly available datasets: CSI300 and CSI500, which represent major Chinese stock market. Besides, We use the stock features of Alpha158 in the open-source quantitative investment platform Qlib. For each stock on date, Alpha158 looks back 40 days as length of stock sequence. The datasets are split into train-ing (04/01/2010–31/12/2020), validation (01/01/2021– 31/12/2022), and testing (01/01/2023–30/09/2025) pe-riods as detailed in Table 5.1. The industry relation settings follow the CSRC (China Securities Regulatory Commission) rule while region relations are categorized by province granularity, both from CSMAR. 1
+
+5.1.2 Compared Methods. To comprehen-sively evaluate ACT, we select a diverse set of repre-sentative deep learning baselines that have achieved re-markable results in the fields of quantitative finance and time series forecasting: LSTM [13], GRU [4], Trans-former [37], ALSTM [30], SFM [50], GAT [38], Lo-calformer (original from Qlib), TCN [5], TabNet [2], 
+
+> 1China Stock Market & Accounting Research Database (https: //data.csmar.com/).
+
+XGBoost [7], CatBoost [28], LightGBM [15], Dou-bleEnsemble [49], iTransformer [23], TimeMixer [40], FreqCycle [48]. These diverse baselines enable a sys-tematic comparison from the perspectives of temporal and interaction modeling. 
+
+5.1.3 Evaluation Metrics. We evaluate all methods using four widely adopted evaluation metrics in stock ranking area: Information Coefficient (IC), IC Information Ratio (ICIR), Rank IC, and Rank ICIR, which measure predictive quality in terms of linear cor-relation, stability, and ranking effectiveness. 
+
+5.2 Comparison with Baselines. As shown in Table 5.2, ACT consistently outperforms all existing methods across both datasets and all metrics, achieving best results. This indicates that the advantage of ACT is not confined to a particular evaluation dimension, but is reflected jointly in predictive accuracy and prediction stability. Besides, ACT demonstrates substantial gains relative to the second-best method per metric, up to 74.25% on CSI300 and 34.74% on CSI500. 
+
+5.3 Ablation Study. To systematically evaluate the contribution of each anti-crosstalk module in ACT, we conduct ablation experiments on both CSI300 and CSI500 datasets by removing one key component at a time and replacing it with a simpler counterpart. Specif-ically, w/o PSPE replaces the Progressive Structural Purification Encoder with a standard GAT, removing   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+
+the sequential extraction and residual subtraction mech-anism; w/o FCI replaces the Fluctuation Component Isolation branch (TCN) with a one-layer MLP, removing the dedicated temporal pathway for oscillatory dynam-ics; and w/o SCI replaces the Shock Component Iso-lation branch (Counterfactual Buffer) with a one-layer MLP, removing the counterfactual smoothing and con-trastive design. The results are shown in Table 5.3. In summary, the ablation results demonstrate the effectiveness and necessity of each anti-crosstalk module in ACT. Specifically: 
+
+w/o PSPE (Progressive Structural Purifica-tion Encoder) demonstrates the importance of resolv-ing structural crosstalk. Removing PSPE (replaced by standard GAT) leads to a 25.87% drop in IC on CSI300 and an 43.67% drop on CSI500, indicating that the bidi-rectional residual design is crucial for decoupling hetero-geneous relational effects. 
+
+w/o FCI (Fluctuation Component Isolation) 
+
+shows the value of isolating short-horizon dynamics from graph propagation. Compared with the 3.88% drop observed on the CSI500 dataset, drop on CSI300 reaches 25.00%, showing that temporal-scale crosstalk from fluctuations plays a stronger role in markets with sparser relational structures. 
+
+w/o SCI (Shock Component Isolation) shows a substantial impact across both datasets. Its removal leads to a 44.51% IC drop on CSI300 and a 25.88% drop on CSI500, demonstrating that isolating idiosyn-cratic event-driven disturbances is vital for prevent-ing temporal-scale crosstalk. This confirms that stock-specific shocks can dominate short-term returns in cer-tain circumstances. 
+
+5.4 Backtesting Performance in Portfolio. 
+
+In this section, we evaluate how ACT’s predictive ad-vantage translates into portfolio profitability. All mod-els are backtested using Qlib’s spot strategy (Top-KDropoutStrategy in K=50 and N=5) on the CSI500 dataset from 2023 to 2025. This is a long-only strategy which selects K best stocks and then discards N stocks. All reported metrics are computed based on excess re-turns. We adopt the following widely used backtesting metrics, including Annualized Return (AR), Informa-tion Ratio (IR), Maximum Drawdown (MD), Cumula-tive Return (CR), Sharpe Ratio (Sharpe), and Calmar Ratio (Calmar). As shown in Table 5.4, ACT achieves dominant backtesting performance on CSI500 across nearly all metrics. ACT’s AR of 0.4579 exceeds the second-best iTransformer (0.3252) by 40.1%, and its IR of 2.5944 surpasses iTransformer’s 1.8040 by 43.8%. The Calmar ratio of 1.6754 indicates that ACT generates signifi-cantly more return per unit of tail risk. The cumula-Table 5.3: Ablation study on CSI300/CSI500. Each row reports absolute performance, with following row reporting relative change: ∆ = Variant −ACT ACT × 100% .                                                          
+
+> CSI300 Variant IC ICIR RankIC RankICIR w/o PSPE 0.0513 0.4998 0.0614 0.6018 -25.87% -28.14% -21.88% -22.94% w/o FCI 0.0519 0.4930 0.0600 0.5923 -25.00% -29.11% -23.66% -24.16% w/o SCI 0.0384 0.3744 0.0515 0.5048 -44.51% -46.17% -34.48% -35.36%
+> ACT 0.0692 0.6955 0.0786 0.7810
+> CSI500 Variant IC ICIR RankIC RankICIR w/o PSPE 0.0494 0.4994 0.0575 0.6318 -43.67% -41.40% -36.60% -31.44% w/o FCI 0.0843 0.8274 0.0885 0.8908 -3.88% -2.91% -2.43% -3.34% w/o SCI 0.0650 0.6697 0.0738 0.7807 -25.88% -21.41% -18.63% -15.29%
+> ACT 0.0877 0.8522 0.0907 0.9216
+
+tive return (CR) of 3.3955 also exceeds the runner-up (iTransformer: 2.0527), while the Sharpe ratio of 2.6696 confirms robust risk-adjusted profitability; note that it is numerically close to IR (2.5944) because both are de-rived from excess returns under a zero risk-free rate. Regarding maximum drawdown, ACT’s MD (−0.2733) ranks competitively but does not achieve the best value (DoubleEnsemble: −0.2643), which is ex-pected: ACT’s aggressive return-seeking entails higher peak-to-trough drawdowns, but the calmar ratio indi-cates superior risk-adjusted performance. Figure 5.1 visualize the cumulative return curves on the CSI500 dataset. The results show that ACT exhibits a pronounced advantage in alpha extraction. The performance gap between ACT and baseline methods is more pronounced than in the overall comparison above: The curve of ACT keeps rising, while other models tend to stabilize during fluctuation periods (such as the middle of 2024). 
+
+5.5 Alpha Robustness and Factor Mining. 
+
+While sections 5.2–5.4 demonstrate ACT’s aggregate superiority, a natural concern is whether its gains reflect risk factor exposure or genuine crosstalk mitigation. Therefore, We conduct the Fama-French factor (three-factor and five-factor) regression on the CSI500 dataset. The core purpose of the regression is to test whether the excess return alpha of an investment strategy can be explained by the representative factors (market, size, value, profitability, investment).   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+
+Table 5.4: Portfolio backtesting on CSI500 (Top-KDropout, K=50, N=5). All metrics except CR are computed on excess returns (without cost), with the best value bold and the 2nd/3rd value underlined.                                                                                                             
+
+> Model AR ↑IR ↑MD ↓CR ↑Sharpe ↑Calmar ↑
+> LSTM 0.1561 0.9069 −0.3267 0.8921 0.9332 0.4779 GRU 0.2506 1.4325 −0.2933 1.4627 1.4740 0.8544 Transformer 0.2934 1.6632 −0.2889 1.7757 1.7114 1.0156 ALSTM 0.2894 1.6316 −0.2973 1.7426 1.6789 0.9734 SFM 0.2090 1.2045 −0.2833 1.1915 1.2394 0.7377 GAT 0.1612 0.9130 −0.2964 0.9175 0.9366 0.5439 TCN 0.2140 1.2193 −0.2879 1.2228 1.2547 0.7434 TabNet 0.2290 1.2950 −0.2898 1.3185 1.3325 0.7902 Localformer 0.2852 1.6028 −0.2872 1.7096 1.6492 0.9930 XGBoost 0.2720 1.5471 −0.3133 1.6132 1.5919 0.8683 CatBoost 0.2121 1.2025 −0.2926 1.2088 1.2374 0.7251 LightGBM 0.2148 1.2090 −0.2773 1.2239 1.2441 0.7747 DoubleEnsemble 0.2390 1.3539 −0.2643 1.3816 1.3931 0.9044 iTransformer 0.3252 1.8040 −0.2749 2.0527 1.8563 1.1829 TimeMixer 0.2692 1.5015 −0.2790 1.6117 1.5450 0.9650 FreqCycle 0.2192 1.2600 −0.2718 1.2731 1.2965 0.8064
+> ACT 0.4579 2.5944 −0.2733 3.3955 2.6696 1.6754
+
+2023-01 
+
+2023-04 
+
+2023-07 
+
+2023-10 
+
+2024-01 
+
+2024-04 
+
+2024-07 
+
+2024-10 
+
+2025-01 
+
+2025-04 
+
+2025-07 
+
+Trading Date 
+
+1.0 
+
+1.5 
+
+2.0 
+
+2.5 
+
+3.0 
+
+3.5 
+
+4.0 
+
+> Cumulative Return
+> ACT
+> Transformer
+> LSTM
+> GRU
+> ALSTM
+> TCN
+> SFM
+> XGBoost
+> LightGBM
+> CatBoost
+> TabNet
+> Double-Ensemble
+> Localformer
+> FreqCycle
+> iTransformer
+> TimeMixer
+> GAT
+
+Figure 5.1: Cumulative Return on CSI500 from 2023 to 2025. ACT (red) substantially outperforms all baselines. 
+
+5.5.1 Fama-French Regression Settings. We construct the excess return series for each model’s portfolio as Rp,t − Rf,t , where Rp,t is the daily portfolio return from Qlib’s TopKDropout backtesting (K=50, N=5) and Rf,t is the daily risk-free rate. Both Fama-French factor data (MktRF, SMB, HML, RMW, CMA) and the risk-free rate are obtained from the CSMAR database, covering the test period from January 2023 to September 2025. We estimate both the three-factor model (MktRF, SMB, HML) and the five-factor model (MktRF, SMB, HML, RMW, CMA): (5.1) Rp,t − Rf,t = ˆ α + X
+
+k
+
+βkFk,t + εt
+
+where t-statistics are computed using Newey-West HAC standard errors with 5 lags to account for serial corre-Table 5.5: Fama–French Five-Factor Regression Results of Daily Return Spreads.                                                    
+
+> Model αt(α)βmβsβhβrβcR2Obs.
+> ACT 0.0023*** 13.342 -0.0011 -0.0132 -0.0077 -0.0195 0.0075 0.002 625 (0.0002) (0.011) (0.017) (0.030) (0.036) (0.038) iTransformer 0.0007*** 5.096 0.0095 -0.0167 0.0168 0.0087 0.0464 0.005 664 (0.0001) (0.018) (0.017) (0.029) (0.035) (0.040) XGBoost 0.0014*** 8.685 -0.0205 0.0128 0.0473 0.0494 0.0153 0.008 664 (0.0002) (0.014) (0.019) (0.027) (0.035) (0.042)
+
+Notes. The dependent variable is the daily portfolio excess return Rp,t − Rf,t . Newey–West (HAC) standard errors with 5 lags are reported in parentheses. *, **, and *** denote statistical significance at the 10%, 5%, and 1% levels, respectively. 
+
+lation. We focus factor regression on ACT and two baseline models that suboptimal on CSI300 and CSI500 datasets respectively (iTransformer and XGBoost). Section 5.5 and Tables A.1(in Appendix) report regression results. 
+
+5.5.2 Analysis. Two key findings can be drawn from Tables 5.5 and Appendix A.1. Firstly, all three models produce daily alphas significant at the 1% level, and ACT’s alpha ( α = 0 .0023 , t > 13 ) is greater than that of iTransformer ( 0.0007 ) and XGBoost ( 0.0014 ), confirming that ACT captures predictive signals beyond well-known factors. Secondly, ACT’s alpha is virtually identical under FF3 and FF5 ( 0.0023 in both), indicating that the profitability (RMW) and investment (CMA) factors add no explanatory power; by contrast, iTransformer shows a non-negligible CMA loading ( βc ≈ 0.046 ) and XGBoost shows non-negligible HML and RMW loadings (βh ≈ 0.047 , βr ≈ 0.049 ) under F-F5. 
+
+6 Conclusion. In this study, we identify crosstalk, namely unintended information interference across predictive factors, as a key challenge in cross-sectional stock ranking, and propose a anti-crosstalk framework ACT . ACT mitigates both temporal-scale and structural crosstalk through our temporal disentan-glement and structural purification modules, enabling modeling of more transferable cross-stock dependencies. Extensive experiments on two representative datasets demonstrate that ACT consistently outperforms strong baselines in both ranking accuracy and portfolio return. 
+
+References 
+
+[1] L. Alfaro, A. Chanda, S. Kalemli-Ozcan, and S. Sayek , FDI and economic growth: The role of local financial markets , Journal of International Economics, 64 (2004), pp. 89–112, https://doi.org/ 10.1016/S0022-1996(03)00081-3. 
+
+Copyright © 2026 by SIAM Unauthorized reproduction of this article is prohibited [2] S. Arik and T. Pfister , Tabnet: Attentive interpretable tabular learning , Proceedings of the AAAI Conference on Artificial Intelligence, 35 (2021), pp. 6679–6687, https://doi.org/10.1609/ aaai.v35i8.16826. [3] C. N. Babu and B. E. Reddy , A moving-average filter based hybrid ARIMA–ANN model for fore-casting time series data , Applied Soft Comput-ing, 23 (2014), pp. 27–38, https://doi.org/10.1016/ j.asoc.2014.05.028. [4] D. Bahdanau, K. Cho, Y. Rachmad, and B. Merrienboer , On the properties of neural machine translation: Encoder-decoder approaches ,(2014), https://doi.org/10.3115/v1/W14-4012. [5] S. Bai, J. Kolter, and V. Koltun , An em-pirical evaluation of generic convolutional and re-current networks for sequence modeling , (2018), https://doi.org/10.48550/arXiv.1803.01271. [6] J. Chen, L. Xie, W. Lin, Y. Wu, and H. Xu ,
+
+Multi-granularity spatio-temporal correlation net-works for stock trend prediction , IEEE Access, 12 (2024), pp. 67219–67232, https://doi.org/10.1109/ ACCESS.2024.3393774. [7] T. Chen and C. Guestrin , Xgboost: A scal-able tree boosting system , in Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, ACM, Aug. 2016, p. 785–794, https://doi.org/10.1145/ 2939672.2939785. [8] Y. Cheng, P. Chen, C. Guo, K. Zhao, Q. Wen, B. Yang, and C. S. Jensen , Weakly guided adaptation for robust time series fore-casting , Proceedings of the VLDB Endowment, 17 (2023), pp. 766–779, https://doi.org/10.14778/ 3636218.3636231. [9] Y. Duan, W. Wang, and J. Li , Factorgcl: Ahypergraph-based factor model with temporal resid-ual contrastive learning for stock returns prediction ,in AAAI Conference on Artificial Intelligence, 2025, https://doi.org/10.1609/aaai.v39i1.31993. [10] E. Ekmekcioglu , Role of financial markets in a global economy and the concept of uncertainty ,International Journal of Academic Research in Economics and Management Sciences, 2 (2013), pp. 147–154, https://doi.org/10.6007/IJAREMS/ v2-i4/147. [11] T. Griveau-Billion and B. Calderhead , Adynamic bayesian model for interpretable decom-positions of market behaviour , 2020, https://arxiv. org/abs/1904.08153. [12] J. Gu, F. P. Deek, and G. Wang , Stock broad-index trend patterns learning via domain knowledge informed generative network , 2023, https://arxiv. org/abs/2302.14164. [13] S. Hochreiter and J. Schmidhuber , Long short-term memory , Neural Computation, 9(1997), pp. 1735–1780, https://doi.org/10.1162/ neco.1997.9.8.1735. [14] Y. Hu, P. Liu, Y. Li, D. Cheng, N. Li, T. Dai, J. Bao, and S. Xia , Finmamba: Market-aware graph enhanced multi-level mamba for stock move-ment prediction , CoRR, abs/2502.06707 (2025), https://doi.org/10.48550/ARXIV.2502.06707. [15] G. Ke, Q. Meng, T. Finley, T. Wang, W. Chen, W. Ma, Q. Ye, and T.-Y. Liu ,
+
+Lightgbm: A highly efficient gradient boosting decision tree , in Neural Information Processing Systems, 2017, https://api.semanticscholar.org/ CorpusID:3815895. [16] T. N. Kipf and M. Welling , Semi-supervised classification with graph convolutional networks ,in Proceedings of the Fifth International Confer-ence on Learning Representations, 2017, https:// openreview.net/forum?id=SJU4ayYgl. arXiv pre-print arXiv:1609.02907. [17] A. Lazcano, P. J. Herrera, and M. Monge ,
+
+A combined model based on recurrent neu-ral networks and graph convolutional networks for financial time series forecasting , Mathemat-ics, 11 (2023), p. 224, https://doi.org/10.3390/ math11010224. [18] J. Lewellen , Predicting returns with finan-cial ratios , Journal of Financial Economics, 74 (2002), pp. 209–235, https://doi.org/10.1016/j. jfineco.2002.11.002. [19] S. Li, X. Jin, Y. Xuan, X. Zhou, W. Chen, Y.-X. Wang, and X. Yan , Enhancing the locality and breaking the memory bottleneck of transformer on time series forecasting , in Advances in Neural Information Processing Systems, vol. 32, 2019, https://arxiv.org/abs/1907.00235. [20] T. Li, Z. Liu, Y. Shen, X. Wang, H. Chen, and S. Huang , MASTER: Market-guided stock   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+
+transformer for stock price forecasting , in Proceed-ings of the Thirty-Eighth AAAI Conference on Ar-tificial Intelligence, vol. 38, 2024, pp. 12953–12961, https://doi.org/10.1609/aaai.v38i1.27767. [21] W. Li, R. Bao, K. Harimoto, D. Chen, J. Xu, and Q. Su , Modeling the stock relation with graph network for overnight stock movement prediction ,in Proceedings of the Twenty-Ninth International Joint Conference on Artificial Intelligence, IJCAI-20, 7 2020, pp. 4541–4547, https://doi.org/10. 24963/ijcai.2020/626. [22] Y. Li, Y. Wang, Y. Yin, and T. Liang ,
+
+ADGAT: Anomaly detection-based graph adver-sarial defense framework , Neurocomputing, 631 (2025), p. 131368, https://doi.org/10.1016/j. neucom.2025.131368. [23] Y. Liu, T. Hu, H. Zhang, H. Wu, S. Wang, L. Ma, and M. Long , itransformer: Inverted transformers are effective for time series fore-casting , in The Twelfth International Confer-ence on Learning Representations, 2024, https:// openreview.net/forum?id=JePfAI8fah. [24] Z. Liu, P. Duan, M. Geng, and B. Zhang ,
+
+A distillation-based future-aware graph neural net-work for stock trend prediction , in ICASSP 2025 - 2025 IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP), Apr. 2025, p. 1–5, https://doi.org/10.1109/icassp49660. 2025.10889901. [25] M. Ma, P. Xie, F. Teng, B. Wang, S. Ji, J. Zhang, and T. Li , HiSTGNN: Hierar-chical spatio-temporal graph neural network for weather forecasting , Information Sciences, 648 (2023), p. 119580, https://doi.org/10.1016/j.ins. 2023.119580. [26] Y. Niu, M. Zhao, V. Poti, and R. Dong ,
+
+NGAT: A Node-Level Graph Attention Network for Long-Term Stock Prediction , 09 2025, pp. 204–215, https://doi.org/10.1007/978-3-032-04555-3_17. [27] M. Patel, K. Jariwala, and C. Chat-topadhyay , A systematic review on graph neural network-based methods for stock market forecast-ing , ACM Computing Surveys, 57 (2025), pp. 34:1– 34:38, https://doi.org/10.1145/3696411. [28] L. Prokhorenkova, G. Gusev, A. Vorobev, A. V. Dorogush, and A. Gulin , Catboost: unbiased boosting with categorical features , in Ad-vances in Neural Information Processing Systems, S. Bengio, H. Wallach, H. Larochelle, K. Grauman, N. Cesa-Bianchi, and R. Garnett, eds., vol. 31, Curran Associates, Inc., 2018, https://proceedings. neurips.cc/paper_files/paper/2018/file/ 14491b756b3a51daac41c24863285549-Paper.pdf. [29] H. Qian, H. Zhou, Q. Zhao, H. Chen, H. Yao, J. Wang, Z. Liu, F. Yu, Z. Zhang, and J. Zhou , MDGNN: Multi-relational dynamic graph neural network for comprehensive and dynamic stock investment prediction , in Proceedings of the Thirty-Eighth AAAI Conference on Artificial In-telligence, vol. 38, 2024, pp. 14253–14261, https: //doi.org/10.1609/aaai.v38i13.29381. [30] Y. Qin, D. Song, H. Chen, W. Cheng, G. Jiang, and G. Cottrell , A dual-stage attention-based recurrent neural network for time series prediction , 08 2017, pp. 2627–2633, https: //doi.org/10.24963/ijcai.2017/366. [31] Z. Shao, Z. Zhang, F. Wang, and Y. Xu , Pre-training enhanced spatial-temporal graph neural network for multivariate time series forecasting , in Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD ’22), Washington, DC, USA, 2022, ACM, pp. 1–11, https://doi.org/10.1145/3534678.3539396. [32] S.-Y. Shih, F.-K. Sun, and H. yi Lee ,
+
+Temporal pattern attention for multivari-ate time series forecasting , Machine Learn-ing, 108 (2019), pp. 1421–1441, https: //doi.org/10.1007/s10994-019-05815-0. [33] R. H. Shumway and D. S. Stoffer , ARIMA models , Springer, Cham, 4th ed., 2017, pp. 75–163, https://doi.org/10.1007/978-3-319-52452-8_3. [34] G. Song, T. Zhao, S. Wang, H. Wang, and X. Li , Stock ranking prediction using a graph aggregation network based on stock price and stock relationship information , Information Sciences, 643 (2023), p. 119236, https://doi.org/10.1016/j.ins. 2023.119236. [35] G. Sonkavde, D. S. Dharrao, A. M. Bon-gale, S. T. Deokate, D. Doreswamy, and S. K. Bhat , Forecasting stock market prices us-ing machine learning and deep learning models: A systematic review, performance analysis and dis-cussion of implications , International Journal of Fi-nancial Studies, 11 (2023), p. 94, https://doi.org/ 10.3390/ijfs11030094.   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+
+[36] L. J. Thompson, S. Martinez, E. K. Wong, A. R. Clark, and O. B. Reid , Industry-linked stock volatility prediction based on graph neural net-works , Frontiers in Business and Finance, 2 (2025), pp. 366–376, https://doi.org/10.71465/fbf452. [37] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin , Attention is all you need , 2023, https://arxiv.org/abs/1706.03762. [38] P. Veličković, G. Cucurull, A. Casanova, A. Romero, P. Liò, and Y. Bengio , Graph attention networks , 2017, https://arxiv.org/abs/ 1710.10903. [39] S. Wang, J. Cao, and P. Yu , Deep learning for spatio-temporal data mining: A survey , IEEE Transactions on Knowledge and Data Engineer-ing, 32 (2020), pp. 2251–2269, https://doi.org/10. 48550/arXiv.1906.04928. [40] S. Wang, H. Wu, X. Shi, T. Hu, H. Luo, L. Ma, J. Y. Zhang, and J. ZHOU , Timemixer: Decomposable multiscale mixing for time series forecasting , in The Twelfth International Confer-ence on Learning Representations, 2024, https:// openreview.net/forum?id=7oLshfEIC2. [41] Z.-L. Wei, H.-Y. An, Y. Yao, W.-C. Su, G. Li, Saifullah, B.-F. Sun, and M.-J.-S. Wang ,
+
+FSTGAT: Financial spatio-temporal graph atten-tion network for non-stationary financial systems and its application in stock price prediction , Sym-metry, 17 (2025), p. 1344, https://doi.org/10.3390/ sym17081344. [42] H. Wu, T. Hu, Y. Liu, H. Zhou, J. Wang, and M. Long , Timesnet: Temporal 2d-variation modeling for general time series analysis , 2023, https://arxiv.org/abs/2210.02186. [43] H. Wu, J. Xu, J. Wang, and M. Long , Aut-oformer: Decomposition transformers with auto-correlation for long-term series forecasting , 2022, https://arxiv.org/abs/2106.13008. [44] C. Xu, H. Huang, X. Ying, J. Gao, Z. Li, P. Zhang, J. Xiao, J. Zhang, and J. Luo ,
+
+HGNN: Hierarchical graph neural network for predicting the classification of price-limit-hitting stocks , Information Sciences, 607 (2022), pp. 783– 798, https://doi.org/10.1016/j.ins.2022.06.010. [45] W. Xu, W. Liu, L. Wang, Y. Xia, J. Bian, J. Yin, and T.-Y. Liu , Hist: A graph-based framework for stock trend forecasting via mining concept-oriented shared information , 2022, https: //arxiv.org/abs/2110.13716. [46] Y. Xu, X. Cai, E. Wang, W. Liu, Y. Yang, and F. Yang , Dynamic traffic correlations based spatio-temporal graph convolutional network for ur-ban traffic prediction , Information Sciences, 610 (2022), pp. 693–707, https://doi.org/10.1016/j.ins. 2022.11.086. [47] X. Xue, P. Duan, Z. Liu, Q. Chu, C. Zhang, and B. Zhang , Gated fusion enhanced multi-scale hierarchical graph convolutional network for stock movement prediction , ArXiv, abs/2511.01570 (2025), https://api.semanticscholar.org/CorpusID: 282739586. [48] B. Zhang, S. Yin, H. Zhu, and X. He , Freqcy-cle: A multi-scale time-frequency analysis method for time series forecasting , 2026, https://arxiv.org/ abs/2603.09661. [49] C. Zhang, Y. Li, X. Chen, Y. Jin, P. Tang, and J. Li , DoubleEnsemble: A new ensemble method based on sample reweighting and feature selection for financial data analysis , in Proceedings of the 20th IEEE International Conference on Data Mining (ICDM), IEEE, 2020, pp. 781–790, https: //doi.org/10.1109/ICDM50108.2020.00087. [50] L. Zhang, C. Aggarwal, and G.-J. Qi , Stock price prediction via discovering multi-frequency trading patterns , in SIGKDD, 2017, p. 2141–2149, https://doi.org/10.1145/3097983.3098117. [51] T. Zhou, Z. Ma, Q. Wen, X. Wang, L. Sun, and R. Jin , Fedformer: Frequency enhanced de-composed transformer for long-term series forecast-ing , 2022, https://arxiv.org/abs/2201.12740. 
+
+A Appendix A.1 Experimental Metrics. 
+
+• Annualized Return (AR ↑): Annualized excess return of the portfolio over the benchmark. 
+
+• Information Ratio (IR ↑): Risk-adjusted excess return, defined as IR = E[rexcess ] 
+
+> σ(rexcess )
+
+× √252 , where 
+
+rexcess denotes the daily excess return. 
+
+• Maximum Drawdown (MD ↓): The largest peak-to-trough decline in excess cumulative return. 
+
+• Cumulative Return (CR ↑): Total absolute portfolio return over the entire testing period.   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited
+
+• Sharpe Ratio (Sharpe ↑): Annualized Sharpe ratio computed on excess returns. Note that in this setting, the Sharpe ratio is numerically close to IR because both are computed using excess returns with a zero risk-free rate assumption. 
+
+• Calmar Ratio (Calmar ↑): Ratio of annual-ized return to maximum drawdown magnitude, Calmar = AR /|MD |, measuring return per unit of tail risk. 
+
+A.2 Fama–French Three-Factor Regression Results. The following is the table of Fama–French Three-Factor Regression of Daily Return Spreads. Table A.1: Fama–French Three-Factor Regression of Daily Return Spreads. 
+
+Model α t(α) βm βs βh R2 Obs. 
+
+ACT 0.0023*** 13.287 -0.0029 -0.0076 0.0019 0.001 625 (0.0002) (0.011) (0.013) (0.023) iTransformer 0.0007*** 5.040 0.0114 -0.0053 0.0217 0.003 664 (0.0001) (0.017) (0.012) (0.026) XGBoost 0.0014*** 8.780 -0.0152 0.0080 0.0291 0.005 664 (0.0002) (0.013) (0.016) (0.023) 
+
+Notes. The dependent variable is the daily portfolio excess return Rp,t − Rf,t . Newey–West (HAC) standard errors with 5 lags are reported in parentheses. *, **, and *** denote statistical significance at the 10%, 5%, and 1% levels, respectively. 
+
+A.3 Subgroup Heterogeneity Analysis. To verify that the inter-stock relationship truly contains valid information and causes crosstalk, we should ob-serve a testable prediction: the gain of ACT should be positively correlated with the local density of the rela-tionship graph. Conversely, if the advantage of ACT comes from factors unrelated to the relationship (such as model capacity or feature engineering), then the gain distribution should be independent of the graph density. 
+
+A.3.1 Subgroup Analysis Settings. We par-tition the 500 stocks in the CSI500 pool into subgroups by industry sector and company registration region. In-dustry classifications follow the CSRC (China Securities Regulatory Commission) rule, supplemented by data fetched via the AKShare database to fill missing en-tries to ensure that each stock has its own category(15 sectors). Company regions are determined by com-pany registration province, mapped to 7 macro-regions (North China, East China, South China, Central China, NE China, NW China, SW China) to prevent over-detailed divisions from insufficient sample size in sub-group. For each subgroup, we compute IC, ICIR, Rank IC, and Rank ICIR using the per-stock daily predic-tions and real returns over test period. This design IC ICIR RankIC RankICIR                                              
+
+> Construction
+> Electronics
+> Equipment
+> Finance
+> Food & Bev.
+> Info. Tech.
+> Materials
+> Mining
+> Other
+> Pharma
+> Real Estate
+> Retail
+> Textile & Chem.
+> Transport
+> Utilities
+> -27.6% -19.5% 20.8% 38.9%
+> 54.7% 87.1% 67.8% 112.9%
+> 0.7% 50.3% 1.9% 49.8%
+> -1.1% 40.6% 8.9% 52.1%
+> 36.4% 71.5% 11.8% 38.4%
+> -17.6% 32.3% 0.3% 65.4%
+> -16.0% 28.6% -3.6% 50.0%
+> -22.4% -18.8% -21.0% -16.5%
+> 7.7% 45.7% 51.9% 88.0%
+> 78.0% 96.8% 71.0% 86.4%
+> 14.7% 26.2% 39.8% 43.6%
+> 29.6% 28.9% 56.4% 60.9%
+> -16.1% -10.3% -1.0% -1.0%
+> -8.3% -5.9% 54.2% 46.8%
+> -20.5% 1.5% -15.0% 4.6%
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Relative Gain (%)
+
+(a) Industry Heatmap IC ICIR RankIC RankICIR                       
+
+> Central China
+> East China
+> NE China
+> NW China
+> North China
+> SW China
+> South China
+> 22.3% 46.3% 38.1% 36.4%
+> 13.5% 24.8% 65.0% 57.2%
+> 163.9% 175.0% 137.2% 140.8%
+> -1.9% 6.6% -11.5% -5.7%
+> 4.1% 50.9% 31.0% 85.7%
+> 34.3% 45.9% 30.3% 31.3%
+> 37.8% 58.2% 55.9% 58.6%
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Relative Gain (%)
+
+(b) Region Heatmap 
+
+Figure A.1: Relative improvement (%) of ACT over the best performance among two baselines (XGBoost, iTransformer), by industry sector and geographic region on CSI500. Darker green indicates larger gains; red indicates the baseline outperforms ACT. directly probes whether ACT’s advantage concentrates in sectors with dense relational structure—where its graph-based anti-crosstalk mechanism should be most effective—or generalizes broadly. Note that iTransformer covers fewer stocks than ACT and XGBoost due to stricter input completeness requirements during inference; subgroups where iTrans-former retains fewer than 5 stocks are marked “–” in tables and omitted from bar charts. 
+
+A.3.2 Analysis. Figures A.1–A.3 and Ta-bles A.2–A.3 reveal a clear pattern that aligns with ACT’s anti-crosstalk design. ACT achieves the high-est RankIC in 11 of 15 sectors and the highest ICIR in 13 of 15 sectors. The largest gains appear in rela-tionally dense sectors where inter-stock edges are plen-tiful and the PSPE module exerts its maximum effect: 
+
+Pharma (+78% IC, +97% ICIR)—573 listed compa-nies with tight supply-chain and regulation linkages; 
+
+Electronics (+55% IC, +87% ICIR)—the largest sec-tor with 1 011 companies and highly interconnected upstream–downstream chains; and Retail (+30% IC, +56% RankIC)—108 companies clustered in similar consumption channels. Notably, even in sectors where iTransformer occa-sionally achieves a higher single-day IC than ACT (e.g. Construction −28% IC, Info. Tech. −18% IC, Mate-rials −16% IC), ACT still leads substantially in ICIR and RankICIR (Info. Tech. +65% RankICIR, Materials +50% RankICIR), indicating that ACT’s advantage lies in stable, day-to-day ranking quality rather than spo-radic peak correlation. Conversely, ACT trails across 
+
+Copyright © 2026 by SIAM Unauthorized reproduction of this article is prohibited all four metrics only in Mining —a sector with merely 52 companies and sparse relational structure—confirming that the anti-crosstalk mechanism requires sufficient re-lational density to be effective. From the perspective of region relations, ACT leads all four metrics in 5 of 7 regions. The most striking case is NE China (+164% IC, +175% ICIR, +137% RankIC), where only 94 companies are listed but they concentrate heavily in a few industries (steel, heavy machinery), creating an extremely dense local graph. Other dense clusters— South China (767 companies in the Pearl River Delta manufacturing belt, +38% IC, +56% RankIC) and North China (557 companies, +51% ICIR, +86% RankICIR)—also show consistent gains. The sole exception is NW China , the sparsest region with only 114 companies spread across diverse industries; here ACT’s RankIC trails the best baseline by −12% , serving as a natural negative-control that reinforces the causal link between relational density and ACT’s advantage.   
+
+> Copyright ©2026 by SIAM Unauthorized reproduction of this article is prohibited Construction
+> Electronics
+> Equipment
+> Finance
+> Food & Bev.
+> Info. Tech.
+> Materials
+> Mining
+> Other
+> Pharma
+> Real Estate
+> Retail
+> Textile & Chem.
+> Transport
+> Utilities
+
+0.00 
+
+0.05 
+
+0.10 
+
+0.15 
+
+0.20 
+
+> RankIC
+
+ACT 
+
+XGBoost 
+
+iTransformer (a) Rank IC by Industry Sector (CSI500) Construction 
+
+> Electronics
+> Equipment
+> Finance
+> Food & Bev.
+> Info. Tech.
+> Materials
+> Mining
+> Other
+> Pharma
+> Real Estate
+> Retail
+> Textile & Chem.
+> Transport
+> Utilities
+
+0.00 
+
+0.05 
+
+0.10 
+
+0.15 
+
+0.20 
+
+> IC
+
+ACT 
+
+XGBoost 
+
+iTransformer 
+
+(b) IC by Industry Sector (CSI500) 
+
+Figure A.2: Absolute IC and Rank IC comparison by industry sector on CSI500. ACT (red) dominates in relationally dense sectors (Electronics, Pharma, Food & Bev.), while iTransformer is competitive in some sectors (Mining, Materials). Companion to the relative-improvement heatmap in Figure A.1a. Central China 
+
+> East China
+> NE China
+> NW China
+> North China
+> SW China
+> South China
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> RankIC
+> ACT
+> XGBoost
+> iTransformer
+
+(a) Rank IC by Region (CSI500) Central China  
+
+> East China
+> NE China
+> NW China
+> North China
+> SW China
+> South China
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> 0.14
+> IC
+> ACT
+> XGBoost
+> iTransformer
+
+(b) IC by Region (CSI500) 
+
+Figure A.3: Absolute IC and Rank IC comparison by geographic region on CSI500. Dense stock clusters (NE China, North China, South China) show clear ACT dominance; NW China is the sole exception. Companion to Figure A.1b. 
+
+Copyright © 2026 by SIAM Unauthorized reproduction of this article is prohibited Table A.2: Subgroup analysis by industry sector on CSI500. Red values indicate the best model per sector. (Companion to Figures A.1 and A.2.) 
+
+Sector ACT XGBoost iTransformer 
+
+IC ICIR RankIC RankICIR IC ICIR RankIC RankICIR IC ICIR RankIC RankICIR Construction 0.0740 0.1476 0.0709 0.1467 -0.0120 -0.0227 -0.0098 -0.0194 0.1022 0.1834 0.0587 0.1056 Electronics 0.1158 0.5638 0.1162 0.5762 0.0672 0.3013 0.0563 0.2707 0.0749 0.2361 0.0693 0.2314 Equipment 0.1018 0.4210 0.1011 0.4281 0.0719 0.2647 0.0602 0.2447 0.1011 0.2801 0.0993 0.2858 Finance 0.2073 0.6227 0.1985 0.6018 0.0890 0.2315 0.0663 0.1890 0.2097 0.4430 0.1822 0.3956 Food & Bev. 0.1112 0.2923 0.0979 0.2609 0.0522 0.1349 0.0383 0.1053 0.0815 0.1704 0.0875 0.1885 Info. Tech. 0.1086 0.3033 0.1118 0.3211 0.0404 0.1074 0.0327 0.0931 0.1317 0.2292 0.1114 0.1941 Materials 0.0638 0.2612 0.0684 0.2855 0.0549 0.2031 0.0463 0.1903 0.0760 0.1938 0.0710 0.1833 Mining 0.0609 0.1505 0.0571 0.1406 0.0584 0.1385 0.0551 0.1370 0.0786 0.1853 0.0722 0.1683 Other 0.0957 0.3045 0.0936 0.2996 0.0531 0.1555 0.0485 0.1593 0.0888 0.2090 0.0616 0.1468 Pharma 0.0931 0.3993 0.0912 0.3895 0.0499 0.2029 0.0468 0.2090 0.0523 0.1452 0.0533 0.1546 Real Estate 0.0594 0.1288 0.0623 0.1335 0.0518 0.1021 0.0445 0.0930 0.0474 0.0899 0.0087 0.0166 Retail 0.1016 0.2462 0.0955 0.2354 0.0474 0.1048 0.0500 0.1220 0.0784 0.1910 0.0611 0.1463 Textile & Chem. 0.0329 0.0654 0.0370 0.0716 0.0392 0.0728 0.0374 0.0724 – – – –Transport 0.0465 0.1041 0.0420 0.0941 0.0507 0.1107 0.0272 0.0641 0.0151 0.0280 0.0143 0.0263 Utilities 0.0459 0.1562 0.0485 0.1731 0.0481 0.1539 0.0471 0.1655 0.0578 0.1453 0.0570 0.1471 
+
+Table A.3: Subgroup analysis by geographic region on CSI500. Red values indicate the best model per region.(Companion to Figure A.1 and A.3.) 
+
+Region ACT XGBoost iTransformer 
+
+IC ICIR RankIC RankICIR IC ICIR RankIC RankICIR IC ICIR RankIC RankICIR Central China 0.0818 0.2344 0.0884 0.2563 0.0591 0.1602 0.0640 0.1879 0.0669 0.1423 0.0578 0.1269 East China 0.0557 0.2925 0.0531 0.2898 0.0491 0.2344 0.0320 0.1843 0.0415 0.1633 0.0322 0.1344 NE China 0.1423 0.2951 0.1329 0.2761 0.0539 0.1073 0.0560 0.1147 – – – –NW China 0.0736 0.1373 0.0658 0.1201 0.0750 0.1288 0.0744 0.1273 – – – –North China 0.0955 0.4173 0.0919 0.4086 0.0490 0.1911 0.0421 0.1814 0.0918 0.2766 0.0702 0.2200 SW China 0.0981 0.2602 0.0906 0.2533 0.0731 0.1784 0.0696 0.1928 0.0472 0.0915 0.0549 0.1110 South China 0.1134 0.4593 0.1134 0.4656 0.0823 0.2902 0.0727 0.2936 0.0436 0.0825 0.0516 0.0979
