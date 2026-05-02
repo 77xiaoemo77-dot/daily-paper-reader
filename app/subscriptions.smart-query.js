@@ -1785,6 +1785,21 @@ window.SubscriptionsSmartQuery = (function () {
       return;
     }
 
+    const isEditMode = !!(modalState && modalState.editProfileId);
+    if (!isEditMode) {
+      const cfg = window.SubscriptionsManager.getDraftConfig
+        ? window.SubscriptionsManager.getDraftConfig()
+        : {};
+      const profiles = (((cfg || {}).subscriptions || {}).intent_profiles || []);
+      const duplicated = Array.isArray(profiles)
+        && profiles.some((p) => getProfileKey(p) === getProfileKey(nextTag));
+
+      if (duplicated) {
+        setMessage(`标签「${nextTag}」已存在。请换一个不同的标签，否则会合并到旧主题。`, '#c00');
+        return;
+      }
+    }
+
     modalState.tag = nextTag;
     modalState.description = nextDesc;
     const nextPaperSources = normalizePaperSources(modalState.paper_sources, { fallbackToArxiv: false });
@@ -1800,7 +1815,6 @@ window.SubscriptionsSmartQuery = (function () {
       setMessage(validationError, '#c00');
       return;
     }
-    const isEditMode = !!(modalState && modalState.editProfileId);
     const ok = isEditMode
       ? replaceProfileFromSelection(
           modalState.editProfileId,
@@ -1976,6 +1990,19 @@ window.SubscriptionsSmartQuery = (function () {
     if (validationError) {
       setMessage(validationError, '#c00');
       return;
+    }
+    if (!modalState.editProfileId) {
+      const cfg = window.SubscriptionsManager.getDraftConfig
+        ? window.SubscriptionsManager.getDraftConfig()
+        : {};
+      const profiles = (((cfg || {}).subscriptions || {}).intent_profiles || []);
+      const duplicated = Array.isArray(profiles)
+        && profiles.some((p) => getProfileKey(p) === getProfileKey(tag));
+
+      if (duplicated) {
+        setMessage(`标签「${tag}」已存在。请换一个不同的标签，否则会合并到旧主题。`, '#c00');
+        return;
+      }
     }
     modalState.inputTag = tag;
 
