@@ -1,0 +1,975 @@
+Title: Multi-Objective Bayesian Optimization via Adaptive \varepsilon-Constraints Decomposition
+
+URL Source: https://arxiv.org/pdf/2604.15959v1
+
+Published Time: Mon, 20 Apr 2026 00:48:04 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+Yaohong Yang 1 2 Sammie Katt 1 2 Samuel Kaski 1 2 3 
+
+## Abstract 
+
+Multi-objective Bayesian optimization (MOBO) provides a principled framework for optimizing expensive black-box functions with multiple ob-jectives. However, existing MOBO methods often struggle with coverage, scalability with respect to the number of objectives, and integrating con-straints and preferences. In this work we propose 
+
+STAGE-BO, Sequential Targeting Adaptive Gap-Filling ε-Constraint Bayesian Optimization , that explicitly targets under-explored regions of the Pareto front. By analyzing the coverage of the approximate Pareto front, our method identifies the largest geometric gaps. These gaps are then used as constraints, which transforms the problem into a sequence of inequality-constrained subprob-lems, efficiently solved via constrained expected improvement acquisition. Our approach provides a uniform Pareto coverage without hypervolume computation and naturally applies to constrained, and preference-based settings. Experiments on synthetic and real-world benchmarks demonstrate superior coverage and competitive hypervolume performance against state-of-the-art baselines. 
+
+## 1. Introduction 
+
+Multi-objective Bayesian optimization (MOBO) has emerged as a powerful paradigm for optimizing expensive black-box functions with conflicting objectives (Belakaria et al., 2020; Daulton et al., 2020; Tu et al., 2022; Qing et al., 2023; Ngo et al., 2025). By navigating trade-offs, MOBO facilitates discovery in diverse fields ranging from machine learning (Sener & Koltun, 2018) and materials science (Xu et al., 2025) to robotics (Kouritem et al., 2022). The objective functions in MOBO are often conflicting, 
+
+> 1
+
+Department of Computer Science, Aalto University, Espoo, Finland 2ELLIS Institute Finland 3Department of Computer Sci-ence, University of Manchester, Manchester, United Kingdom. Correspondence to: Yaohong Yang <yaohong.yang@aalto.fi >.
+
+Preprint. April 17, 2026. 1.0 0.8 0.6 0.4 0.2 0.0                  
+
+> 8
+> 6
+> 4
+> 2
+> 0
+> ZDT1-qEHVI: HV=120.51, IGD=0.11
+> 1.0 0.8 0.6 0.4 0.2 0.0
+> 6
+> 4
+> 2
+> 0
+> ZDT1-STAGE-BO: HV=120.65, IGD=0.01
+> 1.0 0.8 0.6 0.4 0.2 0.0
+> 8
+> 6
+> 4
+> 2
+> 0
+> ZDT2-qEHVI: HV=120.14, IGD=0.18
+> 1.0 0.8 0.6 0.4 0.2 0.0
+> 6
+> 4
+> 2
+> 0
+> ZDT2-STAGE-BO: HV=120.11, IGD=0.01
+> True Pareto Front Evaluated Points Evaluated Pareto Front
+
+Figure 1. Comparison of Pareto front approximation on ZDT1 and ZDT2 benchmarks. While qEHVI (left) and our method (right) achieve comparable hypervolume (HV), our approach yields an order-of-magnitude reduction in IGD, demonstrating signifi-cantly better uniform coverage of the Pareto front. This motivates the need for multiple metrics to assess solution quality. 
+
+meaning that improving one objective may deteriorate an-other. Hence the goal is not to identify a single optimal solution, but rather a set of Pareto optimal solutions. The standard metric for evaluating Pareto approximations is hy-pervolume (HV), which measures the size of the dominated objective space. Because HV is strictly Pareto-compliant, the majority of MOBO algorithms aim to maximize HV improvement. However, this reliance on HV introduces two limitations. First, theoretical bias: analysis by Auger et al. (2009) shows that asymptotically, the density of so-lutions maximizing HV is proportional to the square root of the Pareto front’s negative slope ( ∝ p−F ′(x), where 
+
+F = [ f1, . . . , f m]) are the objectives. Consequently, HV maximization exhibits a bias: it heavily concentrates solu-tions in steep knee regions while undersampling flat trade-off areas, where the slope is small or close to zero, failing to uniformly cover the front. Second, computational scala-bility: exact HV computation scales exponentially with the number of objectives, making it prohibitively expensive for the problem with more than four objectives. Empirical evidence supports this theoretical concern. As il-lustrated in Figure 1, we observe that while qEHVI (Daulton et al., 2020) achieves high HV scores, it fails to generate a uniformly diverse set of solutions. Thus its Inverse Gener-ational Distance (IGD) – a metric of coverage uniformity 1 
+
+> arXiv:2604.15959v1 [cs.LG] 17 Apr 2026 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition
+
+– can be an order of magnitude larger than that of our pro-posed method (STAGE-BO). This discrepancy underscores the insufficiency of relying solely on HV for evaluation and highlights the necessity of using multiple metrics to capture the quality of the Pareto approximation. Recently, diversity-guided MOBO methods attempt to im-prove coverage but often face significant bottlenecks: they either rely on input-space metrics (Renganathan & Carl-son, 2025) that do not guarantee diversity in the objective space, or retain the computational cost of HV maximiza-tion (Konakovic Lukovic et al., 2020; Ngo et al., 2025; Ahmadianshalchi et al., 2024) Scalarization methods (Paria et al., 2020; Knowles, 2006) avoid these costs by decom-posing the problem via random weights. However, it is well-established that a uniform distribution of weights does not map to a uniform set of solutions on the Pareto front (Das & Dennis, 1998), frequently resulting in clustered so-lutions and large geometric gaps. In this work, we propose Sequential Targeting via Adaptive Gap-Filling ε-Constraint Bayesian Optimization (STAGE-BO) – to efficiently generate uniform Pareto optimal solu-tions without the biases or costs of hypervolume compu-tation. We build upon the key insight of the ε-constraint method (Haimes, 1971; Chankong & Haimes, 2008; Branke, 2008): any Pareto-optimal solution can be recovered by op-timizing one objective while constraining the others (Mavro-tas, 2009). The practical challenge lies in selecting valid constraint thresholds ε that leads to uniform coverage of the Pareto front. Our method solves this issue by identifying the largest gap between the Pareto front approximation and the observations, which are then given to the ε-constraint method. This way, we transform the global MOBO prob-lem into a sequence of inequality-constrained sub-problems solved via constrained expected improvement (Schonlau et al., 1998; Gardner et al., 2014). Our specific contributions are as follows: • We propose STAGE-BO: an adaptive gap-filling ε-constraint method that selects constraints based on the geometry (measured by fill distance ) of the Pareto front approximation, guaranteeing uniform coverage without hypervolume computation. • We introduce a general framework that seamlessly han-dles standard MOO, constrained MOO, and preference-aware MOO without requiring structural modifications to the acquisition function. • We demonstrate through extensive experiments that STAGE-BO achieves superior Pareto coverage and competitive hypervolume performance compared to state-of-the-art baselines on both synthetic benchmarks and real-world tasks. 
+
+## 2. Background 
+
+2.1. Bayesian Optimization 
+
+Bayesian Optimization (BO) (Garnett, 2023) is a sequen-tial design strategy for the global optimization of black-box functions that are expensive to evaluate. Formally, we seek to find a global maximizer x∗ of an objective func-tion: f : X → R over a bounded domain X ⊂ Rd:
+
+x∗ = arg max x∈X f (x). The BO framework rests on two principal components: a probabilistic surrogate model and an acquisition function. A Gaussian Process (GP) (Williams & Rasmussen, 2006) is typically employed as a prior distribution over f (x). The GP is fully speci-fied by a mean function and a covariance kernel, denoted as f (x) ∼ GP (m(x), k (x, x′)) . Given a dataset of ob-servations Dt = {(xi, yi}ti=1 , an acquisition function 
+
+α(x|D t) is maximized to sample the next query: xt+1 =arg max x∈X α(x|D t). The objective f is then evaluated at 
+
+xt+1 , the dataset is updated and the posterior is recomputed. The common acquisition functions are EI (Mo ˇckus, 1974), UCB (Srinivas et al., 2010) and TS (Thompson, 1933). 
+
+2.2. Multi-Objective Optimization 
+
+A multi-objective optimization (MOO) problem has a vector-valued objective function F : X → Y with F =(f1, . . . , f m), where X ∈ Rd is a d-dimensional input space, and Y is an m-dimensional output space ( m > 1) . Without loss of generality, we assume the goal is to maximize all objectives of F : max x∈X F (x) = [ f1(x), . . . , f m(x)] . In MOO, the goal is to identify the set of Pareto optimal solu-tions , all of which are mathematically equivalent when no preference information is specified. 
+
+Pareto Optimality For a pair (x, x′), we say “ x weakly dominates x′” if F (x) is no worse than F (x′) in all objec-tives, i.e. fi(x) ≥ fi(x′) for all i ∈ { 1, . . . , m }. If at least one of the inequalities is strict, we say “ x dominates x′”. If x is not (weakly) dominated by any other x′, x is called (weakly) Pareto-optimal. (Weak) Pareto front Pf is a set of (weakly) Pareto optimal solutions, and the corresponding set of Pareto optimal inputs is called the Pareto set Ps.
+
+Multi-Objective Bayesian Optimization (MOBO) 
+
+MOBO extends BO to optimize expensive black-box, vector-valued objective functions F : X → Y with 
+
+F = ( f1, . . . , f m). Given a maximization problem, the goal is to identify the Pareto set Ps and the corresponding Pareto front Pf , using a minimal number of function evalu-ations. MOBO frameworks typically employ independent GPs to model each objective function fi (Bradford et al., 2018; Paria et al., 2020; Belakaria et al., 2020; Daulton et al., 2020). An acquisition function is optimized to select the next query. See the detailed discussion in Section 3. 2Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+Hypervolume (HV) is defined as the m-dimensional Lebesgue measure λm of the space dominated by solutions 
+
+Y and bounded by the reference point r:HV (Pf , r) = λm(∪y∈P f [r, y]) , (1) where [r, y] denotes the hyperrectangle bounded by the reference point y and y ∈ P f .
+
+Inverted generational distance (IGD) assesses both the con-vergence and diversity of the approximation by measuring the average distance from the true Pareto front Pf to the nearest solution in the observed set Yt:IGD (Yt, Pf ) = 1
+
+|P f | ( X
+
+> y∈P f
+
+min 
+
+> y′∈Yt
+
+∥y − y′∥). (2) Lower IGD values indicate that the front approximation is both close to the true front and covers it uniformly. 
+
+2.3. Constrained Multi-Objective Optimization 
+
+In practical engineering and scientific applications, valid solutions often satisfy safety or physical constraints along-side objective trade-offs (Fromer & Coley, 2023; Gardner et al., 2019). The constrained multi-objective optimization problem is defined as: 
+
+max  
+
+> x∈X
+
+F (x) = [ f1(x), . . . , f m(x)] 
+
+s.t. G (x) = [ g1(x), . . . , g c(x)] ≥ 0, (3) where G(x) : X → Rc is the c constraints functions. Both 
+
+F (x) and G(x) are unknown. Consequently, the search space is restricted to the feasible region given by 
+
+C = {x|x ∈ X , g l(x) ≥ 0, ∀l ∈ [c]}. (4) The goal is to identify the Pareto front Pf and Pareto set Ps
+
+strictly within C. This setting introduces complexity, as the optimizer must simultaneously learn the boundaries of the feasible region and maximize the objectives. 
+
+Constrained Multi-Objective Bayesian Optimization (CMOBO) A standard approach to CMOBO is model each objective fi(x) and constraint gj (x) using indepen-dent GPs. The search for feasible Pareto front is guided by modifying the acquisition function to account for constraint satisfaction, such as cEHVI (Abdolshah et al., 2018) and COMBOO (Li et al., 2025). 
+
+2.4. Preference-Aware Multi-Objective Optimization 
+
+While standard MOO aims to approximate the entire Pareto front, in many decision-making scenarios, the whole front is computationally expensive to recover (Paria et al., 2020). Instead, decision-makers often possess prior knowledge re-garding acceptable trade-offs. This motivates the preference-aware setting, where the goal is to concentrate evaluations solely on a user-defined Region of Interest (ROI). Fol-lowing Paria et al. (2020); Hakanen & Knowles (2017), we adopt the bounding box formulation, where prefer-ences are expressed as thresholds. The ROI is defined as 
+
+R = {y ∈ Rm|ai ≤ y ≤ bi, ∀i = 1 , . . . , m }. The op-timization goal is to recover the Pareto optimal solutions satisfying F (x) ∈ B .
+
+## 3. Related Work 
+
+Multi-Objective Bayesian Optimization MOBO meth-ods largely fall into three categories: scalarization, hyper-volume (HV) maximization, and information-theoretic ap-proaches. Scalarization methods (ParEGO (Knowles, 2006) and TS-TCH (Paria et al., 2020)) decompose the problem into single-objective subtasks using random weights, which often fail to cover fronts uniformly. HV-based methods (EHVI (Emmerich & Klinkenberg, 2008), qEHVI (Daulton et al., 2020), and TSEMO (Bradford et al., 2018)), pri-oritize maximizing the dominated volume. As discussed in Section 1, they suffer from the intrinsic bias and high computational costs that scale exponentially with the num-ber of objectives. Information-theoretic methods (PESMO (Hern ´andez-Lobato et al., 2016), MESMO (Belakaria et al., 2019), PFES (Suzuki et al., 2020), and JESMO (Tu et al., 2022)) maximize information gain about the Pareto front but often require heavy approximations to compute. Recent work attempts to explicitly enforce coverage but typically retains bottlenecks. DGEMO (Konakovic Lukovic et al., 2020) guides the search toward diverse regions but still employs HV improvement for the final selection. Moreover, its reliance on data structures limits the scalability beyond three objectives. PDBO (Ahmadianshalchi et al., 2024) em-ploys a bandit strategy with determinantal point processes to select diverse batches. MOBO-OSD (Ngo et al., 2025) de-composes the problem via orthogonal search directions but still relies on HV maximization for selection. qPOTS (Ren-ganathan & Carlson, 2025) combines Thompson Sampling with a maximin strategy; however, it calculates diversity in the input space, which does not guarantee output space diversity. Unlike these approaches, our method ensures output-space diversity without calculating HV. 
+
+Constrained Multi-Objective Bayesian Optimization 
+
+Research explicitly targeting constrained MOBO remains relatively sparse. tandard frameworks, such as the widely used BoTorch (Balandat et al., 2020) implementations of qEHVI (Daulton et al., 2020; 2021), typically handle con-straints by weighting the primary acquisition value by the probability of feasibility, adopting the strategy originally 3Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+proposed by Gelbart et al. (2014). Within the information-theoretic paradigm, Hern ´andez-Lobato et al. (2016) ex-tended Predictive Entropy Search (PES) to constrained set-tings, explicitly balancing constraint learning with Pareto frontier discovery. To mitigate the high computational cost of PES, Fern ´andez-S ´anchez et al. (2023) subsequently pro-posed a formulation based on Max-value Entropy Search (MES) (Wang & Jegelka, 2017). However, these entropy-based methods rely on heavy approximations to maintain tractability, which can degrade performance in complex landscapes. Most recently, qPOTS (Renganathan & Carl-son, 2025) can also handle constraints naturally. COMBOO (Li et al., 2025) introduced a scalarization-based approach that combines random weights with optimistic feasibility assessments (UCB) to identify the constrained Pareto front. 
+
+Preference-Aware Multi-Objective Bayesian Optimiza-tion The integration of Decision Maker preferences has been stuided in MOO. Early approaches Abdolshah et al. (2019) encoded these preferences via objective importance rankings. However, a more prevalent formulation defines the preference structure as a specific Region of Interest (ROI) in the objective space, typically bounded by reference vec-tors or hyper-rectangles (Hakanen & Knowles, 2017; Paria et al., 2020; Palar et al., 2018; He et al., 2020). Paria et al. (2020) systematically generalize the random scalarization technique, allowing different scalarization techniques, e.g., weighted sum and Tchebyshev (Nakayama et al., 2009), as well as different acquisition functions, e.g., TS (Thompson, 1933), UCB (Srinivas et al., 2010) to concentrate candidate generation specifically within the user’s preferred region. 
+
+## 4. Methodology 
+
+Our key motivation is the observation that optimizing hy-pervolume may lead to non-uniformly distributed Pareto optimal solutions and is computationally expensive. This work aims to generate a set of Pareto optimal solutions that uniformly cover Pf . We exploit the property that the ε-constraint method can find any Pareto-optimal point with the appropriate constraints on the objectives. Thus, the chal-lenge is finding the constraints such that the queries found by the ε-constraint method lead to uniform coverage. Our method, called STAGE-BO, tackles this by identifying the largest under-explored region (gap) in the objective space. To measure and, ultimately, optimize for uniform coverage, we adopt the Fill Distance (FD) metric defined in Zhang et al. (2024). For Dt = {Xt, Yt},
+
+Definition 4.1. FD (Yt) = max y∈P f min y′∈Yt ∥y − y′∥,
+
+where ∥ · ∥ denotes the Euclidean distance between two points. Zhang et al. (2024) establish the relationship be-tween FD and IGD and prove that the optimal FD configu-ration sets an upper bound for the IGD value.                
+
+> Figure 2. Illustration of the STAGE-BO algorithm. The blue dots represent observations. The dashed orange curve depicts the sampled Pareto front approximation ( ePtf), generated via Thompson sampling and NSGA-II. The red point A = ( y1, y 2)is identified on
+> ˜Ptfas having the maxmin distance to the existing blue observations. Assuming a schedule where f1is targeted for optimization at this step, a constraint is established on the remaining objective using the objective value of A(f2≥y2). The resulting valid search space for maximizing f1is indicated by the light red shaded region.
+
+Theorem 4.2 (Zhang et al. (2024)) . Assume the goal is to find a set of Pareto optimal solutions, i.e., Y ⊂ P f to optimize either the FD or IGD indicator: min Y⊂P f FD (Y)
+
+or min Y⊂P f IGD (Y) to reach a diverse distribution. Let the optimal sets be YFD and YIGD respectively. Then IGD (YIGD ) ≤ IGD (YFD ) ≤ FD (YFD ). (5) Since the optimal IGD configuration does not similarly bound FD, we focus on minimizing FD in this paper. 
+
+4.1. Proposed Method: STAGE-BO 
+
+The first step of STAGE-BO identifies locations that are likely to be on the Pareto front, but not yet covered by observations. Since the true Pareto front is not known, we resort to sampling from the posterior. 
+
+Target Identification We draw a spectral sample path 
+
+˜F t(x) = [ ˜f t
+
+> 1
+
+(x), . . . , ˜f tm(x)] , ˜f ti (·) ∼ GP (fi|D t) (6) from the posterior distribution of the objective functions. We then compute the sampled Pareto front ePtf by maximizing this sampled trajectory: 
+
+ePtf = max  
+
+> x∈X
+
+[ ˜f1(x), . . . , ˜fm(x)] . (7) This cheap MOO problem is solved using evolutionary al-gorithms such as NSGA-II (Deb & Jain, 2013), generating a discrete approximation of the front. On the sampled front ePf , we seek the target Yc that approx-imates the center of the largest under-explored region (the maxmin) from our current observations Yt:
+
+Yc = arg max  
+
+> y∈ePtf
+
+min 
+
+> y′∈Yt
+
+∥y − y′∥. (8) 4Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+ε-constraint Decomposition Having identified the tar-get location Yc, we require an optimization mechanism to guide the search toward it. To achieve this, we employ the 
+
+ε-constraint method, which allows us to translate the co-ordinates of Yc directly into search space boundaries. By setting the constraint thresholds based on the coordinates of 
+
+Yc, we transform the multi-objective problem into a con-strained single-objective subproblem whose unique optimal solution is guaranteed to be Pareto optimal (Branke, 2008). 
+
+max  
+
+> x∈X
+
+fk(x) + s X
+
+> j
+
+fj
+
+subject to fj (x) ≥ εj for all j = 1 , . . . , m, j ̸ = k. (9) 
+
+s is set as a small number (e.g., 10 −3) to avoid weakly Pareto optimal points. This ensures that our next query is optimally positioned to fill the identified void. To avoid defining an empty feasible region, if j-th objec-tive of the target component Yc,j exceeds the maximum observed value for j-th objective, we clip the constraint to the best observed value: 
+
+bYc,j =
+
+ Yc,j if Yc,j < Yt,j ∃t;max {Yt,j }t if Yc,j ≥ Yt,j ∀t. (10) To ensure balanced exploration across the objective space, we rotate the objective fk to be optimized in a round-robin fashion ( k = t (mod m) + 1 ). This schedule guarantees that optimization pressure is distributed uniformly across all objectives over time. As demonstrated in Section D, our framework is robust to the specific strategy used to select the objective for optimization. 
+
+Acquisition Optimization This decomposition trans-forms the original MOBO problem into a generic con-strained Bayesian optimization problem. The constraints are placed at m − 1 objectives {j|j ∈ (1 , . . . , m ), and j̸ = k}
+
+with thresholds εj = bYc,j and k-th objective is set to be optimized. We solve this efficiently using the Constrained Expected Improvement (cEI) acquisition function: (Schon-lau et al., 1998; Gardner et al., 2014). 
+
+xt+1 = arg max  
+
+> x∈X
+
+EI (x) × PoF (x), (11) where EI (x) is the standard Expected Improvement of the objective fk, and PoF (x) is the Probability of Feasibility 
+
+satisfying the constraints. EI (x) = E[max(0 , f k(x) + s X 
+
+> j̸=k
+
+fj (x) − f ∗ 
+
+> k
+
+− s X 
+
+> j̸=k
+
+f ∗ 
+
+> j
+
+],
+
+(12) where f ∗ 
+
+> k
+
++ s P  
+
+> j̸=k
+
+f ∗ 
+
+> j
+
+is the best observed point. We as-sume the constraints are independent GPs. PoF (x) = Y 
+
+> j=1 ,...,m,j ̸=k
+
+Pr (fj (x) ≥ εj ). (13) By solving Equation (11), STAGE-BO selects the sample that optimizes Equation (9), effectively filling the identified gap. The full algorithm can be found in Section A. 
+
+4.2. Extensions to constrained MOBO 
+
+In practice, regulatory or safety concerns often impose ad-ditional thresholds on certain attributes of the experimental outcomes (Fromer & Coley, 2023). STAGE-BO extends naturally to this setting without structural changes. Since our framework already reduces MOO to a sequence of constrained sub-problems (Equation (9)), incorporating physical constraints is straightforward: we simply append the external constraints to the set of algorithmically gener-ated ε-constraints. The optimization problem becomes: 
+
+max fk(x) + s X
+
+> j
+
+fj
+
+subject to fj (x) ≥ εj for all j = 1 , . . . , m, j ̸ = kgl(x) ≥ 0 for all l = 1 , . . . , c. (14) To ensure the identified target Yc is physically reach-able, we must also account for feasibility during the tar-get identification phase. After collecting t observations 
+
+Dt = {Xt, Yt, Ct)} = {(xi, yi, ci)}ti=1 , we build GP models separately for each objective and each constraint. We sample paths for both objectives and constraints using Thompson sampling. Besides Equation (6), we also sample 
+
+˜Gt(x) = [˜ gt
+
+> 1
+
+(x), . . . , ˜gtc(x)] , ˜gti (·) ∼ GP (gi|D t). (15) Then we optimize the following cheap constrained MOO problem to obtain the sampled Pareto front ePtf using NSGA-II (Deb & Jain, 2013): 
+
+ePtf = max  
+
+> x∈X
+
+[ ˜f1(x), . . . , ˜fm(x)] ,
+
+subject to ˜gj (x) ≥ 0, ∀j ∈ [c] (16) This ensures that the target gap Yc computed via Equa-tion (8) lies within the valid feasible region. Finally, the ac-quisition optimization (Equation (11)) remains unchanged, with PoF (x) updated to include the probability of satisfying physical constraints: PoF (x) = Y 
+
+> j=1 ,...,m,j ̸=k
+
+Pr (fj (x) ≥ εj )×
+
+> c
+
+Y
+
+> l=1
+
+Pr (gl(x) ≥ 0) ,
+
+(17) where εj = bYc,j .5Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition     
+
+> Figure 3. Comparison of preference handling strategies. Left:
+> Preference scalarization methods (Paria et al., 2020) map preferred regions (shaded boxes) to preference weights dependent on a ref-erence point z.Right: Our geometric approach operates without a reference point, directly targeting Pareto-optimal solutions that satisfy either the lower or upper bounds of the specified regions.
+
+4.3. Extensions to MOBO with preferences 
+
+In many decision-making scenarios, exploring the entire Pareto front is unnecessary Paria et al. (2020); Hakanen & Knowles (2017). Instead, domain experts often define a Region of Interest (ROI), typically specified as a hyper-rectangle bounded by fi ∈ [ai, b i], i = 1 , . . . , m . Our framework naturally incorporates these preferences by inte-grating the boundaries directly into the constraint set. A fundamental challenge in preference-based optimization is that the user-defined ROI is often misaligned with the true feasible space: it may be overly ambitious (completely beyond the true front) or overly conservative (dominated). To address this issue, we do not treat the ROI as a rigid binary target. Instead, we interpret the ROI as defining two distinct anchor constraints: the Lower Bounds (minimum acceptable criteria) and the Upper Bounds (ideal limits). We formulate the optimization problem to seek Pareto-optimal solutions that satisfy either of these boundary sets (Figure 3): 
+
+max fk(x) + s X
+
+> j
+
+fj (18) subject to fj (x) ≥ εj for all j = 1 , . . . , m, j ̸ = k
+
+
+
+(fj (x) ≥ aj for all j = 1 , . . . , m, j ̸ = k)
+
+or 
+
+(fj (x) ≤ bj for all j = 1 , . . . , m, j ̸ = k).
+
+This formulation ensures robustness: if the aspirational up-per bounds are unreachable, the solver anchors to the lower bounds to recover the best valid trade-offs. Conversely, if the lower bounds are trivially satisfied, the upper bounds drive the search toward superior regions. To focus the search within the preferred region, the prefer-ence constraints are incorporated in the target identification. After sampling the path in Equation (6), we solve the fol-lowing cheap MOO problem with NSGA-II (Deb & Jain, 2013) to obtain the sampled Pareto front in the preferred region ePtf
+
+ePtf = max  
+
+> x∈X
+
+[ ˜f1(x), . . . , ˜fm(x)] , (19) subject to 
+
+
+
+( ˜fj (x) ≥ aj for all j = 1 , . . . , m, j ̸ = k).
+
+or 
+
+( ˜fj (x) ≤ bj for all j = 1 , . . . , m, j ̸ = k).
+
+Crucially, once the target coordinate Yc is identified within the preferred region, the preference information is implic-itly encoded into the gap-filling ε-constraints ( εj = bYc,j ). Therefore, the acquisition function remains identical to the standard version in Equation (11). 
+
+## 5. Experiments 
+
+We empirically evaluate our proposed method against the state-of-the-art methods on an extensive set of synthetic and real-world benchmark problems under different tasks. 
+
+5.1. Unconstrained MOBO Settings and Baselines. We evaluate STAGE-BO against a comprehensive set of baselines: qEHVI (Daulton et al., 2020), qParEGO (Knowles, 2006; Daulton et al., 2020), 
+
+JESMO (Tu et al., 2022), MESMO (Belakaria et al., 2019), 
+
+qPOTS (Renganathan & Carlson, 2025), MOBO-OSD 
+
+(Ngo et al., 2025). q = 1 . Detailed implementations of our method and the baselines can be found in Section G. We conduct experiments on six benchmark problems. The number of objectives ranges from two to six, which is com-mon in the MOBO literature. For synthetic benchmark problems, we consider ZDT1 ( d = 10 , m = 2 ), ZDT2 (d = 8 , m = 2 ) and DTLZ7 ( d = 6 , m = 5 ) with a discon-tinuous Pareto front. For the real-world benchmark prob-lems, we consider the the problems from the problem suite (Tanabe & Ishibuchi, 2020): Coil compression spring design (d = 3 , m = 2 ), Rocket injector design ( d = 4 , m = 3 ) and Water resource planning ( d = 3 , m = 6 ). These problems are widely used in the MOBO literature (Belakaria et al., 2020; Bradford et al., 2018; Daulton et al., 2020; 2023; Ngo et al., 2025; Renganathan & Carlson, 2025). Details of the benchmark problems can be found in Section H. For the evaluation metrics, we compute the hypervolume difference between the hypervolume of the observed Pareto front and the maximum hypervolume. We also report IGD, which indicates convergence and diversity. We report the mean and the standard error across 10 independence runs. 
+
+Results. Figure 4 summarizes the performance of STAGE-BO and all baselines. Note that qEHVI is evaluated for a limited number of iterations on DTLZ7 and the water plan-ning design problem due to the prohibitively high computa-tional cost when the number of objectives satisfies m ≥ 4.6Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 20 40 60 80 100                                   
+
+> -4
+> -2
+> 0
+> 2
+> Log HV Difference  ZDT1
+> 20 40 60 80 100
+> 12
+> 13
+> DTLZ7
+> 20 40 60 80 100
+> -3
+> -2
+> -1
+> Rocket Injector
+> 20 40 60 80 100
+> 57
+> 58
+> 59
+> Water Planning
+> 20 40 60 80 100
+> Number of Evaluations
+> -4
+> -2
+> 0
+> Log IGD
+> 20 40 60 80 100
+> Number of Evaluations
+> -1
+> 0
+> 20 40 60 80 100
+> Number of Evaluations
+> -2
+> -1
+> 20 40 60 80 100
+> Number of Evaluations
+> 12
+> 13
+> 14
+> STAGE-BO (ours) qEHVI qParEGO JESMO MESMO qPOTS MOBO-OSD
+
+Figure 4. Comparison of our method with state-of-the-art baselines on two synthetic and two real-world benchmark MOO problems .The first row reports hypervolume, and the second row reports IGD. Overall, our method achieves comparable or superior hypervolume relative to the baselines and consistently outperforms them in terms of IGD. 20 40 60 80 100                                 
+
+> -2
+> -1
+> Log HV Difference  MW7
+> 20 40 60 80 100
+> -2
+> 0
+> 2
+> CONSTR
+> 20 40 60 80 100
+> 2
+> 3
+> 4
+> 5
+> Gear Train
+> 20 40 60 80 100
+> -2
+> 0
+> 2
+> Disc Brake
+> 20 40 60 80 100
+> Number of Evaluations
+> -2
+> 0
+> 2
+> Log IGD
+> 20 40 60 80 100
+> Number of Evaluations
+> -2
+> -1
+> 0
+> 20 40 60 80 100
+> Number of Evaluations
+> 0
+> 1
+> 2
+> 3
+> 20 40 60 80 100
+> Number of Evaluations
+> -4
+> -3
+> -2
+> -1
+> 0
+> STAGE-BO (ours) qEHVI qParEGO qPOTS COMBOO
+
+Figure 5. Comparison of our method with state-of-the-art baselines on one synthetic and three real-world benchmark constrained MOO problems . The first row reports hypervolume, and the second row reports IGD. Overall, our method achieves comparable or superior hypervolume relative to the baselines and consistently outperforms them in terms of IGD. 
+
+Our method consistently performs outperforms others with respect to IGD, indicating faster convergence toward the Pareto front and improved solution diversity. Although our method does not explicitly optimize hypervolume, the consistently low IGD values suggest good coverage and diversity of the obtained Pareto front, which in turn leads to comparable hypervolume performance. Additional performance metrics, IGD+ and fill distance, are provided in Section F.1. The full results for the ZDT2 benchmark and the Coil Compression Spring design prob-lem are detailed in Section F.2. A comparison of computa-tional overhead across all methods is presented in Section E, demonstrating that STAGE-BO maintains high efficiency in both low- and high-dimensional objective spaces. We also conduct ablation studies in Section D to validate the core components of our framework. These experiments verify the effectiveness of our fill-distance-based constraint setting and the cEI acquisition function. Furthermore, we demonstrate the robustness of STAGE-BO by showing that its performance is insensitive to the specific strategy used for selecting the primary optimization objective 
+
+5.2. Constrained MOBO Settings and Baselines. We evaluate the proposed algo-rithm against a comprehensive set of baselines: qEHVI 
+
+(Daulton et al., 2020), qParEGO (Knowles, 2006; Daulton et al., 2020), qPOTS (Renganathan & Carlson, 2025), 
+
+COMBOO (Li et al., 2025). Detailed implementations of our method and the baselines can be found in Section G. We conduct experiments on four constrained MOO bench-mark problems. For synthetic benchmark problem, we consider MW7 ( d = 2 , m = 4 , c = 2 ). For the real-world benchmark problems, we consider two problems from the problem suite: (Tanabe & Ishibuchi, 2020): Disc 7Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 20 40 60 80 100                                 
+
+> 0.0
+> 0.1
+> 0.2
+> HV Difference
+> ZDT3
+> 20 40 60 80 100
+> 0.1
+> 0.2
+> DTLZ2
+> 20 40 60 80 100
+> 0
+> 1
+> 2
+> 3
+> Vehicle Safety
+> 20 40 60 80 100
+> 0
+> 2
+> 4
+> 6
+> 8
+> Car Side Impact
+> 20 40 60 80 100
+> Number of Evaluations
+> 0.2
+> 0.4
+> 0.6
+> IGD
+> 20 40 60 80 100
+> Number of Evaluations
+> 0.3
+> 0.5
+> 20 40 60 80 100
+> Number of Evaluations
+> 0
+> 2
+> 4
+> 6
+> 8
+> 20 40 60 80 100
+> Number of Evaluations
+> 0
+> 2
+> 4
+> 6
+> STAGE-BO (ours) qEHVI qParEGO qPOTS TSTCH
+
+Figure 6. Comparison of our method with state-of-the-art baselines on two synthetic and two real-world benchmark MOO problems with preferred regions. The first row reports hypervolume, and the second row reports IGD. Overall, our method achieves superior hypervolume relative to the baselines and consistently outperforms them in terms of IGD. 
+
+brake design ( d = 4, m = 2, c = 4), Gear train de-sign ( d = 4, m = 2, c = 1), and one problem from Garrido-Merch ´an & Hern ´andez-Lobato (2020): CONSTR (d = 2 , m = 2 , c = 2 ). Details of the benchmark problems can be found in Section H. 
+
+Results. Figure 5 shows the performance of all methods. Note that COMBOO is evaluated with a limited number of function evaluations on MW7, as it terminates early and re-turns the observed solutions when the UCB-based estimates of all constraints indicate infeasibility. STAGE-BO consis-tently outperforms state-of-the-art methods in terms of IGD, demonstrating both faster convergence and superior solution diversity. While our framework does not explicitly optimize for hypervolume, its ability to maintain a low fill distance ensures comprehensive coverage of the Pareto front; this uniformity inherently leads to hypervolume performance that is competitive with, or superior to baselines. More met-rics including the feasible evaluation ratio, IGD+, and fill distance are reported in Section F.1 
+
+5.3. Preference-Aware MOBO Settings and Baselines. We evaluate the proposed algo-rithm against a comprehensive set of baselines: qEHVI 
+
+(Daulton et al., 2020), qParEGO (Knowles, 2006; Daulton et al., 2020), TSTCH (Paria et al., 2020), qPOTS (Ren-ganathan & Carlson, 2025). Detailed implementations of our method and the baselines can be found in Section G. We conduct experiments on two synthetic benchmark prob-lems: ZDT3 ( d = 2 , m = 2 ) with the preferred region in ([ −0.7, −0.6] , [−0.2, −0.4]) , DTLZ2 ( d = 6 , m − 5)with the preferred region in [−0.4, −0.4, −0.4, −0.4, −0.4] ,
+
+[−0.2, −0.2, −0.2, −0.2, −0.2]) , and two real-world bench-mark problems: VehicleSafety Problem ( d = 5 , m = 3 )with the region in ([ −1680 , −7, −0.5] , [−1675 , −6, −0.3]) ,CarSideImpact ( m = 7, d = 4) with the region in 
+
+([ −20 , −4.5, −10 , −7] , [−15 , −4, −5, −6]) . Details of the benchmark problems can be found in Section H. 
+
+Results. Figure 6 shows the performance of all methods. Note that qEHVI is evaluated for a limited number of it-erations on DTLZ2 due to the prohibitively high computa-tional cost. Our method consistently performs better than competing approaches in terms of hypervolume and IGD, indicating faster convergence toward the preferred region and improved solution diversity. More metrics, IGD+ and fill distance, are detailed in Section F.1. 
+
+## 6. Conclusion 
+
+We have proposed STAGE-BO that bypasses the prohibitive computational costs of hypervolume-based methods by tar-geting the Pareto front through explicit geometric gap-filling. By reformulating objective trade-offs as adaptive ε-constraints and utilizing cEI, our method provides a unified approach for recovering the global Pareto front, satisfying physical constraints, or focusing on specific regions of in-terest. The flexibility and scalability of STAGE-BO make it a robust tool for high-stakes optimization in design and experimental sciences, where balancing diversity, efficiency, and expert preferences is paramount 
+
+Limitations Our current gap detection relies on observed point positions, which may be sensitive to measurement noise. Extreme measurement errors can distort the sampled Pareto front topology and lead to suboptimal constraint placement. Explicitly incorporating noise-robust geometric estimates remains a promising direction for future research 8Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+## Acknowledgments 
+
+This work was supported by UKRI Turing AI World-Leading Researcher Fellowship, EP/W002973/1. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union or the European Commission. Neither the European Union nor the granting authority can be held responsible for them. This work has been performed using resources provided by the Aalto Science-IT Project from Computer Science IT, the CSC – IT Center for Science, Finland and the Finnish Computing Competence Infrastructure (FCCI). 
+
+## References 
+
+Abdolshah, M., Shilton, A., Rana, S., Gupta, S., and Venkatesh, S. Expected hypervolume improvement with constraints. In 2018 24th International Conference on Pattern Recognition (ICPR) , pp. 3238–3243. IEEE, 2018. Abdolshah, M., Shilton, A., Rana, S., Gupta, S., and Venkatesh, S. Multi-objective bayesian optimisation with preferences over objectives. Advances in neural informa-tion processing systems , 32, 2019. Ahmadianshalchi, A., Belakaria, S., and Doppa, J. R. Pareto front-diverse batch multi-objective bayesian optimization. In Proceedings of the AAAI Conference on Artificial In-telligence , volume 38, pp. 10784–10794, 2024. Auger, A., Bader, J., Brockhoff, D., and Zitzler, E. Theory of the hypervolume indicator: optimal μ-distributions and the choice of the reference point. In Proceedings of the tenth ACM SIGEVO workshop on Foundations of genetic algorithms , pp. 87–102, 2009. Balandat, M., Karrer, B., Jiang, D., Daulton, S., Letham, B., Wilson, A. G., and Bakshy, E. Botorch: A framework for efficient monte-carlo bayesian optimization. Advances in neural information processing systems , 33:21524–21538, 2020. Belakaria, S., Deshwal, A., and Doppa, J. R. Max-value entropy search for multi-objective bayesian optimization. 
+
+Advances in neural information processing systems , 32, 2019. Belakaria, S., Deshwal, A., Jayakodi, N. K., and Doppa, J. R. Uncertainty-aware search framework for multi-objective bayesian optimization. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 34, pp. 10044–10052, 2020. Bradford, E., Schweidtmann, A. M., and Lapkin, A. Effi-cient multiobjective optimization employing gaussian pro-cesses, spectral sampling and a genetic algorithm. Journal of global optimization , 71(2):407–438, 2018. Branke, J. Multiobjective optimization: Interactive and evolutionary approaches , volume 5252. Springer Science & Business Media, 2008. Chankong, V. and Haimes, Y. Y. Multiobjective decision making: theory and methodology . Courier Dover Publi-cations, 2008. Das, I. and Dennis, J. E. Normal-boundary intersection: A new method for generating the pareto surface in nonlinear multicriteria optimization problems. SIAM journal on optimization , 8(3):631–657, 1998. Daulton, S., Balandat, M., and Bakshy, E. Differentiable expected hypervolume improvement for parallel multi-objective bayesian optimization. Advances in neural in-formation processing systems , 33:9851–9864, 2020. Daulton, S., Balandat, M., and Bakshy, E. Parallel bayesian optimization of multiple noisy objectives with expected hypervolume improvement. Advances in neural informa-tion processing systems , 34:2187–2200, 2021. Daulton, S., Balandat, M., and Bakshy, E. Hypervolume knowledge gradient: a lookahead approach for multi-objective bayesian optimization with partial information. In International Conference on Machine Learning , pp. 7167–7204. PMLR, 2023. Deb, K. and Jain, H. An evolutionary many-objective opti-mization algorithm using reference-point-based nondomi-nated sorting approach, part i: solving problems with box constraints. IEEE transactions on evolutionary computa-tion , 18(4):577–601, 2013. Emmerich, M. and Klinkenberg, J.-w. The computation of the expected improvement in dominated hypervolume of pareto front approximations. Rapport technique, Leiden University , 34:7–3, 2008. Eriksson, D. and Poloczek, M. Scalable constrained bayesian optimization. In International conference on artificial intelligence and statistics , pp. 730–738. PMLR, 2021. Fan, Z., Li, H., Wei, C., Li, W., Huang, H., Cai, X., and Cai, Z. An improved epsilon constraint handling method embedded in moea/d for constrained multi-objective opti-mization problems. In 2016 IEEE Symposium Series on Computational Intelligence (SSCI) , pp. 1–8. IEEE, 2016. 9Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+Fern ´andez-S ´anchez, D., Garrido-Merch ´an, E. C., and Hern ´andez-Lobato, D. Improved max-value entropy search for multi-objective bayesian optimization with constraints. Neurocomputing , 546:126290, 2023. Fromer, J. C. and Coley, C. W. Computer-aided multi-objective optimization in small molecule discovery. Pat-terns , 4(2), 2023. Gardner, J., Pleiss, G., Weinberger, K. Q., Bindel, D., and Wilson, A. G. Gpytorch: Blackbox matrix-matrix gaus-sian process inference with gpu acceleration. Advances in neural information processing systems , 31, 2018. Gardner, J. R., Kusner, M. J., Xu, Z. E., Weinberger, K. Q., and Cunningham, J. P. Bayesian optimization with in-equality constraints. In ICML , volume 2014, pp. 937–945, 2014. Gardner, S., Golovidov, O., Griffin, J., Koch, P., Thompson, W., Wujek, B., and Xu, Y. Constrained multi-objective op-timization for automated machine learning. In 2019 IEEE International conference on data science and advanced analytics (DSAA) , pp. 364–373. IEEE, 2019. Garnett, R. Bayesian optimization . Cambridge University Press, 2023. Garrido-Merch ´an, E. C. and Hern ´andez-Lobato, D. Par-allel predictive entropy search for multi-objective bayesian optimization with constraints. arXiv preprint arXiv:2004.00601 , 2020. Gelbart, M. A., Snoek, J., and Adams, R. P. Bayesian opti-mization with unknown constraints. In 30th Conference on Uncertainty in Artificial Intelligence, UAI 2014 , pp. 250–259. AUAI Press, 2014. Haimes, Y. On a bicriterion formulation of the problems of integrated system identification and system optimization. 
+
+IEEE transactions on systems, man, and cybernetics , (3): 296–297, 1971. Hakanen, J. and Knowles, J. D. On using decision maker preferences with parego. In International Conference on Evolutionary Multi-Criterion Optimization , pp. 282–297. Springer, 2017. He, Y., Sun, J., Song, P., Wang, X., and Usmani, A. S. Preference-driven kriging-based multiobjective optimiza-tion method with a novel multipoint infill criterion and application to airfoil shape design. Aerospace Science and Technology , 96:105555, 2020. Hern ´andez-Lobato, D., Hernandez-Lobato, J., Shah, A., and Adams, R. Predictive entropy search for multi-objective bayesian optimization. In International conference on machine learning , pp. 1492–1501. PMLR, 2016. Ishibuchi, H., Masuda, H., Tanigaki, Y., and Nojima, Y. Modified distance calculation in generational distance and inverted generational distance. In International con-ference on evolutionary multi-criterion optimization , pp. 110–125. Springer, 2015. Knowles, J. Parego: A hybrid algorithm with on-line land-scape approximation for expensive multiobjective opti-mization problems. IEEE transactions on evolutionary computation , 10(1):50–66, 2006. Konakovic Lukovic, M., Tian, Y., and Matusik, W. Diversity-guided multi-objective bayesian optimization with batch evaluations. Advances in Neural Information Processing Systems , 33:17708–17720, 2020. Kouritem, S. A., Abouheaf, M. I., Nahas, N., and Hassan, M. A multi-objective optimization design of industrial robot arms. Alexandria Engineering Journal , 61(12): 12847–12867, 2022. Laumanns, M., Thiele, L., and Zitzler, E. An efficient, adap-tive parameter variation scheme for metaheuristics based on the epsilon-constraint method. European Journal of Operational Research , 169(3):932–942, 2006. Li, D., Zhang, F., Liu, C., and Chen, Y. Constrained multi-objective bayesian optimization through optimistic con-straints estimation. In International Conference on Ar-tificial Intelligence and Statistics , pp. 370–378. PMLR, 2025. Liu, B.-J. and Bi, X.-J. Adaptive ε-constraint multi-objective evolutionary algorithm based on decomposition and differential evolution. IEEE Access , 9:17596–17609, 2021. Mavrotas, G. Effective implementation of the ε-constraint method in multi-objective mathematical programming problems. Applied mathematics and computation , 213 (2):455–465, 2009. Mo ˇckus, J. On bayesian methods for seeking the extremum. In IFIP Technical Conference on Optimization Tech-niques , pp. 400–404. Springer, 1974. Nakayama, H., Yun, Y., and Yoon, M. Sequential approx-imate multiobjective optimization using computational intelligence . Springer Science & Business Media, 2009. Ngo, L., Ha, H., Chan, J., and Zhang, H. Mobo-osd: Batch multi-objective bayesian optimization via orthogo-nal search directions. In The Thirty-ninth Annual Confer-ence on Neural Information Processing Systems , 2025. Palar, P. S., Yang, K., Shimoyama, K., Emmerich, M., and B ¨ack, T. Multi-objective aerodynamic design with user 10 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+preference using truncated expected hypervolume im-provement. In Proceedings of the genetic and evolution-ary computation conference , pp. 1333–1340, 2018. Paria, B., Kandasamy, K., and P ´oczos, B. A flexible frame-work for multi-objective bayesian optimization using ran-dom scalarizations. In Uncertainty in Artificial Intelli-gence , pp. 766–776. PMLR, 2020. Qing, J., Moss, H. B., Dhaene, T., and Couckuyt, I. PF 2es: Parallel feasible pareto frontier entropy search for multi-objective bayesian optimization. In International Con-ference on Artificial Intelligence and Statistics , pp. 2565– 2588. PMLR, 2023. Renganathan, A. and Carlson, K. qpots: Efficient batch multiobjective bayesian optimization via pareto optimal thompson sampling. In International Conference on Arti-ficial Intelligence and Statistics , pp. 4051–4059. PMLR, 2025. Schonlau, M., Welch, W. J., and Jones, D. R. Global versus local search in constrained optimization of computer mod-els. Lecture notes-monograph series , pp. 11–25, 1998. Sener, O. and Koltun, V. Multi-task learning as multi-objective optimization. Advances in neural information processing systems , 31, 2018. Srinivas, N., Krause, A., Kakade, S. M., and Seeger, M. Gaussian process optimization in the bandit setting: No regret and experimental design. In Proceedings of the 27th International Conference on Machine Learning , pp. 1015–1022, 2010. Suzuki, S., Takeno, S., Tamura, T., Shitara, K., and Kara-suyama, M. Multi-objective bayesian optimization using pareto-frontier entropy. In International conference on machine learning , pp. 9279–9288. PMLR, 2020. Tanabe, R. and Ishibuchi, H. An easy-to-use real-world multi-objective optimization problem suite. Applied Soft Computing , 89:106078, 2020. Thompson, W. R. On the likelihood that one unknown probability exceeds another in view of the evidence of two samples. Biometrika , 25(3/4):285–294, 1933. Tu, B., Gandy, A., Kantas, N., and Shafei, B. Joint en-tropy search for multi-objective bayesian optimization. 
+
+Advances in Neural Information Processing Systems , 35: 9922–9938, 2022. Wang, Z. and Jegelka, S. Max-value entropy search for effi-cient bayesian optimization. In International conference on machine learning , pp. 3627–3635. PMLR, 2017. Williams, C. K. and Rasmussen, C. E. Gaussian processes for machine learning , volume 2. MIT press Cambridge, MA, 2006. Xu, P., Ma, Y., Lu, W., Li, M., Zhao, W., and Dai, Z. Multi-objective optimization in machine learning assisted ma-terials design and discovery. Journal of Materials Infor-matics , 5(2):N–A, 2025. Zhang, X., Li, G., Lin, X., Zhang, Y., Chen, Y., and Zhang, Q. Gliding over the pareto front with uniform designs. 
+
+Advances in Neural Information Processing Systems , 37: 2215–2245, 2024. 11 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+## A. Algorithm 
+
+Here we describe the overall STAGE-BO algorithm for unconstrained, constrained and preference-aware settings. 
+
+Algorithm 1 The STAGE-BO Algorithm 
+
+Input: Evaluation budget T , initial dataset D0.
+
+while t ≤ T do 
+
+Fit GP models to Dt.Sample the posterior GP paths based on Equation (6) or Equation (15). Solve the cheap MOO problems Equation (7), Equation (16) or Equation (19) via evolutionary algorithms. Identify the target point Yc on ePf with the maxmin distance to evaluations Yt in Equation (8). Select primary objective: k ← t (mod m) + 1 .Set the constraints based on Equation (10). Optimize cEI (Equation (11)) to sample next point (xt+1 , yt+1 ).Update the dateset Dt+1 ← D t ∪ (xt+1 , yt+1 ).
+
+end while Output: The Pareto set Ps and Pareto front Pf .
+
+## B. ε-Constraint Multi-Objective Optimization 
+
+The ε-constraint method (Haimes, 1971; Chankong & Haimes, 2008) is a classic multi-objective optimization strategy that transforms the original problem into a sequence of single-objective subproblems by treating all but one objective as constraints. While the solution to a standard ε-constraint problem is guaranteed to be at least weakly Pareto optimal (Branke, 2008), the augmented ε-constraint method (Mavrotas, 2009) introduces a small slack term to the primary objective to ensure the discovery of strictly Pareto-optimal solutions. The effectiveness of this approach depends heavily on the placement of the constraint thresholds. To overcome the computational inefficiencies and poor coverage associated with fixed grids, adaptive ε-constraint methods (Laumanns et al., 2006; Liu & Bi, 2021; Fan et al., 2016) have been proposed to iteratively refine these thresholds based on the distribution of previously discovered solutions. While various adaptive ε-constraint schemes exist, they typically rely on systematic grid refinement (Laumanns et al., 2006) or population-based feasibility ratios (Fan et al., 2016) to adjust thresholds. These heuristics are designed for settings with large evaluation budgets, such as evolutionary algorithms, and are not directly applicable to Bayesian Optimization where evaluations are prohibitively expensive. In contrast, our method leverages the posterior GP belief to identify the largest geometric voids in the objective space via fill distance minimization. By placing the ε-constraints specifically at these maxmin coordinates, we transform the ε-constraint method from a passive solver into a proactive, targeted acquisition strategy that ensures global diversity with a minimal number of function evaluations. 
+
+## C. Choice of Constrained Solver 
+
+By reformulating the MOO problem into a sequence of constrained subproblems, our framework provides the flexibility to utilize more advanced constrained Bayesian optimization methods. In this work, we employ Constrained Expected Improvement (cEI) due to its robustness and mathematical simplicity in handling black-box constraints. We explicitly distinguish our approach from Trust Region (TR) methods, such as SCBO (Eriksson & Poloczek, 2021). While TR methods are highly effective for optimization with stationary physical constraints, they are fundamentally ill-suited for our framework. In STAGE-BO, the geometric ε-constraints are dynamic targets that shift at every iteration to target the largest under-explored voids. These shifting feasible regions would frequently invalidate the internal state and local modeling of a trust region, effectively forcing it to restart and thereby negating its primary convergence benefits. Consequently, global acquisition functions like cEI are more appropriate for the moving-target nature of our adaptive decomposition. 12 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+## D. Ablation Study 
+
+We conduct an ablation study on the ZDT1 and Rocket injector design benchmark to evaluate the contribution of each component within the STAGE-BO framework. The results, illustrated in Figure 7, are divided into two primary investigations: the effectiveness of our targeted acquisition and the robustness of our objective selection strategy. 
+
+Effectiveness of Targeted Gap-Filling. The left panels of Figure 7 compare the STAGE-BO pipeline against two variants: 1. Direct Sampling (without cEI): We bypass the acquisition optimization and directly query the maxmin target Yc.This evaluates whether cEI provides a necessary push toward the true front beyond the raw posterior samples. 2. Random Constraints (No Maxmin): We replace the geometric target Yc with a randomly selected coordinate within the observed front to verify the necessity of explicit gap-filling via fill-distance minimization. to be optimized. To ensure this randomly selected target defines a non-empty feasible region, we employ a Lexicographical Constraint-Setting procedure: we sequentially determine the thresholds εj by validating feasibility for each objective in order (f1, f 2, . . . , f m), ensuring that each subsequent constraint remains reachable given the previous ones. 
+
+Robustness of Objective Selection. The right panels of Figure 7 investigate the schedule for selecting the primary objective fk. We compare our default round-robin schedule against two alternatives: 1. Random Optimization: The objective fk is chosen at random in each iteration. 2. Feasible Optimization: To maximize the potential feasible region for the acquisition solver, we identify the objective 
+
+fk with the minimum coordinate distance between Yc and its nearest observed neighbor, thereby optimizing the dimension with the most “crowded” constraints. The results demonstrate that STAGE-BO is insensitive to the objective selection strategy, while the combination of maxmin targeting and cEI optimization is essential for achieving superior convergence and uniform coverage. 20 40 60 80 100 
+
+> -4
+> -2
+> 0
+> 2
+> Log HV Difference
+
+ZDT1     
+
+> 20 40 60 80 100
+> -3
+> -2
+> -1
+
+Rocket Injector     
+
+> 20 40 60 80 100
+
+Number of Evaluations     
+
+> -4
+> -2
+> 0
+> Log IGD
+> 20 40 60 80 100
+
+Number of Evaluations 
+
+> -2
+> -1
+
+STAGE-BO 
+
+Random optimization 
+
+w/o cEI 
+
+Feasible optimization 
+
+Random constraints  
+
+> Figure 7. Ablation study on different parts of our method. The left panels show that cEI and computing maxmin to set the constraints are necessary. The right panels show that our method is robust to the strategy of picking the objective to optimize.
+
+13 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+## E. Computation Time 
+
+We compare the computational overhead of STAGE-BO against all baselines across the unconstrained MOO tasks, with results summarized in Figure 8. STAGE-BO demonstrates high efficiency for problems with fewer than four objectives (m < 4). Furthermore, unlike many hypervolume-based methods that become computationally prohibitive as the objective space expands, our framework remains computationally tractable for higher-dimensional objective spaces ( m ≥ 4), maintaining a consistent per-iteration cost. 20 40 60 80 100                   
+
+> Number of Evaluations
+> 0
+> 10
+> 20
+> 30
+> Time (min)
+> ZDT1
+> 20 40 60 80 100
+> Number of Evaluations
+> 0
+> 50
+> 100
+> 150
+> DTLZ7
+> 20 40 60 80 100
+> Number of Evaluations
+> 0
+> 10
+> 20
+> Rocket Injector
+> 20 40 60 80 100
+> Number of Evaluations
+> 0
+> 50
+> 100
+> 150
+> Water Planning
+> STAGE-BO (ours) qEHVI qParEGO JESMO MESMO qPOTS MOBO-OSD
+
+Figure 8. Computation time for STAGE-BO and all baselines. Our method shows high efficiency in low dimensions when m ≤ 4 and remains computationally tractable for higher-dimensional objective spaces ( m ≥ 4). 
+
+## F. Additional Experiments Results 
+
+F.1. Additional Evaluation Metrics 
+
+Besides hypervolume and IGD, here we present more evaluation metrics. 
+
+IGD+ (Ishibuchi et al., 2015) IGD+ (Yt, Pf ) = 1
+
+|P f | ( X
+
+> y∈P f
+
+min 
+
+> y′∈Yt
+
+d+(y, y ′)) , (20) where d+(y, y ′) = pP mi=1 max( y − yi, 0) 2. IGD+ is weakly Pareto-compliant (Ishibuchi et al., 2015). 
+
+Fill distance (Zhang et al., 2024) The definition of fill distance can be found in Theorem 4.1. It measures the maxmin distance between the true Pareto front and the observations. 20 40 60 80 100                                    
+
+> -4
+> -2
+> 0
+> Log IGD+
+> ZDT1
+> 20 40 60 80 100
+> -1
+> 0
+> 1
+> 2DTLZ7
+> 20 40 60 80 100
+> -3
+> -2
+> Rocket Injector
+> 20 40 60 80 100
+> 10
+> 11
+> 12
+> Water Planning
+> 20 40 60 80 100
+> Number of Evaluations
+> -3
+> -1
+> 0
+> Log Fill Distance
+> 20 40 60 80 100
+> Number of Evaluations
+> -0.5
+> 0.0
+> 0.5
+> 20 40 60 80 100
+> Number of Evaluations
+> -1
+> 0
+> 20 40 60 80 100
+> Number of Evaluations
+> 14
+> 15
+> 16
+> STAGE-BO (ours) qEHVI qParEGO JESMO MESMO qPOTS MOBO-OSD
+
+Figure 9. Comparison of our method with state-of-the-art baselines on two synthetic and two real-world benchmark MOO problems . The first row reports IGD+, and the second row reports fill distance. Overall, our method achieves comparable or superior performance. 
+
+Figure 9 demonstrates that STAGE-BO achieves superior performance across additional metrics. While qPOTS remains a strong competitor due to its focus on maximizing diversity, it fails to achieve comprehensive coverage of the entire Pareto front; this limitation is evidenced by its significantly higher IGD+ values and lower hypervolume compared to our approach. 14 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+For the constrained MOO problems, in addition to IGD+ and fill distance, we report the feasibility ratio, defined as the proportion of observed points that satisfy all physical constraints throughout the optimization process. 20 40 60 80 100                                                 
+
+> 0.2
+> 0.3
+> Feasible Ratio
+> MW7
+> 20 40 60 80 100
+> 0.4
+> 0.8
+> CONSTR
+> 20 40 60 80 100
+> 0.0
+> 0.4
+> 0.8
+> Gear Train
+> 20 40 60 80 100
+> 0.5
+> 0.8
+> Disc Brake
+> 20 40 60 80 100
+> -2
+> 0
+> 2
+> Log IGD+
+> 20 40 60 80 100
+> -4
+> -3
+> -2
+> -1
+> 0
+> 20 40 60 80 100
+> -2
+> 0
+> 2
+> 20 40 60 80 100
+> -4
+> -3
+> -2
+> -1
+> 0
+> 20 40 60 80 100
+> Number of Evaluations
+> -1
+> 0
+> 1
+> 2
+> Log Fill Distance
+> 20 40 60 80 100
+> Number of Evaluations
+> -1
+> 0
+> 1
+> 20 40 60 80 100
+> Number of Evaluations
+> 2
+> 3
+> 20 40 60 80 100
+> Number of Evaluations
+> -2
+> -1
+> 0
+> 1
+> STAGE-BO (ours) qEHVI qParEGO qPOTS COMBOO
+
+Figure 10. Comparison of our method with state-of-the-art baselines on one synthetic and three real-world benchmark constrained MOO problems . The first row reports feasible ratio, the second row reports IGD+, and the last row reports fill distance. Overall, our method achieves comparable or superior performance. 
+
+Lastly, we show the IGD+ and fill distance results on preference-aware MOO tasks in Figure 11. STAGE-BO achieves superior performance across additional metrics. 
+
+F.2. Additional benchmark experiments 
+
+We present additional experimental results for the unconstrained MOO benchmarks ZDT2 ( d = 8 , m = 2 ) and the Coil Compression Spring design problem ( d = 3 , m = 2 ) in Figure 12. Across both synthetic and engineering-design tasks, our method achieves superior performance in terms of IGD+ and fill distance. These results further validate the effectiveness of our gap-filling strategy in maintaining high solution diversity and rapid convergence toward the true Pareto front. 
+
+## G. Baselines Implementation 
+
+We implemented STAGE-BO and all baselines in Python (version 3.10). The detailed implementation are as follows. 
+
+STAGE-BO For the surrogate model, we implement the GPs via GPyTorch (Gardner et al., 2018) and BoTorch (Ba-landat et al., 2020). We employ a Matern 5/2 kernel with ARD length-scales. The Gaussian likelihood is modeled with homoskedastic noise, and model hyperparameters are optimized by maximizing the Sum Marginal Log-Likelihood. During fitting, a Cholesky jitter of 10 −3 is applied to maintain numerical stability. We set 300 population size and 50 max generations for the NSGA-II and use BoTorch to optimize cEI with 20 starters. 
+
+qEHVI (Daulton et al., 2020) We use the default hyperparameter settings from the paper and the open-sourced implemen-tation can be found at https://github.com/pytorch/botorch .
+
+qParEGO (Knowles, 2006) qParEGO is a novel extension from ParEGO (Knowles, 2006) that is developed by Daulton et al. (2020) to leverage batch setting. We use the settings as follows: augmented Tchebychev scalarization (Nakayama 15 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 20 40 60 80 100 
+
+> 0.0
+> 0.2
+> 0.5
+> IGD+
+
+ZDT3     
+
+> 20 40 60 80 100
+> 0.3
+> 0.5
+> 0.6
+
+DTLZ2     
+
+> 20 40 60 80 100
+> 0
+> 1
+> 2
+
+Vehicle Safety     
+
+> 20 40 60 80 100
+> 0
+> 2
+> 4
+
+Car Side Impact     
+
+> 20 40 60 80 100
+
+Number of Evaluations     
+
+> 0.4
+> 0.8
+> Fill Distance
+> 20 40 60 80 100
+
+Number of Evaluations     
+
+> 0.4
+> 0.6
+> 20 40 60 80 100
+
+Number of Evaluations     
+
+> 5
+> 10
+> 20 40 60 80 100
+
+Number of Evaluations 
+
+> 5
+> 10
+
+STAGE-BO (ours) qEHVI qParEGO qPOTS TSTCH 
+
+Figure 11. Comparison of our method with state-of-the-art baselines on two synthetic and two real-world benchmark MOO problems with preferred regions . The first row reports hypervolume, and the second row reports IGD. Overall, our method consistently outperforms baselinese in terms of IGD+ and fill distance. 10 20 30 40 50 
+
+> -4
+> -2
+> 0
+> 2
+> 4
+> ZDT2
+
+Log HV Difference     
+
+> 10 20 30 40 50
+> -4
+> -2
+> 0
+
+Log IGD     
+
+> 10 20 30 40 50
+> -4
+> -2
+> 0
+
+Log IGD+     
+
+> 10 20 30 40 50
+
+Number of Evaluations 
+
+> -2
+> 0
+
+Log Fill Distance                 
+
+> 20 40 60 80 100
+> 12
+> 14
+> 16
+> Coil Compression Spring
+> 20 40 60 80 100
+> 8
+> 9
+> 20 40 60 80 100
+> -2
+> 0
+> 2
+> 20 40 60 80 100
+
+Number of Evaluations 
+
+> 13
+> 13
+> 14
+
+STAGE-BO (ours) qEHVI qParEGO JESMO MESMO qPOTS MOBO-OSD 
+
+Figure 12. Comparison of our method with state-of-the-art baselines on one synthetic and one real-world benchmark MOO problems .The first row reports the results for ZDT2, and the second row reports results for Coil compression spring design. Overall, our method achieves comparable or superior hypervolume relative to the baselines and consistently outperforms them in terms of IGD and fill distance. 
+
+16 Multi-Objective Bayesian Optimization via Adaptive ε-Constraints Decomposition 
+
+et al., 2009) and EI acquisition function with gradient solver. We use the open-sourced implementation at https: //botorch.org/docs/tutorials .
+
+MESMO (Wang & Jegelka, 2017) We use the default hyperparameter settings and the open-sourced implementation can be found at https://github.com/pytorch/botorch .
+
+JESMO (Tu et al., 2022) We use the default hyperparameter settings and the open-sourced implementation can be found at https://github.com/pytorch/botorch .
+
+qPOTS (Renganathan & Carlson, 2025) We use the default hyperparameter settings. This includes the NSGA-II hyperparameter settings. We use the open-sourced implementation at https://github.com/csdlpsu/qpots .
+
+MOBO-OSD (Ngo et al., 2025) We use the default hyperparameter settings from the paper. This includes the number of points on approximated CHIM and the number of starting points when solving MOBO-OSD subproblem. We use the open-sourced implementation at https://github.com/LamNgo1/mobo-osd .
+
+COMBOO (Li et al., 2025) We use the default hyperparameter setting from the paper. The open-sorced implementation can be found at https://github.com/dancewithDianTong/COMBOO .
+
+TSTCH (Paria et al., 2020) We use the settings as follows: augmented Tchebychev scalarization (Nakayama et al., 2009) and Thompson sampling acquisition function. We implement this with BoTorch (Balandat et al., 2020). 
+
+## H. Benchmark Problems 
+
+Here we present the benchmark problems used in unconstrained MOO, constrained MOO and preference-aware MOO.   
+
+> Table 1. Benchmark problem settings and reference points in unconstrained multi-objective problems .
+
+Problem D M Reference Point 
+
+ZDT1 10 2 (−11 .0, −11 .0) 
+
+ZDT2 8 2 (−11 .0, −11 .0) 
+
+DTLZ7 6 5 (−1.1, −1.1, −1.1, −1.1, −1.1) 
+
+Coil Compression Spring 3 2 (−133 .65 , −9056129 .08) 
+
+Rocket Injector 4 3 (−0.96 , −1.11 , −1.08) 
+
+Water Planning 3 6 (−84348 .75 , −1460 .57 , −3101483 .5, −12442799 .73 , −67029 .71 , −1.59)   
+
+> Table 2. Benchmark problem settings and reference points in constrained multi-objective problems .
+
+Problem D M C Reference Point 
+
+MW7 4 2 2 (−1.2, −1.2) 
+
+CONSTR 2 2 2 (−10 .0, −10 .0) 
+
+Disc brake design 4 2 4 (−7.58 , −7.0) 
+
+Gear train design 4 2 1 (−7.4, −64 .1)   
+
+> Table 3. Benchmark problem settings and reference points in preference-aware multi-objective problems .
+
+Problem D M Preferred Region 
+
+ZDT3 2 2 (−1, −1) 
+
+DTLZ2 6 5 (−0.8442 , −0.8999 , −0.8358 , −0.8710 , −0.8553) 
+
+VehicleSafety 5 3 (−1680 , −7.0, −0.26) 
+
+CarSideImpact 7 4 (−23 .01 , −4.43 , −13 .09 , −9.47) 
+
+17

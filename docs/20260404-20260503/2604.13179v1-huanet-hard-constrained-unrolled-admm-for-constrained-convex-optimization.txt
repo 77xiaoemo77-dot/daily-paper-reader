@@ -1,0 +1,803 @@
+Title: HUANet: Hard-Constrained Unrolled ADMM for Constrained Convex Optimization
+
+URL Source: https://arxiv.org/pdf/2604.13179v1
+
+Published Time: Thu, 16 Apr 2026 00:05:04 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# HUANet: Hard-Constrained Unrolled ADMM for Constrained Convex Optimization 
+
+Trinh Tran †, Binh Nguyen † and Truong X. Nghiem 
+
+Abstract — This paper presents HUANet, a constrained deep neural network architecture that unrolls the iterations of the Alternating Direction Method of Multipliers (ADMM) into a trainable neural network for solving constrained convex optimization problems. Existing end-to-end learning methods operate as black-box mappings from parameters to solutions, often lacking explicit optimality principles and failing to enforce constraints. To address this limitation, we unroll ADMM and embed a hard-constrained neural network at each iteration to accelerate the algorithm, where equality constraints are enforced via a differentiable correction stage at the network output. Furthermore, we incorporate first-order optimality conditions as soft constraints during training to promote the convergence of the proposed unrolled algorithm. Extensive numerical experiments are conducted to validate the effective-ness of the proposed architecture for constrained optimization problems. 
+
+I. I NTRODUCTION 
+
+Constrained convex optimization is an important class of mathematical programming problems that seek to minimize a convex objective function subject to a set of convex constraints [1]. Such problems arise ubiquitously across a wide range of disciplines from engineering to finance, including robotics [2], signal processing [3], power grids [4], transportation networks [5], and portfolio optimization [6]. These real-world optimization tasks are usually large-scale, involve varying problem parameters, and must satisfy safety-critical constraints. There is thus a need for efficient algorithms for solving constrained convex optimization problems, which remain a crucial research topic. The key challenges for designing such an effective algorithm lie in the following performance criteria: computational efficiency , as the computational load increases substantially when problem dimensionality expands, and the solver must be re-executed for every new problem instance in parametric optimization problems; feasibility , as the solution must satisfy all constraints simultaneously; and solution optimality , as a solver should not sacrifice solution quality for speed. Among many optimization algorithms available for solv-ing such problems, the Alternating Direction Method of Multipliers (ADMM) [7], [8] has emerged as a widely adopted first-order method due to its decomposability, and  
+
+> This material is based upon work supported by the U.S. National Science Foundation under Grants No. 2449927 and No. 2514584. All authors are with Department of Electrical and Computer Engineering, University of Central Florida, Orlando, FL 32816, USA. Emails: {tr586225, thanhbinh.nguyen, truong.nghiem }@ucf.edu
+> †These authors contributed equally to this work.
+
+ability to handle large-scale structured problems. ADMM attempts to solve an optimization problem by decomposing it into smaller-sized subproblems, each of which will be easier to solve. While some ADMM subproblems admit closed-form analytical solutions, many practical problems do not. Therefore, ADMM traditionally relies on numerical solvers, such as interior-point methods [9], [10] or active-set meth-ods [11], to solve each subproblem. However, they require a large number of iterations for large-scale problems, creating a computational bottleneck that is particularly prohibitive for real-time applications. Furthermore, ADMM suffers from slow tail convergence, demanding many iterations before reaching an optimal solution. These limitations motivate the development of a learning-based approach that can au-tomatically adapt to varying problem instances, accelerate convergence, and guarantee constraint satisfaction. Recently, learning-to-optimize (L2O) methods [12] have emerged as a promising approach for solving parametric constrained optimization problems. L2O models learn the solution mapping from problem parameters to solutions, which classical solvers do not exploit. As a result, they can solve new problem instances significantly faster than classical methods. Existing L2O methods can be broadly di-vided into two groups. The first group consists of end-to-end surrogate models that replace the solver entirely by training a neural network to directly predict the solution [13], [14]. This approach supervised network training using training datasets of problem instances paired with optimal solutions from classical solvers. While this approach has proven its power for unconstrained problems, it has struggled to perform well in constrained cases, as the predicted solutions are not guaranteed to satisfy the constraints at test time. This limitation therefore restricts the practical applicability of the end-to-end surrogate model in constrained convex optimiza-tion. To address this shortcoming, [15] and [16] introduce predict-and-correct approaches that first use a neural network to predict a solution and then apply a correction step to project it onto the feasible set. Such hybrid architectures can achieve higher feasibility rates than purely end-to-end approaches in some settings. However, as purely data-driven approaches, these deep learning methods lack interpretability since the networks learn a black-box mapping from inputs to outputs without any structural connection to the underlying optimization process. The second group uses machine learning to improve the performance of classical optimization solvers by embedding domain knowledge of the optimization algorithm into the network architecture. One of the most prominent approaches 
+
+> arXiv:2604.13179v1 [math.OC] 14 Apr 2026
+
+in this group is algorithm unrolling [17]. Algorithm unrolling represents each iteration of the classical algorithm, such as the iterative shrinkage and thresholding algorithm [18], gradient descent [19], and ADMM [20], [21], as one layer of the neural network. These layers are then concatenated to form a deep neural network. Compared to the first group, unrolling methods are more data efficient and more interpretable because they naturally inherit the prior struc-ture and domain knowledge of the underlying algorithm. However, existing unrolling methods treat constraints as soft penalties, which provide no constraint feasibility guarantee for the solution. In particular, existing unrolled ADMM methods [20], [21], which are the most relevant to our work, focus only on unconstrained problems, thus leaving a critical gap in applying the unrolled ADMM to general constrained optimization problems. Additionally, despite inheriting the iterative structure of the underlying algorithm, unrolled net-works do not guarantee convergence to an optimal solution. In this paper, we propose a Hard-Constrained Unrolled ADMM neural network (HUANet) framework, a learning-to-optimize approach that finds (near-)optimal feasible solutions for parametric constrained convex optimization with signifi-cant speedup over classical solvers. The main contributions of our approach are highlighted as follows:  
+
+> •
+
+Accelerating ADMM for constrained optimization with unrolled neural networks: We propose a hard-constrained neural network that enforces equality con-straints via an end-layer correction to approximate the solution of the primal update with low computational cost at each ADMM iteration. The proposed method provides a learnable and accelerated alternative to clas-sical ADMM.  
+
+> •
+
+Optimality-driven convergence for ADMM unrolling: 
+
+We develop a self-supervised training loss that com-bines: the terminal objective value promoting solution quality, inequality-constraint violation penalty at the final layer enforcing feasibility, and KKT residual terms facilitating convergence. Alongside the hard-constrained primal network, we design a network that predicts the Lagrangian multiplier of the primal subproblem. The proposed loss function effectively and systematically drives the network toward the true optimal solution, requiring no ground-truth solutions.  
+
+> •
+
+Empirical validation on various constrained optimiza-tion : We demonstrate the effectiveness of our approach on smooth and nonsmooth constrained convex opti-mization problems. Our results show that HUANet offers a scalable framework that is less sensitive to hyperparameter tuning and achieves significant speedup over classical solvers in high-dimensional problems. The remainder of this paper is structured as follows. Section II formulates constrained convex optimization prob-lems. Section III describes the way to design and train our proposed HUANet. Section IV presents empirical evaluations and extensive comparisons with existing approaches, and Section V concludes the paper. 
+
+Notations: Let R, R≥0, and R>0 denote the sets of real numbers, nonnegative real numbers, and positive real numbers, respectively. In Euclidean space Rn, ∥x∥2 denotes the Euclidean norm of x ∈ Rn. For a vector x ∈ Rn, I≥0(x)
+
+represents for the indicator function such that I≥0(x) = 0 if 
+
+x ∈ Rn 
+
+> ≥0
+
+and I≥0(x) = + ∞ otherwise. In addition, Π≥0(x)
+
+stands for the Euclidean projection of x onto Rn
+
+> ≥0
+
+, that is, 
+
+Π≥0(x) = arg min y∈Rn 
+
+> ≥0
+
+∥y − x∥22. Finally, In denotes the identity matrix in Rn×n.II. P ROBLEM FORMULATION 
+
+Consider a parametric convex optimization problem in the following form 
+
+minimize  
+
+> x
+
+fλ(x), (1a) s.t. Aλx = bλ, (1b) 
+
+Cλx ≤ dλ, (1c) where x ∈ Rnx is the decision variable, fλ(x) : Rnx → R
+
+is a closed convex function, Aλ ∈ Rneq ×nx , C λ ∈ Rnin ×nx ,
+
+bλ ∈ Rneq , dλ ∈ Rnin , neq and nin denote the number of equality and inequality constraints. In this paper, fλ, Aλ, bλ,
+
+Cλ, and dλ take λ ∈ Λ ⊂ Rnλ as a vector of parameters. By introducing a slack variable s ∈ Rnin and an auxiliary variable w ∈ Rnin , the optimization problem (1) can be rewritten as the equivalent problem 
+
+minimize  
+
+> x,s,w
+
+fλ(x) + I≥0(w), (2a) s.t. Aλx = bλ, (2b) 
+
+Cλx + s = dλ, (2c) 
+
+s = w. (2d) According to [7], ADMM for solving (1) includes the following iterations 
+
+xk+1 , s k+1 = arg min 
+
+> x,s
+
+fλ(x)+ ρ
+
+2 s−wk +ρ−1vk 22 , (3a) s.t. Aλx = bλ,Cλx + s = dλ,wk+1 = Π ≥0(sk+1 + ρ−1vk), (3b) 
+
+vk+1 = vk + ρ(sk+1 − wk+1 ), (3c) where k = 0 , 1, . . . denotes the iteration index, v ∈ Rnin is the dual variable, and ρ > 0 is the step-size parameter. 
+
+Assumption 1: Matrix Aλ has full-row rank for all λ ∈ Λ,and fλ is twice differentiable. Following [11, Chapter 13], if Aλ contains redundant rows, a preprocessing step using QR or LU factorization can be used to remove them without altering the feasible set. Additionally, reformulation by adding slack variables can result in the full row rank property of the constraint matri-ces. Therefore, Assumption 1 is without loss of generality in the applicability of our method for constrained convex optimization. 
+
+Objective: This paper develops a learning-based ADMM framework to accelerate solving the parametric optimization problem (1), while maintaining acceptable optimality gaps and constraint violations. Correction stage Fig. 1: A neural layer Fθp of HUANet for an ADMM iteration at step k.III. P ROPOSED HUAN ET FRAMEWORK 
+
+In this section, we present HUANet, a deep unrolled ADMM framework designed to efficiently solve the con-strained optimization problem (1) across varying problem parameters λ. HUANet unfolds the ADMM iterations in (3) into N sequential neural layers, where each layer cor-responds to an ADMM iteration and executes an identical neural mapping Fθp .
+
+A. HUANet Architecture 
+
+At each iteration k, the ADMM algorithm (3) executes three sequential update steps, including the primal up-date (3a), the auxiliary variable update (3b), and the dual variable update (3c). Among these, the primal update is the most computationally expensive step, as it requires solving a constrained optimization subproblem. Conventional end-to-end learning methods can approximate the optimal solution of the primal update. They typically treat the inequality con-straints as soft penalties, which, however, do not guarantee constraint satisfaction in the primal update. The HUANet consists of N neural layers, each defined by 
+
+Fθp , arranged sequentially and sharing the same learnable parameters θp. The architecture of each neural layer Fθp is il-lustrated in Fig. 1, where a hard-constrained neural network, denoted by HNN θp , is proposed. The HNN θp consists of a multi-layer perceptron (MLP) that generates a prior estimate (¯ xk+1 , ¯sk+1 ) of the primal–slack pair (xk+1 , s k+1 )
+
+without enforcing the equality constraints, followed by a 
+
+correction stage . The outputs of the MLP are subsequently passed through this correction stage to enforce the equality constraints, as illustrated in Fig. 1. The correction stage acts as an equality feasibility corrector, mapping (¯ xk+1 , ¯sk+1 )
+
+onto the affine subspace defined by the equality constraints, and results in a posterior estimation (ˆ xk+1 , ˆsk+1 ) of the primal–slack pair. The MLP neural network is designed to learn the optimal solution of the primal update (3a). The inputs of the MLP are the vector qk = wk − ρ−1vk and the problem parameter 
+
+λ. The primal update can be rewritten as 
+
+xk+1 , s k+1 = arg min 
+
+> x,s
+
+fλ(x) + ρ
+
+2 s − qk 22 , (4a) s.t. Aλx = bλ, C λx + s = dλ. (4b) The MLP acts as a universal function approximator that learns the mapping (qk, λ ) 7 → ¯yk+1 = [(¯ xk+1 )⊤, (¯ sk+1 )⊤]⊤,producing unconstrained estimates of the primal and slack variables prior to projection. The MLP employs differen-tiable activation functions to enable efficient gradient-based optimization during training. The correction stage ensures that the output ˆyk+1 of 
+
+HNN θp satisfies the equality constraints. Common methods are to project ¯yk+1 onto the affine constraint set to obtain 
+
+ˆyk+1 by solving the following optimization problem 
+
+ˆyk+1 = arg min 
+
+> y
+
+12 ∥y − ¯yk+1 ∥22, s.t. Eλy = ηλ, (5) where ˆyk+1 = [(ˆ xk+1 )⊤, (ˆ sk+1 )⊤]⊤ ∈ Rnx+nin is a feasible solution of the primal problem (4a), ˆxk+1 ∈ Rnx , and ˆsk+1 ∈
+
+Rnin . For simplifying presentation, let us denote 
+
+Eλ =
+
+Aλ 0
+
+Cλ Inin 
+
+
+
+∈ R(neq +nin )×(nx+nin ), η λ =
+
+bλ
+
+dλ
+
+
+
+.
+
+Accordingly, the first-order optimality conditions of (5) are: 
+
+ˆyk+1 − ¯yk+1 + E⊤ 
+
+> λ
+
+νk+1 = 0 , (6) 
+
+Eλ ˆyk+1 = ηλ, (7) where νk+1 ∈ Rneq +nin is the Lagrange multiplier. Then, substituting (6) into (7) gives EλE⊤ 
+
+> λ
+
+νk+1 = Eλ ¯yk+1 − ηλ.
+
+Since Aλ is a full-row-rank matrix from Assumption 1 , Eλ
+
+has full row rank, and thus EλE⊤ 
+
+> λ
+
+is invertible. We yield the closed form of the projection 
+
+ˆyk+1 = ¯ yk+1 − E⊤ 
+
+> λ
+
+(EλE⊤ 
+
+> λ
+
+)−1(Eλ ¯yk+1 − ηλ). (8) After obtaining ˆyk+1 , wk+1 and vk+1 of ADMM are updated according to (3b) and (3c), respectively. The neural network HNN θp (qk, λ ), together with the ADMM updates (3b) and (3c) (by substituting ˆsk+1 into 
+
+sk+1 ), constitutes a neural layer Fθp , as illustrated in Fig. 1. It can be seen that the projected primal-slack pair 
+
+(ˆ xk+1 , ˆsk+1 ) satisfies all equality constraints exactly, i.e., both constraints Aλ ˆxk+1 = bλ and Cλ ˆxk+1 + ˆ sk+1 = dλ
+
+always hold. HUANet framework is then constructed by stacking the neural layers Fθp sequentially. From the diagram of Fθp in Fig. 1, HUANet can be interpreted as a discrete-time invariant dynamical system 
+
+xk+1 = Fθp (xk, λ ), x0 =
+
+w0
+
+v0
+
+
+
+, (9a) 
+
+ˆyk = HNN θp
+
+  Inin −ρ−1Inin 
+
+ xk, λ  , (9b) where xk =
+
+wk
+
+vk
+
+
+
+, λ, and ˆyk are the state, the input, and the output of (9), respectively. From (9), we can unroll the dynamics (9a) to accelerate the computation of HUANet. Note from Fig. 1 that N is the number of unrolled layers used only during training, and it may differ from the number of layers required to reach an optimal solution, denoted as K. Additionally, the matrix (EλE⊤ 
+
+> λ
+
+)−1 is precomputed once before the training process to reduce the per-iteration computational cost and training time. Layer 1 Layer 2 Layer N 
+
+> HUANet
+
+Fig. 2: Training process of HUANet. Black and red arrows represent the forward and backward passes, respectively. 
+
+B. Training HUANet 
+
+This section describes the training procedure of HUANet for generating a high-accuracy feasible solution ˆxN for a given problem instance λ. The training workflow is illus-trated in Fig. 2, which consists of forward pass and backward pass. Before detailing these passes, we first establish the optimality conditions that guide the training of HUANet. 
+
+KKT optimality conditions : HNN θp already guarantees the primal feasibility of (4a); however, the primal feasibility alone is insufficient to satisfy the optimality conditions. According to [22, Chapter 5], optimality sufficient conditions for the primal update require both primal feasibility and stationary conditions. In this paper, the optimality conditions of the primal update (4a) are incorporated into the training HUANet. The stationary conditions for subproblem (4a) are 
+
+∇fλ(ˆ xk+1 ) + A⊤ 
+
+> λ
+
+zk+1 + C⊤ 
+
+> λ
+
+βk+1 = 0 , (10) 
+
+ρ(ˆ sk+1 − qk) + βk+1 = 0 , (11) where z and β denote the Lagrange multipliers associated with the constraints (4b). Substituting (11) into (10) leads to 
+
+rk+1 = ∇fλ(ˆ xk+1 ) + A⊤ 
+
+> λ
+
+zk+1 +ρC ⊤ 
+
+> λ
+
+(qk−ˆsk+1 ) = 0 , (12) where rk+1 is the KKT residual at iteration k + 1 . The resulting residual rk+1 serves as an augmentation term for the soft constraints in the training loss. When rk+1 = 0 ,the stationary condition is satisfied, implying that the k + 1 -th layer of HUANet can mimics an ADMM iteration. Since 
+
+(ˆ xk+1 , ˆsk+1 ) is itself determined by (qk, λ ) via HNN θp ,we treat zk+1 as an implicit function of (qk, λ ), which captures its dependent on (qk, λ ). Accordingly, we use an additional MLP, called MLP θd as in Fig. 2, to approximate the dual variable zk+1 ≈ MLP θd (qk, λ ). The MLP θd
+
+plays a crucial role in training HUANet, as it provides a learned dual variable zk+1 for the primal update, which, together with the learned primal variable ˆxk+1 , enforces the optimality conditions. The KKT-augmented enforcement promotes convergence of HUANet, a property that is often overlooked in existing methods for unrolling conventional optimization algorithms. We train HUANet in a self-supervised manner by min-imizing a loss function that penalizes both the original optimization objective f and violations of the KKT op-timality condition (12). The network is unrolled for N
+
+ADMM iterations with all parameters trained jointly using the AdamW optimizer [23]. For notational convenience, we index the unrolled iterations by k = 1 , . . . , N hereafter. For a batch of S problem instances {λ(i)}Si=1 sampled from a given distribution D, the training loss is defined as 
+
+Lλ(θp, θ d) = 1
+
+S
+
+> S
+
+X
+
+> i=1
+
+hλ(ˆ yNi ) + γrNX
+
+> k=1
+
+∥rki ∥22
+
+!
+
+, (13) where hλ(ˆ yNi ) = fλ
+
+ ˆxNi
+
+ + γs∥ max(0 , −ˆsNi )∥22 stands for the terminal cost which enforces objective optimality and inequality-violation penalties at the last neural layer, θp and 
+
+θd denote trainable parameters of HNN θp and MLP θd ,
+
+γs, γ r > 0 are weighting hyperparameters, xki , s ki , and 
+
+rki stand for the primal variable, slack variable, and KKT residual at the layer k of the i-th instance λ(i), respectively. In the loss function (13), the first term enforces optimality and constraint satisfaction at the final layer, while the second term promotes satisfaction of the KKT conditions to facilitate convergence to the optimal solution. 
+
+Remark 1: The KKT-augmented loss function (13) offers two practical advantages over existing unrolled methods. First, since we consider first-order optimality conditions at each unrolled step, there is no need to accumulate the objective across all layers as in [19]. This can improve the accuracy and convergence for HUANet. Second, (13) defines a self-supervised loss function that does not require labeled data (computed optimal solutions) for the problem instances 
+
+{λ(i)}Si=1 .
+
+Forward Pass: the complete forward pass of HUANet proceeds as follows. Starting from the initial states (w0,
+
+v0), with the input λ(i), each layer carries out the following sequential steps. The intermediate vector qki is computed from the current ADMM variables and, together with the problem parameter λ(i), is fed into HNN θp , which generates constrained estimates of the primal–slack pair. The auxiliary and dual variables wk+1  
+
+> i
+
+and vk+1  
+
+> i
+
+are then updated via (3b) and (3c). At each layer, the KKT residuals rk+1  
+
+> i
+
+are com-puted via (12), and accumulated into the training loss. After 
+
+N layers, the total training loss Lλ(θp, θ d) is computed over a batch of S instances via (13). The learned dual variables 
+
+ˆzk+1  
+
+> i
+
+= MLP θd (qki , λ i) have additional trainable parameters 
+
+θd and act as relaxation variables in the KKT residual of the training loss. 
+
+Backward Pass: we update learnable parameters (θp, θ d) of HUANet using first-order optimization methods, in which the gradient of Lλ(θp, θ d) can be computed by back-propagating through the unrolled layers. Derivative of Lλ with respect to the neural network parameters θp and θd is given by 
+
+∂ Lλ
+
+∂θ p
+
+= 1
+
+S
+
+> S
+
+X
+
+> i=1
+
+∂ h λ
+
+∂θ p
+
++ γrNX
+
+> k=1
+
+(rki )⊤ ∂ r ki
+
+∂θ p
+
+!
+
+, (14) 
+
+∂ Lλ
+
+∂θ d
+
+= γr
+
+S
+
+> S
+
+X
+
+> i=1
+> N
+
+X
+
+> k=1
+
+(rki )⊤ ∂ r ki
+
+∂θ d
+
+. (15) By using the chain rule to compute the gradient terms of (14) and (15), we obtain 
+
+∂h λ
+
+∂θ p
+
+=
+
+ ∂h λ
+
+∂ ˆyNi
+
+∂ ˆyNi
+
+∂ ¯yNi
+
+∂ ¯yNi
+
+∂q N −1
+
+> i
+
+ ∂q N −1
+
+> i
+
+∂θ p
+
+, (16) 
+
+∂ r ki
+
+∂θ p
+
+= ∂r ki
+
+∂ ˆyki
+
+∂ ˆyki
+
+∂ ¯yki
+
+∂ ¯yki
+
+∂q k−1
+
+> i
+
++ ∂r ki
+
+∂q k−1
+
+> i
+
+!
+
+∂q k−1
+
+> i
+
+∂θ p
+
+, (17) 
+
+∂ r ki
+
+∂θ d
+
+= ∂r ki
+
+∂z ki
+
+∂z ki
+
+∂q k−1
+
+> i
+
+!
+
+∂q k−1
+
+> i
+
+∂θ d
+
+. (18) In (16), (17), and (18), ∂ ¯yki
+
+> ∂q k−1
+> i
+
+and ∂z ki
+
+> ∂q k−1
+> i
+
+can be computed via back-propagation through the HNN θp and MLP θd w.r.t the input qk−1 
+
+> i
+
+, ∂r ki 
+
+> ∂ˆxki
+
+= ∇2fλ(ˆ xki ), ∂r ki 
+
+> ∂ˆski
+
+= −ρC ⊤ 
+
+> λ
+
+, ∂r ki
+
+> ∂q k−1
+> i
+
+= ρC ⊤ 
+
+> λ
+
+,
+
+> ∂r ki
+> ∂z ki
+
+= A⊤ 
+
+> λ
+
+followed by (12), and from (8), 
+
+∂ ˆyki
+
+∂ ¯yki
+
+= Inx+nin − E⊤ 
+
+> λ
+
+(EλE⊤ 
+
+> λ
+
+)−1Eλ.
+
+It should be noted that ∂q k−1 
+
+> i
+> ∂θ p
+
+and ∂q k−1 
+
+> i
+> ∂θ d
+
+stand for back-propagation induced by the unrolled ADMM iterations, while the terms in brackets in (16), (17), and (18) can be computed from variables in a single layer of HUANet. 
+
+Remark 2: During training, the quantities f (xki ), ∇f (xki ),and ∇2fλ(xki ) must be well-defined for all xki , which may not hold if xki lies outside the domain of f . If the correction stage employs a projection operator to enforce the equality constraints in (4a), these quantities may not be well-defined at the projected points, which prevents the training process from being completed. To address this issue, we can replace the correction stage with a feasibility stage , which is imple-mented as a solving layer at the end of HNN θp . Specifically, let X denote the set of all points x for which f (x), ∇f (x),and ∇2fλ(x) are well-defined. We first determine a feasible point ˆxk satisfying ˆxk ∈ X, A λ ˆxk = bλ. Then, we define 
+
+ˆsk = dλ − Cλ ˆxk. Accordingly, the output of the correction stage is given by ˆyk = (ˆ xk)⊤ (ˆ sk)⊤⊤.
+
+Remark 3: When there is no inequality constraint ( nin =0) in (1), HUANet has only one neural layer ( N = 1 ), which becomes the hard-constrained neural network HNN θp . In this case, HNN θp and MLP θd only take λ as inputs, and there are no ADMM updates. IV. E XPERIMENTAL RESULTS 
+
+To evaluate the performance of our proposed HUANet framework, we conduct numerical experiments for the LASSO problem, the quadratic programming (QP) problem, and the entropy maximization problem. 
+
+Baselines : We compare HUANet with well-known solvers including OSQP [24], Clarabel [10], and SCS [25]. For the LASSO and QP problems, the solvers are OSQP and Clarabel. For the entropy maximization example, the solvers are Clarabel and SCS. Furthermore, we benchmark the average computational time of HUANet against classical ADMM [5], which uses Clarabel to solve subproblems. Since the solvers use different termination criteria, we adjust their termination thresholds to achieve comparable solution accuracies as closely as possible. 
+
+Experimental setups : All neural networks consist of two hidden layers, each with 512 neurons, across all optimization problems. For each problem, a set of 20 ,000 samples of λi is generated, with 16 ,000 used for training, 2,000 for validation, and 2,000 for testing. Numerical experiments are conducted with low and high numbers of decision variables correspond-ing to nx = 10 and nx = 100 . For all problems, we set the number of training iterations N and testing iterations K
+
+within [20 , 40] , and a maximum of 100 iterations for the ADMM baseline. To ensure a fair comparison of computational time, all computations of HUANet inference and solver benchmarks are performed on a CPU, as some solvers do not support GPU computing. Specifically, inferences are conducted on an Intel i9-285K CPU with 128 GB RAM, while HUANets are trained on an NVIDIA RTX 5090 GPU with 32 GB memory. 
+
+Metrics : We evaluate the performance of methods using optimality gap, equality violation, inequality violation, and solve time. For the violations, we measure the average constraint infeasibility (mean) and the worst-case violation (max) across all samples on the test set. 
+
+A. LASSO problem 
+
+The least absolute shrinkage and selection operator (LASSO) is a common technique for sparse linear regression to shrink less important weights in the linear regression model. It is formulated by adding an ℓ1 regularization term in the objective function. In this section, we consider LASSO in the following form 
+
+minimize  
+
+> x
+
+∥Qx − p∥22 + α∥x∥1, (19a) s.t. Ax = bλ, (19b) 
+
+Cx ≤ d, (19c) where x ∈ Rnx is the decision variable, Q ∈ Rm×nx is the feature matrix with 20% nonzero elements generated from N (0 , 1) , p = Qυ + ϵq with (ϵq )i ∼ N (0 , 0.1) is the noisy observation vector, and α is the regularization weight. The true sparse vector v ∈ Rnx to be learned contains 50% non-zero entries sampled from N (0 , 1 
+
+> nx
+
+). The matrices 
+
+A ∈ Rneq ×nx and C ∈ Rnin ×nx have elements sampled from N (0 , 1) , and the vector d ∈ Rnin has elements drawn from U(1 , 2) . The problem parameter λ ∈ Rneq is sampled as λ = Av + ϵa, where (ϵa)i ∼ N (0 , 1) , and we set bλ = λ.We set α = 15 ∥Q⊤λ∥∞ and m = 10 nx.End-to-end learning methods for solving the LASSO prob-lem (19) are challenging since its optimal solutions often lie on the boundaries of the feasible sets (19b) and (19c). By unrolling the ADMM, HUANet can approximate solutions obtained with the specified number of iterations. Denote by 
+
+1nx the all-ones vector with dimension of nx, the LASSO problem (19) can be converted into the following equivalent nx = 10    
+
+> 6
+> 7
+> 8
+> Time (seconds)
+> ×10 5
+> nx= 100
+> 1
+> 2
+> 3
+> 4
+> ×10 3
+> Clarabel
+> OSQP
+> HUANet
+
+Fig. 3: Solve time of HUANet, OSQP, and Clarabel on the LASSO problem. QP problem 
+
+minimize  
+
+> x,t
+
+∥Qx − p∥22 + α1⊤ 
+
+> nx
+
+t, (20a) s.t. Ax = bλ, (20b) 
+
+Cx ≤ d, (20c) 
+
+− t ≤ x ≤ t, (20d) where t ∈ Rnx is a newly introduced variable. Then, by letting y = x⊤ t⊤⊤, it is equivalent to 
+
+minimize  
+
+> y
+
+y⊤P y + q⊤y, (21a) s.t. Gy = bλ, (21b) 
+
+Ky ≤ m, (21c) with q =
+
+−2Q⊤pα1nx
+
+
+
+, P =
+
+Q⊤Q 00 0
+
+
+
+, G = A 0, m =
+
+d⊤ 0 0⊤, and K =
+
+
+
+C 0
+
+Inx −Inx
+
+−Inx −Inx
+
+.The performance results of HUANet on the LASSO problem are presented in Table I. For the case nx = 10 ,the maximum optimality gap ( 3.24 e−3%) and the maxi-mum inequality violation ( 8.72 e−6) are both very small. Meanwhile, equality constraints are satisfied exactly by the hard-constrained neural network HNN θp . As the number of variables increases from nx = 10 to nx = 100 , the maximum optimality gap and maximum inequality violation rise to 
+
+1.66 e−1% and 8.68 e−5, respectively. This is likely because the neural networks use the same architecture, hidden-layer settings, and activation functions across all problem sizes. The boxplot in Fig. 3 compares the solve time of HUANet with those of other solvers. In the low-dimension case ( nx =10 ), all methods have comparable solve times. However, the high-dimension case ( nx = 100 ) shows a clear performance gap, in which HUANet runs 8 × faster than Clarabel and 7× faster than OSQP. The performance comparison be-tween HUANet and vanilla ADMM is illustrated in Fig. 4a. HUANet is 61 × faster at nx = 10 and 1240 × faster at 
+
+nx = 100 . As nx scales from 10 to 100, HUANet’s solve time grows only fourfold, while the ADMM solve time in-creases 100-fold. This dramatic gap highlights a fundamental limitation of iterative solvers, where computational overhead increases rapidly as the problem dimension grows. These results showcase the scalability advantage of the unrolled architecture for constrained optimization problems. 
+
+B. Quadratic programming problem 
+
+This example validates the performance and accuracy of HUANet via parametric QP problems in the following form 
+
+min 
+
+> x
+
+12 x⊤Qx + p⊤ 
+
+> λ
+
+x, (22a) s.t. Ax = bλ, (22b) 
+
+Cx ≤ dλ, (22c) where λ ∈ Rnx , (λ)i ∼ U(−1, 1) is the optimization parameter, U(−1, 1) is the uniform distribution over [−1, 1] ,
+
+Q = F ⊤ 
+
+> q
+
+Fq + Inx is a positive definite matrix, Fq ∈ Rnx×nx
+
+with (Fq )ij ∼ N (0 , 1) , pλ = 1nx + λ, A ∈ Rneq ×nx
+
+with (A)ij ∼ N (0 , 1) , and C ∈ Rnin ×nx with (C)ij ∼N (0 , 1) . In addition, bλ = −AQ −1pλ + ϵb ∈ Rneq and 
+
+dλ = −CQ −1pλ + ϵd ∈ Rnin with (ϵb)i ∼ U (0 , 0.1) and 
+
+(ϵd)i ∼ U (0 , 0.1) .Table I demonstrates that HUANet obtains small optimal-ity gaps, averaging less than 0.6% across both dimensional settings. This is because the integration of a correction stage within the hard-constrained neural network architecture strictly guarantees zero equality violations to machine pre-cision. Furthermore, the problem bounds remain sufficiently tight to ensure constraint feasibility with an average inequal-ity violation below 2e−5. Fig. 5 compares the execution time of HUANet against baselines. For the low-dimensional problem, HUANet exhibits a slight overhead compared to the baseline solvers. However, as the problem dimensionality scales, HUANet achieves significant acceleration, specifically attaining a 44 × speedup over Clarabel and a 12 × speedup over OSQP in high-dimensional scenarios. Notably, we for-mulate the parametric QP problem more complex than the LASSO as the problem parameters λ appear in the objec-tive function and all constraints. While this configuration increases the computational overhead for traditional solvers, which must rebuild the optimization model for each new problem instance, HUANet avoids this bottleneck by lever-aging the inference capabilities of a deep neural network. As illustrated in Fig. 4b, HUANet accelerates ADMM by un-rolling the algorithm through the hard-constrained network. Our approach achieves orders-of-magnitude speedups over vanilla ADMM, e.g., 1000 × speedup in the low-dimensional case and about 2600 × speedup in the high-dimensional case. 
+
+C. Entropy maximization 
+
+Besides the LASSO and QP problems, we consider the entropy maximization problem in [22, example 5.13] 
+
+maximize  
+
+> xi>0
+
+−
+
+> nx
+
+X
+
+> i=1
+
+xi log xi (23a) s.t. 1⊤x = 1 , (23b) 
+
+Ax ≤ bλ, (23c) nx = 10 nx = 100     
+
+> 10 1
+> 10 0
+> 10 1
+> 10 2
+> 66 s
+> 328 s
+> 4ms
+> 408ms
+> HUANet ADMM
+
+(a) LASSO nx = 10 nx = 100      
+
+> 10 1
+> 10 0
+> 10 1
+> 10 2
+> 80 s
+> 127 s
+> 86ms
+> 339ms
+> HUANet ADMM
+
+(b) QP nx = 10 nx = 100       
+
+> 10 1
+> 10 0
+> 10 1
+> 10 2
+> 82 s115 s
+> 5ms
+> 544ms
+> HUANet ADMM
+
+(c) Entropy 
+
+Fig. 4: Average solve time of HUANet and ADMM. nx = 10    
+
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> Time (seconds)
+> ×10 5
+> nx= 100
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> ×10 2
+> Clarabel
+> OSQP
+> HUANet
+
+Fig. 5: Solve time of HUANet, OSQP, and Clarabel on the QP problem. nx = 10     
+
+> 1
+> 2
+> 3
+> 4
+> Time (seconds)
+> ×10 4
+> nx= 100
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 ×10 2
+> Clarabel
+> SCS
+> HUANet
+
+Fig. 6: Solve time of HUANet, Clarabel, and SCS on the entropy problem. where x = [x1, x 2, . . . , x nx ]⊤ ∈ Rnx is the decision vector representing a probability distribution, the matrix 
+
+A ∈ Rnin ×nx is sampled as (A)ij ∼ N (0 , 1) , the problem parameter λ ∈ Rnin is given by λ = Aυ +ϵ with υi ∼ U (0 , 1) 
+
+and ϵi ∼ N (0 , 0.1) , and we set bλ = λ. Here, we consider 
+
+bλ as parameters of the optimization problem. As mentioned in Remark 2, to ensure that fi = xi log xi,
+
+f ′ 
+
+> i
+
+= log xi +1 , and f ′′  
+
+> i
+
+= 1 
+
+> xi
+
+are well-defined, the constraints 
+
+xi > 0 must be enforced in the correction stage. In this case, the correction stage of HNN θp is to find ˆxk+1 in Rnx
+
+> >0
+
+,scale ˆxk+1 to affine space (23b), and followed by ˆsk+1 =
+
+bλ − Aˆxk+1 .The results of HUANet on the entropy maximization problem are reported in Table I. The optimality gap remains below 6.18 e−3% on average across both low- and high-dimensional settings. Equality constraints are satisfied to machine precision, with a maximum violation of 4.45 e−16 ,while the maximum inequality violation is 3.09 e−6, com-parable to the precision of the SCS solver. The solve time comparison in Fig. 6 further demonstrates the computational advantage of HUANet. In the low-dimensional case ( nx =10 ), HUANet is 3× faster than SCS and 1.5× faster than Clarabel. These gaps widen significantly as problem size increases at nx = 100 , HUANet achieves 42 × speedup over SCS and 33 × speedup over Clarabel. In Fig. 4c, HUANet outperforms vanilla ADMM in terms of computational time, where HUANet achieves approximately 61 × speedup at 
+
+nx = 10 and approximately 4700 × at nx = 100 . When the objective is no longer quadratic like in this example, vanilla ADMM faces significant difficulties in solving the sub-problem efficiently, whereas HUANet leverages the learned solution mapping to rapidly produce near-optimal feasible solutions. All the above experiments clearly showcase the effec-tiveness, scalability, and generalizability of HUANet for parametric constrained convex optimization. V. C ONCLUSION 
+
+In this paper, we introduced HUANet, a deep unrolling architecture for accelerating parametric constrained convex optimization by representing each ADMM iteration as a neural layer. The proposed architecture enforces equality constraint satisfaction at every unrolled iteration via a correc-tion stage in each neural layer. By integrating the first-order optimality conditions directly into the training process, our framework facilitates convergence of the unrolled iterates toward optimal solutions. Our architecture achieves high performance on various constrained convex problems while TABLE I: Experimental results across problem types and scenarios. 
+
+Problem nx (neq , n in ) Optimality gap (%) Eq. violation Ineq. violation Solve time (s) mean (max) mean (max) mean (max) mean (max) LASSO 10 (2, 2) 4.22 e−4 (3.24 e−3) 1.07 e−15 (3.33 e−15 ) 9.85 e−8 (8.72 e−6) 6.62 e−5 (1.24 e−4)100 (5, 5) 8.61 e−2 (1.66 e−1) 9.95 e−16 (3.11 e−15 ) 1.27 e−6 (8.68 e−5) 3.28 e−4 (5.09 e−4)QP 10 (5, 5) 4.56 e−3 (2.42 e−2) 2.19 e−15 (3.55 e−15 ) 6.99 e−11 (1.33 e−8) 8.04 e−5 (2.28 e−4)100 (50, 50) 5.94 e−2 (2.62 e−1) 1.31 e−14 (2.49 e−14 ) 3.55 e−5 (4.19 e−4) 1.27 e−4 (2.97 e−4)Entropy 10 (1, 5) 2.83 e−4 (1.60 e−2) 7.39 e−17 (4.44 e−16 ) 2.25 e−8 (3.09 e−6) 7.34 e−5 (1.33 e−4)100 (1, 50) 6.18 e−3 (4.87 e−2) 9.66 e−17 (4.45 e−16 ) 9.56 e−8 (2.14 e−6) 1.15 e−4 (1.96 e−4)
+
+offering significant computational efficiency compared to vanilla ADMM and traditional solvers, particularly in high-dimensional scenarios. For future work, we will embed both equality and inequality constraints into the network archi-tecture, thus eliminating the reliance on explicit correction stages. In addition, we will consider broader classes of convex problems beyond affine constraints, and ultimately extend the framework to nonconvex problems. REFERENCES [1] D. P. Bertsekas, Constrained optimization and Lagrange multiplier methods . Academic press, 2014. [2] B. Nguyen, L. Nguyen, T. X. Nghiem, H. La, J. Baca, P. Rangel, M. C. Montoya, and T. Nguyen, “Spatially temporally distributed informative path planning for multi-robot systems,” in 2025 American Control Conference (ACC) . IEEE, 2025, pp. 3429–3434. [3] B. R. Gaines, J. Kim, and H. Zhou, “Algorithms for fitting the constrained lasso,” Journal of Computational and Graphical Statistics ,vol. 27, no. 4, pp. 861–871, 2018. [4] S.-S. Lin, S.-C. Horng et al. , “Distributed quadratic programming problems of power systems with continuous and discrete variables,” 
+
+IEEE Transactions on Power Systems , vol. 28, no. 1, pp. 472–481, 2012. [5] J. F. Mota, J. M. Xavier, P. M. Aguiar, and M. P¨ uschel, “Distributed optimization with local domains: Applications in mpc and network flows,” IEEE Transactions on Automatic Control , vol. 60, no. 7, pp. 2004–2009, 2014. [6] Y. Jin, R. Qu, and J. Atkin, “Constrained portfolio optimisation: The state-of-the-art markowitz models,” in International Conference on Operations Research and Enterprise Systems , vol. 2. SCITEPRESS, 2016, pp. 388–395. [7] S. Boyd, N. Parikh, E. Chu, B. Peleato, and J. Eckstein, “Distributed optimization and statistical learning via the alternating direction method of multipliers,” Foundations and Trends in Information Re-trieval , vol. 3, no. 1, pp. 1–122, 07 2011. [8] D.-R. Han, “A survey on some recent developments of alternating direction method of multipliers,” Journal of the Operations Research Society of China , vol. 10, no. 1, pp. 1–52, 2022. [Online]. Available: https://doi.org/10.1007/s40305-021-00368-3 [9] A. S. Nemirovski and M. J. Todd, “Interior-point methods for opti-mization,” Acta Numerica , vol. 17, pp. 191–234, 2008. [10] P. J. Goulart and Y. Chen, “Clarabel: An interior-point solver for conic programs with quadratic objectives,” arXiv preprint arXiv:2405.12762 ,2024. [11] J. Nocedal and S. J. Wright, Numerical optimization . Springer, 2006. [12] T. Chen, X. Chen, W. Chen, H. Heaton, J. Liu, Z. Wang, and W. Yin, “Learning to optimize: A primer and a benchmark,” Journal of Machine Learning Research , vol. 23, no. 189, pp. 1–59, 2022. [13] A. S. Zamzam and K. Baker, “Learning optimal solutions for ex-tremely fast ac optimal power flow,” in 2020 IEEE international conference on communications, control, and computing technologies for smart grids (SmartGridComm) . IEEE, 2020, pp. 1–6. [14] W. Wang, H. Zhang, Y. Wang, Y. Tian, and Z. Wu, “Fast explicit machine learning-based model predictive control of nonlinear pro-cesses using input convex neural networks,” Industrial & Engineering Chemistry Research , vol. 63, no. 40, pp. 17 279–17 293, 2024. [15] P. L. Donti, D. Rolnick, and J. Z. Kolter, “DC3: A learning method for optimization with hard constraints,” in International Conference on Learning Representations , 2021. [Online]. Available: https://openreview.net/forum?id=V1ZHVxJ6dSS [16] H. T. Nguyen and P. L. Donti, “FSNet: Feasibility-seeking neural network for constrained optimization with guarantees,” in The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [Online]. Available: https://openreview.net/forum?id= oum1txoy1D [17] V. Monga, Y. Li, and Y. C. Eldar, “Algorithm unrolling: Interpretable, efficient deep learning for signal and image processing,” IEEE Signal Processing Magazine , vol. 38, no. 2, pp. 18–44, 2021. [18] K. Gregor and Y. LeCun, “Learning fast approximations of sparse coding,” in Proceedings of the 27th international conference on international conference on machine learning , 2010, pp. 399–406. [19] M. Andrychowicz, M. Denil, S. Gomez, M. W. Hoffman, D. Pfau, T. Schaul, B. Shillingford, and N. De Freitas, “Learning to learn by gradient descent by gradient descent,” Advances in neural information processing systems , vol. 29, 2016. [20] Y. Yang, J. Sun, H. Li, and Z. Xu, “ADMM-CSNet: A deep learning approach for image compressive sensing,” IEEE transactions on pattern analysis and machine intelligence , vol. 42, no. 3, pp. 521– 538, 2018. [21] K. Liu, H. Jiang, H. Yang, J. Zhang, Z. Gu, Z. Yu, Y. Zhang, B. Xiao, and W. Wu, “ADMM-ESINet: A deep unrolling network for EEG extended source imaging,” IEEE Journal of Biomedical and Health Informatics , 2025. [22] S. Boyd and L. Vandenberghe, Convex optimization . Cambridge university press, 2004. [23] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in International Conference on Learning Representations , 2019. [Online]. Available: https://openreview.net/forum?id=Bkg6RiCqY7 [24] B. Stellato, G. Banjac, P. Goulart, A. Bemporad, and S. Boyd, “Osqp: An operator splitting solver for quadratic programs,” Mathematical Programming Computation , vol. 12, no. 4, pp. 637–672, 2020. [25] “SCS: Splitting conic solver v1.1.0,” https://github.com/cvxgrp/scs, 2015.

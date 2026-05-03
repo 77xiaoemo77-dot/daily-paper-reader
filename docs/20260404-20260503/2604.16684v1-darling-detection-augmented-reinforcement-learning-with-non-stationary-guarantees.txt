@@ -1,0 +1,3845 @@
+Title: DARLING: Detection Augmented Reinforcement Learning with Non-Stationary Guarantees
+
+URL Source: https://arxiv.org/pdf/2604.16684v1
+
+Published Time: Tue, 21 Apr 2026 00:18:19 GMT
+
+Number of Pages: 31
+
+Markdown Content:
+# DARLING: Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Argyrios Gerogiannis 1 Yu-Han Huang 1 Venugopal V. Veeravalli 1
+
+## Abstract 
+
+We study model-free reinforcement learning (RL) in non-stationary finite-horizon episodic Markov decision processes (MDPs) without prior knowl-edge of the non-stationarity. We focus on the piecewise-stationary (PS) setting, where both the reward and transition dynamics can change an ar-bitrary number of times. We propose Detection Augmented Reinforcement Learning (DARLING), a modular wrapper for PS-RL that applies to both tabular and linear MDPs, without knowledge of the changes. Under certain change-point separa-tion and reachability conditions, DARLING im-proves the best available dynamic regret bounds in both settings and yields strong empirical per-formance. We further establish the first mini-max lower bounds for PS-RL in tabular and lin-ear MDPs, showing that DARLING is the first nearly optimal algorithm. Experiments on stan-dard benchmarks demonstrate that DARLING consistently surpasses the state-of-the-art meth-ods across diverse non-stationary scenarios. 
+
+## 1. Introduction 
+
+Reinforcement Learning (RL) studies sequential decision making in unknown environments, typically modeled as Markov decision processes (MDPs), with the goal of max-imizing cumulative reward (Sutton & Barto, 2018). Most RL algorithms assume a stationary environment, where rewards and transition dynamics are fixed but unknown, im-plying a time-invariant optimal policy. In many real-world applications, however, this assumption is violated: envi-ronments evolve due to changing populations, markets, or physical conditions. Such non-stationarity is central to ap-plications including clinical treatment planning (Shortreed et al., 2011), real-time bidding (Cai et al., 2017), inven-
+
+> 1
+
+Department of Electrical and Computer Engineering, Grainger College of Engineering, University of Illinois, Urbana-Champaign, Champaign, USA. Correspondence to: Argyrios Gerogiannis 
+
+<ag91@illinois.edu >.
+
+Preprint. April 21, 2026. 
+
+tory management (Agrawal & Jia, 2019), and traffic control (Chen et al., 2020). In these settings, stationary guarantees no longer apply and performance can degrade significantly (Ortner et al., 2020), motivating the development of reliable algorithms for non-stationary (NS) RL. Non-stationarity is often divided into two regimes: drift-ing non-stationarity, where the MDP evolves gradually, and 
+
+abrupt non-stationarity, where the environment changes at discrete times. The latter is captured by the piecewise stationary (PS) model, in which the MDP remains station-ary on contiguous segments separated by change-points. While drifting models have received substantial attention (Ortner et al., 2019; Cheung et al., 2020; Touati & Vin-cent, 2021; Zhou et al., 2022; Mao et al., 2022; Domingues et al., 2021b), the PS setting remains comparatively under-explored in RL (Gajane et al., 2018). At the same time, recent results in the NS bandit literature indicate that algo-rithms designed for PS can be empirically robust even under drift and on experiments that deviate from strict piecewise stationarity, outperforming approaches explicitly tuned for drifting settings (Gerogiannis et al., 2025a). This suggests that the PS model can yield effective methods beyond the nominal regime of validity. Existing NS-RL algorithms differ along three key dimen-sions: (i) prior knowledge of the non-stationarity (e.g., change frequency or variation budgets), (ii) the adaptation mechanism used to respond to changes, and (iii) whether the method is model-based or model-free . Model-based approaches attempt to track the underlying dynamics as the environment evolves; while theoretically appealing, they can incur substantial computational and memory overhead and may degrade under drift due to model mis-specification and estimation error (Cheung et al., 2020; Mao et al., 2022). To this end, we focus on model-free methods. Within NS-RL, the dominant design axis is the adaptation mechanism, which yields three widely used paradigms: (i) discounted/sliding window methods (Gajane et al., 2018; Cheung et al., 2020; Touati & Vincent, 2021; Domingues et al., 2021b), (ii) budget-restart methods (Jaksch et al., 2010; Ortner et al., 2019; Mao et al., 2022; Zhou et al., 2022), and (iii) detection-restart methods (Wei & Luo, 2021). Discounted and sliding-window approaches 1
+
+> arXiv:2604.16684v1 [cs.LG] 17 Apr 2026
+
+Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Table 1. Dynamic regret comparison of algorithms in PS episodic, finite-horizon MDPs and linear MDPs, under Assumptions 4.10 and 4.7. NT is the number of changes, S is the number of states, A is the number of actions, d is the dimension of the feature space for the linear case, T is the number of episodes and H is the number of steps per episode. Gray cells denote results of this work. 
+
+Setting Algorithm Regret Prior-Free 
+
+Episodic MDPs RestartQ-UCB (Mao et al., 2022) ˜O(S3/4A3/4H5/3N 1/3 
+
+> T
+
+T 2/3) ✗
+
+Double-Restart Q-UCB (Mao et al., 2022) ˜O(S1/3A1/3H5/3N 1/3 
+
+> T
+
+T 2/3 + H6/4T 3/4) ✓
+
+MASTER (Wei & Luo, 2021) ˜O(√SAH 5NT T ) ✓
+
+DARLING + UCMQ (Menard et al., 2021) ˜O(√SAH 3NT T ) ✓
+
+Lower Bound Ω( √SAH 3NT T )
+
+Linear MDPs OPT-WLSVI (Touati & Vincent, 2021) ˜O(d5/4H2N 1/4 
+
+> T
+
+T 3/4) ✗
+
+LSVI-UCB-Restart (Zhou et al., 2022) ˜O(d4/3H2N 1/3 
+
+> T
+
+T 2/3) ✗
+
+ADA-LSVI-UCB-Restart (Zhou et al., 2022) ˜O(d5/4H2N 1/4 
+
+> T
+
+T 3/4) ✓
+
+MASTER (Wei & Luo, 2021) ˜O(d3/2√H4NT T ) ✓
+
+DARLING + LSVI-UCB ++ (He et al., 2023) ˜O(d√H3NT T ) ✓
+
+Lower Bound Ω( d√H3NT T )
+
+are adaptive , continuously down-weighting or discarding older data, whereas budget-restart and detection-restart ap-proaches are restarting strategies that periodically or con-ditionally reset the learning process. These paradigms are prevalent in the NS multi-armed bandit literature, which has served as a canonical testbed for studying non-stationarity in online learning (Garivier & Moulines, 2011; Besbes et al., 2014; Besson et al., 2022). An additional discussion on the NS bandit literature is given in the Appendix. Among these paradigms, detection-restart methods are dis-tinctive in enabling prior-free design with optimal guaran-tees: they do not require knowledge of the timing, frequency, or magnitude of changes, in contrast to discounted, sliding-window, and budget-restart methods whose performance depends on tuned parameters that encode such prior informa-tion. Recent results further suggest that restarting strategies can enjoy more favorable worst-case complexity guarantees than fully adaptive schemes (Peng & Papadimitriou, 2024). Despite the appeal of prior-free , model-free detection– restart, a theory–practice gap remains. To our knowledge, MASTER (Wei & Luo, 2021) is the only algorithm in this class with order-optimal guarantees, yet recent empirical work shows that its internal detection can be practically un-reliable, leading to performance far worse than competing alternatives (Gerogiannis et al., 2025b;a). On the theory side, to our knowledge, minimax lower bounds for PS episodic MDPs have been unavailable, obscuring the difficulty of PS-RL and the optimality landscape. These gaps motivate new PS-RL methods that are simultaneously prior-free, the-oretically grounded, and empirically robust. 
+
+Contributions We propose DARLING, a modular and prior-free detection-restart framework for PS episodic MDPs. DARLING combines effective mean-shift detection ideas (Besson et al., 2022; Gerogiannis et al., 2025a; Huang et al., 2025b) with two tests tailored to identify changes in the reward functions and transition dynamics, and can augment 
+
+any base RL algorithm with order-optimal stationary re-gret to lift its guarantees to the PS setting. We instantiate DARLING for tabular and linear MDPs, obtaining unified prior-free algorithms with near-optimal dynamic regret un-der piecewise stationarity. We also derive the first , to our knowledge, minimax dynamic-regret lower bounds for PS episodic MDPs in both regimes, and show that under reacha-bility and change-point separation conditions our algorithms are nearly-optimal , improving upon the best known prior-free guarantees. Finally, we evaluate extensively on PS and drifting benchmarks against state-of-the-art prior-free and prior-based baselines, where DARLING consistently out-performs existing methods and remains robust beyond its nominal regime. 
+
+## 2. Problem Formulation 
+
+Interaction Protocol We study episodic RL over T episodes with horizon H. We index time by (t, h ) for episode t ∈ [T ]
+
+and step h ∈ [H]. The NS environment is an episodic MDP with state space S (|S| = S), action space A (|A| =
+
+A), and step-dependent reward and transition components 
+
+{rth, P th}t∈[T ],h ∈[H]. At time (t, h ), after taking action ath in state sth, the agent observes Rth(sth, a th) ∈ [0 , 1] with mean 
+
+rth(sth, a th) and transitions to sth+1 ∼ P th(· | sth, a th). The episode ends at stH+1 .
+
+Value Functions and Bellman Equations A deterministic policy π : [ T ]×[H]×S → A maps the time index and state space to the action space; we let πth(s) denote the action chosen in state s at time (t, h ). Under policy π, the value function V t,π h : S → R and the corresponding state-action 2Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Algorithm 1 Detection Augmented Reinforcement Learn ING (DARLING )
+
+Input: stationary algorithm L, detector D, probe collection P = {(Se,h , {A s
+
+> e,h
+
+}s∈S e,h )}Hh=1 , exploration frequencies {αk }k≥1.
+
+Initialization: restart switch Restart ← False , detection τ ← 0, counter k ← 1, for all h ∈ [H], s ∈ S e,h , a ∈ A s
+
+> e,h
+
+, reward history 
+
+H(r)(s,a,h ) ← ∅ . For all h ∈ [H], s ∈ S e,h , a ∈ A s
+
+> e,h
+
+, (j, a ′) ∈ [d] × A , transition history H(P )(s,a,h,j,a ′) ← ∅ .1: for t = 1 , 2, . . . , T do 
+
+2: for h = 1 , 2, . . . , H do 
+
+3: if (t − τ ) mod ⌈1/α k ⌉ = 0 and sth ∈ S e,h then 
+
+4: Set s ← sth, select an action a from As 
+
+> e,h
+
+uniformly at random, and store state sth+1 ▷ forced exploration 5: Receive reward Rth(s, a ) and append to history H(r)(s,a,h )
+
+6: Add [ϕ(sth+1 , a ′)] j to history H(P )(s,a,h,j,a ′) for all (j, a ′) ∈ [d] × A 
+
+7: Test 1 ← D 
+
+
+
+H(r)(s,a,h )
+
+
+
+, Test 2 ← D 
+
+
+
+H(P )(s,a,h,j,a ′)
+
+
+
+for all (j, a ′) ∈ [d] × A ▷ non-stationarity detection 8: if Test 1 or Test 2 then Restart ← True 
+
+9: else if (t − τ ) mod ⌈1/α k ⌉ = 0 then Select action according to L, but don’t update L
+
+10: else Run and update L ▷ stationary learning 11: if Restart then 
+
+12: Reset the RL algorithm L; empty all histories H used for detection ▷ restart learning process 13: τ ← t, k ← k + 1 , Restart ← False 
+
+value function Qt,π h : S × A → R at time (t, h ) are: 
+
+V t,π h (s) := E
+
+" HX
+
+> h′=h
+
+rth′
+
+ sh′ , π th′ (sh′ ) sh = s
+
+#
+
+,Qt,π h (s, a ) := rth(s, a )+ 
+
+E
+
+" HX
+
+> h′=h+1
+
+rth′
+
+ sh′ , π th′ (sh′ ) | sh = s, a h = a
+
+#
+
+where sh′+1 ∼ P th′ (· | sh′ , a h′ ). For brevity, let 
+
+P thVh+1 (s, a ) := Es′∼P th(·| s,a )[Vh+1 (s′)] . The Bellman equations give V t,π h (s) = Qt,π h (s, π th(s)) and Qt,π h (s, a ) = (rth + P thV t,π h+1 )( s, a ), with V t,π H+1 (s) = 0 for all s ∈ S .There exists an optimal policy π⋆ providing the optimal 
+
+V t,⋆ h (s) := sup π V t,π h (s) for all (s, t, h ). From the Bell-man optimality equation, V t,⋆ h (s) = max a∈A Qt,⋆ h (s, a );
+
+Qt,⋆ h (s, a ) := ( rth + P thV t,⋆ h+1 )( s, a ).
+
+Linear MDP. We also consider a class of MDPs called 
+
+linear MDPs (Jin et al., 2020), with discrete state space 
+
+S. Linear MDPs assume both P th and rth are linear in a known feature map ϕ : S × A → Rd, such that for any (t, h ) ∈ [T ] × [H], there exist d unknown measures 
+
+μh,t = ( μ1
+
+> h,t
+
+, . . . , μ dh,t )⊤ on S and θh,t ∈ Rd P th(s′ |
+
+s, a ) = ϕ(s, a )⊤μh,t (s′), rth(s, a ) = ϕ(s, a )⊤θh,t . With-out loss of generality, we assume ∥ϕ(s, a )∥2 ≤ 1 for all 
+
+(s, a ), and max {∥ μh,t (S)∥2, ∥θh,t ∥2} ≤ √d for all (h, t ).
+
+Tabular and Linear Equivalence A tabular MDP is a spe-cial case of a linear MDP under the canonical one-hot fea-ture map. For finite S, set d = SA and ϕ(s, a ) = e(s,a )
+
+where e(s,a ) is the one-hot vector with the (s, a )-th en-try being one; then choosing [θh,t ](s,a ) = rth(s, a ) and 
+
+[μh,t (s′)] (s,a ) = P th(s′ | s, a ) recovers the tabular model. 
+
+Dynamic Regret We evaluate performance using dynamic regret (Cheung et al., 2020; Mao et al., 2022), which com-pares the agent’s policy π against the optimal policy for each episode in hindsight: 
+
+R(π, T ) := 
+
+> T
+
+X
+
+> t=1
+
+ V t,⋆  
+
+> 1
+
+(st
+
+> 1
+
+) − V t,π  
+
+> 1
+
+(st
+
+> 1
+
+) ,
+
+where the initial state st 
+
+> 1
+
+for each episode is selected by an oblivious adversary (Cheung et al., 2020; Mao et al., 2022). Thereupon, the goal of the agent is to minimize the dynamic regret with respect to the time-dependent policy π.
+
+Non-Stationarity Measure In the PS setting, non-stationarity is naturally measured per episode rather than per step . We assume that the MDP undergoes abrupt changes at unknown episode-level change-points, with a total of NT
+
+changes over T episodes. Formally, let 
+
+1 =: ν0 < ν 1 < · · · < ν NT < ν NT +1 := T + 1 ,
+
+denote the change-points. Then, rth and P th remain the same over {νk, . . . , ν k+1 − 1} and change at νk+1 . Thus, we now conceptualize our algorithm which aims to solve the problem without the knowledge of NT .
+
+## 3. Our Algorithm 
+
+What to Detect A key challenge in prior-free detection-restart design is deciding what signal to monitor so that changes are detected quickly in realistic sample regimes. The only prior-free algorithm with order-optimal guarantees in our setting, MASTER, detects non-stationarity only in-directly by checking whether certain stationary-regret guar-antees are violated. While this principle enables theoretical guarantees, it can be overly conservative in practice, requir-ing unrealistic number of episodes to detect changes even 3Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+in favorable instances (Gerogiannis et al., 2025b), which in turn leads to infeasible restarts and poor empirical per-formance. DARLING takes a different approach: it detects non-stationarity directly by monitoring mean shifts in quan-tities that characterize the MDP itself . The environment in each episode t is fully specified by {rth, P th}Hh=1 ; therefore, any change must manifest as a change in at least one of these objects. Thus, we run two dedicated tests: one targeting changes in rewards and one targeting changes in transitions. This “detect-the-model” viewpoint yields interpretable de-tection statistics and avoids relying on regret-violation. 
+
+How to Detect Monitoring changes in {rth, P th}Hh=1 di-rectly is challenging because informative triples (s, a, h )
+
+may be infinite and most may be rarely visited under the behavior induced by the base learner or optimal policy. DARLING addresses this by (i) restricting attention to a finite probe collection P ⊆ S × A × [H] constructed from step-dependent exploration supports {S e,h }h∈[H] ⊆ S 
+
+and {A s
+
+> e,h
+
+}s∈S e,h , h ∈[H] ⊆ A , and (ii) injecting probing episodes at a controlled frequency to guarantee samples for the monitored streams. The step-h probe slice is defined as Ph := {(s, a ) : s ∈ S e,h , a ∈ A s
+
+> e,h
+
+} and the union of probe slices gives P, i.e., P := SHh=1 (Ph × { h}). Since 
+
+rth(s, a ) = ϕ(s, a )⊤θh,t , choosing Ph so that {ϕ(s, a ) : (s, a ) ∈ P h} spans Rd (or maximal independent) ensures that any reward change that is not orthogonal to this span in-duces a mean shift in at least one monitored reward stream. 
+
+Probing episodes and freezing the base learner Within segment k (after the last restart at episode τ ), DARLING designates one probing episode every ⌈1/α k⌉ episodes. In a probing episode, the agent may query the base learner L
+
+for its suggested actions, but does not update L. At step 
+
+h, if sth ∈ S e,h , DARLING overrides the base action and samples ath uniformly from Asth
+
+> e,h
+
+; otherwise it follows L.The resulting rewards and successor-feature observations are recorded only for change detection. Freezing L preserves modularity: the stationary regret guarantees of L generally rely on its own (on-policy) interaction stream, while probing intervenes on the visitation distribution and can corrupt both theory and practice if used for updates. 
+
+Detection histories and monitored streams DARLING performs change detection by maintaining scalar histories for the probe triples (s, a, h ) ∈ P , and applying the same univariate mean-shift detector to each history. Concretely, whenever a probing episode visits an exploration state sth ∈Se,h and takes a probe action ath = a ∈ A sth
+
+> e,h
+
+, we observe a reward sample Rth(s, a ) and the next state sth+1 . We then update two families of histories: 
+
+Reward histories (Test 1). For each probed triple (s, a, h ),we append the scalar reward sample to H(r)(s,a,h ), whose mean equals the probed reward rth(s, a ).
+
+Transition histories (Test 2). To detect changes in P th(· | 
+
+s, a ), we monitor shifts in expected successor features . For a reference action a′ ∈ A define the successor-feature vector 
+
+X(t;s,a,h,a ′) := ϕ(sth+1 , a ′) ∈ Rd, sth+1 ∼ P th(· | s, a ).
+
+Since our detector is univariate, we append each coordi-nate [X(t;s,a,h,a ′)]j to the scalar history H(P )(s,a,h,j,a ′) for all 
+
+(j, a ′) ∈ [d] × A . Thus, DARLING reduces PS-RL change detection to detecting mean shifts across a finite collec-tion of scalar streams indexed by (s, a, h ) (rewards) and 
+
+(s, a, h, j, a ′) (successor-feature coordinates). The mean of the successor-feature is linear in ϕ(s, a ); hence any change in the underlying transition parameters that is visible on the probe span induces a mean shift in at least one successor-feature coordinate stream (formalized in Section 4.1). 
+
+The Detector DARLING uses the univariate mean-shift detector D in Algorithm 2. Given a history H =
+
+{X1, . . . , X n}, the generalized detection test (GDT) checks whether the sequence exhibits a mean shift at any candi-date split point. Specifically, for each k ∈ { 1, . . . , n − 1},it forms empirical means on the two segments, ˆμ1: k and 
+
+ˆμk+1: n (as well as ˆμ1: n), and evaluates a generalized likelihood-ratio-type statistic GTS k that quantifies how in-compatible the two-segment model is with the no-change hypothesis. If GTS k exceeds a threshold βGDT (n, δ F), the test indicates a detected change. The threshold is calibrated to control false alarms uniformly over time at level δF, while 
+
+δD parameterizes the desired detection reliability. Algorith-mically, every time DARLING appends a new observation to a history, it runs D on the updated history. Test 1 ap-plies D to reward histories H(r)(s,a,h ). Test 2 applies D to successor-feature coordinate histories H(P )(s,a,h,j,a ′) for all 
+
+(j, a ′) ∈ [d] × A . If any monitored history triggers, we set a restart flag and at the end of the current episode, the base learner L and all detection histories are reset. 
+
+Algorithm 2 G eneralized Detection Test ( GDT )                            
+
+> 1: Input : history H={X1, . . . , X n},δF,δD
+> 2: for k= 1 to n−1do
+> 3: Compute empirical means ˆμ1: k,ˆμk+1: n,ˆμ1: n
+> 4: Compute GDT test statistic GTS kbased on the means 5: if GTS k≥βGDT (n, δ F)then return True
+
+## 4. Theoretical Analysis 
+
+4.1. On Effective Detection 
+
+Effective detection in DARLING relies on repeatedly sam-pling the finite probe collection P. For each step h, DAR-LING is given exploration supports Se,h ⊆ S and As 
+
+> e,h
+
+⊆ A 
+
+(with N s 
+
+> e,h
+
+:= |A s
+
+> e,h
+
+|), inducing Ph = {(s, a ) : s ∈Se,h , a ∈ A s
+
+> e,h
+
+} and P = SHh=1 (Ph × { h}). Probing 4Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+episodes occur once every ⌈1/α k⌉ episodes in segment k;within a probing episode, conditional on reaching s at step 
+
+h, each a ∈ A s 
+
+> e,h
+
+is selected with probability 1/N s
+
+> e,h
+
+, so per-stream sample accrual scales as 1/N s
+
+> e,h
+
+.
+
+Reward detection. Define the step-h probe subspace and its orthogonal complement: 
+
+Uh := span {ϕ(s, a ) : ( s, a ) ∈ P h} ⊆ Rd,U ⊥ 
+
+> h
+
+:= {v ∈ Rd : u⊤v = 0 ∀u ∈ Uh}.
+
+By design, DARLING constructs probe slices to maximize feature coverage at each step. Formally, we define the probe rank ρh := dim( Uh) ≤ d and require that probe slices are 
+
+maximal independent :
+
+Definition 4.1. The probe slice Ph is maximal independent 
+
+if {ϕ(s, a ) : ( s, a ) ∈ P h} forms a basis for Uh and |P h| =
+
+ρh, i.e., it contains as many linearly independent feature vectors as possible at step h.Throughout, all probe slices {P h}Hh=1 are chosen to satisfy this maximality condition. This principle ensures the best possible identifiability given a reachable state-action space. 
+
+Proposition 4.2. For probe collection P with maximal in-dependent slices, we have |P| = PHh=1 ρh ≤ dH . For any step h and reward parameters θ̸ = θ′:
+
+θ − θ′ /∈ U ⊥ 
+
+> h
+
+⇒ ∃ (s, a ) ∈ P h : ϕ(s, a )⊤θ̸ = ϕ(s, a )⊤θ′.
+
+Remark 4.3. If ρh < d , then dim( U ⊥ 
+
+> h
+
+) ≥ 1. Any change 
+
+∆ ∈ U ⊥ 
+
+> h
+
+\ { 0} satisfies ϕ(s, a )⊤∆ = 0 for all (s, a ) ∈ P h,making reward parameter shifts of the form θ → θ + ∆ 
+
+undetectable from data collected on Ph.
+
+In tabular MDPs with ϕ(s, a ) = e(s,a ) (so d = SA ), maxi-mal coverage forces Ph = S × A for all h. In linear MDPs, the goal is ρh = d for each h, achieved by selecting d
+
+probed pairs whose features are linearly independent. 
+
+Transition detection. Since DARLING’s detector operates on scalar streams, we cannot directly monitor the high-dimensional distribution P th(· | s, a ). Instead, we monitor changes in expected successor features . For a probe (s, a ) ∈Ph and reference action a′ ∈ A , define the successor-feature random vector in segment t by 
+
+X(t;s,a,h,a ′) := ϕ(s′, a ′) ∈ Rd, s′ ∼ P th(· | s, a ).
+
+DARLING applies the univariate detector to each coordinate 
+
+[X(t;s,a,h,a ′)]j for (j, a ′) ∈ [d] × A . Since P th(s′ | s, a ) = 
+
+ϕ(s, a )⊤μh,t (s′), the expected successor feature admits a linear representation. Define 
+
+M (a′) 
+
+> h,t
+
+:= X
+
+> s′∈S
+
+μh,t (s′) ϕ(s′, a ′)⊤ ∈ Rd×d.
+
+Then for any (s, a ) ∈ Ph, E
+
+h
+
+X(t;s,a,h,a ′)
+
+i
+
+=
+
+ M (a′)
+
+> h,t
+
+⊤ϕ(s, a ).
+
+Proposition 4.4. Fix h ∈ [H]. Suppose there exist episodes 
+
+t̸ = t′ and a′ ∈ A such that M (a′)
+
+> h,t
+
+̸ = M (a′) 
+
+> h,t ′
+
+and the difference has a nonzero projection onto Uh:
+
+ M (a′) 
+
+> h,t
+
+− M (a′)
+
+> h,t ′
+
+⊤u̸ = 0 for some u ∈ Uh.
+
+Then there exist (s, a ) ∈ P h and (j, a ′) ∈ [d] × A such that 
+
+E[ [ ϕ(s′
+
+> t
+
+, a ′)] j ]̸ = E[ [ ϕ(s′ 
+
+> t′
+
+, a ′)] j ], where s′ 
+
+> t
+
+∼ P th(· | s, a )
+
+and s′ 
+
+> t′
+
+∼ P t′ 
+
+> h
+
+(· | s, a ), enabling Test 2 to detect the change. 
+
+Remark 4.5. If ρh < d, transition changes satisfying 
+
+ M (a′) 
+
+> h,t
+
+− M (a′)
+
+> h,t ′
+
+⊤u = 0 for all u ∈ Uh induce no mean shift on any successor-feature stream from Ph and are thus undetectable. 
+
+These probe conditions capture identifiability constraints inherent to PS-MDPs, not specific to DARLING. Any al-gorithm collecting data only from (s, a ) ∈ P h observes rewards through ϕ(s, a )⊤θ and transitions through feature expectations in Uh. When ρh < d , changes in directions or-thogonal to Uh are information-theoretically invisible. Thus, without sufficient feature coverage and adequate reachabil-ity, reliable detection is impossible for any algorithm. 
+
+4.2. On Feasible Detection 
+
+Section 4.1 addresses identifiability : when ρh < d , certain changes are observationally invisible regardless of sample size. A separate issue is feasibility : even when informa-tive probes exist, the agent must reach the corresponding probe states often enough within each stationary segment to collect sufficient detection data. This section formalizes reachability conditions that guarantee feasible detection. 
+
+Main reachability assumption. A standard (yet strong) assumption in the NS linear MDP literature is the following: 
+
+Assumption 4.6. For each round t and step h, the transition kernel P th satisfies that for any (s, a, s ′) ∈ S × A × S ,
+
+P th(s′|s, a ) ≥ pm > 0.Without this assumption many of the analyses of current methods in the literature are impossible (see e.g. Cheng et al. (2023)). Even though our analysis still holds under this assumption, we consider the following weaker assumption. Let πU denote the uniform probing policy : at step h, if the current state s ∈ S e,h is in the exploration support, it samples action a uniformly from Ase,h ; otherwise, it samples uniformly from all actions A. For a stationary segment indexed by t and fixed initial state st
+
+> 1
+
+, let PπU 
+
+> t
+
+(·) denote probabilities under policy πU and the MDP in segment t.Define the step-h occupancy of state s under the uniform probing policy by pπU
+
+> h,t
+
+(s) := PπU 
+
+> t
+
+(sh = s | s1). Let Bh
+
+denote the family of Ph at step h such that: 
+
+Bh := {P h : rank  {ϕ(s, a ) : ( s, a ) ∈ P h} = ρh}.
+
+5Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Assumption 4.7. There exists pm > 0 such that for every segment t ∈ [NT +1] , initial state st 
+
+> 1
+
+∈ S , and step h ∈ [H],
+
+inf 
+
+> Ph∈Bh
+
+min 
+
+> (s,a )∈P h
+
+pπU
+
+> h,t
+
+(s) ≥ pm.
+
+Assumption 4.7 ensures that every maximal independent probe slice at step h contains only states that are reachable with probability at least pm under the uniform probing pol-icy. This condition is weaker than Assumption 4.6—it only needs to hold for the specific (uniform) exploration strategy DARLING employs. The assumption has two implications: 
+
+(i) Prior-free sample collection: DARLING does not need to know which specific probe slice to use—any maximal independent choice guarantees sufficient visitation under uniform probing. When DARLING triggers forced explo-ration at step h and finds sth ∈ S e,h , it samples uniformly from Ase,h . After n episodes within a segment, each mon-itored triple (s, a, h ) ∈ P accrues ˜Ω
+
+ αk 
+
+> Nse,h
+
+pm n
+
+
+
+samples in expectation. 
+
+(ii) Connection to tabular MDPs: In tabular settings with 
+
+ϕ(s, a ) = e(s,a ), maximal independence requires Ph =
+
+S × A for all h. Assumption 4.7 then simplifies to: for every state s ∈ S and step h ∈ [H], we have PπU 
+
+> t
+
+(sh =
+
+s | s1) ≥ pm—exactly the condition needed for prior-free detection in tabular PS-MDPs. 
+
+Probe selection in practice. In tabular MDPs (one-hot features, d = SA ), identifiability forces Ph = S × A for all h ∈ [H]; thus, in probing episodes, whenever the trajec-tory is at state s at step h, DARLING samples actions (e.g., uniformly over A) and logs the resulting reward/transition observations for detection. In linear MDPs, for each step h
+
+we choose a maximal independent slice Ph = {(si, a i)}ρh
+
+> i=1
+
+such that {ϕ(si, a i)}ρh 
+
+> i=1
+
+are linearly independent (ideally 
+
+ρh = d), which can be built greedily by adding reach-able (s, a ) whose features increase rank. During probing episodes, if sth ∈ S e,h , DARLING samples ath uniformly from the corresponding probe actions so the associated his-tories accrue samples; under Assumption 4.7, any maximal independent choice yields the required coverage. 
+
+4.3. On Detector Selection 
+
+Any detector aiming to identify distribution shifts inherently requires a certain number of samples, both before and after the change. Ideally, this sample complexity should scale appropriately to avoid negatively impacting the total regret. The stopping time τ of a change detector D denotes the time (episode) at which a change is identified. Let Pν and Eν be the probability and expectation with change-point at ν, and 
+
+P∞ and E∞ be the ones with no change-point. The latency 
+
+ℓD is the length of time post-change within which a change is declared with a probability 1 − δD, i.e., ℓD is defined as: 
+
+inf {t ∈ [T ] : Pν (τ ≥ ν + t) ≤ δD, ∀ ν ∈ [mD + 1 , T − t]}
+
+where mD is the length of the pre-change window at which no changes occur. A detector seeks to minimize ℓD while ensuring low false-alarm probability over horizon T , namely 
+
+P∞(τ ≤ T ) ≤ δF with δF ∈ (0 , 1) . To ensure order-optimal regret for DARLING, the detector D must satisfy: 
+
+Property 4.8. ℓD , m D = O
+
+
+
+log T + log(1 /(δDδF )) 
+
+
+
+.
+
+This property has been widely used in the NS bandit, detection-restart literature (Besson et al., 2022; Gerogiannis et al., 2025a; Huang et al., 2025b), due to its good regret properties. Specifically, with δF = δD = T −γ for any 
+
+γ > 1, Property 4.8 implies mD + ℓD = ˜O(1) , so detec-tion overhead per stationary segment is polylogarithmic and does not affect the leading-order regret rates. Regarding the existence of detectors satisfying Property 4.8, prior work shows that certain variants of the GDT can achieve logarithmic pre-/post-change sample complexity (up to problem-dependent signal terms). In particular, the Gen-eralized Likelihood Ratio (GLR) and Generalized Shiryaev– Roberts (GSR) tests (Huang & Veeravalli, 2025) satisfy Property 4.8. Due to space constraints, we provide the de-tails of the GLR and GSR in the Appendix. We emphasize that DARLING is detector-agnostic : our regret analysis depends only on Property 4.8, not on any specific implemen-tation of D, Algorithm 2 is presented to enhance clarity. 
+
+From sample complexity to episode separation. Let 
+
+Ne := max h∈[H],s ∈S e,h N s
+
+> e,h
+
+. Property 4.8 is stated in terms of the number of samples in a monitored stream . In DARLING, samples for a fixed probed triple (s, a, h ) ar-rive only during probing episodes, and only when (i) the probing-policy trajectory visits s at step h, and (ii) the prob-ing policy samples action a ∈ A s 
+
+> e,h
+
+(uniformly). In each probing episode, each monitored stream (s, a, h ) is sampled with probability at least pm/N s 
+
+> e,h
+
+≥ pm/N e. Therefore, over n episodes in segment k, each probed stream receives on the order of ˜Ω( pmαkn/N e) samples with high probabil-ity. Consequently, to guarantee mD pre-change samples and 
+
+ℓD post-change samples per monitored stream, it suffices that segment lengths scale proportionally. 
+
+Definition 4.9. Define mk := 
+
+⌈1/α k⌉⌈ mD Ne/p m + (N 2e log T )/(4 p2m) +p(mD log( T )N 3e )/(2 p3m) + ((log T )2N 4e )/(16 p4m)⌉
+
+and ℓk := ⌈1/α k⌉⌈ ℓD Ne/p m + ( N 2e log T )/(4 p2m) + p(ℓD log( T )N 3e )/(2 p3m) + ((log T )2N 4e )/(16 p4m)⌉ for 
+
+k ∈ [NT ].Thereupon, to ensure that there are enough samples between change-points, we consider the following assumption. 
+
+Assumption 4.10. Assume ν1 ≥ m1 and νk − νk−1 ≥ ℓk−1
+
++ mk for k ∈ { 2, . . . , N T }.6Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+4.4. DARLING’s Regret 
+
+Given the probe construction in Section 4.1, the detector requirements in Section 4.3, and the feasibility conditions in Section 4.2, we can now characterize DARLING’s regret. 
+
+Theorem 4.11. Consider DARLING with a detector D that satisfies Property 4.8, a stationary RL algorithm L with regret upper bound RL concave and increasing with T , a probe set P and forced exploration frequencies (αk)Tk=1 . If Assumptions 4.7, 4.10 hold, αk = √kdH/ (2 √T log 2 T ),
+
+δF = δD = T −γ , with γ > 1, then DARLING’s regret satisfies, R(π, T ) = ˜O (( NT + 1) RL(T / (NT + 1))) .
+
+The proof of Theorem 4.11 is given in the Appendix. In particular, if RL(T ) = c′√T for c′ > 0, then Theorem 4.11 yields R(π, T ) = ˜O(c′√NT T ), showing that DARLING lifts the stationary guarantee of L to the PS setting. By instantiating L with state-of-the-art stationary algorithms, e.g., UCB-MQ (Menard et al., 2021) with ˜O(√SAH 3T )
+
+in tabular MDPs and LSVI-UCB++ (He et al., 2023) with 
+
+˜O(d√H3T ) in linear MDPs, we recover the upper bounds in Table 1. We next complement these guarantees by estab-lishing minimax lower bounds for PS episodic RL. 
+
+4.5. Lower Bounds 
+
+We provide information-theoretic lower bounds of the dy-namic regret to characterize the fundamental limits in PS-RL in finite-horizon tabular and linear MDPs. 
+
+Theorem 4.12. For any algorithm, there exists an episodic, finite-horizon, tabular PS-MDP such that the dynamic regret of the algorithm is at least Ω( √SAH 3NT T ).Proof Sketch We construct a family of 2NT +1 hard instances indexed by binary vectors, where each MDP contains a waiting state, a root, an A-ary tree with AD−1 leaves, and absorbing states. In each stationary segment k, the optimal state-action-step triple depends adversarially on the k-th index bit: when ik = 0 it is fixed, while when ik = 1 it is the least-visited triple under any policy, forcing exploration or high regret. We lower bound regret on paired instances differing in one bit using the Bretagnolle–Huber inequality, relating it to KL divergence controlled by visit counts to the least-visited triple. Optimizing the bias parameter and averaging over all instances yields the lower bound. The full proof of Theorem 4.12 is given in the Appendix. 
+
+Theorem 4.13. For any algorithm, there exists an episodic, finite-horizon, linear PS-MDP such that the dynamic regret of the algorithm is at least Ω( d√H3NT T ).Proof Sketch We follow the linear-mixture MDP hard in-stance and reduction of Zhou et al. (2021). We construct a piecewise-stationary MDP with NT +1 segments, where within each segment the value gap in one episode lower bounds (up to constants) the sum of H/ 2 independent Bernoulli linear-bandit gaps. Applying the Bernoulli linear-bandit lower bound in each segment and stage yields per-segment regret and summing over segments leads to the final result. The proof of this theorem is provided in the Appendix. Hence it is evident that according to Theorems 4.12,4.13, DARLING is nearly-optimal under Assumptions 4.7, 4.10. 
+
+## 5. Experimental Study 
+
+Remark 5.1. At this point, it is important to emphasize that Assumptions 4.10 and 4.7 are only necessary for theoretical analyses. None of our experiments enforce these constraints, and, in fact, violate them in almost all cases considered. 
+
+Baselines and tuning. We compare DARLING against the state-of-the-art PS-RL methods summarized in Table 1, in-cluding both prior-free detection–restart approaches (e.g., MASTER) and prior-based restart methods (e.g., RestartQ-UCB / LSVI-UCB-Restart and their variants). All base-lines are tuned following their respective original papers. DARLING employs the Bernoulli GLR detector as the 
+
+GDT and uses a threshold, βGLR (n, δ F ) = log( n3/2/δ F)
+
+with δF = 1 /√T . Finally, as per Theorem 4.11 we set 
+
+αk = √kdH/ (2 √T log 2 T ).
+
+DARLING instantiations. We instantiate DARLING with an order-optimal stationary base learner in each regime. For tabular MDPs we use UCB-MQ (Menard et al., 2021), and for linear MDPs we use LSVI-UCB++ (He et al., 2023). For change detection we employ the GLR test, using the sub-Bernoulli variant (Besson et al., 2022) for both reward and transition streams. Rewards are already bounded in 
+
+[0 , 1] . For transition detection, we feed successor-feature coordinates into the detector after mapping each feature value to [0 , 1] via (x + 1) /2 (see Section 2). 
+
+Environments. We evaluate on two standard “combination-lock” benchmarks that are designed to be exploration-hard :(i) the Bidirectional Diabolical Combination Lock variant of Mao et al. (2022) for tabular MDPs, and (ii) the Chain Combination Lock of Zhou et al. (2021) for linear MDPs. In both benchmarks, the worst-case probe states may only be reached through rare action prefixes. While this can lead to exponential sample complexity in the worst case, our exper-iments show that DARLING remains empirically effective and substantially outperforms existing alternatives on these environments. Full environment details are provided in the Appendix. 
+
+Non-stationarity protocols and horizon. We test un-der both PS and drifting non-stationarity for a total of 
+
+T = 50000 episodes. In the PS setting, we follow the same change mechanisms as the original benchmark con-structions, but adopt a geometric change-point model (Gero-7Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 0 1 2 3 4 5                                                    
+
+> ×10 4
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> Cumulative Reward  ×10 4
+> PS-Tabular MDPs, = 0.4
+> 012345
+> ×10 4
+> 0.0
+> 1.0
+> 2.0
+> 3.0
+> 4.0
+> ×10 4
+> PS-Tabular MDPs, = 0.6
+> 012345
+> ×10 4
+> 0.0
+> 1.0
+> 2.0
+> 3.0
+> 4.0
+> ×10 4
+> PS-Tabular MDPs, = 0.8
+> 012345
+> ×10 4
+> 0.0
+> 1.0
+> 2.0
+> 3.0
+> ×10 4
+> Drifting Tabular MDPs
+> 012345
+> Episodes ×10 4
+> 0.0
+> 1.0
+> 2.0
+> 3.0
+> 4.0
+> Cumulative Reward  ×10 4
+> PS-Linear MDPs, = 0.4
+> 012345
+> Episodes ×10 4
+> 0.0
+> 1.0
+> 2.0
+> 3.0
+> 4.0
+> 5.0 ×10 4
+> PS-Linear MDPs, = 0.6
+> 012345
+> Episodes ×10 4
+> 0.0
+> 1.0
+> 2.0
+> 3.0
+> 4.0
+> 5.0
+> ×10 4
+> PS-Linear MDPs, = 0.8
+> 012345
+> Episodes ×10 4
+> 0.0
+> 1.0
+> 2.0
+> 3.0
+> ×10 4
+> Drifting Linear MDPs
+> DARLING MASTER RestartQ-UCB LSVI-UCB-Restart ADA-LSVI-UCB-Restart Double-Restart Q-UCB OPT-WLSVI
+
+Tabular MDP ms/episode 
+
+DARLING 0.4124 Double-RestartQ 0.0450 MASTER 1.3494 RestartQ-UCB-Oracle 0.1320 
+
+Linear MDP ms/episode 
+
+DARLING 1.5331 MASTER 3.9990 LSVI-UCB-Restart 0.4431 ADA-LSVI-UCB-Restart 0.6081 OPT-WLSVI 29.6189 
+
+Runtime averaged per episode (mean over seeds/settings). Figure 1. Cumulative reward results for the experiments (higher=better). Top row: Tabular MDPs, Bottom row: Linear MDPs. 
+
+giannis et al., 2025b) to stress-test prior-free adaptation: segment lengths are i.i.d. geometric with parameter T −ξ
+
+for ξ ∈ { 0.4, 0.6, 0.8}, yielding an average of up to 659 
+
+changes over the horizon. This is substantially more chal-lenging than the settings used in Mao et al. (2022) (5 changes) and Zhou et al. (2021) (20 changes). For drift-ing experiments, we use the drifting protocols proposed in the corresponding benchmark papers (see appendix for the exact parameterization). Performance is reported in terms of cumulative reward. 
+
+Probe-set construction. We construct probe slices 
+
+{P h}Hh=1 as described in Section 4.1. In tabular MDPs, since ϕ(s, a ) = e(s,a ), identifiability requires probing all state–action pairs; thus we set Ph = S × A for all h. In linear MDPs, we greedily select (for each h) a set of state– action pairs whose feature vectors {ϕ(s, a )} are as linearly independent as possible, allowing the same pair to appear across multiple steps when convenient; this targets ρh ≈ d
+
+while keeping probe sets small. The greedy selection would guarantee order-optimal theoretical performance under As-sumption 4.7, hence, we follow this principle, even if the assumption may not hold true. 
+
+Experimental Results. Figure 1 reports cumulative reward across all benchmarks. DARLING achieves the highest cu-mulative reward in both tabular and linear MDPs across all PS configurations, and remains strong even under drifting non-stationarity. Among prior-free methods, DARLING consistently outperforms MASTER—the only competing prior-free algorithm with order-optimal PS guarantees— highlighting the advantage of directly detecting changes in the MDP (rewards/transitions) rather than relying on regret-violation tests. Notably, in the drifting tabular regimes, DARLING also surpasses the best prior-based baseline, Restart-Q-UCB, despite requiring no tuning or knowledge of the non-stationarity budget, indicating robustness beyond the nominal PS regime where our theory applies. Despite DARLING’s multiple detection tests, it is computa-tionally efficient: it runs in 0.41 ms/episode in tabular MDPs and 1.53 ms/episode in linear MDPs, faster than MASTER (4.00 ms/episode) and substantially faster than model-based approaches such as OPT-WLSVI ( 29 .62 ms/episode). Over-all, these results suggest that DARLING narrows the theory– practice gap in prior-free PS-RL, combining near-optimal guarantees with consistently strong empirical performance across diverse non-stationary settings. 
+
+## 6. Conclusion 
+
+We introduced DARLING, a modular, prior-free detection– restart framework for piecewise-stationary (PS) episodic RL. Unlike prior-free baselines that detect changes indi-rectly via regret-violation, DARLING detects the model 
+
+by monitoring mean shifts in probed reward streams and successor-feature streams, and can wrap any stationary RL algorithm with optimal regret, while preserving its on-policy learning guarantees via probing episodes that freeze the base learner. Under identifiability and reachability conditions, and with a broad class of logarithmic-sample-complexity detectors, DARLING attains near-minimax dynamic regret in both tabular and linear MDPs. We also establish, to our knowledge, the first minimax dynamic-regret lower bounds for PS episodic MDPs, showing our rates are nearly op-timal. Empirically, DARLING consistently outperforms state-of-the-art prior-free and tuned restart baselines on exploration-hard PS benchmarks and remains robust under drifting non-stationarity, while retaining practical runtime. An interesting direction, would be to adapt the detection mechanism or propose a novel detector to handle uncount-ably infinite spaces. Finally, future work also includes the extension of DARLING to infinite-horizon MDPs. 8Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+## References 
+
+Agrawal, S. and Jia, R. Learning in structured mdps with convex cost functions: Improved regret bounds for inventory management. In Proceedings of the 2019 ACM Conference on Economics and Computation , EC ’19, pp. 743–744, New York, NY, USA, 2019. Associa-tion for Computing Machinery. ISBN 9781450367929. doi: 10.1145/3328526.3329565. URL https://doi. org/10.1145/3328526.3329565 .Auer, P., Gajane, P., and Ortner, R. Adaptively Tracking the Best Bandit Arm with an Unknown Number of Distribu-tion Changes. In Beygelzimer, A. and Hsu, D. (eds.), Pro-ceedings of the Thirty-Second Conference on Learning Theory , volume 99 of Proceedings of Machine Learning Research , pp. 138–158. PMLR, 25–28 Jun 2019. Besbes, O., Gur, Y., and Zeevi, A. Stochastic Multi-Armed-Bandit Problem with Non-stationary Rewards. In Ghahra-mani, Z., Welling, M., Cortes, C., Lawrence, N., and Weinberger, K. (eds.), Advances in Neural Information Processing Systems , volume 27. Curran Associates, Inc., 2014. URL https://proceedings.neurips. cc/paper_files/paper/2014/file/ 903ce9225fca3e988c2af215d4e544d3-Paper. pdf .Besson, L., Kaufmann, E., Maillard, O.-A., and Seznec, J. Efficient Change-Point Detection for Tackling Piecewise-Stationary Bandits. Journal of Machine Learning Re-search , 23(77):1–40, 2022. Cai, H., Ren, K., Zhang, W., Malialis, K., Wang, J., Yu, Y., and Guo, D. Real-time bidding by reinforce-ment learning in display advertising. In Proceedings of the Tenth ACM International Conference on Web Search and Data Mining , WSDM ’17, pp. 661–670, New York, NY, USA, 2017. Association for Comput-ing Machinery. ISBN 9781450346757. doi: 10.1145/ 3018661.3018702. URL https://doi.org/10. 1145/3018661.3018702 .Cao, Y., Wen, Z., Kveton, B., and Xie, Y. Nearly Optimal Adaptive Procedure with Change Detection for Piecewise-Stationary Bandit. In Chaudhuri, K. and Sugiyama, M. (eds.), Proceedings of the Twenty-Second International Conference on Artificial Intelligence and Statistics , vol-ume 89 of Proceedings of Machine Learning Research ,pp. 418–427. PMLR, 16–18 Apr 2019. URL https:// proceedings.mlr.press/v89/cao19a.html .Chen, C., Wei, H., Xu, N., Zheng, G., Yang, M., Xiong, Y., Xu, K., and Li, Z. Toward a thousand lights: Decentral-ized deep reinforcement learning for large-scale traffic signal control. Proceedings of the AAAI Conference on Ar-tificial Intelligence , 34(04):3414–3421, 4 2020. doi: 10. 1609/aaai.v34i04.5744. URL https://ojs.aaai. org/index.php/AAAI/article/view/5744 .Chen, Y., Lee, C.-W., Luo, H., and Wei, C.-Y. A new algo-rithm for non-stationary contextual bandits: Efficient, op-timal and parameter-free. In Beygelzimer, A. and Hsu, D. (eds.), Proceedings of the Thirty-Second Conference on Learning Theory , volume 99 of Proceedings of Machine Learning Research , pp. 696–726. PMLR, 25–28 Jun 2019. URL https://proceedings.mlr.press/v99/ chen19b.html .Cheng, Y., Yang, J., and Liang, Y. Provably efficient al-gorithm for nonstationary low-rank mdps. In Oh, A., Naumann, T., Globerson, A., Saenko, K., Hardt, M., and Levine, S. (eds.), Advances in Neural Information Pro-cessing Systems , volume 36, pp. 6330–6372. Curran As-sociates, Inc., 2023. Cheung, W. C., Simchi-Levi, D., and Zhu, R. Learning to Optimize under Non-Stationarity. In Chaudhuri, K. and Sugiyama, M. (eds.), Proceedings of the Twenty-Second International Conference on Artificial Intelligence and Statistics , volume 89 of Proceedings of Machine Learn-ing Research , pp. 1079–1087. PMLR, 16–18 Apr 2019. URL https://proceedings.mlr.press/v89/ cheung19b.html .Cheung, W. C., Simchi-Levi, D., and Zhu, R. Reinforcement learning for non-stationary Markov decision processes: The blessing of (More) optimism. In III, H. D. and Singh, A. (eds.), Proceedings of the 37th International Confer-ence on Machine Learning , volume 119 of Proceedings of Machine Learning Research , pp. 1843–1854. PMLR, 13–18 Jul 2020. URL https://proceedings.mlr. press/v119/cheung20a.html .Deng, Y., Zhou, X., Kim, B., Tewari, A., Gupta, A., and Shroff, N. Weighted Gaussian Process Bandits for Non-stationary Environments . In Camps-Valls, G., Ruiz, F. J. R., and Valera, I. (eds.), Proceedings of The 25th International Conference on Artificial Intelligence and Statistics , volume 151 of Proceedings of Machine Learning Research , pp. 6909–6932. PMLR, 28–30 Mar 2022. URL https://proceedings.mlr.press/ v151/deng22b.html .Domingues, O. D., M ´enard, P., Kaufmann, E., and Valko, M. Episodic reinforcement learning in finite 9Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+mdps: Minimax lower bounds revisited. In Feld-man, V., Ligett, K., and Sabato, S. (eds.), Proceed-ings of the 32nd International Conference on Algorith-mic Learning Theory , volume 132 of Proceedings of Machine Learning Research , pp. 578–598. PMLR, 16– 19 Mar 2021a. URL https://proceedings.mlr. press/v132/domingues21a.html .Domingues, O. D., M ´enard, P., Pirotta, M., Kaufmann, E., and Valko, M. A kernel-based approach to non-stationary reinforcement learning in metric spaces. In International Conference on Artificial Intelligence and Statistics , pp. 3538–3546, 2021b. Faury, L., Russac, Y., Abeille, M., and Calauz `enes, C. Re-gret Bounds for Generalized Linear Bandits under Param-eter Drift, 2021. URL https://arxiv.org/abs/ 2103.05750 .Gajane, P., Ortner, R., and Auer, P. A sliding-window algorithm for Markov decision processes with arbitrar-ily changing rewards and transitions. arXiv preprint arXiv:1805.10066 , 2018. Garivier, A. and Moulines, E. On Upper-Confidence Bound Policies for Switching Bandit Problems. In Kivinen, J., Szepesv ´ari, C., Ukkonen, E., and Zeugmann, T. (eds.), 
+
+Algorithmic Learning Theory , pp. 174–188, Berlin, Hei-delberg, 2011. Springer Berlin Heidelberg. ISBN 978-3-642-24412-4. Gerogiannis, A., Huang, Y.-H., Bose, S., and Veeravalli, V. V. Dal: A practical prior-free black-box framework for non-stationary bandits, 2025a. URL https://arxiv. org/abs/2501.19401 .Gerogiannis, A., Huang, Y.-H., and Veeravalli, V. Is Prior-Free Black-Box Non-Stationary Reinforcement Learning Feasible? In Li, Y., Mandt, S., Agrawal, S., and Khan, E. (eds.), Proceedings of The 28th In-ternational Conference on Artificial Intelligence and Statistics , volume 258 of Proceedings of Machine Learning Research , pp. 2692–2700. PMLR, 03–05 May 2025b. URL https://proceedings.mlr. press/v258/gerogiannis25a.html .He, J., Zhao, H., Zhou, D., and Gu, Q. Nearly minimax optimal reinforcement learning for linear Markov deci-sion processes. In Krause, A., Brunskill, E., Cho, K., Engelhardt, B., Sabato, S., and Scarlett, J. (eds.), Pro-ceedings of the 40th International Conference on Ma-chine Learning , volume 202 of Proceedings of Machine Learning Research , pp. 12790–12822. PMLR, 23–29 Jul 2023. URL https://proceedings.mlr.press/ v202/he23d.html .Hong, K., Li, Y., and Tewari, A. An Optimization-based Algorithm for Non-stationary Kernel Bandits without Prior Knowledge. In Ruiz, F., Dy, J., and van de Meent, J.-W. (eds.), Proceedings of The 26th International Conference on Artificial Intelligence and Statistics , volume 206 of Proceedings of Machine Learning Research , pp. 3048–3085. PMLR, 25–27 Apr 2023. URL https://proceedings.mlr.press/ v206/hong23b.html .Hu, P., Chen, Y., and Huang, L. Nearly minimax optimal re-inforcement learning with linear function approximation. In Chaudhuri, K., Jegelka, S., Song, L., Szepesvari, C., Niu, G., and Sabato, S. (eds.), Proceedings of the 39th International Conference on Machine Learning , volume 162 of Proceedings of Machine Learning Research , pp. 8971–9019. PMLR, 17–23 Jul 2022. URL https:// proceedings.mlr.press/v162/hu22a.html .Huang, Y.-H. and Veeravalli, V. V. Sequential change de-tection for learning in piecewise stationary bandit en-vironments. In 2025 IEEE International Symposium on Information Theory (ISIT) , pp. 1–5, 2025. doi: 10.1109/ISIT63088.2025.11195515. Huang, Y.-H., Gerogiannis, A., Bose, S., and Veeravalli, V. V. Change Detection-Based Procedures for Piecewise Stationary MABs: A Modular Approach, 2025a. URL 
+
+https://arxiv.org/abs/2501.01291 .Huang, Y.-H., Gerogiannis, A., Bose, S., and Veeravalli, V. V. Detection augmented bandit procedures for piece-wise stationary mabs: A modular approach, 2025b. URL 
+
+https://arxiv.org/abs/2501.01291 .Jaksch, T., Ortner, R., and Auer, P. Near-optimal regret bounds for reinforcement learning. Journal of Machine Learning Research , 11:1563–1600, 2010. Jin, C., Yang, Z., Wang, Z., and Jordan, M. I. Prov-ably efficient reinforcement learning with linear func-tion approximation. In Abernethy, J. and Agarwal, S. (eds.), Proceedings of Thirty Third Conference on Learn-ing Theory , volume 125 of Proceedings of Machine Learning Research , pp. 2137–2143. PMLR, 09–12 Jul 2020. URL https://proceedings.mlr.press/ v125/jin20a.html .Kocsis, L. and Szepesv ´ari, C. Discounted ucb. In 2nd PASCAL Challenges Workshop , volume 2, pp. 51–134, 2006. Liu, F., Lee, J., and Shroff, N. A Change-Detection Based Framework for Piecewise-Stationary Multi-Armed Ban-dit Problem. Proceedings of the AAAI Conference on Artificial Intelligence , 32(1), Apr. 2018. doi: 10.1609/ aaai.v32i1.11746. URL https://ojs.aaai.org/ index.php/AAAI/article/view/11746 .10 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Luo, H., Wei, C.-Y., Agarwal, A., and Langford, J. Efficient contextual bandits in non-stationary worlds. In Bubeck, S., Perchet, V., and Rigollet, P. (eds.), Proceedings of the 31st Conference On Learning Theory , volume 75 of Proceedings of Machine Learning Research , pp. 1739–1776. PMLR, 06–09 Jul 2018. URL https:// proceedings.mlr.press/v75/luo18a.html .Mao, W., Zhang, K., Zhu, R., Simchi-Levi, D., and Ba s¸ ar, T. Model-free non-stationary rl: Near-optimal regret and applications in multi-agent rl and inventory control, 2022. URL https://arxiv.org/abs/2010.03161 .Menard, P., Domingues, O. D., Shang, X., and Valko, M. Ucb momentum q-learning: Correcting the bias with-out forgetting. In Meila, M. and Zhang, T. (eds.), Pro-ceedings of the 38th International Conference on Ma-chine Learning , volume 139 of Proceedings of Machine Learning Research , pp. 7609–7618. PMLR, 18–24 Jul 2021. URL https://proceedings.mlr.press/ v139/menard21b.html .Ortner, R., Gajane, P., and Auer, P. Variational regret bounds for reinforcement learning. In Uncertainty in Artificial Intelligence , pp. 81–90, 2019. Ortner, R., Gajane, P., and Auer, P. Variational regret bounds for reinforcement learning. In Adams, R. P. and Gogate, V. (eds.), Proceedings of The 35th Uncertainty in Artifi-cial Intelligence Conference , volume 115 of Proceedings of Machine Learning Research , pp. 81–90. PMLR, 22– 25 Jul 2020. URL https://proceedings.mlr. press/v115/ortner20a.html .Peng, B. and Papadimitriou, C. The complexity of non-stationary reinforcement learning. In Vernade, C. and Hsu, D. (eds.), Proceedings of The 35th International Conference on Algorithmic Learning Theory , volume 237 of Proceedings of Machine Learning Research , pp. 972– 996. PMLR, 25–28 Feb 2024. Russac, Y., Vernade, C., and Capp ´e, O. Weighted Linear Bandits for Non-Stationary Environments. In Wallach, H., Larochelle, H., Beygelzimer, A., d'Alch ´e-Buc, F., Fox, E., and Garnett, R. (eds.), Advances in Neural Information Processing Systems , volume 32. Curran Associates, Inc., 2019. URL https://proceedings.neurips. cc/paper_files/paper/2019/file/ 263fc48aae39f219b4c71d9d4bb4aed2-Paper. pdf .Russac, Y., Capp ´e, O., and Garivier, A. Algorithms for Non-Stationary Generalized Linear Bandits, 2020. URL 
+
+https://arxiv.org/abs/2003.10113 .Russac, Y., Faury, L., Capp ´e, O., and Garivier, A. Self-Concordant Analysis of Generalized Linear Bandits with Forgetting . In Banerjee, A. and Fukumizu, K. (eds.), 
+
+Proceedings of The 24th International Conference on Ar-tificial Intelligence and Statistics , volume 130 of Proceed-ings of Machine Learning Research , pp. 658–666. PMLR, 13–15 Apr 2021. URL https://proceedings. mlr.press/v130/russac21a.html .Shortreed, S. M., Laber, E., Lizotte, D. J., Stroup, T. S., Pineau, J., and Murphy, S. A. Informing sequential clinical decision-making through reinforcement learn-ing: an empirical study. Mach. Learn. , 84(1–2): 109–136, July 2011. ISSN 0885-6125. doi: 10.1007/ s10994-010-5229-0. URL https://doi.org/10. 1007/s10994-010-5229-0 .Sutton, R. S. and Barto, A. G. Reinforcement learning: An introduction . MIT press, 2018. Touati, A. and Vincent, P. Efficient learning in non-stationary linear markov decision processes, 2021. URL 
+
+https://arxiv.org/abs/2010.12870 .Wang, J., Zhao, P., and Zhou, Z.-H. Revisiting Weighted Strategy for Non-stationary Parametric Bandits. In Ruiz, F., Dy, J., and van de Meent, J.-W. (eds.), Proceedings of The 26th International Conference on Artificial In-telligence and Statistics , volume 206 of Proceedings of Machine Learning Research , pp. 7913–7942. PMLR, 25– 27 Apr 2023. URL https://proceedings.mlr. press/v206/wang23k.html .Wei, C.-Y. and Luo, H. Non-stationary Reinforcement Learning without Prior Knowledge: an Optimal Black-box Approach. In Belkin, M. and Kpotufe, S. (eds.), 
+
+Proceedings of Thirty Fourth Conference on Learn-ing Theory , volume 134 of Proceedings of Machine Learning Research , pp. 4300–4354. PMLR, 15–19 Aug 2021. URL https://proceedings.mlr.press/ v134/wei21b.html .Zhao, P., Zhang, L., Jiang, Y., and Zhou, Z.-H. A Simple Approach for Non-stationary Linear Bandits. In Chiappa, S. and Calandra, R. (eds.), Proceedings of the Twenty Third International Conference on Artificial Intelligence and Statistics , volume 108 of Proceedings of Machine Learning Research , pp. 746–755. PMLR, 26–28 Aug 2020. URL https://proceedings.mlr.press/ v108/zhao20a.html .Zhou, D., Gu, Q., and Szepesvari, C. Nearly minimax opti-mal reinforcement learning for linear mixture markov decision processes. In Belkin, M. and Kpotufe, S. (eds.), Proceedings of Thirty Fourth Conference on Learn-ing Theory , volume 134 of Proceedings of Machine Learning Research , pp. 4532–4576. PMLR, 15–19 Aug 2021. URL https://proceedings.mlr.press/ v134/zhou21a.html .11 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Zhou, H., Chen, J., Varshney, L. R., and Jagmohan, A. Nonstationary reinforcement learning with linear func-tion approximation. Transactions on Machine Learn-ing Research , 2022. ISSN 2835-8856. URL https: //openreview.net/forum?id=nS8A9nOrqp .Zhou, X. and Shroff, N. No-Regret Algorithms for Time-Varying Bayesian Optimization. In 2021 55th Annual Conference on Information Sciences and Systems (CISS) ,pp. 1–6, 2021. doi: 10.1109/CISS50987.2021.9400292. 12 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+## A. Related Work in Non-Stationary Bandits 
+
+Non-stationary (NS) bandits are a canonical testbed for studying learning under distribution shift, and they have strongly influenced how NS-RL algorithms are designed and analyzed. A useful way to organize the NS bandit literature is along two largely orthogonal axes: (i) the adaptation mechanism —adaptive methods that continuously emphasize recency versus restarting methods that explicitly reset the learner—and (ii) the extent of prior knowledge required about the non-stationarity— prior-based (requiring tuned parameters linked to variation/breakpoints) versus prior-free (not requiring such tuning). This taxonomy parallels the dominant paradigms in NS-RL (discounting/windowing, budget-restart, detection-restart), and helps clarify which assumptions are needed to obtain guarantees and practical performance (Garivier & Moulines, 2011; Besbes et al., 2014; Besson et al., 2022). 
+
+Adaptive methods: discounting and sliding windows. Adaptive approaches track change by continuously down-weighting or discarding older samples, typically via exponential discounting or fixed-length sliding windows. These methods are conceptually simple and widely applicable, but their performance depends on selecting a discount factor or window length that matches the (unknown) timescale of non-stationarity, rendering them typically prior-based . In NS-MABs, classical examples include discounted UCB and sliding-window UCB (Kocsis & Szepesv ´ari, 2006; Garivier & Moulines, 2011). This paradigm has been extended to structured bandits, including NS linear bandits (NS-LBs) (Cheung et al., 2019; Russac et al., 2019; Wang et al., 2023), NS generalized linear bandits (NS-GLBs) (Faury et al., 2021; Russac et al., 2020; Wang et al., 2023), and NS self-concordant bandits (NS-SCBs) (Russac et al., 2021; Wang et al., 2023). Analogous ideas also appear in non-parametric settings such as kernelized bandits (NS-KBs), where recency-weighted or windowed estimators are combined with optimism (Deng et al., 2022; Zhou & Shroff, 2021). Overall, discounting/windowing provides a general-purpose route to adaptivity, but introduces a non-trivial tuning problem: too much forgetting increases variance, while too little forgetting yields bias under shift. 
+
+Restarting methods: budgeted restarts. A second family of approaches explicitly restarts the learning process, typically on a schedule designed to control the amount of stale data. In NS bandits, the most common restarting template is the budget-restart strategy, which restarts at predetermined times (or on epochs of increasing lengths) selected using a variation/breakpoint budget. This yields strong theoretical guarantees when the budget is known or can be tuned, but again is usually prior-based . Representative results include the classical NS-MAB framework in Besbes et al. (2014), as well as extensions to structured settings such as NS-LBs/NS-GLBs (Zhao et al., 2020) and NS-KBs (Zhou & Shroff, 2021). Conceptually, budget-restart trades off two error sources: within-epoch learning (stationary regret) and cross-epoch mismatch (stale data), and the schedule is tuned to balance these terms. 
+
+Restarting methods: detection-based restarts. Detection-restart methods aim to remove the explicit dependence on a known non-stationarity budget by testing for change and restarting only when evidence accumulates. This is particularly natural in abrupt (piecewise-stationary) models, where changes are sparse but impactful. In NS-MABs, prior-based detection-restart methods include algorithms that rely on thresholds calibrated to the change budget or minimal gap assumptions (Liu et al., 2018; Cao et al., 2019). More recent prior-free approaches emphasize modular change detection primitives (e.g., GLR/CuSum-type tests) coupled with bandit exploration policies, enabling guarantees without knowing the number/timing of changes (Auer et al., 2019; Besson et al., 2022; Huang et al., 2025a). Beyond MABs, related detection-restart ideas have been developed for richer structured classes, including NS linear and kernelized bandits (Hong et al., 2023) and NS contextual bandits (NS-CBs) (Luo et al., 2018; Chen et al., 2019). At a high level, these methods separate concerns: a base algorithm drives exploration/exploitation within a segment, while a statistical test monitors for distributional shifts and triggers a reset. Importantly, in the detection-based restart literature there exist two black-box, prior-free methodologies which are applicable to all the general bandit settings DAL (Gerogiannis et al., 2025a) and MASTER (Wei & Luo, 2021). 
+
+## B. Theoretical Proofs 
+
+B.1. Proofs of Propositions 
+
+B.1.1. P ROOF OF PROPOSITION 4.2 
+
+Proof. First, since |P h| = ρh = dim( Uh) ≤ d for each h ∈ [H], we have |P| = PHh=1 |P h| = PHh=1 ρh ≤ PHh=1 d =
+
+dH .For the identifiability claim, fix h ∈ [H]. By definition, {ϕ(s, a ) : ( s, a ) ∈ P h} is a linearly independent set of size 
+
+|P h| = ρh = dim( Uh), hence it forms a basis of Uh = span {ϕ(s, a ) : ( s, a ) ∈ C h}. Therefore any u ∈ Uh can be written 13 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+as u = P 
+
+> (s,a )∈P h
+
+cs,a ϕ(s, a ) for some coefficients {cs,a }.Let ∆ := θ − θ′. The condition ∆ /∈ U ⊥ 
+
+> h
+
+is equivalent to the existence of some u ∈ Uh such that u⊤∆̸ = 0 . Write this u in the basis Ph:
+
+u⊤∆ = X
+
+> (s,a )∈P h
+
+cs,a ϕ(s, a )⊤∆.
+
+If ϕ(s, a )⊤∆ = 0 for all (s, a ) ∈ P h, then the right-hand side would be 0, contradicting u⊤∆̸ = 0 . Hence there exists 
+
+(s, a ) ∈ P h such that ϕ(s, a )⊤(θ − θ′)̸ = 0 , equivalently ϕ(s, a )⊤θ̸ = ϕ(s, a )⊤θ′.B.1.2. P ROOF OF PROPOSITION 4.4 
+
+Proof. Fix h ∈ [H] and let t̸ = t′ and a′ ∈ A be as in the statement. Define 
+
+B :=  M (a′) 
+
+> h,t
+
+− M (a′)
+
+> h,t ′
+
+⊤ ∈ Rd×d.
+
+The visibility condition states that there exists u ∈ Uh such that Bu ̸ = 0 . Since {ϕ(s, a ) : ( s, a ) ∈ P h} is a basis of Uh, we can write u = P 
+
+> (s,a )∈P h
+
+cs,a ϕ(s, a ), and therefore by linearity, 
+
+Bu = X
+
+> (s,a )∈P h
+
+cs,a Bϕ (s, a ).
+
+If Bϕ (s, a ) = 0 for all (s, a ) ∈ P h, then the right-hand side would be 0, contradicting Bu ̸ = 0 . Hence there exists 
+
+(s, a ) ∈ P h such that Bϕ (s, a )̸ = 0 .Fix such a pair (s, a ). Recall that E[X(s,a,h,a ′) 
+
+> t
+
+] = ( M (a′) 
+
+> h,t
+
+)⊤ϕ(s, a ) and E[X(s,a,h,a ′) 
+
+> t′
+
+] = ( M (a′) 
+
+> h,t ′
+
+)⊤ϕ(s, a ), so 
+
+E
+
+h
+
+X(s,a,h,a ′)
+
+> t
+
+i
+
+− E
+
+h
+
+X(s,a,h,a ′)
+
+> t′
+
+i
+
+=  M (a′) 
+
+> h,t
+
+− M (a′)
+
+> h,t ′
+
+⊤ϕ(s, a ) = Bϕ (s, a )̸ = 0 .
+
+Since this difference is a nonzero vector in Rd, there exists at least one coordinate j ∈ [d] such that 
+
+E
+
+h
+
+[X(s,a,h,a ′) 
+
+> t
+
+]j
+
+i̸
+
+= E
+
+h
+
+[X(s,a,h,a ′) 
+
+> t′
+
+]j
+
+i
+
+.
+
+Finally, by definition [X(s,a,h,a ′) 
+
+> t
+
+]j = [ ϕ(s′
+
+> t
+
+, a ′)] j where s′ 
+
+> t
+
+∼ P th(· | s, a ) (and analogously for t′), which yields the claimed mean shift in a probed successor-feature coordinate stream. 
+
+B.2. Proof of Theorem 4.12 
+
+Proof. Assume there are NT changes and hence NT + 1 stationary segments of equal length. Consider the family of 2NT +1 
+
+PS tabular episodic MDPs {M i}i∈{ 0,1}NT +1 indexed by i = ( i1, . . . , i NT +1 ) ∈ { 0, 1}NT +1 . Each Mi has state space S
+
+with |S| = S, action space A with |A| = A, horizon H, and T episodes. Without loss of generality, we set A = [ A]. Fix an arbitrary policy π, and let Pi,π and Ei,π denote the probability measure and expectation induced by executing π in Mi.Recall that νk denote the kth change-points and that ν0 = 1 and νNT +1 = T + 1 . The change-points are evenly separated over the T episodes: for the kth stationary segment, its interval length νk − νk−1 = ⌈T / (NT + 1) ⌉ if k ≤ T mod ( NT + 1) 
+
+and ⌊T / (NT + 1) ⌋ otherwise. so that period k has length νk − νk−1. For each k ∈ [NT + 1] , h ∈ [H], a ∈ A , and s ∈ S ,let nk(s, a, h ) be the number of visits to (s, a ) at step h during episodes t ∈ { νk−1, . . . , ν k − 1}, i.e., 
+
+nk(s, a, h ) :=  
+
+> νk−1
+
+X
+
+> t=νk−1
+
+1{sth = s, a th = a}. (1) We construct a hard instance following the structure of Domingues et al. (2021a). Assume S ≥ 6 and A ≥ 2, and that there exists an integer D such that 
+
+S − 3 = 
+
+> D−1
+
+X
+
+> j=0
+
+Aj = AD − 1
+
+A − 1 . (2) 14 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Additionally, we assume H ≥ 3D.1 The state space contains a waiting state sw, a root state sroot , an A-ary tree of depth 
+
+D − 1 with leaves {leaf ℓ}Lℓ=1 where L = AD−1, a good absorbing state sg and a bad absorbing state sb. The states are illustrated in Figure 2. 𝑠 ! 𝑠 "##$ ⋮   
+
+> 𝐴 actions leading
+> to different
+> childern states
+> ⋮
+> ⋮
+> depth 𝐷 ⋯
+> lea f%
+> lea f&
+> lea f'
+> ⋮
+> lea f(
+> 𝑠 )
+> 𝑠 *
+
+Figure 2. States of the MDP Mi’s 
+
+Let rkh, i and P kh, i denote the reward function and the transition kernel of MDP Mi at step h over the kth stationary segment, i.e., rth = rkh, i and P th = P kh, i for Mi at t ∈ { νk−1, . . . , ν k − 1}. We set the rewards of the MDP Mi’s to be deterministic and binary. To be specific, The reward function is defined as follows: for all k ∈ [NT + 1] , h ∈ [H], i ∈ { 0, 1}NT +1 , s ∈ S ,and a ∈ A ,
+
+rkh, i(s, a ) = 
+
+(
+
+1, s = sg, h ≥ ¯H + D + 1 ,
+
+0, otherwise , (3) for some ¯H ∈ [H] whose value is determined later in the proof. In other words, if the agent ends up at the good absorbing state sg Notice that the reward function is invariant across all change-points and all MDPs. The transition kernels are defined as follows: Consider an arbitrary MDP Mi. The agent starts at the waiting state sw, i.e., 
+
+st 
+
+> 0
+
+= sw. At sw, for h < ¯H, the agent moves to sroot deterministically when the leaving action aleave is chosen. When other action is chosen, the agent remains at sw deterministically, i.e., 
+
+P kh, i(s|sw, a ) = 
+
+
+
+1, (s, a ) = ( sroot , a leave ),
+
+1, s = sw and a̸ = aleave ,
+
+0, otherwise .
+
+(4) Without loss of generality, we set aleave = 1. At the ¯H step, the next state is sroot deterministically regardless of the chosen action, i.e., 
+
+P kH, i(s|sw, a ) = 
+
+(1, s = sroot ,
+
+0, otherwise . (5) At any internal tree node, choosing action a deterministically moves to the a-th child. Now, consider the leaf nodes at the 
+
+kth stationary segment of MDP Mi with ik = 0 . Let εk > 0 be a bias parameter that we tune later in the proof. Then, if the 
+
+> 1
+
+When A = 1 , the construction reduces to a contextual bandit instance rather than an episodic MDP. 
+
+15 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+agent chooses the good action ag at leaf node leaf 1 at step 1 + D, it goes to the good absorbing state sg with probability  
+
+> 12
+
++ εk, and goes to the bad absorbing state sb with probability 12 − εk, i.e., 
+
+P k
+
+> 1+ D, i
+
+(s | leaf 1, a g) = 
+
+ 
+
+> 12
+
++ εk, s = sg, 
+
+> 12
+
+− εk, s = sb,
+
+0, otherwise .
+
+(6) If the agent chooses other actions at leaf node leaf 1 at step 1 + D, then the agent goes to the two absorbing states with equal probability. If the agent is at other leaves or at other step, the agent goes to the two absorbing states with equal probability regardless of the chosen action, i.e., for all (h, ℓ, a )̸ = (1 + D, 1, a g)
+
+P kh, i(s | leaf ℓ, a ) = 
+
+( 12 , s ∈ { sg, s b},
+
+0, otherwise . (7) Without loss of generality, we set ag = 1 . In this case, the optimal policy is the one that leads the agent to leaf 1 at step 
+
+1 + D, and then selects the good action ag to reach the good absorbing state with higher probability. Now, consider the leaf nodes at the kth stationary segment of MDP Mi with ik = 1 . Let j denote the (NT + 1) -dimensional binary vector obtained by flipping the k-th bit of i, i.e., jk = 0 and jl = il for l̸ = k. Recall that Ei,π denote the expectation induced by executing π in Mi. Define 
+
+(˜hi, ˜ℓi, ˜ai) = arg min   
+
+> (h,ℓ,a )̸=(1+ D, 1,a g)
+
+E˜i,π [nk(leaf ℓ, a, h )] . (8) In other words, the expected number of times the policy π chooses action ˜ai at leaf node leaf ˜ℓi at step ˜hi is the least compared to those when choosing action a at leaf node leaf ℓ at step h such that (h, ℓ, a )̸ = (1 + D, 1, a g). Then, when the agent selects ˜ai at leaf node leaf ˜ℓi at step ˜hi, it goes to the good absorbing state with probability 12 + 2 εk, and goes to the bad absorbing state with probability 12 − 2εk, i.e., 
+
+P k
+
+> ˜hi,i
+
+
+
+s leaf ˜ℓi , ˜ai
+
+
+
+=
+
+ 
+
+> 12
+
++ 2 εk, s = sg, 
+
+> 12
+
+− 2εk, s = sb,
+
+0, otherwise ,
+
+(9) The rest of the value of the transition kernel follows the same distributions in (6) and (7), i.e., 
+
+P k
+
+> 1+ D, i
+
+(s | leaf 1, a g) = 
+
+ 
+
+> 12
+
++ εk, s = sg, 
+
+> 12
+
+− εk, s = sb,
+
+0, otherwise .
+
+(10) and for all other triples (h, ℓ, a ) /∈ { (1 + d, leaf ∗, 1) , (˜hi, ˜ℓi, ˜ai)},
+
+P i
+
+> k,h
+
+(s | leaf ℓ, a ) = 
+
+( 12 , s ∈ { sg, s b},
+
+0, otherwise . (11) Hence, in this case, the optimal policy is the one that leads the agent to leaf ˜ℓi at step ˜hi, and then selects the good action ˜ai
+
+to reach the good absorbing state with higher probability. At the absorbing states sg and sb, the process stays in the same state deterministically regardless of the action. The transition kernel is illustrated in Figures 3 and 4. We start constructing the transition kernel of MDP Mi with i being the all-zero vector. Next, we proceed to assign the transition probability of MDPs with one-hot index vectors. Then, we proceed to MDPs with one more 1 bit in their index vectors. We continue this process until all transition probabilities are assigned in the MDP with all-one index vector. This process is illustrated in Figure 5 for the case where NT = 2 .Let Ri,k (π) be the dynamic regret of π over the kth stationary segment on instance Mi, i.e., 
+
+Ri,k (π) :=  
+
+> νk−1
+
+X
+
+> t=νk−1
+
+
+
+V t,⋆  
+
+> 1
+
+(st
+
+> 1
+
+) − V t,π  
+
+> 1
+
+(st
+
+> 1
+
+)
+
+
+
+.
+
+16 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 𝑠 ! 𝑠 "##$ ⋮ 𝐴 ac#ons leading                                                 
+
+> to different
+> childern states
+> ⋮
+> ⋮
+> depth 𝐷 ⋯
+> lea f%
+> ⋮
+> lea f&
+> 𝑠 '
+> 𝑠 (
+> 𝑎 ≠𝑎 )*+,*
+> for ℎ<.𝐻
+> 𝑎 =𝑎 )*+,*
+> or ℎ=.𝐻
+> 𝑎 =1
+> 𝑎 =𝐴
+> 𝑎 =1
+> 𝑎 =𝐴
+> 𝑎 =1
+> 𝑎 =𝐴
+> %
+> -+𝜀 .when (𝑎 ,ℎ)=(𝑎 ',1+𝐷 )
+> and %
+> -otherwise
+> 1
+> 2
+> 1
+> 2
+> %
+> -−𝜀 .when (𝑎 ,ℎ)=(𝑎 ',1+𝐷 )
+> and %
+> -otherwise
+
+Figure 3. The transition kernel of MDP Mi with ik = 0 
+
+Fix i ∈ { 0, 1}NT +1 and k ∈ [NT + 1] , and let j be the index obtained by flipping the kth bit, i.e., jk̸ = ik and jl = il for all 
+
+l̸ = k; the map i 7 → j is bijective. Without loss of generality, we assume that ik = 0 and jk = 1 . Then 
+
+Ri,k (π) = X 
+
+> (h,ℓ,a )̸=(1+ D, 1,a g)
+
+εk(H − ¯H − D) Ei,π [nk(leaf ℓ, a, h )] = εk(H − ¯H − D) ( νk − νk−1 − Ei,π [nk(leaf 1, a g, 1 + D)]) 
+
+≥ εk(H − ¯H − D)
+
+
+
+νk − νk−1 − Ei,π 
+
+
+
+nk(leaf 1, a g, 1 + D) nk(leaf 1, a g, 1 + D) ≤ νk − νk−1
+
+2
+
+ 
+
+· Pi,π 
+
+
+
+nk(leaf 1, a g, 1 + D) ≤ νk − νk−1
+
+2
+
+
+
+≥ εk(H − ¯H − D) νk − νk−1
+
+2 Pi,π 
+
+
+
+nk(leaf 1, a g, 1 + D) ≤ νk − νk−1
+
+2
+
+
+
+. (12) Similarly, 
+
+Rj,k (π) = εk(H − ¯H − D) Ej,π [nk(leaf 1, a g, 1 + D)] + X  
+
+> (h,ℓ,a )/∈{ (˜hi,˜ℓi,˜ai),(1+ D, 1,a g)}
+
+2εk(H − ¯H − D) Ej,π [nk(leaf ℓ, a, h )] 
+
+≥ εk(H − ¯H − D) Ej,π [nk(leaf 1, a g, 1 + D)] 
+
+≥ εk(H − ¯H − D) Ej,π 
+
+
+
+nk(leaf 1, a g, 1 + D) nk(leaf 1, a g, 1 + D) > νk − νk−1
+
+2
+
+
+
+· Pj,π 
+
+
+
+nk(leaf 1, a g, 1 + D) > νk − νk−1
+
+2
+
+
+
+≥ εk(H − ¯H − D) νk − νk−1
+
+2 Pj,π 
+
+
+
+nk(leaf 1, a g, 1 + D) > νk − νk−1
+
+2
+
+
+
+. (13) Therefore, 
+
+Ri,k (π) + Rj,k (π) ≥
+
+εk(H − ¯H −D) νk −νk−1
+
+2
+
+
+
+Pi,π 
+
+
+
+nk(leaf 1, a g, 1+ D) ≤ νk −νk−1
+
+2
+
+
+
++ Pj,π 
+
+
+
+nk(leaf 1, a g, 1+ D) ≥ νk −νk−1
+
+2
+
+ 
+
+. (14) 17 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 𝑠 ! 𝑠 "##$ ⋮ 𝐴 actions leading                                                                       
+
+> to different
+> childern states
+> ⋮
+> ⋮
+> depth 𝐷 ⋯
+> lea f%
+> ⋮
+> lea f&
+> 𝑠 '
+> 𝑠 (
+> 𝑎 ≠𝑎 )*+,*
+> for ℎ<.𝐻
+> 𝑎 =𝑎 )*+,*
+> or ℎ=.𝐻
+> 𝑎 =1
+> 𝑎 =𝐴
+> 𝑎 =1
+> 𝑎 =𝐴
+> 𝑎 =1
+> 𝑎 =𝐴
+> %
+> -+𝜀 .when (𝑎 ,ℎ)=(𝑎 ',1+𝐷 )
+> and %
+> -otherwise
+> 1
+> 2
+> 1
+> 2
+> %
+> -−𝜀 .when (𝑎 ,ℎ)=(𝑎 ',1+𝐷 )
+> and %
+> -otherwise
+> ⋮
+> lea f/ℓ!
+> %
+> -+2𝜀 .when (𝑎 ,ℎ)=(9𝑎 1,:ℎ1)
+> and %
+> -otherwise
+> %
+> -−2𝜀 .when (𝑎 ,ℎ)=(9𝑎 1,:ℎ1)
+> and %
+> -otherwise
+
+Figure 4. The transition kernel of MDP Mi with ik = 1 
+
+Let ˜i := ( i1, . . . , i k, 0, . . . , 0) be the index vector obtained by making the bits of i after the kth bit become 0. Similarly, let 
+
+˜j := ( j1, . . . , j k, 0, . . . , 0) be the index vector obtained by making the bits of j after the kth bit become 0. Then, due to the fact that Pkh, i and Pkh, ˜i are identical up to the kth interval, and that Pkh, j and Pkh, ˜j are identical up to the kth interval, we can perform change of measure and obtain 
+
+Ri,k (π) + Rj,k (π) ≥
+
+εk(H − ¯H −D) νk −νk−1
+
+2
+
+
+
+P˜i,π 
+
+
+
+nk(leaf 1, a g, 1+ D) ≤ νk −νk−1
+
+2
+
+
+
++ P˜j,π 
+
+
+
+nk(leaf 1, a g, 1+ D) ≥ νk −νk−1
+
+2
+
+ 
+
+. (15) By the Bretagnolle–Huber inequality, for any event A and measures P and Q,
+
+P(A) + Q(Ac) ≥ 12 exp( −DKL (P∥Q)) . (16) where DKL (P∥Q) denotes the KL divergence between P and Q. Thus, applying it to the bracketed term in the right-hand side of (15) above yields 
+
+Ri,k (π) + R˜i,k (π) ≥ εk(H − ¯H − D) νk − νk−1
+
+2 exp 
+
+
+
+−DKL 
+
+
+
+P˜i,π ∥P˜j,π 
+
+ 
+
+. (17) Since rewards are deterministic, all randomness comes from states and actions. Let the trajectory up to episode t and step h
+
+be 
+
+ζth := ( s11, a 11, . . . , a 1 
+
+> H
+
+, s 1
+
+> H+1
+
+, s 21, a 21, . . . , a 2 
+
+> H
+
+, s 2
+
+> H+1
+
+, . . . , a th−1, s th). (18) Then, 
+
+DKL 
+
+
+
+P˜i,π ∥P˜j,π 
+
+
+
+= E˜i,π 
+
+log 
+
+QNT +1 
+
+> l=1
+
+Qνl−1
+
+> t=νl−1
+
+QHh=1 π(ath | ζth) P lh, ˜i(sth+1 | sth, a th)
+
+QNT +1 
+
+> l=1
+
+Qνl−1
+
+> t=νl−1
+
+QHh=1 π(ath | ζth) P lh, ˜j(sth+1 | sth, a th)
+
+
+
+> (a)
+
+= E˜i,π 
+
+ 
+
+> νk−1
+
+X
+
+> t=νk−1
+
+log 
+
+P k
+
+> ˜hi,˜i
+
+
+
+st 
+
+> ˜hi+1
+
+st
+
+> ˜hi
+
+, a t
+
+> ˜hi
+
+
+
+P k
+
+> ˜hi,˜j
+
+
+
+st 
+
+> ˜hi+1
+
+st
+
+> ˜hi
+
+, a t
+
+> ˜hi
+
+ . (19) 18 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees All -zero vector: 𝐢 = [0,0,0]                                                                                                                                                                                                                            
+
+> 1/2+𝜀 !for (lea f",1,1+𝐷 )
+> 1/2for others
+> (lea f#,3,3+𝐷 )(lea f$,5,2+𝐷 )(lea f%,5,4+𝐷 )
+> One -hot vectors: 𝐢 =[1,0,0]
+> (lea f",2,4+𝐷 )(lea f#,1,2+𝐷 )
+> 1/2+2𝜀 !for (lea f#,3,3+𝐷 )
+> 𝐢 =[0,1,0]
+> (lea f#,3,3+𝐷 )(lea f&,2,1+𝐷 )
+> 1/2+2𝜀 !for (lea f$,5,2+𝐷 )
+> 𝐢 =[0,0,1]
+> 1/2+2𝜀 !for (lea f%,5,4+𝐷 )
+> 1/2for others 1/2for (lea f%,5,4+𝐷 )
+> Vectors with two 1’s: 𝐢 =[1,1,0]
+> 1/2+2𝜀 !for (lea f",2,4+𝐷 )
+> 𝐢 =[1,0,1]𝐢 =[0,1,1]
+> 𝐢 =[1,1,1]
+> 1/2+2𝜀 !for (lea f"" ,4,8+𝐷 )
+> All -one vector:
+> 1/2+𝜀 !for (lea f",1,1+𝐷 )1/2+𝜀 !for (lea f",1,1+𝐷 )1/2+𝜀 !for (lea f",1,1+𝐷 )
+> 1/2+𝜀 !for (lea f",1,1+𝐷 )1/2+𝜀 !for (lea f",1,1+𝐷 )
+> 1/2+𝜀 !for (lea f",1,1+𝐷 )
+> 1/2+𝜀 !for (lea f",1,1+𝐷 )
+> 1/2for (lea f$,5,2+𝐷 )1/2for (lea f$,5,2+𝐷 )
+> 1/2+2𝜀 !for (lea f#,3,3+𝐷 )
+> 1/2for (lea f#,3,3+𝐷 )1/2for others
+> 1/2+2𝜀 !for (lea f#,3,3+𝐷 )1/2+2𝜀 !for (lea f#,1,2+𝐷 )1/2+2𝜀 !for (lea f&,2,1+𝐷 )
+> (lea f#,3,3+𝐷 )(lea f$,5,2+𝐷 )
+> 1/2+2𝜀 !for (lea f$,5,2+𝐷 )
+> (lea f"" ,4,8+𝐷 )(lea f",2,4+𝐷 )(lea f#,3,3+𝐷 )
+> 1/2+2𝜀 !for (lea f",2,4+𝐷 )1/2+2𝜀 !for (lea f#,3,3+𝐷 )
+
+Figure 5. The process of transition probability assignment for the MDPs with NT = 2 . The lines represent the value of the transition probability P kh, i(sg|leaf ℓ, a ), and the intervals are the stationary segments. The colored triple underneath each interval denotes the triple 
+
+(leaf ˜ℓi , ˜ai, ˜hi) in (8). 
+
+In step (a), we use the fact that the transition kernel of M˜i and that of M˜j differ only at step ˜hi during the kth stationary segment. Expanding log-likelihood-ratios yields 
+
+DKL (P˜i,π ∥P˜j,π ) (a)
+
+=
+
+νk −1X
+
+t=νk−1
+
+E˜i,π 
+
+h
+
+− log(1 + 4 εk) 1
+
+n
+
+st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai, s t
+
+˜hi+1 = sg
+
+oi 
+
++
+
+νk −1X
+
+t=νk−1
+
+E˜i,π 
+
+h
+
+− log(1 − 4εk) 1
+
+n
+
+st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai, s t
+
+˜hi+1 = sb
+
+oi 
+
+=
+
+νk −1X
+
+t=νk−1
+
+− log(1 + 4 εk) P˜i,π 
+
+ st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai, s t
+
+˜hi+1 = sg
+
+
+
++
+
+νk −1X
+
+t=νk−1
+
+− log(1 − 4εk) P˜i,π 
+
+ st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai, s t
+
+˜hi+1 = sb
+
+
+
+(b)
+
+=
+
+νk −1X
+
+t=νk−1
+
+− 12 log(1 + 4 εk) P˜i,π 
+
+ st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai
+
+
+
++
+
+νk −1X
+
+t=νk−1
+
+− 12 log(1 − 4εk) P˜i,π 
+
+ st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai
+
+
+
+=
+
+νk −1X
+
+t=νk−1
+
+− 12 log(1 − 16 ε2
+
+k) P˜i,π 
+
+ st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai
+
+
+
+= − 12 log(1 − 16 ε2
+
+k) E˜i,π 
+
+
+
+νk −1X
+
+t=νk−1
+
+1{st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai}
+
+
+
+= − 12 log(1 − 16 ε2
+
+k) E˜i,π 
+
+nk(leaf ˜ℓi , ˜ai, ˜hi). (20) Step (a) follows from the fact that P k
+
+˜hi,˜i(st
+
+˜hi+1 = sg|st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai)/P k
+
+˜hi,˜j(st
+
+˜hi+1 = sg|st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai)) = 1/(1 + 4 εk) and that P k
+
+˜hi,˜i(st
+
+˜hi+1 = sb|st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai)/P k
+
+˜hi,˜j(st
+
+˜hi+1 = sb|st
+
+˜hi
+
+= leaf ˜ℓi , a t
+
+˜hi
+
+= ˜ ai)) = 1 /(1 − 4εk).19 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Step (b) stems from the fact that P k
+
+> ˜hi,˜i
+
+(st 
+
+> ˜hi+1
+
+= sg|st
+
+> ˜hi
+
+= leaf ˜ℓi , a t
+
+> ˜hi
+
+= ˜ ai) = P k
+
+> ˜hi,˜i
+
+(st 
+
+> ˜hi+1
+
+= sb|st
+
+> ˜hi
+
+= leaf ˜ℓi , a t
+
+> ˜hi
+
+= ˜ ai) = 1/2. Using log(1 − x) ≥ − x 
+
+> 1−x
+
+for x ∈ [0 , 1) gives 
+
+DKL (P˜i,π ∥P˜j,π ) ≤ 8ε2
+
+> k
+
+1 − 16 ε2
+
+> k
+
+E˜i,π 
+
+nk(leaf ˜ℓi , ˜ai, ˜hi). (21) Recall that L is the number of leaf nodes. By the definition of (˜hi, ˜ℓi, ˜ai) in (8), we have 
+
+E˜i,π 
+
+nk(leaf ˜ℓi , ˜ai, ˜hi) ≤ νk − νk−1
+
+AL ¯H − 1 , (22) and hence 
+
+DKL (P˜i,π ∥P˜j,π ) ≤ 8ε2
+
+> k
+
+1 − 16 ε2
+
+> k
+
+νk − νk−1
+
+AL ¯H − 1 . (23) Combining the Bretagnolle–Huber lower bound with the above KL upper bound yields 
+
+Ri,k (π) + Rj,k (π) ≥ εk(H − ¯H − D) νk − νk−1
+
+2 exp 
+
+
+
+− 8ε2
+
+> k
+
+1 − 16 ε2
+
+> k
+
+νk − νk−1
+
+AL ¯H − 1
+
+
+
+. (24) Since H ≥ 3D, we have H − ¯H − D ≥ 23 H − ¯H. Then, set εk = [16 + 8( νk − νk−1)/(AL ¯H − 1)] −1/2, we have 
+
+Ri,k (π) + Rj,k (π) ≥ 1
+
+p16 + 8( νk − νk−1)/(AL ¯H − 1) 
+
+ 23 H − ¯H
+
+ νk − νk−1
+
+2e . (25) Notice that εk ≤ 1/4, ensuring that the transition probabilities remain in [0 , 1] . Recall that L = AD−1 = ( S − 3)(1 −
+
+1/A ) + 1 /A . Then, by setting ¯H = H/ 3, we have 
+
+Ri,k (π) + Rj,k (π) ≥ H
+
+6e
+
+s
+
+(νk − νk−1)2
+
+16 + 8( νk − νk−1)/(( S − 3)( A − 1) H/ 3 + H/ 3 − 1) . (26) There are 2NT disjoint pairs (i, j) for each fixed k, hence 
+
+X 
+
+> i∈{ 0,1}NT+1
+
+Ri,k (π) ≥ 2NT · H
+
+6e
+
+s
+
+(νk − νk−1)2
+
+16 + 8( νk − νk−1)/(( S − 3)( A − 1) H/ 3 + H/ 3 − 1) . (27) Without loss of generality, we assume that T is divisible by NT + 1 , meaning that νk − νk−1 = T / (NT + 1) . Thereupon, this implies that, 
+
+2−(NT +1) X  
+
+> i∈{ 0,1}NT+1
+> NT+1
+
+X
+
+> k=1
+
+Ri,k (π) ≥ H
+
+12 e
+
+s
+
+116 /T 2 + 8 /T (NT + 1)(( S − 3)( A − 1) H/ 3 + H/ 3 − 1) . (28) Consequently, there exists ˆi ∈ { 0, 1}NT +1 such that  
+
+> NT+1
+
+X
+
+> k=1
+
+Rˆi,k (π) ≥ H
+
+12 e
+
+s
+
+116 /T 2 + 8 /T (NT + 1)(( S − 3)( A − 1) H/ 3 + H/ 3 − 1) . (29) Since π was arbitrary, it follows that for any algorithm (possibly history-dependent) there exists a PS tabular MDP instance with exactly NT changes such that the expected dynamic regret (where T is the number of episodes) satisfies 
+
+R(π, T ) = Ω( pSAH 3NT T ). (30) This completes the proof. 20 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+B.3. Proof of Theorem 4.13 
+
+Proof. Assume d ≥ 4, H ≥ 4, T ≥ (d − 1) 2H(NT + 1) /8, and NT ≥ 0. Since we construct a single hard instance, we may assume without loss of generality that H is even: if H is odd, append one dummy step with deterministic transition and zero reward. This increases the horizon by 1 and cannot decrease regret. We consider the standard protocol in the main text indexed by (t, h ) ∈ [T ] × [H], and we take the oblivious adversary to always select the same initial state st 
+
+> 1
+
+= x1.Fix change-points 1 = ν0 < ν 1 < · · · < ν NT < ν NT +1 = T + 1 and define segment lengths Lk := νk − νk−1 for 
+
+k ∈ [NT + 1] . We set all segments equal: 
+
+Lk = L := TNT + 1 ∀k ∈ [NT + 1] .
+
+By the assumption on T , we have L ≥ (d − 1) 2H/ 8. Define the amplitude 
+
+∆ := 14√2
+
+r 1
+
+HL = 14√2
+
+r NT + 1 
+
+HT .
+
+For each segment k ∈ [NT + 1] , define parameters 
+
+μ(k) =  μ(k)1 , . . . , μ (k)
+
+> H
+
+, μ(k) 
+
+> h
+
+∈ {− ∆, +∆ }d−1 ∀h ∈ [H/ 2] , μ(k) 
+
+> h
+
+= 0 ∀h > H/ 2,
+
+and write μ = ( μ(1) , . . . , μ (NT +1) ).We now define a piecewise-stationary episodic MDP Mμ (as in the hard instance of (Zhou et al., 2021; Hu et al., 2022)). Let the state space be 
+
+S = {x1, . . . , x H , x H+1 , x H+2 }, st 
+
+> 1
+
+= x1 ∀t ∈ [T ],
+
+so S = H + 2 . Let the action space be A = {− 1, +1 }d−1, so A = 2 d−1. Let ι := 1 /H . Define deterministic rewards (hence Rth(s, a ) = rth(s, a )): 
+
+rth(s, a ) = 1{s = xH+2 }, ∀(t, h ) ∈ [T ] × [H], ∀(s, a ) ∈ S × A ,
+
+and let xH+1 and xH+2 be absorbing. For each segment k ∈ [NT + 1] , for all episodes t ∈ { νk−1, . . . , ν k − 1} and all steps h ∈ [H], define the transitions from s = xh by 
+
+P th(xH+2 | xh, a ) = ι + ⟨μ(k) 
+
+> h
+
+, a ⟩, P th(xh+1 | xh, a ) = 1 − ι − ⟨ μ(k) 
+
+> h
+
+, a ⟩, (31) and all other next-state probabilities are 0; from xH+1 , x H+2 the process stays put deterministically. This makes (rth, P th)
+
+constant within each segment {νk−1, . . . , ν k − 1}, hence the environment is piecewise-stationary with NT changes. We check that (31) defines valid kernels. For a ∈ {− 1, +1 }d−1 and μ(k) 
+
+> h
+
+∈ {− ∆, +∆ }d−1, |⟨ μ(k) 
+
+> h
+
+, a ⟩| ≤ (d − 1)∆ . Using 
+
+L ≥ (d − 1) 2H/ 8 and the definition of ∆,
+
+(d − 1)∆ = ( d − 1) · 14√2
+
+r 1
+
+HL ≤ 12H = ι
+
+2 ,
+
+so ι + ⟨μ(k) 
+
+> h
+
+, a ⟩ ∈ [ι/ 2, 3ι/ 2] ⊆ [0 , 1/2] (since H ≥ 4) and 1 − ι − ⟨ μ(k) 
+
+> h
+
+, a ⟩ ∈ [0 , 1] .Fix any algorithm π (as defined in the main text), and let Pμ,π and Eμ,π denote the induced probability measure and expectation when interacting with Mμ. The dynamic regret in your notation is 
+
+R(π, T ) = 
+
+> T
+
+X
+
+> t=1
+
+ V t,⋆  
+
+> 1
+
+(st
+
+> 1
+
+) − V t,π  
+
+> 1
+
+(st
+
+> 1
+
+) =
+
+> T
+
+X
+
+> t=1
+
+ V t,⋆  
+
+> 1
+
+(x1) − V t,π  
+
+> 1
+
+(x1) ,
+
+and for each segment k ∈ [NT + 1] define 
+
+Rk(π) :=  
+
+> νk−1
+
+X
+
+> t=νk−1
+
+ V t,⋆  
+
+> 1
+
+(x1) − V t,π  
+
+> 1
+
+(x1) , R(π, T ) =  
+
+> NT+1
+
+X
+
+> k=1
+
+Rk(π).
+
+21 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+For each episode t and step h, let ath be the action taken at time (t, h ), and define 
+
+¯ath := Eμ,π 
+
+ath | sth = xh, s t 
+
+> 1
+
+= x1
+
+ ∈ [−1, 1] d−1.
+
+By Lemma 24 of (Zhou et al., 2021), for every episode t in segment k,
+
+V t,⋆  
+
+> 1
+
+(x1) − V t,π  
+
+> 1
+
+(x1) ≥ H
+
+10 
+
+> H/ 2
+
+X
+
+> h=1
+
+
+
+max  
+
+> a∈A
+
+⟨μ(k) 
+
+> h
+
+, a ⟩ − ⟨ μ(k) 
+
+> h
+
+, ¯ath⟩
+
+
+
+. (32) Summing (32) over t = νk−1, . . . , ν k − 1 gives 
+
+Rk(π) ≥ H
+
+10 
+
+> H/ 2
+
+X
+
+> h=1
+
+Bk,h (μ(k) 
+
+> h
+
+), (33) where 
+
+Bk,h (μ(k) 
+
+> h
+
+) :=  
+
+> νk−1
+
+X
+
+> t=νk−1
+
+
+
+max  
+
+> a∈A
+
+⟨μ(k) 
+
+> h
+
+, a ⟩ − ⟨ μ(k) 
+
+> h
+
+, ¯ath⟩
+
+
+
+.
+
+For fixed (k, h ), Bk,h (·) is the pseudo-regret of an L-round Bernoulli linear bandit with action set A = {− 1, +1 }d−1 and unknown parameter μ(k) 
+
+> h
+
+∈ {− ∆, +∆ }d−1 (the mean is ι + ⟨μ(k) 
+
+> h
+
+, a ⟩, and ι is a constant offset). By Lemma 25 of (Zhou et al., 2021) (Bernoulli hypercube linear-bandit lower bound), for any algorithm there exists a choice of μ(k) 
+
+> h
+
+∈ {− ∆, +∆ }d−1 such that 
+
+Eμ,π 
+
+h
+
+Bk,h (μ(k) 
+
+> h
+
+)
+
+i
+
+≥ (d − 1) √Lι 
+
+8√2 = (d − 1) 8√2
+
+r LH . (34) We now fix a single hard instance μ by choosing, for every k ∈ [NT + 1] and h ∈ [H/ 2] , a parameter μ(k) 
+
+> h
+
+satisfying (34) ,and setting μ(k) 
+
+> h
+
+= 0 for h > H/ 2.Taking expectations in (33) and using (34), for each k,
+
+Eμ,π [Rk(π)] ≥ H
+
+10 
+
+> H/ 2
+
+X
+
+> h=1
+
+Eμ,π 
+
+h
+
+Bk,h (μ(k) 
+
+> h
+
+)
+
+i
+
+≥ H
+
+10 · H
+
+2 · (d − 1) 8√2
+
+r LH = (d − 1) 160 √2 H3/2√L. 
+
+Summing over k = 1 , . . . , N T + 1 and substituting L = T / (NT + 1) yields 
+
+Eμ,π [R(π, T )] =  
+
+> NT+1
+
+X
+
+> k=1
+
+Eμ,π [Rk(π)] ≥ (NT + 1) · (d − 1) 160 √2 H3/2√L = (d − 1) 160 √2 H3/2p(NT + 1) T . 
+
+which completes the proof. 
+
+B.4. Proof of DARLING regret bound 
+
+Proof. Consider a piecewise stationary episodic MDP over T episodes with horizon H and NT change-points. Recall that the kth change-point is denoted by νk, and that ν0 := 1 and νNT +1 := T + 1 . Over a stationary segment {νk−1, . . . , ν k − 1},the environment remains stationary in the sense that there exist transition kernels {P (k) 
+
+> h
+
+}h∈[H] and mean reward functions 
+
+{r(k) 
+
+> h
+
+}h∈[H] such that, for all h ∈ [H] and (s, a ) ∈ S × A ,
+
+P th(· | s, a ) = P (k) 
+
+> h
+
+(· | s, a ), rth(s, a ) = r(k) 
+
+> h
+
+(s, a ). (35) Equivalently, one may denote the stationary MDP over the kth stationary segment by (S, A, H, P (k), r (k)) with P (k) =
+
+{P (k) 
+
+> h
+
+}h∈[H] and r(k) = {r(k) 
+
+> h
+
+}h∈[H]. Let τk be the kth episode at which DARLING restarts, i.e., for k ∈ N,
+
+τk := inf {t > τ k−1 : Restart = True } (36) 22 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+with τ0 := 0 . We then define the following events: 
+
+Gk := {∀ l ∈ [k − 1] , τ l ∈ { νl, . . . , ν l + ℓl − 1}} ∩ { τk > ν k} , k ∈ [NT ] . (37) The event Gk represents the “good event” up to the kth restart time-step Gk in which the first k changes are detected within the latencies ℓl’s. For notational convenience, we define G0 to be the universal space. In this section, let E denote the expectation under the probability measure P induced by executing policy π on the NS episodic MDP, and let π∗ be the optimal policy over the piecewise stationary episodic MDP. For brevity and clarity of the notations, we omitted the conditioning on st
+
+> 1
+
+’s, as st 
+
+> 1
+
+are fixed states chosen by an oblivious adversary. Then, we have the following: 
+
+R(π, T )=
+
+> T
+
+X
+
+> t=1
+
+ V t,⋆  
+
+> 1
+
+(st
+
+> 1
+
+) − V t,π  
+
+> 1
+
+(st
+
+> 1
+
+)
+
+= 
+
+> NT+1
+
+X 
+
+> k=1
+> νk−1
+
+X
+
+> t=νk−1
+
+E
+
+" HX
+
+> h=1
+
+rth
+
+ sh, (π∗)th (sh) − rth
+
+ sh, π th (sh)#
+
+= 
+
+> NT+1
+
+X
+
+> k=1
+
+E
+
+ 
+
+> νk−1
+
+X
+
+> t=νk−1
+> H
+
+X
+
+> h=1
+
+rth
+
+ sh, (π∗)th (sh) − rth
+
+ sh, π th (sh)
+
+= 
+
+> NT+1
+
+X
+
+> k=1
+
+P (Gck) E
+
+ 
+
+> νk−1
+
+X
+
+> t=νk−1
+> H
+
+X
+
+> h=1
+
+rth
+
+ sh, (π∗)th (sh) − rth
+
+ sh, π th (sh) Gck
+
+
+
++ 
+
+> NT+1
+
+X
+
+> k=1
+
+E
+
+1 {G k} 
+
+> νk−1
+
+X
+
+> t=νk−1
+> H
+
+X
+
+> h=1
+
+rth
+
+ sh, (π∗)th (sh) − rth
+
+ sh, π th (sh)
+
+> (a)
+
+≤ 
+
+> NT+1
+
+X
+
+> k=1
+
+H (νk − νk−1) P (Gck) +  
+
+> NT+1
+
+X
+
+> k=1
+
+E
+
+1 {G k} 
+
+> νk−1
+
+X
+
+> t=νk−1
+> H
+
+X
+
+> h=1
+
+rth
+
+ sh, (π∗)th (sh) − rth
+
+ sh, π th (sh) (38) where step (a) follows from the fact that the rewards are bounded in [0 , 1] . Now, define 
+
+Ek := {∀ l ∈ [k − 1] , τ l ∈ { νl, . . . , ν l + ℓl − 1}} , k ∈ [NT ] . (39) 
+
+P (Gck) is upper bounded by the following modified union bound, which decomposes the bad event into false alarm events and late detection events: 
+
+P (Gck) = P ({∃ l ∈ [k − 1] , τ l /∈ { νl, . . . , ν l + ℓl − 1}} ∪ { τk ≤ νk})=
+
+> k−1
+
+X
+
+> l=1
+
+P (τl /∈ { νs, . . . , ν l + ℓl − 1} , El−1) + P (τk ≤ νk, Ek−1)=
+
+> k−1
+
+X
+
+> l=1
+
+P (El−1) P  τl /∈ { νl, . . . , ν l + ℓl − 1} El−1
+
+ + P (Ek−1) P  τk ≤ νk Ek−1
+
+
+
+> (a)
+
+≤
+
+> k−1
+
+X
+
+> l=1
+
+P  τl /∈ { νl, . . . , ν l + ℓl − 1} El−1
+
+ + P  τk ≤ νk Ek−1
+
+
+
+=
+
+> k
+
+X
+
+> l=1
+
+P  τl < ν l El−1
+
+| {z }
+
+> Φ1
+
++
+
+> k−1
+
+X
+
+> l=1
+
+P  τl ≥ νl + ℓl El−1
+
+| {z }
+
+> Φ2
+
+(40) where (a) is due to the fact that P {E k−1} ≤ 1. We then separately bound Φ1 and Φ2.
+
+Upper-Bounding Φ1. Recall DARLING illustrated in Algorithm in 1. Between the restart episodes τk−1 and τk, DARLING executes forced exploration every ⌈1/α k⌉ rounds, where αk ∈ (0 , 1) is (adaptive) forced exploration frequency. For each 23 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+episode t > τ k−1, if 
+
+(t − τk−1 − 1) mod ⌈1/α k⌉ = 0 , (41) then episode t is a forced exploration episode. Thereupon, if sth is in the exploration state set Se,h , the agent chooses an action from the exploration action set Asth 
+
+> e,h
+
+uniformly at random, add the received reward into the reward history H(r)(sth,a th,h ),and add the entries of feature vector ϕ(sth+1 , a ′) into the transition history H(P )(sth,a th,h,j,a ′) for each j ∈ [d] and a′ ∈ A .Otherwise, the agent runs the stationary RL algorithm L for that episode. For any h ∈ [H], s ∈ S e,h , a ∈ A s
+
+> e,h
+
+, and u ∈ N,we define t(s,a,h ),u to be the uth episode after τl−1 at which (sth, a th) = ( s, a ) and (t − τl−1 − 1) mod ⌈1/α l⌉ = 0 , i.e., 
+
+t(s,a,h ),u := inf t > t (s,a,h ),u −1 : ( sth, a th) = ( s, a ), (t − τl−1 − 1) mod ⌈1/α l⌉ = 0 (42) with t(s,a,h ),0 = τl−1. Then, we define ns,a,h (t) to be the number of episodes between τl−1 + 1 and t at which (sth, a th) = (s, a ) and (t − τl−1 − 1) mod ⌈1/α l⌉ = 0 , which is the number of samples obtained due to force exploration and added in the reward history H(r)(s,a,h ) and the transition history H(P )(sth,a th,h,j,a ′) given that there are no restarts after τl−1, i.e., 
+
+n(s,a,h ) (t) := 
+
+> t
+
+X
+
+> s=τl−1+1
+
+1 (sth, a th) = ( s, a ), (t − τl−1 − 1) mod ⌈1/α l⌉ = 0 . (43) Recall that GDT represents the change detector, which outputs True if D detects a change. Let τ (r)(s,a,h ) denote the stopping time at which the change detector monitoring H(r)(s,a,h ) declares a change after the (l − 1) th restart episode τl−1, i.e., 
+
+τ (r)(s,a,h ) := inf 
+
+n
+
+u ∈ N : D
+
+
+
+H(r)(s,a,h )
+
+
+
+= True at episode t(s,a,h ),u 
+
+o
+
+. (44) Similarly, let τ (P )(s,a,h,j,a ′) denote the stopping time at which the change detector monitoring H(P )(s,a,h,j,a ′) declares a change after the (l − 1) th restart episode τl−1, i.e., 
+
+τ (P )(s,a,h,j,a ′) := inf 
+
+n
+
+u ∈ N : D
+
+
+
+H(P )(s,a,h,j,a ′)
+
+
+
+= True at episode t(s,a,h ),u 
+
+o
+
+. (45) Let P∞ denote the probability measure at which ft = fνl for all t > ν l, i.e., the probability measure under which the MDP becomes stationary after the kth change-point. Then, for all l ∈ [NT + 1] , we have 
+
+P (τl < ν l|E l−1)= P({∃ (s, a, h ) : s ∈ S e,h , a ∈ A s
+
+> e,h
+
+, τ (r)(s,a,h ) ≤ n(s,a,h ) (νl − 1) }∪ {∃ (s, a, h, j, a ′) : s ∈ S e,h , a ∈ A s
+
+> e,h
+
+, j ∈ [d], a ′ ∈ A , τ (P )(s,a,h,j,a ′) ≤ n(s,a,h ) (νl − 1) } El−1)
+
+> (a)
+
+≤
+
+> H
+
+X
+
+> h=1
+
+X
+
+> s∈S e,h
+> s
+
+X
+
+> a∈A e,h
+
+P
+
+
+
+τ (r)(s,a,h ) ≤ n(s,a,h ) (νl − 1) El−1
+
+
+
++
+
+> H
+
+X
+
+> h=1
+
+X
+
+> s∈S e,h
+> s
+
+X
+
+> a∈A e,h
+> d
+
+X
+
+> j=1
+
+X
+
+> a′∈A
+
+P
+
+
+
+τ (P )(s,a,h,j,a ′) ≤ n(s,a,h ) (νl − 1) El−1
+
+
+
+> (b)
+
+≤
+
+> H
+
+X
+
+> h=1
+
+X
+
+> s∈S e,h
+> s
+
+X
+
+> a∈A e,h
+
+P∞
+
+
+
+τ (r)(s,a,h ) ≤ T El−1
+
+
+
++
+
+> H
+
+X
+
+> h=1
+
+X
+
+> s∈S e,h
+> s
+
+X
+
+> a∈A e,h
+> d
+
+X
+
+> j=1
+
+X
+
+> a′∈A
+
+P∞
+
+
+
+τ (P )(s,a,h,j,a ′) ≤ T El−1
+
+
+
+> (c)
+
+≤
+
+> H
+
+X
+
+> h=1
+
+X
+
+> s∈S e,h
+> s
+
+X
+
+> a∈A e,h
+
+δF +
+
+> H
+
+X
+
+> h=1
+
+X
+
+> s∈S e,h
+> s
+
+X
+
+> a∈A e,h
+> d
+
+X
+
+> j=1
+
+X
+
+> a′∈A
+
+δF
+
+=
+
+(HS 2A2δF, for PS tabular episodic MDP ,Hd 2Aδ F, for PS linear episodic MDP .
+
+(46) 24 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+where step (a) results from a union bound. Due to the fact that the rewards at step h conditioned on the same state-action pair between τl−1 and νl are i.i.d. given the past event El−1 (as there are no changes between τl−1 and νl), we can change the measure to P∞ in step (b). Similarly, the next state conditioned on the same current state-action pair between τl−1 and 
+
+νl are i.i.d. given the past event El−1, which allows for changing measure to P∞. In addition, because na (νl − 1) ≤ T , the event {τa,l ≤ na (νl − 1) } ⊆ { τa,l ≤ T }. In step (c), we can apply the false alarm probability upper bound for the change detectors in Section 4.3, as the sequence of rewards conditioned on the same state-action pair are i.i.d. sub-Gaussian, and so are the sequence of the jth entries of the feature vector evaluated at (sth+1 , a ′) conditioned on the same current state-action pair. 
+
+Upper Bounding Φ2. Let (s∗, a ∗, h ∗) be the state-action-step triple at which the mean reward or the transition kernel shifts the most at νl, i.e., 
+
+(s∗, a ∗, h ∗) := argmax 
+
+> h∈[H],s ∈S e,h ,a ∈A s
+> e,h
+
+max {| r(l+1)  
+
+> h
+
+(s, a ) − r(l) 
+
+> h
+
+(s, a )|,
+
+max 
+
+> j∈[d],a ′∈A
+
+{| Esth+1 ∼P (l+1) 
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ] − Esth+1 ∼P (l)
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ]|}} . (47) We define the events Ml and Ll as follows: 
+
+Ml := n(s∗,a ∗,h ∗)(νl − 1) ≥ mD , (48) 
+
+Ll := n(s∗,a ∗,h ∗)(νl + ℓl − 1) − n(s∗,a ∗,h ∗)(νl − 1) ≥ ℓD . (49) When τl ≥ νl + ℓl, there are at least mD reward samples with mean r(l) 
+
+> h∗
+
+(s∗, a ∗) in H(r)(s∗,a ∗,h ∗) under the event Ml, and there are at least ℓD reward samples with mean r(l) 
+
+> h∗
+
+(s∗, a ∗) in H(r)(s∗,a ∗,h ∗) under the event Ll. Similarly, given that τl ≥ νl + ℓl,there are at least mD samples with mean Esth+1 ∼P (l)
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ] in H(P )(s∗,a ∗,h ∗,j,a ′) under the event Ml, and there are at least ℓD samples with mean Esth+1 ∼P (l+1) 
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ] in H(P )(s∗,a ∗,h ∗,j,a ′) under the event Ll. Then, we have, 
+
+P  τl ≥ νl + ℓl El−1
+
+
+
+≤ P  {τl ≥ νl + ℓl} ∪ M cl ∪ L cl El−1
+
+
+
+= P  Mcl ∪ L cl El−1
+
+ + P  {τl ≥ νl + ℓl} ∩ M l ∩ L l El−1
+
+
+
+= P  Mcl ∪ L cl El−1
+
+ + P  Ml ∩ L l El−1
+
+ P  τl ≥ νl + ℓl Ml ∩ L l ∩ E l−1
+
+
+
+> (a)
+
+≤ P  Mcl El−1
+
+ + P  Lcl El−1
+
+ + P  τl ≥ νl + ℓl Ml ∩ L l ∩ E l−1
+
+ (50) where step (a) follows from a union bound and the fact that P  Ml ∩ L l El−1
+
+ ≤ 1. Recall that n(s,a,h ) (t) is the number of episodes between τl−1 + 1 and t at which sth = s and ath = a, and that Ne = max h∈[H],s ∈S e,h N s 
+
+> e,h
+
+in Definition 4.9. 25 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Then, we have 
+
+E n(s∗,a ∗,h ∗) (νl − 1) − n(s∗,a ∗,h ∗) (τl−1) |E l−1
+
+
+
+> (a)
+
+≥ E n(s∗,a ∗,h ∗) (νl − 1) − n(s∗,a ∗,h ∗) (νl − ml − 1) |E l−1
+
+
+
+= E
+
+" νl−1X
+
+> t=νl−ml
+
+1 (sth∗ , a th∗ ) = ( s∗, a ∗), (t − τl−1 − 1) mod ⌈1/α l⌉ = 0 El−1
+
+#
+
+=
+
+> νl−1
+
+X
+
+> t=νl−ml
+
+P  (sth∗ , a th∗ ) = ( s∗, a ∗)|E l−1
+
+ 1 {(t − τl − 1) mod ⌈1/α l⌉ = 0 }
+
+> (b)
+
+=
+
+> νl−1
+
+X
+
+> t=νl−ml
+
+P  (sth∗ , a th∗ ) = ( s∗, a ∗) 1 {(t − τl − 1) mod ⌈1/α l⌉ = i − 1}
+
+> (c)
+
+≥ pm
+
+Ne
+
+> νl−1
+
+X
+
+> t=νl−ml
+
+1 {(t − τl − 1) mod ⌈1/α l⌉ = i − 1}
+
+> (d)
+
+= pm
+
+Ne
+
+ ml
+
+⌈1/α l⌉
+
+
+
+= pm
+
+Ne
+
+&
+
+mD Ne
+
+pm
+
++ N 2e log T
+
+4p2m
+
++
+
+s
+
+N 3e mD log T
+
+2p3m
+
++ N 4e (log T )2
+
+16 p4m
+
+'
+
+, (51) and 
+
+E n(s∗,a ∗,h ∗) (νl + ℓl − 1) − n(s∗,a ∗,h ∗) (νl − 1) 
+
+= E
+
+"νl+ℓl−1X
+
+> t=νl
+
+1 (sth∗ , a th∗ ) = ( s∗, a ∗), (t − τk − 1) mod ⌈1/α l⌉ = 0 
+
+#
+
+=
+
+> νl+ℓl−1
+
+X
+
+> t=νl
+
+P  (sth∗ , a th∗ ) = ( s∗, a ∗)|E l−1
+
+ 1 {(t − τl − 1) mod ⌈1/α l⌉ = 0 }
+
+> (e)
+
+=
+
+> νl+ℓl−1
+
+X
+
+> t=νl
+
+P  (sth∗ , a th∗ ) = ( s∗, a ∗) 1 {(t − τl − 1) mod ⌈1/α l⌉ = 0 } 
+
+> (f)
+
+≥ pm
+
+Ne
+
+> νl+ℓl−1
+
+X
+
+> t=νl
+
+1 {(t − τl − 1) mod ⌈1/α l⌉ = 0 }
+
+> (g)
+
+= pm
+
+Ne
+
+ ℓl
+
+⌈1/α l⌉
+
+
+
+= pm
+
+Ne
+
+&
+
+ℓD Ne
+
+pm
+
++ N 2e log T
+
+4p2m
+
++
+
+s
+
+N 3e ℓD log T
+
+2p3m
+
++ N 4e (log T )2
+
+16 p4m
+
+'
+
+. (52) In step (a), since τl−1 ≤ νl−1 + ℓl−1 − 1 given El−1 and νl − νl−1 ≥ ℓl−1 + ml by Assumption 4.10, τl−1 ≤ νl − ml − 1
+
+and thus n(s∗,a ∗.h ∗) (νl − 1) ≤ n(s∗,a ∗.h ∗) (νl − ml − 1) . Steps (b) and (e) follow from the independence between 
+
+{(sth∗ , a th∗ )}t>τ l:( t−τl−1) mod ⌈1/α l⌉=0 and El−1. Steps (c) and (f ) stem from the definition of pm in Assumption 4.7 and the fact that each action in the exploration action set is chosen uniformly at random. Steps (d) and (g) result from the fact 26 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+that ml and ℓl are divisible by ⌈1/α l⌉. Therefore, 
+
+P  Mcl El−1
+
+
+
+= P  n(s∗,a ∗,h ∗)(νl − 1) < m D |E l−1
+
+
+
+> (a)
+
+≤ exp −2  E n(s∗,a ∗,h ∗)(νl − 1)  − mD
+
+2
+
+Pνl−1 
+
+> t=τl+1
+
+1 {(t − τl − 1) mod ⌈1/α l⌉ = 0 }
+
+!
+
+> (b)
+
+≤ exp 
+
+
+
+−2
+
+
+
+pm⌈mD Ne/p m + ( N 2e log T )/(4 p2m) + p(mD log( T )N 3e )/(2 p3m) + ((log T )2N 4e )/(16 p4m)⌉ − mD
+
+2
+
+Ne⌈mD Ne/p m + ( N 2e log T )/(4 p2m) + p(mD log( T )N 3e )/(2 p3m) + ((log T )2N 4e )/(16 p4m)⌉
+
+
+
+≤ T −1, (53) and 
+
+P  Lcl El−1
+
+
+
+= P  n(s∗,a ∗,h ∗)(νl + ℓl − 1) − n(s∗,a ∗,h ∗)(νl − 1) < ℓ D |E l−1
+
+
+
+> (c)
+
+≤ exp −2  E n(s∗,a ∗,h ∗)(νl + ℓl − 1) − n(s∗,a ∗,h ∗)(νl − 1)  − ℓD
+
+2
+
+Pνl+ℓl−1 
+
+> t=νl
+
+1 {(t − τl − 1) mod ⌈1/α l⌉ = 0 }
+
+!
+
+> (d)
+
+≤ exp 
+
+
+
+−2
+
+
+
+pm⌈ℓD Ne/p m + ( N 2e log T )/(4 p2m) + p(ℓD log( T )N 3e )/(2 p3m) + ((log T )2N 4e )/(16 p4m)⌉ − ℓD
+
+2
+
+Ne⌈ℓD Ne/p m + ( N 2e log T )/(4 p2m) + p(ℓD log( T )N 3e )/(2 p3m) + ((log T )2N 4e )/(16 p4m)⌉
+
+
+
+≤ T −1. (54) In steps (a) and (c), we apply Hoeffding’s inequality, as {1{sth∗ = s∗, a th∗ = a∗}} t>τ l:( t−τl−1) mod ⌈1/α l⌉=0 is a sequence of i.i.d. Bernoulli random variables with parameter greater than pm/N e. In steps (b) and (d), we apply (52). Before bounding the third term in (50) , recall the definitions of the stopping times of the change detectors in (44) and (45) . Without loss of generality, we assume that νl ≤ T − ℓl; otherwise, there is no need to detect the change be-cause the horizon will end soon after the change occurs. Let Pr ν denote the probability measure whose distribution changes at the νth sample. For the case where |r(l+1)  
+
+> h
+
+(s, a ) − r(l) 
+
+> h
+
+(s, a )| ≥ max j∈[d],a ′∈A {| Esth+1 ∼P (l+1) 
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ] −
+
+Esth+1 ∼P (l)
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ]|} , we can derive 
+
+P (τl ≥ νl + ℓl|E l−1 ∩ M l ∩ L l)= P(∀ h ∈ [H], ∀ s ∈ S e,h , ∀ a ∈ A s
+
+> e,h
+
+, ∀ j ∈ [d], ∀ a′ ∈ A ,τ (r)(s,a,h ) > n (s,a,h ) (νl + ℓl − 1) , τ (P )(s,a,h,j,a ′) > n (s,a,h ) (νl + ℓl − 1) |E l−1 ∩ M l ∩ L l)
+
+> (a)
+
+≤ P
+
+
+
+τ (r)(s∗,a ∗,h ∗) > n (s∗,a ∗,h ∗) (νl + ℓl − 1) El−1 ∩ M l ∩ L l
+
+
+
+> (b)
+
+≤ P
+
+
+
+τ (r)(s∗,a ∗,h ∗) > n (s∗,a ∗,h ∗) (νl − 1) + ℓD El−1 ∩ M l ∩ L l
+
+
+
+> (c)
+
+≤ sup    
+
+> ν∈{ mD+1 ,...,T −ℓD}
+
+Pν
+
+
+
+τ (r)(s∗,a ∗,h ∗) ≥ ν + ℓD El−1 ∩ M l ∩ L l
+
+
+
+> (d)
+
+≤ δD. (55) For the other case where |r(l+1)  
+
+> h
+
+(s, a ) − r(l) 
+
+> h
+
+(s, a )| < max j∈[d],a ′∈A {| Esth+1 ∼P (l+1) 
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ] −
+
+Esth+1 ∼P (l)
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ]|} , let (j∗, a ′∗ ) := arg max j∈[d],a ′∈A {| Esth+1 ∼P (l+1) 
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ] −
+
+27 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Esth+1 ∼P (l)
+
+> h+1
+
+[[ ϕ(sth+1 , a ′)] j ]|} . We can similarly obtain 
+
+P (τl ≥ νl + ℓl|E l−1 ∩ M l ∩ L l)= P(∀ h ∈ [H], ∀ s ∈ S e,h , ∀ a ∈ A s
+
+> e,h
+
+, ∀ j ∈ [d], ∀ a′ ∈ A ,τ (r)(s,a,h ) > n (s,a,h ) (νl + ℓl − 1) , τ (P )(s,a,h,j,a ′) > n (s,a,h ) (νl + ℓl − 1) |E l−1 ∩ M l ∩ L l)
+
+> (e)
+
+≤ P
+
+
+
+τ (P )(s∗,a ∗,h ∗,j ∗,a ′∗ ) > n (s∗,a ∗,h ∗) (νl + ℓl − 1) El−1 ∩ M l ∩ L l
+
+ 
+
+> (f)
+
+≤ P
+
+
+
+τ (P )(s∗,a ∗,h ∗,j ∗,a ′∗ ) > n (s∗,a ∗,h ∗) (νl − 1) + ℓD El−1 ∩ M l ∩ L l
+
+
+
+> (g)
+
+≤ sup    
+
+> ν∈{ mD+1 ,...,T −ℓD}
+
+Pν
+
+
+
+τ (P )(s∗,a ∗,h ∗,j ∗,a ′∗ ) ≥ ν + ℓD El−1 ∩ M l ∩ L l
+
+
+
+> (h)
+
+≤ δD. (56) In steps (a) and (e), DARLING restarts at the minimum of the stopping time, leading to the inequalities. Steps (b) and (f )
+
+stem from the fact that n(s∗,a ∗,h ∗) (νl + ℓl − 1) − n(s∗,a ∗,h ∗) (νl − 1) ≥ ℓD given Ll. Steps (c) and (g) result from the fact that n(s∗,a ∗,h ∗) (νl − 1) ≥ mD given Ml and νl ≤ T − ℓl. Recall the definition of t(s,a,h ),u in (42) . Step (d) follows from the definition of latency in Section 4.3, as the rewards at step h∗ conditioned on the state-action pair (s∗, a ∗) are independent sub-Gaussian whose distribution changes at ν, given El−1, Ll, and Ml. Step (h) also follows from the definition of latency in Section 4.3, as the sequence of the jth entries of the feature vector evaluated at (sth+1 , a ′∗ ) conditioned on the current state-action pair (s∗, a ∗) are independent sub-Gaussian whose distribution changes at ν, given El−1, Ll, and Ml. Plugging (53), (54), (55), and (56) into (50), we have 
+
+P  τl ≥ νl + ℓl El−1
+
+ ≤ 2T −1 + δD. (57) This completes bounding Φ1 and Φ2. Plugging (46) and (57) into (40), we obtain 
+
+P {G ck} ≤ 
+
+(kHS 2A2δF + ( k − 1)  2T −1 + δD
+
+ , for PS tabular episodic MDP ,kHd 2Aδ F + ( k − 1)  2T −1 + δD
+
+ , for PS linear episodic MDP . . (58) This bounds the first term in (38). For convenience in bounding the second term in (38) , we define ¯α := max k=1 ,...,N T +1 αk. For any k ∈ [NT + 1] , if 
+
+(t − τk−1 − 1 mod ⌈1/α k⌉)̸ = 0 , then At follows the stationary RL algorithm L. Thus, the second term in (38) can then be decomposed as follows: 
+
+E
+
+1 {G k} 
+
+> νk−1
+
+X
+
+> t=νk−1
+> H
+
+X
+
+> h=1
+
+rth
+
+ sh, (π∗)th (sh) − rth
+
+ sh, π th (sh)
+
+> (a)
+
+≤ ℓk−1 +
+
+ νk − νk−1
+
+⌈1/α k⌉
+
+
+
++ E
+
+1{G k} 
+
+> νk−1
+
+X  
+
+> t=τk−1+1:( t−τk−1−1) mod ⌈1/α k⌉̸ =0
+> H
+
+X
+
+> h=1
+
+rth
+
+ sh, (π∗)th (sh) − rth
+
+ sh, π th (sh)
+
+> (b)
+
+≤ ℓk−1 + [ αk (νk − νk−1) + 1] + RL (νk − νk−1)
+
+≤ ℓk−1 + [¯ α (νk − νk−1) + 1] + RL (νk − νk−1) (59) where in step (a), the first term bounds the regret due to the delay of the change detector, and the second term bounds the regret incurred due to forced exploration. In step (b), as the rewards and the trajectories in the history of the L are independent of those in H(r) 
+
+> s,a,h
+
+and H(P ) 
+
+> s,a,h,j,a ′
+
+, and that Gk only depends on samples in H(r) 
+
+> s,a,h
+
+and H(P ) 
+
+> s,a,h,j,a ′
+
+, the regret bound of L applies. We also apply the fact that RL (T ) is increasing with T . For the tabular MDP case, we can plug (59) 28 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+and (58) into (38) and obtain: 
+
+R(π, T )
+
+≤ 
+
+> NT+1
+
+X
+
+> k=1
+
+H (νk − νk−1)  kHd 2Aδ F + ( k − 1)  2T −1 + δD
+
+ 
+
++ 
+
+> NT+1
+
+X
+
+> k=1
+
+(Hℓ k−1 + H [¯ α (νk − νk−1) + 1] + RL (νk − νk−1)) 
+
+≤ 
+
+> NT+1
+
+X
+
+> k=1
+
+H (νk − νk−1)  (NT + 1) Hd 2Aδ F + NT
+
+ 2T −1 + δD
+
+ 
+
++ 
+
+> NT+1
+
+X
+
+> k=1
+
+(Hℓ k−1 + H [¯ α (νk − νk−1) + 1] + RL (νk − νk−1)) = T H 2d2A (NT + 1) δF + 2 HN T + T HN T δD + H
+
+> NT
+
+X
+
+> k=1
+
+ℓk + H (¯ αT + 1) + H 
+
+> NT+1
+
+X
+
+> k=1
+
+RL (νk − νk−1)
+
+> (a)
+
+≤ T H 2d2A (NT + 1) δF + 2 NT + T N T Hδ D + H
+
+> NT
+
+X
+
+> k=1
+
+ℓk + H (¯ αT + 1) + ( NT + 1) RL
+
+ TNT + 1 
+
+
+
+. (60) In step (a), we apply Jensen’s inequality to the concave function RL. For the linear MDP case, we can obtain: 
+
+R(π, T )
+
+≤ 
+
+> NT+1
+
+X
+
+> k=1
+
+H (νk − νk−1)  kHS 2A2δF + ( k − 1)  2T −1 + δD
+
+ 
+
++ 
+
+> NT+1
+
+X
+
+> k=1
+
+(ℓk−1 + [¯ α (νk − νk−1) + 1] + RL (νk − νk−1)) 
+
+≤ 
+
+> NT+1
+
+X
+
+> k=1
+
+H (νk − νk−1)  (NT + 1) HS 2A2δF + NT
+
+ 2T −1 + δD
+
+ 
+
++ 
+
+> NT+1
+
+X
+
+> k=1
+
+(ℓk−1 + [¯ α (νk − νk−1) + 1] + RL (νk − νk−1)) = T H 2S2A2 (NT + 1) δF + 2 HN T + T HN T δD + H
+
+> NT
+
+X
+
+> k=1
+
+ℓk + H (¯ αT + 1) +  
+
+> NT+1
+
+X
+
+> k=1
+
+RL (νk − νk−1)
+
+> (a)
+
+≤ T H 2S2A2 (NT + 1) δF + 2 HN T + T HN T δD + H
+
+> NT
+
+X
+
+> k=1
+
+ℓk + H (¯ αT + 1) + ( NT + 1) RL
+
+ TNT + 1 
+
+
+
+. (61) In step (a), we apply Jensen’s inequality to the concave function RL. This concludes the proof of Theorem 4.11. 
+
+## C. Experimental Details 
+
+C.1. General Formulations of GLR and GSR 
+
+For completeness, we summarize the general forms of the Generalized Likelihood Ratio (GLR) and Generalized Shiryaev– Roberts (GSR) tests for sequential change detection. Let (Xi)i≥1 be a sequence of real-valued observations generated from a parametric family {fθ : θ ∈ R}. Both tests compare the no-change hypothesis (a single parameter θ for all samples) against the single change-point alternative (parameters θ0 before the change and θ1 after). 29 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+Algorithm 3 G eneralized Likelihood Ratio Test (GLR) 
+
+1: Input : history H = {X1, . . . , X n}, δF, δD, divergence 
+
+kl( ·, ·)
+
+2: for t = 1 to n − 1 do 
+
+3: Compute ˆμ1: t, ˆμt+1: n, ˆμ1: n
+
+4: GLR t ← t kl(ˆ μ1: t, ˆμ1: n) + ( n − t) kl(ˆ μt+1: n, ˆμ1: n)
+
+5: if GLR t ≥ βGLR (n, δ F) then return True 
+
+Algorithm 4 G eneralized Shiryaev– Roberts Test (GSR) 
+
+1: Input : history H = {X1, . . . , X n}, δF, δD, divergence 
+
+kl( ·, ·), GSR ← 0
+
+2: for t = 1 to n − 1 do 
+
+3: Compute ˆμ1: t, ˆμt+1: n, ˆμ1: n
+
+4: GSR ← GSR + exp(GLR t) (according to Alg 3) 5: if log(GSR) ≥ βGSR (n, δ F) + log n then return True 
+
+GLR test. The GLR stopping time is defined as 
+
+τGLR := inf 
+
+n
+
+n ∈ N : Gn ≥ β(n, δ F)
+
+o
+
+,
+
+where the GLR statistic is 
+
+Gn := sup 
+
+> t∈[n]
+
+log sup θ0∈R sup θ1∈R
+
+Qti=1 fθ0 (Xi) Qni=t+1 fθ1 (Xi)sup θ∈R
+
+Qni=1 fθ (Xi)
+
+!
+
+.
+
+GSR test. The GSR stopping time is 
+
+τGSR := inf 
+
+n
+
+n ∈ N : log Wn ≥ β(n, δ F) + log n
+
+o
+
+,
+
+with statistic 
+
+Wn := 1
+
+n
+
+> n
+
+X
+
+> t=1
+
+sup θ0∈R sup θ1∈R
+
+Qti=1 fθ0 (Xi) Qni=t+1 fθ1 (Xi)sup θ∈R
+
+Qni=1 fθ (Xi)
+
+!
+
+.
+
+Anytime-valid threshold. In the general case, for any target false-alarm level δF ∈ (0 , 1) , we use the threshold 
+
+β(n, δ F) = 6 log  1 + log n + 52 log 
+
+ 4n3/2
+
+δF
+
+
+
++ 11 . (62) 
+
+Empirical-mean (Bernoulli / Gaussian) specialization. For the families used in our experiments and implementations (Algorithms 3–4), following Besson et al. (2022); Huang et al. (2025a), the log-likelihood ratio at a candidate split 
+
+t ∈ { 1, . . . , n − 1} admits the closed form 
+
+log sup θ0∈R
+
+Qti=1 fθ0 (Xi) sup θ1∈R
+
+Qni=t+1 fθ1 (Xi)sup θ∈R
+
+Qni=1 fθ (Xi)
+
+!
+
+= t kl  ˆμ1: t, ˆμ1: n
+
+ + ( n − t) kl  ˆμt+1: n, ˆμ1: n
+
+, (63) where ˆμa:b denotes the empirical mean of {Xa, . . . , X b}. For sub-Bernoulli observations we use 
+
+kl( x, y ) = x ln xy + (1 − x) ln 1 − x
+
+1 − y ,
+
+and for σ2-sub-Gaussian observations (Gaussian mean-shift proxy), 
+
+kl( x, y ) = (x − y)2
+
+2σ2 .
+
+In our experiments, we use the Bernoulli variants for sub-Bernoulli rewards (with kl as above). For σ2-sub-Gaussian observations we use the Gaussian proxy divergence kl( x, y ) = ( x − y)2/(2 σ2).30 Detection Augmented Reinforcement Learning with Non-Stationary Guarantees 
+
+C.2. Experimental Environments Exploration-hard “combination-lock” benchmarks. We evaluate on two standard combination-lock MDPs (Mao et al., 2022; Zhou et al., 2022) which are designed to require deep exploration : a near-optimal return is only obtained by executing a long, specific action prefix of length H, while most other action sequences quickly lead to a “trap” region with small but dense rewards. This creates a strong local optimum (exploiting the trap) that can dominate na ˜A¯ve exploration, even though the globally optimal behavior is to keep searching for the rare high-reward chain. In particular, under uniform exploration the probability of reaching the high-reward endpoint scales as A−H , so identifying the correct action sequence can be exponentially hard in H without principled exploration or structure. We use these benchmarks to stress-test adaptation under both PS and drifting non-stationarity. 
+
+Tabular MDP: Bidirectional Diabolical Combination Lock. We follow the Bidirectional Diabolical Combination Lock construction Mao et al. (2022) in which each episode starts from a fixed initial state. The first action routes the agent into one of two “locks” (paths), each a chain of length H; along each chain, at every step there is a unique correct action that advances to the next state on that path, whereas any of the other A − 1 actions sends the agent to an absorbing sinking state. The MDP is mildly stochastic: even when the agent selects the correct action, the intended transition succeeds with probability 0.98 , and with probability 0.02 the agent still falls into the sink. Rewards are sparse on the optimal behavior: taking correct actions yields reward 0, and the only large reward occurs at the endpoint of a path (one endpoint gives reward 
+
+1, the other gives 0.25 ). By contrast, entering the sink yields a small reward of 18H at the transition step and then a per-step reward of 18H thereafter, making the sink a tempting locally-optimal attractor. Non-stationarity. For drifting experiments we use the original gradual protocol in Mao et al. (2022): the routing dynamics at the initial state are linearly morphed over time so that an action that initially reaches path 1 with probability 0.98 (and path 2 with probability 0.02 ) is gradually transformed to reach path 1 with probability 0.02 (and path 2 with probability 0.98 ), with the symmetric change applied to the other action. For abrupt PS experiments, we use the same endpoint-swap mechanism as Mao et al. (2022), but replace their fixed-period switching with a geometric change-point model Gerogiannis et al. (2025b): segment lengths are i.i.d. geometric with parameter T −ξ for ξ ∈ { 0.4, 0.6, 0.8} over a horizon of T = 50000 episodes, and at each change-point the two endpoints swap identities (the 1 and 0.25 rewards exchange). Unless otherwise stated, we use the benchmark parameterization (Mao et al., 2022) H = 5 , S = 10 , A = 2 , and report cumulative reward averaged over multiple random seeds. 
+
+Linear MDP: Synthetic Chain Combination Lock. We follow the synthetic linear-MDP “chain lock” construction Zhou et al. (2022) with S = 15 states, A = 7 actions, horizon H = 10 , feature dimension d = 10 , and 5 special candidate chains. The MDP is linear: transitions factor as P (k) 
+
+> h
+
+(s′ | s, a ) = ⟨ϕ(s, a ), μ h,k (s′)⟩, where the known feature map ϕ : S × A → Rd
+
+is one-hot , so each (s, a ) deterministically selects a latent index in [d]. The feature map is constructed so that for each special chain index i ∈ { 1, . . . , 5}, there is a designated “correct” action ai at state si with ϕ(si, a i) = ei; taking any other action at si maps to a random latent coordinate in [d] \ { i} (uniformly). For all remaining (“normal”) states si with i ≥ 6,every action maps to a uniformly random latent coordinate in [d]. Given this ϕ, the vectors μh,k are chosen so that in each episode there is exactly one connected special chain g ∈ [5] that behaves like a combination lock: the latent index g
+
+induces transitions that keep the agent on the corresponding chain with high probability (e.g., 0.99 vs. 0.01 ), while the other special chains are “broken” by reversing these probabilities; the remaining (normal) latent indices transition to randomly chosen states (e.g., a 0.8/0.2 split between two random next states). Rewards are also linear, r(k) 
+
+> h
+
+(s, a ) = ⟨ϕ(s, a ), θ h,k ⟩:for the good-chain coordinate g, the reward is 0 for steps h ≤ H − 1 and 1 at the terminal step h = H, whereas all other coordinates receive small dense rewards (e.g., i.i.d. in [0 .005 , 0.008] ), again creating a strong local optimum away from the rare terminal reward. Non-stationarity. For drifting experiments we use the original gradual protocol in (Zhou et al., 2022), which continuously shifts the identity of the good chain by interpolating (via convex combinations) between successive base MDPs over fixed windows (e.g., 100 episodes). For abrupt PS experiments, we use the same abrupt switching mechanism as Zhou et al. (2022), and the identity of the good chain g ∈ [5] changes at change-points but we draw segment lengths i.i.d. from the same geometric change-point model used in the tabular benchmark (parameter T −ξ with ξ ∈ { 0.4, 0.6, 0.8} over 
+
+T = 50000 episodes). Performance is reported as cumulative reward averaged over multiple random seeds. 
+
+C.3. Hardware Specifications 
+
+All experiments were employed on a desktop using an Intel(R) Xeon(R) W-2245 processor with 32 GB RAM. 31
