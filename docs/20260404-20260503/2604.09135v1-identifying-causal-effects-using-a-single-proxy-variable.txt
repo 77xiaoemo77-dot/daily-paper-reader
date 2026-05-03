@@ -1,0 +1,3977 @@
+Title: Identifying Causal Effects Using a Single Proxy Variable
+
+URL Source: https://arxiv.org/pdf/2604.09135v1
+
+Published Time: Mon, 13 Apr 2026 00:58:01 GMT
+
+Number of Pages: 54
+
+Markdown Content:
+# Identifying Causal Effects Using a Single Proxy Variable 
+
+Silvan Vollmer sivo@math.ku.dk 
+
+Department of Mathematical Sciences University of Copenhagen Copenhagen, Denmark 
+
+Niklas Pfister ∗ niklas.pfister@gmail.com 
+
+Lakera AI Zurich, Switzerland 
+
+Sebastian Weichwald ∗ sweichwald@math.ku.dk 
+
+Department of Mathematical Sciences University of Copenhagen Copenhagen, Denmark 
+
+Abstract 
+
+Unobserved confounding is a key challenge when estimating causal effects from a treatment on an outcome in scientific applications. In this work, we assume that we observe a single, potentially multi-dimensional proxy variable of the unobserved confounder and that we know the mechanism that generates the proxy from the confounder. Under a completeness assumption on this mechanism, which we call Single Proxy Identifiability of Causal Effects or simply SPICE, we prove that causal effects are identifiable. We extend the proxy-based causal identifiability results by Kuroki and Pearl (2014); Pearl (2010) to higher dimensions, more flexible functional relationships and a broader class of distributions. Further, we develop a neural network based estimation framework, SPICE-Net, to estimate causal effects, which is applicable to both discrete and continuous treatments. 
+
+Keywords: unobserved confounding, single proxy, identifiability, causal effects, measure-ment error 
+
+1 Introduction 
+
+Unobserved confounding is a fundamental problem for estimating causal effects from observa-tional data (Byrnes and Dee, 2025; Lu, 2009; VanderWeele and Ding, 2017). A confounder is a common cause of both the treatment and the outcome, inducing non-causal dependencies between them. In practice, it is unrealistic to assume complete knowledge of all confounders. Instead, we may rely on a proxy variable of the true confounder, such as a noisy measurement. We assume that we observe a single, potentially multi-dimensional proxy variable of the confounder and assume that the error mechanism that generates the proxy variable from the confounder is known. In this setting, our contribution is twofold. First, we prove a novel causal identifiability condition, which we call Single Proxy Identifiability of Causal Effects or simply SPICE, that extends existing proxy-based causal identifiability results. Second, we propose a neural network architecture and corresponding loss function, which allows us to estimate causal effects. 
+
+> ∗
+
+Authors contributed equally.  
+
+> ©2026 Vollmer, Weichwald and Pfister. License: Perpetual, non-exclusive license, see
+> https://arxiv.org/licenses/nonexclusive-distrib/1.0/license.html .
+> arXiv:2604.09135v1 [stat.ML] 10 Apr 2026 Vollmer, Pfister ∗and Weichwald ∗
+
+Existing identifiability results can be divided into a single proxy and a multiple proxy setting. In the single proxy setting, we assume that we observe a potentially multi-dimensional proxy variable whose components need not be conditionally independent given the confounder. In the multiple proxy case, we observe multiple proxies, which are assumed to be conditionally independent given the confounder. Our work falls into the single proxy setting. In this setting, Kuroki and Pearl (2014); Pearl (2010) show that causal effects are identifiable for discrete confounders and proxies and for linear Gaussian structural causal models by using the matrix adjustment method of Greenland and Lash (2015). Crucially, Kuroki and Pearl (2014); Pearl (2010) assume knowledge of the error mechanism that links the proxy to the confounder, that is, the set of conditional densities of the proxy given the confounder. We extend these results both in the discrete case by allowing the proxy to have a higher dimension than the confounder and in the continuous case by allowing for multi-dimensional and non-Gaussian variables. Further, we only require that the proxy is a linear function of the confounder plus noise, rather than a linear model across all variables as assumed by Kuroki and Pearl (2014); Pearl (2010). Without assuming knowledge on the error mechanism, Park et al. (2024) show identifiability of the average causal effect for the treated of a binary treatment using a single proxy, thereby generalising the control outcome calibration approach (Tchetgen Tchetgen, 2014) and ultimately the Difference-in-Difference approach (Card and Krueger, 1994). Xu and Gretton (2025) extend the framework of Park et al. (2024) to continuous treatments while assuming that the outcome is a deterministic function of the treatment and the confounder. With multiple proxies, causal effect identifiability can be achieved through the proximal causal inference framework (Miao et al., 2018), with recent overviews provided by Ringlein et al. (2025); Tchetgen Tchetgen et al. (2024). In proximal causal inference, unobserved confounding is addressed by classifying proxies into treatment and outcome proxies. Identifi-ability in proximal causal inference is achieved via bridge functions. As an alternative to proximal causal inference, array decomposition approaches (Deaner, 2023; Kuroki and Pearl, 2014; Pearl, 2010) recover the joint distribution over unobserved and observed variables up to injective transformations of the unobserved variables (Guo et al., 2025). It originates from the work by Kruskal (1977) and for continuous variables, Deaner (2023) achieves identifiability of causal effects using three proxies by building on the results of Hu and Schennach (2008). Our work can be seen as an array decomposition approach that assumes a known error mechanism, as in Kuroki and Pearl (2014); Pearl (2010), and a single proxy variable in contrast to Deaner (2023). Based on our identifiability result, we propose SPICE-Net, a machine learning method to estimate causal effects. SPICE-Net handles both discrete and continuous treatments and outcomes and it builds on Engression (Shen and Meinshausen, 2025). We show that it recovers the unobserved confounder distribution up to a linear transformation and can be combined with modern nonparametric estimators of causal effects. We compare our method to a variational autoencoder by Louizos et al. (2017) and kernel-based methods by Xu and Gretton (2025). The remainder of the paper is structured as follows. In Section 2, we define the proximal-confounded structural causal model and use it to define our target of inference. We then introduce SPICE Assumption 8 and prove our identifiability results (Theorem 7 and Theorem 9) in Section 3. In Section 4, we propose our neural network based estimator 
+
+> 2SPICE
+
+SPICE-Net and apply it to simulated and real-world data in Section 5. Finally, we discuss extensions and applications of SPICE and conclude in Section 6. 
+
+Notation. For a measurable space X and a measure μ on X , we denote the space of 
+
+μ-equivalent measurable functions from X to R that are absolutely integrable by L1(X ), that are absolutely square integrable by L2(X ) and that are essentially bounded with respect to μ by L∞(X ). For a measurable product space X × Y with measure μ and random variables ( X, Y ) ∈ X × Y , we denote the joint distribution by PX,Y , the density with respect to μ by pX,Y – assuming the existence of densities throughout the paper – and the expectation by E. Furthermore, for all y ∈ Y , the conditional distribution of X given Y = y
+
+is denoted by PX|Y =y and the conditional density with respect to μ by pX|Y (· | y). We consider distributions under interventions using do -notation (Pearl, 2009). Finally, a normal distribution with mean zero and variance one is denoted by N (0 , 1) and an exponential distribution with scale one by Exp(1). 
+
+2 Proximal-Confounded Structural Causal Model 
+
+We now present our causal model describing the treatment effect on an outcome under unobserved confounding. Specifically, we consider a Proximal-Confounded Structural Causal Model (PC-SCM), which assumes that the treatment, the outcome and a noisy proxy of the confounder is observed. A formal description of the model is provided in the following definition. 
+
+Definition 1 (Proximal-Confounded Structural Causal Model (PC-SCM)) . Consider a treatment X ∈ X ⊆ Rp, an outcome Y ∈ Y ⊆ R, an unobserved confounder U ∈ U ⊆ Rk
+
+and a proxy variable W ∈ W ⊆ Rd, where p, k, d ∈ N.1 A proximal-confounded structural causal model (PC-SCM) M is a structural causal model that induces the directed acyclic graph (DAG) G, both shown in Figure 1, with measurable functions fW , f X , f Y and mutual independent random noise terms (NU , E, N X , N Y ).2
+
+M :
+
+
+
+U ← NU
+
+W ← fW (U, E )
+
+X ← fX (U, N X )
+
+Y ← fY (U, X, N Y )G: U
+
+W
+
+X Y
+
+Figure 1: Structural causal model M and directed acyclic graph G of Definition 1. 
+
+Moreover, it induces a unique, well-defined probability distribution on the variables 
+
+(U, W, X, Y ) that we denote by P M (for example Bongers et al., 2021) and for each in-tervention do (X = x) that sets X to a fixed value x ∈ X , an interventional distribution 
+
+P M ;do (X:= x) 
+
+> Y
+
+on Y . Furthermore, the implied joint distribution P M is absolutely continuous          
+
+> 1. The setting can be extended to a multi-dimensional outcome Y∈ Y ⊆ Rqwith q∈N.2. The mutual independence assumption can be relaxed as long as the independence statement in Equation 1 holds.
+> 3Vollmer, Pfister ∗and Weichwald ∗
+
+with respect to a σ-finite product measure μ such that it has a density and the density is defined on Rk × Rd × Rp × R and has support on U × W × X × Y , that is 
+
+pM (u, w, x, y ) > 0 ⇐⇒ (u, w, x, y ) ∈ U × W × X × Y .
+
+Setting 2 We assume that we observe n ∈ N independent and identically distributed copies 
+
+(W1, X 1, Y 1), . . . , (Wn, X n, Y n) of the random variable (W, X, Y ) generated by a PC-SCM 
+
+M0. We assume that the error mechanism {pM0  
+
+> W|U
+
+(· | u) | u ∈ U} is known. Moreover, we assume that the causal function in Definition 3 is uniquely defined and integrable. We denote the density pM0 
+
+> W,X,Y
+
+as the observational density. 
+
+Using d-separations, it follows for all PC-SCMs that the proxy is conditionally independent of the treatment and the outcome given the confounder, that is, 
+
+W ⊥⊥ (X, Y ) | U. (1) We conclude that for all ( u, x, y ) ∈ U × X × Y it holds that pMW |U,X,Y (· | u, x, y ) = pMW |U (· | u). Given Setting 2, we aim to determine how intervening on the treatment X impacts the outcome Y . Formally, this is captured by the causal function, which can be contrasted to provide a measure of the causal effect of X on Y .
+
+Definition 3 (causal function and average causal effect) . Let M0 be the true PC-SCM from Setting 2. We define the causal function θM0 : X → R for all x ∈ X as 
+
+θM0 (x) := EM0;do (X:= x) [Y ] = 
+
+Z
+
+y
+
+Z
+
+pM0  
+
+> Y|U,X
+
+(y | u, x ) pM0 
+
+> U
+
+(u) μ(du, dy ),
+
+where the equality holds by the adjustment formula (Pearl, 2009, Theorem 3.3.2). Moreover, the average causal effect (ACE) for a univariate, continuous treatment X ∈ R is defined by 
+
+ACE M0 := EM0  ∂∂x θM0 (x) |x=X
+
+
+
+and for a univariate, binary treatment X ∈ { 0, 1}, it is defined by 
+
+ACE M0 := θM0 (1) − θM0 (0) .
+
+As shown in the definition, the causal function can be identified by controlling for the confounding U using for example the adjustment formula. Using W instead of U is however in general not possible and will result in a biased estimate. In Appendix A, we derive an explicit expression for the difference between controlling for W and controlling for U in a linear Gaussian setting. From this expression we can see that the difference is small if the proxy is close to U or if the direct effect of X on Y dominates the confounding due to U .
+
+3 Identifiability of the Causal Function 
+
+We now study the identifiability of the causal function. The causal function is identifiable if it is the same across all PC-SCMs that induce the same observational features. For a PC-SCM 
+
+M defined in Definition 1, the observational features consist of both the observational density and the error mechanism and we denote them by 
+
+FM := {pMW,X,Y } ∪ { pMW |U (· | u) | u ∈ U} .
+
+> 4SPICE
+
+PC-SCMs that share the same observational features are referred to as observationally equivalent. This leads us to the following definition of the identifiability of the causal function (Pearl, 2009; Pearl and Bareinboim, 2014). 
+
+Definition 4 (identifiablility) . Let M0 be the true PC-SCM from Setting 2. We denote the set of PC-SCMs that are observationally equivalent to M0 by M(M0), that is, for all 
+
+M ∈ M (M0), it holds that 
+
+FM = FM0 . (2) 
+
+The causal function θM0 is identifiable if for all models M ∈ M (M0), it holds that 
+
+θM ≡ θM0 .
+
+Our main identifiability result relies on a technical assumption on the error mechanism defined below, which ensures that the proxy W contains sufficient information about the confounder U .
+
+Definition 5 (complete error mechanism) . Let M0 be the true PC-SCM from Setting 2. We say the error mechanism {pM0  
+
+> W|U
+
+(· | u) | u ∈ U} is (i) L1-complete if for all δ ∈ L1(U)
+
+Z
+
+> U
+
+pM0  
+
+> W|U
+
+(· | u)δ(u) μ(du ) ≡ 0 =⇒ δ ≡ 0 a.e. (ii) L∞-complete if for all δ ∈ L∞(U)
+
+Z
+
+> U
+
+pM0  
+
+> W|U
+
+(· | u)δ(u) μ(du ) ≡ 0 =⇒ δ ≡ 0 a.e. (3) Definition 5 is similar to the completeness assumption of Mattner (1993) as outlined by Deaner (2023, HS Assumption 3). Assuming that the error mechanism is complete, we get the following identifiability result. 
+
+Theorem 6 (identifiability of the causal function) . Let M0 be the true PC-SCM from Setting 2. Assume that the error mechanism is (i) L1-complete as in Definition 5-(i) or (ii) L∞-complete as in Definition 5-(ii) and for all M ∈ M (M0) and for all (x, y ) ∈ X × Y 
+
+it holds that pMU |X,Y (· | x, y ) ∈ L∞(U).Then, the causal function θM0 is identifiable. 
+
+We prove Theorem 6 in Appendix B. Next, we investigate sufficient conditions for the error mechanism to be complete and thus for Theorem 6 to apply. We distinguish between two cases in the following subsections, based on whether the confounders and proxies are discrete or continuous random variables. In both cases, we require that the dimension of the proxy is as least as large as the dimension of the confounder. In the discrete case, the error mechanism is complete if the matrix with entries pM0  
+
+> W|U
+
+(· | · ) has full column rank. In the continuous case, completeness holds for a linear proxy-confounder relation with additive noise whose Fourier transform has no zeros.  
+
+> 5Vollmer, Pfister ∗and Weichwald ∗
+
+3.1 Discrete Confounders and Proxies 
+
+We begin with the discrete case and assume that the proxy has at least the dimension of the unobserved confounder, that is, d ≥ k. Then, the error mechanism is complete if there exists a matrix of conditional probabilities of the proxy given the confounder with full column rank. The formal result is provided in the following theorem. 
+
+Theorem 7 (a complete error mechanism for discrete confounders) . Let M0 be the true PC-SCM from Setting 2. Further, assume that the following holds. (i) (discrete support and sufficient dimension) We have a discrete confounder U ∈ U =
+
+{u1, . . . , u k} and a proxy W ∈ W = {w1, . . . , w d} with d ≥ k.(ii) (full rank error mechanism) We assume that there exists a subset Wr := {w′
+
+> 1
+
+, . . . , w ′
+
+> r
+
+} ⊆ W with cardinality r ∈ N and k ≤ r ≤ d such that the matrix 
+
+
+
+pM0  
+
+> W|U
+
+(w′ 
+
+> 1
+
+| u1) · · · pM0  
+
+> W|U
+
+(w′ 
+
+> 1
+
+| uk)
+
+... . . . ...
+
+pM0  
+
+> W|U
+
+(w′ 
+
+> r
+
+| u1) · · · pM0  
+
+> W|U
+
+(w′ 
+
+> r
+
+| uk)
+
+ ∈ [0 , 1] r×k (4) 
+
+has full column rank. Then, the error mechanism {pM0  
+
+> W|U
+
+(· | u) | u ∈ { u1, . . . , u k}} is L1-complete and L∞-complete. 
+
+A proof is given in Appendix C. Together with Theorem 6, the result implies identifiability of the causal function. Theorem 7 extends results of Kuroki and Pearl (2014); Pearl (2010), which we state and prove in Appendix D using our notation and formal framework to facilitate comparison, by relaxing their assumption that d = k.
+
+3.2 Continuous Confounders and Proxies 
+
+Now we turn to continuous confounders and proxies. We regard Assumption 8 in combination with Theorem 9 as the most practically relevant theoretical result of this paper: It provides sufficient conditions for the error mechanism to be complete. We refer to Assumption 8 as Single Proxy Identifiability of Causal Effects or simply SPICE. 
+
+Assumption 8 (SPICE) Let M0 be the true PC-SCM from Setting 2. (i) (sufficient proxy dimension) The proxy W ∈ W ⊆ Rd has at least the dimension of the confounder U ∈ U ⊆ Rk, that is, d ≥ k.(ii) (additive noise model) The proxy follows an additive noise model where fW : ( U, E ) 7 →
+
+AU +E for a matrix A ∈ Rd×k with full column rank and a random variable E ∈ E ⊆ Rd,which is independent of U , that is, 
+
+W = AU + E with U ⊥⊥ E. 
+
+(iii) (density) The distribution of E has a density pM0 
+
+> E
+
+on Rd with respect to the Lebesgue measure. 
+
+> 6SPICE
+
+(iv) (non-vanishing Fourier transform) The Fourier transform of the density of E has no zeros, that is, we have for all t ∈ Rd that 
+
+(2 π)− d
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(e) exp( −it T e) de ̸ = 0 
+
+with imaginary unit i.
+
+If SPICE Assumption 8 holds, then the error mechanism is complete by the following theorem. 
+
+Theorem 9 (a complete error mechanism for continuous confounders) . Let M0 be the true PC-SCM from Setting 2. Further, assume that SPICE Assumption 8 holds. Then, the error mechanism {pM0  
+
+> W|U
+
+(· | u) | u ∈ Rk} is L∞-complete. 
+
+We prove Theorem 9 using the Wiener Tauberian theorem (Wiener, 1932) in Appendix E. If SPICE Assumption 8 holds and for all M ∈ M (M0) and for all ( x, y ) ∈ X × Y it holds that pMU |X,Y (· | x, y ) ∈ L∞, then the causal function is identifiable by Theorem 9 and Theorem 6-(ii). The result in Theorem 9 extends the framework of Kuroki and Pearl (2014); Pearl (2010), which we state and prove in Appendix D using our notation and formalism, by considering higher dimensions, less structural assumptions and a broader class of noise distributions. Kuroki and Pearl (2014); Pearl (2010) assume a linear Gaussian dependency between all variables, which are assumed to be one-dimensional. Further, they require mean-zero noise variables to achieve identifiability. Their case is subsumed by Theorem 9. In their framework, E ∈ R follows a Gaussian distribution whose Fourier transform has no zeros, as we show in Appendix F. The linear Gaussian SCM of Kuroki and Pearl (2014); Pearl (2010) implies for all M ∈ M (M0) and for all ( x, y ) ∈ X × Y that pMU |X,Y (· | x, y ) ∈ L∞(U)and hence the causal function is identifiable by Theorem 6-(ii). Next, we clarify which noise distributions have Fourier transforms with no zeros and satisfy SPICE Assumption 8-(iv). We define the characteristic function, infinitely divisible distributions and convolutionally infinitely divisible kernels in Appendix G. 
+
+Proposition 10 (sufficient conditions for a non-vanishing Fourier transform) . Let M0 be the true PC-SCM from Setting 2 and assume that SPICE Assumption 8-(iii) holds. Further, assume that one of the following holds. (i) The characteristic function of E has no zeros. This means that for all t ∈ Rd, we have that Z
+
+pM0 
+
+> E
+
+(e) exp( it T e) de ̸ = 0 
+
+with imaginary unit i.(ii) The probability distribution P M0 
+
+> E
+
+is infinitely divisible. (iii) The density pM0 
+
+> E
+
+is a convolutionally infinitely divisible kernel. Then, SPICE Assumption 8-(iv) holds, that is, the Fourier transform of the density of E has no zeros.  
+
+> 7Vollmer, Pfister ∗and Weichwald ∗
+
+The second result in the proposition follows from Sato (1999, Lemma 7.5) as shown in Appendix G. In particular, we have that Prop. 10-(iii) =⇒ Prop. 10-(ii) =⇒ Prop. 10-(i) and Prop. 10-(i) ⇐⇒ SPICE 8-(iv) .
+
+Using this result, we can show that many common distributions satisfy SPICE Assump-tion 8-(iv). Focusing on Proposition 10-(ii) and univariate distributions, we have that the normal, Cauchy, Laplace or gamma distribution, which includes the exponential and chi-squared distribution, and all stable distributions are infinitely divisible as shown by Lukacs (1970). Furthermore, the log-normal distribution, all generalised hyperbolic distributions, such as the t-distribution and all generalised inverse Gaussian distributions are also infinitely divisible as shown by Thorin (1977) and Barndorff-Nielsen and Halgreen (1977). Further, any convolution of two infinitely divisible probability distributions is again infinitely divisible by Sato (1999, Lemma 7.4). For a multi-dimensional variable E, we have that the product measure of infinitely divisible probability measures, representing independent components of 
+
+E, is again infinitely divisible as shown by Horn and Steutel (1978). Gaussian and Cauchy distributions on Rd are infinitely divisible by Sato (1999). Now we consider Proposition 10-(iii), which reinforces the applicability of Theorem 9 in a multi-dimensional proxy-confounder setting. We provide examples for convolutionally infinitely divisible kernels based on Nishiyama and Fukumizu (2016, Example 3.4). Convo-lutionally infinitely divisible kernels include Gaussian, Laplace, Cauchy, for all α ∈ (0 , 2] 
+
+α-stable, sub-Gaussian α-stable, Student’s t, GH, normalized inverse Gaussian, variance gammma (for example Mat´ ern) and tempered α-stable kernels by Bianchi et al. (2011); Grosswald (1976); Rachev et al. (2011); Rosi´ nski (2007). Other convolutionally infinitely divisible kernels can be constructed due to their closure under convolution, as shown by Nishiyama and Fukumizu (2016, Proposition 3.7). Next, we provide an example where the error mechanism is not complete. If the unobserved confounder enters the proxy equation in a non-injective way, the error mechanism fails to be complete. The loss of information induced by a non-injective function, such as when the confounder enters the proxy equation squared, results in a non-complete error mechanism. We define a non-injective function of positive and finite measure for this in Definition 21 and prove the following result in Appendix H. 
+
+Proposition 11 (non-injective noise model is not complete) . Let M0 be the true PC-SCM from Setting 2. Assume the proxy follows an additive noise model where fW : ( U, E ) 7 →
+
+g(U )+ E for a measurable and non-injective function of positive and finite measure g : U → Rd
+
+and a random variable E ∈ E ⊆ Rd, which is independent of U , that is, 
+
+W = g(U ) + E with U ⊥⊥ E. 
+
+Further, assume that the distribution of E has a density on Rd with respect to a σ-finite measure μ.Then, the error mechanism is not L1-complete and not L∞-complete. 
+
+> 8SPICE
+
+4 Estimation of the Causal Function 
+
+To estimate the causal function, we develop SPICE-Net, a neural network based estimation framework. Throughout this section, we assume that the causal function is identifiable and, in particular, that SPICE Assumption 8 holds. SPICE-Net builds on Engression, a distributional regression method developed by Shen and Meinshausen (2025), and we show that it recovers the distribution of the unobserved confounder up to a linear transformation. SPICE-Net is a two step procedure: First, we estimate the conditional density of the proxy W given the treatment and outcome ( X, Y ) using a neural network. Second, we sample observations from a linear transformation of the confounder and use these to adjust when estimating the causal function. In the first step, we use the Engression framework by Shen and Meinshausen (2025) to estimate the density of W given ( X, Y ). We use a neural network with l ∈ N linear layers as visualised in Figure 2. We input the treatment and the outcome into the neural network and append noise nodes ( ε1, . . . , ε l−2) to the first l − 2 layers. Each noise node has a user-specified dimension and we collect them as ε := ( ε1, . . . , ε l−2), where ε follows a multivariate standard Gaussian distribution, that is a multivariate Gaussian distribution with zero mean and identity covariance. We use rectified linear unit (ReLU) activation functions up to layer l − 2 followed by a linear activation. In the second-to-last layer, we add independent samples e of dimension d from the distribution of E. We know the distribution of E since we know the error mechanism, that is, we know by SPICE Assumption 8-(i) to (iii) for a matrix A ∈ Rd×k with full column rank and for all ( u, w ) ∈ U × W 
+
+pM0  
+
+> W|U
+
+(w | u) = pM0 
+
+> E|U
+
+(w − Au | u) = pM0 
+
+> E
+
+(w − Au ),
+
+which holds by the change of variables formula (see for example Equation 2.89 in Murphy (2012)) and the independence of E and U . The neural network in Figure 2 can be seen as a function gγ : ( x, y, ε, e ) 7 → w, with the output denoted by w, which approximates the conditional density of W | (X, Y ). We define a corresponding model class as the set of all functions by 
+
+G = {gγ : ( x, y, ε, e ) 7 → w | γ valid neural network parameters }.
+
+We optimise the weights of our neural network minimising the energy loss as in Shen and Meinshausen (2025), which is based on the energy score by Gneiting and Raftery (2007). This leads to the following population-level solution 
+
+g∗ 
+
+> γ
+
+∈ argmin  
+
+> gγ∈G
+
+E
+
+
+
+|| W − gγ (X, Y, ε, e )|| − 12 || gγ (X, Y, ε, e ) − gγ (X, Y, ε ′, e ′)|| 
+
+
+
+, (5) where ε, ε ′ are vectors drawn independently from a multivariate standard Gaussian distribu-tion and e, e ′ are independent draws from the distribution of E. If the model is correctly specified, we show that g∗ 
+
+> γ
+
+recovers the distribution of W | (X, Y ) and by the hardcoded last layer, the first part of the neural network recovers a linear transformation of U | (X, Y ). 
+
+Proposition 12 (population guarantee for SPICE-Net) . Let M0 be the true PC-SCM from Setting 2. Assume that the model for W | (X, Y ) is correctly specified, that is, there exists  
+
+> 9Vollmer, Pfister ∗and Weichwald ∗
+
+x
+
+y
+
+ε1
+
+ε2
+
+# · · · εl−2
+
+w
+
++e
+
+gγ
+
+Figure 2: The first step of SPICE-Net is a neural network that builds on the Engression framework by Shen and Meinshausen (2025). It has weights γ and it takes the treatment and the outcome as inputs and appends independent standard Gaussian noise nodes ε1, . . . , ε l−2 to the first l − 2 layers. We add samples from the distribution of E in the second-to-last layer and denote the output by w. It recovers the conditional distributions of interest by Proposition 12. 
+
+a gγ ∈ G such that for a multivariate standard Gaussian random variable E and for all 
+
+(x, y ) ∈ X × Y , it holds that gγ (x, y, E, E ) ∼ P M0  
+
+> W|(X,Y )=( x,y )
+
+. Furthermore, assume that the expectation in Equation 5 is finite. Then, for the solution g∗ 
+
+> γ
+
+in Equation 5, we have for almost all (x, y ) ∈ X × Y that 
+
+g∗ 
+
+> γ
+
+(x, y, E, E ) ∼ P M0  
+
+> W|(X,Y )=( x,y )
+
+.
+
+Moreover, by SPICE Assumption 8-(i) to (iii) there exists a matrix eA ∈ Rd×k with full column rank such that for almost all (x, y ) ∈ X × Y 
+
+g∗ 
+
+> γ
+
+(x, y, E, E ) − E ∼ P M0  
+
+> eAU |(X,Y )=( x,y )
+
+.
+
+The proof follows from Shen and Meinshausen (2025); Sz´ ekely (2002) and is presented in Appendix I. By Proposition 12, we can sample from the conditional distribution eAU |(X, Y ). We recover the distribution of the unobserved confounder up to a linear transformation 
+
+eA ∈ Rd×k, which does not necessarily coincide with the matrix A ∈ Rd×k from SPICE Assumption 8. We show that this is sufficient to recover the causal function in Proposition 13. Our result is even more general by considering all injective functions from Rk to Rd with 
+
+k ≤ d. This extends the adjustment formula (Pearl, 2009, Theorem 3.3.2) to injective transformations of the confounder and is proven in Appendix I. 
+
+Proposition 13 (adjusting for b(U )) . Let M0 be the true PC-SCM from Setting 2. For all Borel measurable and injective functions b : Rk → Rd, we recover the causal function by adjusting for b(U ), that is, for all x ∈ X we have that 
+
+θM0 (x) = EM0 EM0 [Y | b(U ), X = x] a.s. 
+
+In our Setting 2, we observe n independent and identically distributed copies of the random variable ( X, Y, W ). For a matrix eA ∈ Rd×k with full column rank and all i ∈ [n], 
+
+> 10 SPICE
+
+we sample eAU i ∼ P M0   
+
+> eAU |(X,Y )=( Xi,Y i)
+
+via the function g∗ 
+
+> γ
+
+− E in Proposition 12. Since the function U 7 → eAU is Borel measurable by Rosenthal (2006, Proposition 3.1.8) and injective, adjusting for eAU recovers the causal function by Proposition 13. In the second step of SPICE-Net, we estimate the causal function by adjusting for a linear transformation of the confounder. There are various approaches to adjust for observed confounding (Yao et al., 2021) and we focus on a regression adjustment estimator following Zhang et al. (2025) based on the G-computation estimator by Gill and Robins (2001); Robins (1986). Regression adjustment estimates the causal function for eA ∈ Rd×k with full column rank and for all x ∈ X by ˆθ(x) := 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+EM0
+
+h
+
+Y | eAU = eAU i, X = x
+
+i
+
+. (6) We use a neural network for estimating the conditional expectation in Equation 6 with one hidden layer, ReLU activations, an adaptive learning rate and squared error loss. This step of SPICE-Net can be replaced with any other causal function estimator that adjusts for observed confounding. In the first step of SPICE-Net, we add independent samples from the distribution of 
+
+E in the second-to-last layer of the neural network in Figure 2. If the parameters of the distribution of E are unknown, we can estimate them as additional parameters within the first step. We initialize the parameters of the distribution of E by using the fact that the variance of E does not exceed the variance of W . We keep the second step unchanged and refer to this adjusted framework as SPICE-Net-Approx. 
+
+5 Application 
+
+We compare SPICE-Net to other causal function estimators on simulated data in Section 5.1 and on real-world data in Section 5.2. SPICE-Net is a two-step procedure for a matrix 
+
+eA ∈ Rd×k with full column rank: 1. Train the neural network in Figure 2 and sample from the conditional distribution 
+
+eAU | (X, Y ). 2. Estimate the causal function by the regression adjustment estimator in Equation 6. The approach is compatible with any other causal function estimator in the second step. 
+
+5.1 Simulation Study Simulation settings. In our simulation, we consider four different data sets outlined in Table 1 which are subsumed under SPICE Assumption 8. Data set A is a linear Gaussian SCM as in Kuroki and Pearl (2014); Pearl (2010) and data set B uses a binary treatment. Data set C deviates from Gaussian noise distributions and from a linear function fY . Data set D assumes a bivariate unobserved confounder and a three-dimensional proxy variable observed under multivariate Gaussian measurement noise with a fixed covariance matrix in which the proxies are not conditionally independent given the confounder. For all data sets, we sample 2000 and 5000 observations 20 times, which we refer to as the training sets.  
+
+> 11 Vollmer, Pfister ∗and Weichwald ∗
+
+NU fW fX fY
+
+A. Gaussian N (0 , 1) U + N (0 , 1) U + N (0 , 1) U + X + N (0 , 1) B. Binary N (0 , 1) U + N (0 , 1) 1{(U + N (0 , 1)) > 0} U + X + N (0 , 1) C. Exponential Exp(1) U + Exp(1) U + Exp(1) X2 + U X + Exp(1) D. High-dim. N
+
+ 00
+
+
+
+,
+
+1 00 1
+
+ 
+
+AU + E BU + N (0 , 1) BU + X + N (0 , 1) 
+
+with A =
+
+
+
+1 10 11 0
+
+ , E ∼ N 
+
+
+
+000
+
+ ,
+
+
+
+2.0 −0.3 0.5
+
+−0.3 1.5 0.40.5 0.4 1.8
+
+ and B =
+
+11
+
+
+
+.
+
+Table 1: The data sets for our simulation that are subsumed under SPICE Assumption 8. All noise distributions are drawn independently from each other. In data set B, the treatment is one if U + N (0 , 1) is positive and zero otherwise. 
+
+Causal function. In the data sets A,B and D, the causal function for all x ∈ X is 
+
+θM0 (x) = x, and in data set C, it is for all x ∈ X given by θM0 (x) = x2 + x + 1. We test the estimates on a test data set of size 500 following the same data generating mechanism as the training set. For a continuous treatment, we calculate the mean squared test error as 
+
+> 1500
+
+P500 
+
+> i=1
+
+(ˆθ(xi) − θM0 (x)) 2 where ˆθ(xi) is an estimate of the causal function evaluated at a test point. For the binary treatment in data set B, we evaluate the squared test error of estimating the ACE, which is ( ˆθ(1) − ˆθ(0) − 1) 2.
+
+Methods. We outline different methods to estimate the causal function with details given in Appendix J. For all methods, we standardise the data and then back-transform the causal function estimates to the original scale. 3 For our proposed method, SPICE-Net, we keep the architecture fixed across simulations. We only adapt the sampling procedure in the second-to-last layer of Figure 2 to match the distribution of E. Assuming that the parameters of the distribution of E are unknown a priori, we estimate them with SPICE-Net-Approx. To estimate the causal function in the second step, we use the nonparametric regression adjustment estimator in Equation 6. We compare SPICE-Net and SPICE-Net-Approx to adjusting for the proxy, denoted by Adj.-W, and the (true yet in practice considered unobserved) confounder, denoted by Adj.-U, which serves as an oracle benchmark. We use the same regression adjustment estimator in Equation 6 for Adj.-W and Adj.-U as for SPICE-Net and SPICE-Net-Approx. We further compare SPICE-Net to methods with the same graph as in Setting 2 such as the variational autoencoder by Louizos et al. (2017). Their proposed method, the Causal Effect Variational Autoencoder (CEVAE), has been widely used and motivated several extensions (Li et al., 2024). CEVAE uses a factorisation of the joint density pM of Setting 2 into marginal and conditional densities, which are for continuous variables approximated by Gaussian densities with parameters learnt by neural networks.  
+
+> 3. We do not standardise the binary treatment in data set B. Further, we do not standardise the variables from data set B for SKPV and SPMMR because the standardisation significantly increases test errors.
+> 12 SPICE
+
+Finally, we compare SPICE-Net to two kernel-based methods, Single Kernel Proxy Variable (SKPV) and Single Proxy Maximum Moment Restriction (SPMMR) by Xu and Gretton (2025). 4 Xu and Gretton (2025) estimate the causal function via estimating a bridge function with a two-stage regression approach for SKPV and a maximum moment restriction approach for SPMMR. Xu and Gretton (2025) show that the bridge function exists if the outcome is a deterministic function of the treatment and the unobserved confounder. 
+
+Results. The test errors are presented in Figure 3, with numerical values reported in Table 4 in Appendix J, which also contains the results for a training sample size of 5000. Adjusting for the confounder achieves the lowest MSE across all data sets. Adjusting for the proxy yields biased estimates of the causal function. Excluding Adj.-U, SPICE-Net attains the lowest MSE in all data sets except for data set C and a sample size of 5000 where SPICE-Net-Approx has a lower MSE. SPICE-Net-Approx exhibits a higher variance in test errors than SPICE-Net. In general, CEVAE, SKPV and SPMMR have a higher MSE than SPICE-Net, with a smaller difference for binary treatments but especially for non-Gaussian and high-dimensional data. Adjusting for the confounder satisfies the adjustment formula (Pearl, 2009, Theorem 3.3.2) and the low MSE indicates that the regression adjustment estimator in Equation 6 performs reasonable in our simulations. In general, adjusting for the proxy is insufficient. SPICE-Net recovers the causal function in our simulations, its performance is comparable to adjusting for the confounder itself. When the parameters of the noise distribution are unknown, SPICE-Net-Approx yields reasonable results. However, we do not have theoretical guarantees for SPICE-Net-Approx and it is unclear whether it leads to valid adjustment. We interpret comparisons of SPICE-Net to other estimators with caution because SPICE-Net underlies different assumptions than SKPV and SPMMR. Nevertheless, in our setting SPICE-Net performs substantially better than the other single proxy estimators for continuous treatments. SPICE-Net improves upon adjusting for the proxy and achieves a performance close to confounder adjustment. We conclude that SPICE-Net can recover the causal function under SPICE Assumption 8. 
+
+5.2 Real-world data Causal Chamber ®. We use the Causal Chamber ® (Gamella et al., 2025) to generate real-world data with a graph as in Figure 1. Specifically, we apply the Light Tunnel Mk2 from Causal Chamber ® as shown in Figure 7, which is a computer-controlled device to measure variables from physical systems. The tunnel is a real, controllable and optical experiment designed for evaluating machine learning methodology. It consists of different light sources, polarisers and sensors that allow us to measure and manipulate the physical variables of the system, while providing a causal ground truth of the effects between them. 5
+
+We consider a subset of the tunnel variables as described in Figure 7 and keep all other variables constant. 
+
+Experiments and methods. We generate data for two different parameter settings of the Causal Chamber ® as outlined in Table 6. In experiment I, we consider a low noise setting  
+
+> 4. We conduct our simulation based on the code by Xu and Gretton (2025). Aside from using a linear kernel for the binary treatment in data set B, the implementation and hyperparameters of SKPV and SPMMR remain unchanged. 5. See causalchamber.ai for the complete documentation and ground-truth graph.
+> 13
+
+Vollmer, Pfister ∗ and Weichwald ∗Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0.0
+> 0.5
+> 1.0
+> MSE
+
+A. Gaussian Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0.0
+> 0.5
+> 1.0
+> MSE
+
+B. Binary Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> MSE
+
+C. Exponential Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0.0
+> 0.5
+> 1.0
+> MSE
+
+D. High-dim. 
+
+Figure 3: Mean squared error (MSE) of causal function estimators described in Section 5.1 and Appendix J for 2000 training samples from data sets A-D of Table 1 on a test set of size 500. For data set C, the median (standard deviation) of the MSE for CEVAE, SKPV and SPMMR are 2 .87 (4 .70), 16 .16 (14 .95) and 58 .18 (18 .21), respectively, and there is a different scale for the y-axis. Numerical values are given in Table 4. Our proposed method SPICE-Net achieves a MSE close to the ground-truth method Adj.-U. 
+
+14 SPICE 
+
+between the confounder and the proxy variable and we increase the noise in experiment II. We generate 5000 training samples and 500 test samples for each experiment 20 times. We consider the same causal function estimators as in the previous simulation in Section 5.1 with details on the parameters given in Appendix K. For our proposed method, SPICE-Net, we estimate the error mechanism in an additional experiment III on the Causal Chamber ®
+
+as shown in Table 6. For this, we assume that the noise E of the proxy-confounder relation follows a Gaussian distribution and estimate its variance by setting the confounder to zero. We then use the empirical variance of the proxy as an estimate for the variance of E. This is different from SPICE-Net-Approx, where we estimate the variance of E within the estimation framework as described in Section 4. 
+
+Results. We present the test errors of all causal function estimators compared to the ground-truth method Adj.-U in Figure 4 with numerical values in Table 8. In a low noise setting, Adj.-U, Adj.-W, SPICE-Net and SPICE-Net-Approx lead to similar causal function estimates. In a noisy setting, Adj.-W and SPICE-Net-Approx have a higher MSE and deviate from Adj.-U and SPICE-Net. SPICE-Net performs better than the other proxy-based causal function estimators and achieves a performance close to confounder adjustment. Adj.-W 
+
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0
+> 1
+> 2
+> 3
+> MSE
+> I. Low noise Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0
+> 1
+> 2
+> 3
+> MSE
+> II. Noisy
+
+Figure 4: Mean squared error (MSE) in ten thousands of causal function estimators compared to the ground-truth method Adj.-U on data from the Light Tunnel Mk2 from the Causal Chamber ® (Gamella et al., 2025) from experiments I and II of Table 6. The methods are described in Sections 5.1 and 5.2 and Appendices J and K and numerical values of the results are given in Table 8. Our proposed method SPICE-Net is close to the ground-truth method Adj.-U in both experiments. 
+
+6 Discussion 
+
+In this paper, we prove the identifiability of the causal function in a proxy-confounded structural causal model under the assumption of a known error mechanism. The causal function is identifiable under SPICE Assumption 8 for continuous confounders and proxies in a linear additive noise model for a broad class of noise distributions. Based on this result, we propose SPICE-Net, a machine learning method to recover the distribution of  
+
+> 15 Vollmer, Pfister ∗and Weichwald ∗
+
+the unobserved confounder up to a linear transformation. It can be combined with any estimator of the causal function and it performs on par with confounder adjustment in our simulations and real-world example. 
+
+Applications. We expect SPICE and SPICE-Net to be relevant in medical applications. In healthcare, the functional status of senior citizens confounds the relationship between influenza vaccination and all cause mortality (Jackson et al., 2005). The diagnosis of dementia is an indicator of functional status and may be associated with a higher mortality risk and a lower probability of influenza vaccination (Jackson et al., 2005). In administrative insurance data sets, Alzheimer’s disease and related disorders are often unmeasured (Wyss et al., 2022). However, the use of donepezil, a medication to treat dementia, is typically recorded and can serve as a proxy variable. In cancer research, a patient’s overall fitness can be an unobserved confounder influencing both the choice of treatment aimed at curing cancer and patient survival. Such a scenario arises in stage III non-small cell lung cancer, where van Amsterdam et al. (2022) examine concurrent versus sequential chemoradiation treatment. A patient’s performance score, reflecting their capacity for self-care and physical ability, serves as a proxy for overall fitness in this context. An additional example comes from educational contexts akin to Deaner (2023). After elementary school in Germany, a decision on the secondary school track is made. Treating track choice as the treatment and degree completion as the outcome, their relation is confounded by the academic ability of the student. Since ability is unobserved, grades from elementary school serve as error-prone proxy measurements. In general, our setting is related to measurement errors in which the proxy is a noisy measurement of the confounder. In particular, it corresponds to a nondifferential measurement error, where the proxy is conditionally independent of the outcome given the the treatment and the confounder (Carroll et al., 2006). 
+
+Extensions. We sketch three generalisations to the PC-SCM of Setting 2 under which our results remain valid. First, we allow for an additional observed confounder O ∈ O ⊆ Rl,where l ∈ N, as illustrated on the left-hand side of Figure 5. We show in Appendix L that Theorem 6 and hence all subsequent results also hold for the causal function in this extended setting. Second, we can revert edges in the directed acyclic graph as illustrated by undirected edges in the middle graph of Figure 5. Here, we can reinterpret our PC-SCM within the context of unobserved mediation analysis by considering a model similar to Setting 2 but where U ← fU (X, N U ) and X ← NX such that the induced graph is as in Setting 2 but with the edge reversed between U and X. In this setting, the causal function corresponds to the controlled direct effect of X on Y as in Liu et al. (2025). The direct effect can relate to implicit biases in clinical decision-making as opposed to biological effects mediated through the patient’s true underlying health status (Liu et al., 2025). Another example is to assess whether genetic variants influence lung cancer directly, or indirectly via smoking behaviour (VanderWeele et al., 2012). The unobserved mediation graph is termed classical measurement error by le Cessie et al. (2012). It is observationally equivalent to the PC-SCM by Pearl (2009, Theorem 1.2.8) because they have the same skeleton and the same (empty) set of v-structures and hence our results remain valid. Further, we can revert the edge between the proxy and the confounder. Under the assumptions of Theorem 9, the matrix A ∈ Rd×k is of full column rank and hence, there exists a left-inverse such that we can write the confounder 
+
+> 16 SPICE
+
+U
+
+W
+
+X Y
+
+O
+
+U
+
+W
+
+X Y
+
+U
+
+W
+
+X Y
+
+X∗ Y ∗
+
+Figure 5: Extensions of Setting 2 with an additional observed confounder O ∈ O ⊆ Rl (left), unobserved mediation (middle) and noisy treatment and outcome (right). as a function of the proxy. It suffices to observe a variable that satisfies the conditional independence in Equation 1, and it need not be a causal descendant of the confounder. Lastly, we consider a case where all variables are measured with error as on the right-hand side of Figure 5. We assume that we know the error mechanisms for W and U , but also for the relation between X∗ and X and Y ∗ and Y . If all three error mechanisms are complete and if the density over all variables is bounded, the causal function of Definition 3, which considers the unobserved treatment and outcome, is identifiable as we show in Appendix L. 
+
+Known and Unknown Error Mechanisms. In this paper, we assume that we know the error mechanism, that is the set of conditional densities of the proxy given the confounder. In the case of an additive noise model as in SPICE Assumption 8, this corresponds to the density of the noise E. We provide an example from differential privacy in which these assumptions are met. The United States census records demographic and housing characteristics of individuals in the United States and is recognized as the world’s longest-running statistical program (Garfinkel, 2022). To protect respondent privacy, the Census Bureau implemented a differential privacy mechanism by adding known, discrete Gaussian noise to the data (U.S. Census Bureau, 2021). If the error mechanism is generally unknown, but we have access to noise-free measurements of the confounder for a subset of the data, we can calibrate our causal function estimates for the entire population accordingly (Kuroki and Pearl, 2014; Pearl, 2010). If we only know the distribution of the noise in the additive noise model, we can estimate its parameters using SPICE-Net-Approx. However, we lack theoretical guarantees for SPICE-Net-Approx, and establishing them is an avenue for future work. When the error mechanism is only partially observable, a natural direction for future research is to derive bounds on the causal function as in Zhang and Su (2024). Moreover, our work may provide additional information about the assumptions in settings with multiple proxies, such as for Deaner (2023), where identifiability is obtained using three proxies without the knowledge of the error mechanism. Future work could extend the continuous confounder setting of SPICE to include arbitrary injective functions within the noise model. Moreover, there appears to be a trade-off between assumptions on the noise density and assumptions on the conditional densities of the confounder given treatment and outcome. To identify alternative complete error mechanisms, one may invoke other Wiener Tauberian theorems or related results such as the theorem for functions in L2 (Wiener, 1932, Theorem I). In our implementation, SPICE-Net uses the energy loss as in Engression (Shen and Meinshausen, 2025), although any strictly proper  
+
+> 17 Vollmer, Pfister ∗and Weichwald ∗
+
+scoring rule is applicable. Overall, we think that a key next step for proxy-based methods is practical evaluation, for example in medical applications and we hope that SPICE will motivate future work on this. 
+
+Acknowledgments and Disclosure of Funding 
+
+We thank Simon Bing, Simon Buchholz, Hubert Drazkowski, Francesco Freni, Juan Gamella, Luigi Gresele, Niels Richard Hansen, Harald Kugler, Kai Lion, Anton Rask Lundborg and Xinwei Shen. This research was supported by a research grant (0069071) from Novo Nordisk Fonden. 
+
+> 18
+
+SPICE 
+
+Appendix A. Ordinary Least Squares Adjustment 
+
+Here, we compare adjustment for the unobserved confounder U with adjustment for the proxy variable W . We consider a univariate linear Gaussian SCM and use ordinary least squares to estimate the causal function. In a linear Gaussian model, the functions fW , f X , f Y
+
+are linear such that 
+
+M lin :
+
+
+
+U ← NU
+
+W ← αU W U + EX ← αU X U + NX
+
+Y ← αU Y U + αXY X + NY
+
+with jointly independent mean-zero Gaussian variables ( NU , E, N X , N Y ) with variances 
+
+σ2
+
+· ∈ R+ and path coefficients α·· ∈ R. This means that the support of all random variables is U = W = X = Y = R. The joint distribution under causal model M lin 0 is 
+
+
+
+UWXY
+
+ ∼ N 
+
+
+
+0000
+
+ , VM lin 0
+
+ , with (7) 
+
+VM lin 0 =                                                                     
+
+> 
+> σ2
+> NUαU W σ2
+> NUαU X σ2
+> NU(αU Y +αXY αU X )σ2
+> NU
+> αU W σ2
+> NUα2
+> U W σ2
+> NU+σ2
+> EαU W αU X σ2
+> NU(αU Y +αXY αU X )αU W σ2
+> NU
+> αU X σ2
+> NUαU X αU W σ2
+> NUα2
+> U X σ2
+> NU+σ2
+> NX(αU Y +αXY αU X )αU X σ2
+> NU+αXY σ2
+> NX
+> (αU Y +αXY αU X )σ2
+> NU(αU Y +αXY αU X )αU W σ2
+> NU(αU Y +αXY αU X )αU X σ2
+> NU+αXY σ2
+> NX(αU Y +αXY αU X )2σ2
+> NU+α2
+> XY σ2
+> NX+σ2
+> NY
+> .
+
+We omit the superscript M lin 0 in the following for clarity. We have for all x ∈ X that 
+
+θ(x) = Edo (X:= x) [Y ]= E [αU Y U + αXY x + NY ]= αXY x. 
+
+This holds because the random noise variables have mean zero. We denote covariances by σ,for example the covariance between U and X is denoted by σU,X . The population solution of the ordinary least squares estimator for regressing Y on X and U is given by 
+
+σX,X σU,X 
+
+σU,X σU,U 
+
+−1 σX,Y 
+
+σU,Y 
+
+
+
+=
+
+" σX,Y σU,U −σU,Y σU,X 
+
+σX,X σU,U −(σU,X )2
+
+σU,Y σX,X −σX,Y σU,X 
+
+σX,X σU,U −(σU,X )2
+
+#
+
+.
+
+We reformulate the regression coefficient for X by inserting the corresponding covariances from Equation 7 such that for all x ∈ X 
+
+σX,Y σU,U − σU,Y σU,X 
+
+σX,X σU,U − (σU,X )2
+
+= (( αU Y + αXY αU X )αU X σ2
+
+NU + αXY σ2
+
+NX )σ2
+
+NU − (αU Y + αXY αU X )σ2
+
+NU αU X σ2
+
+NU
+
+(α2
+
+U X σ2
+
+NU + σ2
+
+NX )σ2
+
+NU − (αU X σ2
+
+NU )2
+
+= αU Y αU X σ2
+
+NU + αXY α2
+
+U X σ2
+
+NU + αXY σ2
+
+NX − αU Y αU X σ2
+
+NU − αXY α2
+
+U X σ2
+
+NU
+
+α2
+
+U X σ2
+
+NU + σ2
+
+NX − α2
+
+U X σ2
+
+NU
+
+= αXY = θ(x)
+
+x . (8) 
+
+19 Vollmer, Pfister ∗ and Weichwald ∗
+
+If we consider a regression of Y on W and X, the regression coefficient for X is 
+
+σX,Y σW,W − σW,Y σW,X 
+
+σX,X σW,W − (σW,X )2
+
+= σW,W 
+
+ αXY σX,X + αU X αU Y σ2
+
+> U,U
+
+ − σW,X 
+
+ αXY σW,X + αU W αU Y σ2
+
+> U,U
+
+
+
+σX,X σW,W − (σW,X )2
+
+= αXY + σW,W αU X αU Y σ2 
+
+> U,U
+
+− σW,X αU W αU Y σ2
+
+> U,U
+
+σX,X σW,W − (σW,X )2
+
+= αXY + αU X αU Y σ2 
+
+> NU
+
+σ2
+
+> E
+
+σX,X σW,W − (σW,X )2
+
+= αXY + αU X αU Y σ2 
+
+> NU
+
+σ2
+
+> E
+
+σX,X σW,W − (σW,X )2
+
+= αXY + αU X αU Y σ2 
+
+> NU
+
+σ2
+
+> E
+
+α2 
+
+> U X
+
+σ2 
+
+> NU
+
+σ2 
+
+> E
+
++ α2 
+
+> U W
+
+σ2 
+
+> NX
+
+σ2 
+
+> NU
+
++ σ2 
+
+> NX
+
+σ2
+
+> E
+
+= αXY + αU X αU Y 
+
+α2 
+
+> U X
+
++ α2 
+
+> U W σ2
+> NX
+> σ2
+> E
+
++ σ2
+
+> NX
+> σ2
+> NU
+
+. (9) The regression coefficient in Equation 9 deviates from Equation 8 if we have confounding, meaning that αU X ̸ = 0 and αU Y ̸ = 0. The deviation reduces if the proxy is close to U
+
+(meaning that σ2 
+
+> E
+
+is small or αU W is large) or if the direct effect of X on Y dominates the confounding effect due to U (meaning that αXY is large, σ2 
+
+> NX
+
+is large or σ2 
+
+> NU
+
+is small). These relationships are described holding all other parameters constant. 
+
+Appendix B. A Complete Error Mechanism Implies Identifiability 
+
+Theorem 6 (identifiability of the causal function) . Let M0 be the true PC-SCM from Setting 2. Assume that the error mechanism is (i) L1-complete as in Definition 5-(i) or (ii) L∞-complete as in Definition 5-(ii) and for all M ∈ M (M0) and for all (x, y ) ∈ X × Y 
+
+it holds that pMU |X,Y (· | x, y ) ∈ L∞(U).Then, the causal function θM0 is identifiable. 
+
+Proof [of Theorem 6] For all ( w, x, y ) ∈ W × X × Y , we have 
+
+pM0  
+
+> W|X,Y
+
+(w | x, y )=
+
+Z
+
+pM0  
+
+> U,W |X,Y
+
+(u, w | x, y ) μ(du )=
+
+Z
+
+pM0  
+
+> W|U,X,Y
+
+(w | u, x, y )pM0  
+
+> U|X,Y
+
+(u | x, y ) μ(du )=
+
+Z
+
+pM0  
+
+> W|U
+
+(w | u)pM0  
+
+> U|X,Y
+
+(u | x, y ) μ(du ) (10) 
+
+20 SPICE 
+
+where the third equation follows from the independence W ⊥⊥ (X, Y ) | U . Furthermore, by the definition of M(M0), it holds for all M ∈ M (M0) that for all ( u, x, y ) ∈ U × X × Y 
+
+pMW |U (· | u) = pM0  
+
+> W|U
+
+(· | u) and pMW |X,Y (· | x, y ) = pM0  
+
+> W|X,Y
+
+(· | x, y ). (11) This implies for all M ∈ M (M0) and for all ( w, x, y ) ∈ W × X × Y that 
+
+Z
+
+pM0  
+
+> W|U
+
+(w | u)pMU |X,Y (u | x, y ) μ(du ) = 
+
+Z
+
+pM0  
+
+> W|U
+
+(w | u)pM0  
+
+> U|X,Y
+
+(u | x, y ) μ(du )and hence 
+
+Z
+
+pM0  
+
+> W|U
+
+(w | u)
+
+
+
+pMU |X,Y (u | x, y ) − pM0  
+
+> U|X,Y
+
+(u | x, y )
+
+
+
+μ(du ) = 0 (12) where we apply Equation 10 and Equation 11. Considering the difference in Equation 12, we have for all M ∈ M (M0) and for all ( x, y ) ∈ X × Y that 
+
+Z
+
+pMU |X,Y (u | x, y ) − pM0  
+
+> U|X,Y
+
+(u | x, y ) μ(du )
+
+≤
+
+Z
+
+pMU |X,Y (u | x, y ) μ(du ) + 
+
+Z
+
+pM0  
+
+> U|X,Y
+
+(u | x, y ) μ(du )=
+
+Z
+
+pMU |X,Y (u | x, y ) μ(du ) + 
+
+Z
+
+pM0  
+
+> U|X,Y
+
+(u | x, y ) μ(du )= 2 .
+
+Hence for all M ∈ M (M0) and for all ( x, y ) ∈ X × Y it holds that pMU |X,Y (· | x, y ) − pM0  
+
+> U|X,Y
+
+(· | 
+
+x, y ) ∈ L1(U). Now we consider the two cases (i) and (ii) separately. 
+
+Case (i). We have for all M ∈ M (M0), using Definition 5-(i) and Equation 12, and for all (x, y ) ∈ X × Y and almost all u ∈ U that 
+
+pMU |X,Y (u | x, y ) − pM0  
+
+> U|X,Y
+
+(u | x, y ) = 0 .
+
+Case (ii). We have for all ( x, y ) ∈ X × Y that pMU |X,Y (· | x, y ) − pM0  
+
+> U|X,Y
+
+(· | x, y ) ∈ L∞(U). It follows that for all M ∈ M (M0), using Definition 5-(ii) and Equation 12, and for all (x, y ) ∈ X × Y and almost all u ∈ U that 
+
+pMU |X,Y (u | x, y ) − pM0  
+
+> U|X,Y
+
+(u | x, y ) = 0 .
+
+Thus in both cases (i) and (ii), we have for all M ∈ M (M0), for all ( x, y ) ∈ X × Y and for almost all u ∈ U that 
+
+pMU |X,Y (u | x, y ) = pM0  
+
+> U|X,Y
+
+(u | x, y ). (13) 
+
+21 Vollmer, Pfister ∗ and Weichwald ∗
+
+The causal function from Definition 3 for all x ∈ X is given by 
+
+θM0 (x) = 
+
+Z
+
+y
+
+Z
+
+pM0  
+
+> Y|U,X
+
+(y | u, x ) pM0 
+
+> U
+
+(u) μ(du, dy )=
+
+Z
+
+y
+
+Z pM0 
+
+> U,X,Y
+
+(u, x, y )
+
+pM0 
+
+> U,X
+
+(u, x ) pM0 
+
+> U
+
+(u) μ(du, dy )=
+
+Z
+
+y
+
+Z pM0  
+
+> U|X,Y
+
+(u | x, y )pM0 
+
+> X,Y
+
+(x, y )
+
+R pM0  
+
+> U|X,Y
+
+(u | x, y )pM0 
+
+> X,Y
+
+(x, y ) μ(dy )
+
+Z Z
+
+pM0  
+
+> U|X,Y
+
+(u | x, y )pM0 
+
+> X,Y
+
+(x, y ) μ(dx, dy )
+
+
+
+μ(du, dy ). (14) In Equation 14, the causal function only depends on observational features and on the conditional densities of the confounder given the treatment and the outcome. For all 
+
+M ∈ M (M0), the observational features coincide by Equation 2, and for the conditional densities of the confounder given the treatment and the outcome, we established equality in Equation 13. Thus we have for all M ∈ M (M0) that 
+
+θM ≡ θM0 .
+
+Therefore, the causal function θM0 is identifiable according to Definition 4. 
+
+Appendix C. A Complete Error Mechanism for Discrete Confounders and Proxies 
+
+Theorem 7 (a complete error mechanism for discrete confounders) . Let M0 be the true PC-SCM from Setting 2. Further, assume that the following holds. (i) (discrete support and sufficient dimension) We have a discrete confounder U ∈ U =
+
+{u1, . . . , u k} and a proxy W ∈ W = {w1, . . . , w d} with d ≥ k.(ii) (full rank error mechanism) We assume that there exists a subset Wr := {w′
+
+> 1
+
+, . . . , w ′
+
+> r
+
+} ⊆ W with cardinality r ∈ N and k ≤ r ≤ d such that the matrix 
+
+
+
+pM0  
+
+> W|U
+
+(w′ 
+
+> 1
+
+| u1) · · · pM0  
+
+> W|U
+
+(w′ 
+
+> 1
+
+| uk)
+
+... . . . ...
+
+pM0  
+
+> W|U
+
+(w′ 
+
+> r
+
+| u1) · · · pM0  
+
+> W|U
+
+(w′ 
+
+> r
+
+| uk)
+
+ ∈ [0 , 1] r×k (4) 
+
+has full column rank. Then, the error mechanism {pM0  
+
+> W|U
+
+(· | u) | u ∈ { u1, . . . , u k}} is L1-complete and L∞-complete. 
+
+Proof [of Theorem 7] The premise in Definition 5-(i) in the discrete setting of Theorem 7 is that for all δ ∈ L1(U), it holds that 
+
+
+
+pM0  
+
+> W|U
+
+(w′ 
+
+> 1
+
+| u1) · · · pM0  
+
+> W|U
+
+(w′ 
+
+> 1
+
+| uk)... . . . ...
+
+pM0  
+
+> W|U
+
+(w′ 
+
+> r
+
+| u1) · · · pM0  
+
+> W|U
+
+(w′ 
+
+> r
+
+| uk)
+
+
+
+δ(u1)...
+
+δ(uk)
+
+ =
+
+
+
+0...0
+
+ .
+
+22 SPICE 
+
+Indeed, for all δ ∈ L1(U) that satisfy this premise it follows that 
+
+
+
+δ(u1)...
+
+δ(uk)
+
+ =
+
+
+
+0...0
+
+ a.e. because the matrix from Equation 4 has full column rank by Assumption (ii). The error mechanism is L1-complete. We have that L1(U) = L∞(U) because U is finite and hence the error mechanism is also L∞-complete according to Definition 5-(ii). 
+
+Appendix D. Previous Identifiability Results 
+
+We state and prove the results on the identifiability of the causal function of Kuroki and Pearl (2014); Pearl (2010). 
+
+Proposition 14 (results on the identifiability of the causal function) . Let M0 be the true PC-SCM from Setting 2. Assume that one of the following holds. (i). We have a discrete confounder U ∈ U = {u1, ..., u d} and a discrete proxy W ∈ W =
+
+{w1, ..., w d} with a finite number of categories d ∈ N. The error mechanism matrix 
+
+
+
+pM0  
+
+> W|U
+
+(w1 | u1) · · · pM0  
+
+> W|U
+
+(w1 | ud)
+
+... . . . ...
+
+pM0  
+
+> W|U
+
+(wd | u1) · · · pM0  
+
+> W|U
+
+(wd | ud)
+
+
+
+is known and invertible. (ii). We have a linear Gaussian structural causal model where fW , f X , f Y are linear functions such that 
+
+M lin :
+
+
+
+U ← NU
+
+W ← αU W U + EX ← αU X U + NX
+
+Y ← αU Y U + αXY X + NY
+
+with jointly independent mean-zero Gaussian variables (NU , E, N X , N Y ) with variances 
+
+σ2 
+
+> ·
+
+∈ R+ and path coefficients α·· ∈ R. This means that the support of all the random variables is U = W = X = Y = R. Further, knowing the error mechanism corresponds to knowing the measurement error variance σ2M lin  
+
+> 0
+> E
+
+.Then, the causal function θM0 is identifiable. 
+
+Proof [of Proposition 14-(i).] We prove the identifiability of θM0 for a discrete setting in which ( W, U ) ∈ { 0, 1}2. Kuroki and Pearl (2014); Pearl (2010) extend the setting to confounders and proxies with more than two categories. We want to show that if the matrix 
+
+f M0 := pM0  
+
+> W|U
+
+(0 | 0) pM0  
+
+> W|U
+
+(0 | 1) 
+
+pM0  
+
+> W|U
+
+(1 | 0) pM0  
+
+> W|U
+
+(1 | 1) 
+
+!
+
+23 Vollmer, Pfister ∗ and Weichwald ∗
+
+is known and invertible, then θM0 is identifiable. The interventional probability mass function for all ( x, y ) ∈ X × Y in a binary confounder model is given by 
+
+pM0;do (X:= x) 
+
+> Y
+
+(y) = pM0  
+
+> Y|U,X
+
+(y | 0, x )pM0 
+
+> U
+
+(0) + pM0  
+
+> Y|U,X
+
+(y | 1, x )pM0 
+
+> U
+
+(1) .
+
+We follow the approach by Greenland and Lash (2015); Kuroki and Pearl (2014); Pearl (2010) known as matrix adjustment method and effect restoration. We have for all ( w, x, y ) ∈{0, 1} × X × Y that 
+
+pM0 
+
+> W,X,Y
+
+(w, x, y ) = pM0 (0 , w, x, y ) + pM0 (1 , w, x, y )= pM0  
+
+> W|U,X,Y
+
+(w | 0, x, y )pM0 
+
+> U,X,Y
+
+(0 , x, y ) + pM0  
+
+> W|U,X,Y
+
+(w | 1, x, y )pM0 
+
+> U,X,Y
+
+(1 , x, y )= pM0  
+
+> W|U
+
+(w | 0) pM0 
+
+> U,X,Y
+
+(0 , x, y ) + pM0  
+
+> W|U
+
+(w | 1) pM0 
+
+> U,X,Y
+
+(1 , x, y )where in the last equation we use Equation 1. In matrix notation, we have for all ( x, y ) ∈ X ×Y 
+
+that 
+
+pM0 
+
+> W,X,Y
+
+(0 , x, y )
+
+pM0 
+
+> W,X,Y
+
+(1 , x, y )
+
+!
+
+= f M0 pM0 
+
+> U,X,Y
+
+(0 , x, y )
+
+pM0 
+
+> U,X,Y
+
+(1 , x, y )
+
+!
+
+.
+
+Since f M0 is invertible, we have for all ( x, y ) ∈ X × Y that 
+
+pM0 
+
+> U,X,Y
+
+(0 , x, y )
+
+pM0 
+
+> U,X,Y
+
+(1 , x, y )
+
+!
+
+= ( f M0 )−1 pM0 
+
+> W,X,Y
+
+(0 , x, y )
+
+pM0 
+
+> W,X,Y
+
+(1 , x, y )
+
+!
+
+.
+
+For all observationally equivalent models M ∈ M (M0), it holds that FM = FM0 . This implies for all M ∈ M (M0) and for all ( x, y ) ∈ X × Y that 
+
+pMU,X,Y (0 , x, y )
+
+pMU,X,Y (1 , x, y )
+
+
+
+= pM0 
+
+> U,X,Y
+
+(0 , x, y )
+
+pM0 
+
+> U,X,Y
+
+(1 , x, y )
+
+!
+
+.
+
+This implies, using Definition 3, for all M ∈ M (M0) that 
+
+θM ≡ θM0
+
+The causal function is identifiable according to Definition 4. 
+
+Proof [of Proposition 14-(ii).] By Appendix A and Equation 8, we have for all x ∈ X that 
+
+σX,Y σU,U − σU,Y σU,X 
+
+σX,X σU,U − (σU,X )2 = θ(x)
+
+x .
+
+24 SPICE 
+
+Following Kuroki and Pearl (2014), we reformulate the ordinary least squares solution, using that σY,U = σY,W  
+
+> αU W
+
+, σU,X = σW,X  
+
+> αU W
+
+and σW,W = α2 
+
+> U W
+
+σU,U + σ2 
+
+> E
+
+, such that for all x ∈ X 
+
+θ(x) = σX,Y σU,U − σU,Y σU,X 
+
+σX,X σU,U − (σU,X )2 x
+
+= σX,Y − σU,Y σU,X 
+
+> σU,U
+
+σX,X − (σU,X )2
+
+> σU,U
+
+x
+
+=
+
+σX,Y − σW,Y σW,X  
+
+> α2
+> U W σU,U
+
+σX,X − σ2 
+
+> W,X
+> α2
+> U W σU,U
+
+x
+
+=
+
+σX,Y − σW,Y σW,X  
+
+> σW,W −σ2
+> E
+
+σX,X − σ2 
+
+> W,X
+> σW,W −σ2
+> E
+
+x. 
+
+For the PC-SCM M lin 0 , we reintroduce notation such that for all x ∈ X 
+
+θM lin 0 (x) = 
+
+σM lin 0 
+
+> X,Y
+
+− σM lin 0      
+
+> W,Y σMlin 0
+> W,X
+> σMlin 0
+> W,W −(σ2
+> E)Mlin 0
+
+σM lin 0 
+
+> X,X
+
+− (σ2      
+
+> W,X )Mlin 0
+> σMlin 0
+> W,W −(σ2
+> E)Mlin 0
+
+x. (15) For all observationally equivalent models M lin ∈ M (M lin  
+
+> 0
+
+), the quantities on the right-hand side of Equation 15 are equivalent. It follows that for all M lin ∈ M (M lin  
+
+> 0
+
+)
+
+θM lin 
+
+= θM lin 0
+
+and θM lin 0 is identifiable according to Definition 4. 
+
+Appendix E. A Complete Error Mechanism for Continuous Confounders and Proxies 
+
+We prove Theorem 9 and introduce the notion of a Fourier transform and the Wiener Tauberian theorem. 
+
+Definition 15 (Fourier transform) . The Fourier transform ˆf of a function f ∈ L1(Rd) is defined for all t ∈ Rd by 
+
+ˆf (t) := (2 π)− d
+
+> 2
+
+Z
+
+f (x) exp( −it T x) dx 
+
+with imaginary unit i.
+
+Before we introduce the Wiener Tauberian theorem, we define translations of a function, the closure of a set and dense sets based on Steen and Seebach Jr. (1970). 
+
+25 Vollmer, Pfister ∗ and Weichwald ∗
+
+Definition 16 (closure of a set, dense set and set of translations) . Let C ⊆ L1 be a set of functions. The closure of a set C, which we denote by C, is the union of the set C and its limit points. For all functions f ∈ L1(Rd), we define the set of translations of f by 
+
+Cf := {f (· + τ ) | τ ∈ Rd}.
+
+The Wiener Tauberian theorem now states that the span of Cf is dense in L1(Rd) if and only if the Fourier transform has no zeros. The one-dimensional case is due to Wiener (1932), with multi-dimensional counterparts in Rudin (1991). In our notation, Theorem 9.5 in Rudin (1991) can be stated as follows. 
+
+Lemma 17 (Wiener Tauberian theorem) . For all f ∈ L1(Rd) it holds that 
+
+span Cf = L1(Rd)
+
+if and only if the Fourier transform of f has no zeros, that is, for all ω ∈ Rd it holds that 
+
+ˆf (ω)̸ = 0 .
+
+Now we prove Theorem 9 and restate SPICE Assumption 8. 
+
+Assumption 8 (SPICE) Let M0 be the true PC-SCM from Setting 2. (i) (sufficient proxy dimension) The proxy W ∈ W ⊆ Rd has at least the dimension of the confounder U ∈ U ⊆ Rk, that is, d ≥ k.(ii) (additive noise model) The proxy follows an additive noise model where fW : ( U, E ) 7 →
+
+AU +E for a matrix A ∈ Rd×k with full column rank and a random variable E ∈ E ⊆ Rd,which is independent of U , that is, 
+
+W = AU + E with U ⊥⊥ E. 
+
+(iii) (density) The distribution of E has a density pM0 
+
+> E
+
+on Rd with respect to the Lebesgue measure. (iv) (non-vanishing Fourier transform) The Fourier transform of the density of E has no zeros, that is, we have for all t ∈ Rd that 
+
+(2 π)− d
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(e) exp( −it T e) de ̸ = 0 
+
+with imaginary unit i.
+
+Theorem 9 (a complete error mechanism for continuous confounders) . Let M0 be the true PC-SCM from Setting 2. Further, assume that SPICE Assumption 8 holds. Then, the error mechanism {pM0  
+
+> W|U
+
+(· | u) | u ∈ Rk} is L∞-complete. 
+
+Proof [of Theorem 9] First, we draw some conclusions that arise from the assumptions of Theorem 9. By the assumption of a full support density in Setting 2, for all ( u, w ) ∈ U × W 
+
+the conditional density pM0  
+
+> W|U
+
+(w | u) is well defined. By the independence of U and E, we have for all ( u, w ) ∈ U × W that pM0 
+
+> E|U
+
+(w − Au | u) = pM0 
+
+> E
+
+(w − Au ). For all u ∈ U , we have 
+
+> 26
+
+SPICE 
+
+that the determinant of the Jacobian of the mapping w − Au 7 → w is 1. Taken together, we have for all ( u, w ) ∈ U × W that 
+
+pM0  
+
+> W|U
+
+(w | u) = pM0 
+
+> E|U
+
+(w − Au | u) = pM0 
+
+> E
+
+(w − Au ) (16) by the change of variables formula (see for example Equation 2.89 in Murphy (2012)). For all w ∈ Rd, we define 
+
+f M0 
+
+> w
+
+: Rk → R, u 7 → pM0 
+
+> E
+
+(w − Au ). (17) Moreover, by assumption SPICE Assumption 8-(iii), we have that pM0 
+
+> E
+
+∈ L1(Rd). The following proof can be structured into five steps. E.1 We show for almost all w ∈ Rd that f M0 
+
+> w
+
+∈ L1(Rk). E.2 We show for all t ∈ Rd that pM0 
+
+> E
+
+(·) exp( −it T ·) ∈ L1(Rd). E.3 We show that there exists a set W′ ⊆ Rd with positive Lebesgue measure on Rd such that for all w ∈ W ′ the Fourier transform of f M0 
+
+> w
+
+has no zeros. E.4 We apply the Wiener Tauberian theorem for functions in L1(Rk). E.5 We show that the error mechanism is complete by choosing a specific function g ∈
+
+L1(Rk) ∩ L∞(Rk). The first and third step are further divided into the cases where k = d and k < d .
+
+E.1 We show for almost all w ∈ Rd that f M0 
+
+> w
+
+∈ L1(Rk).We begin with case of k < d . For this, we extend the full column matrix A ∈ Rd×k by adding columns, while keeping the full column rank, to obtain a square matrix, which we denote by A′ = [ A, A ′′ ] ∈ Rd×d where A′′ ∈ Rd×(d−k). This is justified because the columns of A are linearly independent, so it can be extended to a basis of Rd, as stated in Axler (2015, Theorem 2.33). We fix an arbitrary A′′ such that the extended matrix A′ has full rank. Further, we define a variable U ′ = [ U, U ′′ ]T ∈ Rd for some variable U ′′ ∈ Rd−k and for all w ∈ Rd we define the transformation Tw : Rd → Rd via 
+
+Tw(u′) = w − A′u′. (18) Next, we outline that the assumptions of the change of variables formula by Folland (1999, Theorem 2.47) are met. The transformations Tw have continuous first-order partial derivatives, the transformations are injective and the Jacobian, which is given by −A′, is invertible. Since pM0 
+
+> E
+
+≥ 0, we have by Folland (1999, Theorem 2.47) for all w ∈ Rd that 1 = 
+
+Z
+
+pM0 
+
+> E
+
+(u′) du ′ =
+
+Z
+
+pM0 
+
+> E
+
+(w − A′u′
+
+| {z } 
+
+> =Tw(u′)
+
+)| det( A′)| du ′.
+
+Thus we have for all w ∈ Rd that 0 <
+
+Z
+
+|pM0 
+
+> E
+
+(w − A′u′)| du ′ = 1
+
+| det( A′)| < ∞ (19) 
+
+27 Vollmer, Pfister ∗ and Weichwald ∗
+
+and hence pM0 
+
+> E
+
+(w − A′·) ∈ L1(Rd) because A′ is invertible. By Fubini’s Theorem (e.g., Rudin, 1987, Theorem 8.8) we have for all w ∈ Rd that 
+
+Z
+
+> Rd
+
+pM0 
+
+> E
+
+(w − A′u′) du ′ =
+
+Z
+
+> Rd−k
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w − A′′ u′′ − Au ) du du ′′ 
+
+= 1
+
+| det( A′)| . (20) Equations 19 and 20 imply that for all w ∈ Rd and for almost all u′′ ∈ Rd−k that 
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w − A′′ u′′ − Au ) du < ∞.
+
+Thus, for almost all w′ := w − A′′ u′′ ∈ Rd we have that 
+
+Z
+
+> Rk
+
+|pM0 
+
+> E
+
+(w′ − Au )| du < ∞.
+
+and thus 
+
+f M0 
+
+> w′
+
+∈ L1(Rk).
+
+We continue with the case where d = k. We have for all w ∈ Rd that 
+
+Z
+
+|pM0 
+
+> E
+
+(w − Au )| du = 1
+
+| det( A)| < ∞
+
+by Rudin (1987, Theorem 7.26). Thus we have for all w ∈ Rd that 
+
+f M0 
+
+> w
+
+∈ L1(Rk).
+
+In summary, we showed for k ≤ d and for almost all w ∈ Rd that 
+
+f M0 
+
+> w
+
+∈ L1(Rk). (21) 
+
+E.2 We show for all t ∈ Rd that pM0 
+
+> E
+
+(·) exp( −it T ·) ∈ L1(Rd).
+
+For this, we fix an arbitrary t ∈ Rd. By SPICE Assumption 8-(iv), we have that (2 π)− d
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(e) exp( −it T e) de ̸ = 0 .
+
+We have for all x ∈ R that 
+
+| exp( ix )| = | cos( x) + i sin( x)| =
+
+q
+
+cos 2(x) + sin 2(x) = 1 (22) with imaginary number i by Euler (1748) and a Pythagorean trigonometric identity. Now we have that Z
+
+|pM0 
+
+> E
+
+(e) exp( −it T e)| de =
+
+Z
+
+|pM0 
+
+> E
+
+(e)| de = 1 .
+
+Since t was arbitrary, we showed for all t ∈ Rd that pM0 
+
+> E
+
+(·) exp( −it T ·) ∈ L1(Rd). 
+
+28 SPICE 
+
+E.3 We show that there exists a set W′ ⊆ Rd with positive Lebesgue measure on Rd such that for all w ∈ W ′ the Fourier transform of f M0 
+
+> w
+
+has no zeros. We begin with the case of k < d . We use the same notation as above. In the following, we will fix an arbitrary t ∈ Rd to ease presentation. We use the change of variables formula by Folland (1999, Theorem 2.47) for the transformations in Equation 18 with the function from E.2. Thus, we have for all w ∈ Rd that (2 π)− d
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(u′) exp( −it T u′) du ′̸ = 0 
+
+⇐⇒ (2 π)− d
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(w − A′u′) exp( −it T (w − A′u′)) | det( A′)| du ′̸ = 0 
+
+⇐⇒ (2 π)− d 
+
+> 2
+
+| det( A′)| exp( −it T w)
+
+Z
+
+pM0 
+
+> E
+
+(w − A′u′) exp( it T A′u′) du ′̸ = 0 
+
+⇐⇒ 
+
+Z
+
+pM0 
+
+> E
+
+(w − A′u′) exp( it T A′u′) du ′̸ = 0 . (23) We have for all w ∈ Rd that pM0 
+
+> E
+
+(w − A′·) exp (it T A′·) ∈ L1(Rd) by Equation 22 and Equation 19. By Fubini’s Theorem, as in Rudin (1987, Theorem 8.8), we have for all w ∈ Rd
+
+that 
+
+Z
+
+pM0 
+
+> E
+
+(w − A′u′) exp( it T A′u′) du ′̸ = 0 
+
+⇐⇒ 
+
+Z
+
+> Rd−k
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w − A′′ u′′ − Au ) exp( it T A′′ u′′ + it T Au ) du du ′′ ̸ = 0 For the previous statement to hold, for all w ∈ Rd there exists a set U′′  
+
+> w
+
+⊆ Rd−k with positive Lebesgue measure on Rd−k such that for all u′′ ∈ U ′′  
+
+> w
+
+it holds that 
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w − A′′ u′′ − Au ) exp( it T A′′ u′′ + it T Au ) du ̸ = 0 
+
+⇐⇒ 
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w − A′′ u′′ − Au ) exp( it T Au ) du ̸ = 0 .
+
+We continue by showing that there exists a set W′ ⊆ Rd with positive Lebesgue measure on Rd. such that for all w′ ∈ W ′
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w′ − Au ) exp( it T Au ) du ̸ = 0 .
+
+We consider Lebesgue measures equipped with a Lebesgue σ-algebra and denote the Lebesgue measure on Rd by λd. Further, we define the following sets 
+
+H =
+
+
+
+(w, u ′′ ) ∈ Rd × Rd−k |
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w − A′′ u′′ − Au ) exp( it T Au ) du ̸ = 0 
+
+
+
+and for all w ∈ Rd
+
+Hw =
+
+n
+
+u′′ ∈ Rd−k | (w, u ′′ ) ∈ H 
+
+o
+
+.
+
+29 Vollmer, Pfister ∗ and Weichwald ∗
+
+For all w ∈ Rd the set Hw has positive Lebesgue measure on Rd−k denoted by 
+
+λd−k(Hw) > 0since U′′  
+
+> w
+
+⊆ H w with positive Lebesgue measure on Rd−k. For the Lebesgue measure of H
+
+on Rd × Rd−k, we have that 
+
+λd×(d−k)(H) = 
+
+Z
+
+> Rd
+
+λd−k(Hw) dw > 0 (24) by Folland (1999, Theorem 2.36). We define the affine and surjective map 
+
+M : Rd × Rd−k → Rd, (w, u ′′ ) 7 → w − A′′ u′′ .
+
+It remains to show that λdL(M (H)) > 0. We extend M to a bijective and affine map 
+
+M ′ : Rd × Rd−k → Rd × Rd−k, (w, u ′′ ) 7 → (w − A′′ u′′ , u ′′ )such that M = proj ◦ M ′ where proj is a suitable projection onto Rd. The Jacobian of M ′ is given by a triangular matrix with ones on its diagonal and a determinant equal to 1. Since 
+
+M ′ is injective, we have by Folland (1999, Theorem 2.47) and for H′ := M ′(H) ⊆ Rd × Rd−k
+
+that 
+
+λd×(d−k)(H′) = 
+
+Z
+
+> H
+
+1 dw du ′′ = λd×(d−k)(H) > 0where the inequality follows from Equation 24. If w′̸ ∈ M (H) ⊆ Rd, then it holds for all 
+
+u′′ ∈ Rd−k that ( w′, u ′′ )̸ ∈ H ′ and the indicator function 1H′ (w′, u ′′ ) = 0 . (25) By Rudin (1987, Theorem 8.8), it holds that 0 < λ d×(d−k)(H′) = 
+
+Z
+
+> Rd×Rd−k
+
+1H′ (w′, u ′′ ) dw ′ du ′′ 
+
+=
+
+Z
+
+> Rd
+
+Z
+
+> Rd−k
+
+1H′ (w′, u ′′ ) du ′′ dw ′
+
+=
+
+Z 
+
+> M(H)
+
+Z
+
+> Rd−k
+
+1H′ (w′, u ′′ ) du ′′ dw ′
+
+where the last equality follows from Equation 25. From this, we conclude that 
+
+λdL(M (H)) > 0.
+
+By definition, we have for all w′ ∈ M (H) that 
+
+Z
+
+> Rk
+
+pM0 
+
+> E
+
+(w′ − Au ) exp( it T Au ) du ̸ = 0 . (26) 
+
+30 SPICE 
+
+Since t was arbitrary, Equation 26 holds for all t ∈ Rd. Since for all t ∈ Rd, there exists a 
+
+s := −AT t ∈ Rk. Together, for W′ := M (H) we have that for all ( s, w ′) ∈ Rk × W ′ that (2 π)− f
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(w − Au ) exp( −is T u) du ̸ = 0 . (27) 
+
+Now we consider the case of d = k. By Equation 23 and the change of variables formula in Folland (1999, Theorem 2.47), we have for all ( t, w ) ∈ Rd × Rd that (2 π)− f
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(w − Au ) exp( it T Au ) du ̸ = 0 .
+
+For all t ∈ Rd, there exists a s := −AT t ∈ Rk. Thus, we conclude that for all ( s, w ) ∈ Rk ×Rd
+
+that (2 π)− f
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(w − Au ) exp( −is T u) du ̸ = 0 . (28) 
+
+We summarise now. For k ≤ d, we showed that there exists a set W′ ⊆ Rd with positive Lebesgue measure on Rd such that for all w ∈ W ′ the Fourier transform of f M0 
+
+> w
+
+has no zeros by Equations 27 and 28 and 
+
+f M0 
+
+> w
+
+∈ L1(Rk)by Equation 21. 
+
+E.4 We exploit the Wiener Tauberian theorem for functions in L1(Rk).
+
+We fix a w ∈ W ′ for which the Fourier transform of f M0 
+
+> w
+
+has no zeros and f M0 
+
+> w
+
+∈ L1(Rk). We apply the Wiener Tauberian theorem, which leads to span Cf M0
+
+> w
+
+= L1(Rk).
+
+Now we consider all bounded functions g ∈ L1(Rk) ∩ L∞(Rk) and approximate them using the result from the Tauberian theorem. For all functions g ∈ L1(Rk) ∩ L∞(Rk), there exists a sequence of functions ( gn)n∈N ⊆ span Cf M0
+
+> w
+
+⊆ L1(Rk) by Royden and Fitzpatrick (2010, Definition in 7.4), for which it holds that lim 
+
+> n→∞
+
+Z
+
+|gn(u) − g(u)| du = 0 . (29) The sequence ( gn)n∈N converges to g in L1(Rk). Let δ ∈ L∞(Rk) be a bounded function. Then there exists a Q ∈ R such that lim 
+
+> n→∞
+
+Z
+
+|gn(u)δ(u) − g(u)δ(u)| du = lim 
+
+> n→∞
+
+Z
+
+|δ(u)|| gn(u) − g(u)| du 
+
+≤ Q lim 
+
+> n→∞
+
+Z
+
+|gn(u) − g(u)| du 
+
+= 0 .
+
+31 Vollmer, Pfister ∗ and Weichwald ∗
+
+by Equation 29. Therefore we have for all g ∈ L1(Rk) ∩ L∞(Rk) that lim 
+
+> n→∞
+
+Z
+
+|gn(u)δ(u) − g(u)δ(u)| du = 0 (30) and hence the sequence ( gnδ)n∈N converges to gδ in L1(Rk). Now we show for all g ∈
+
+L1(Rk) ∩ L∞(Rk) and for all n ∈ N that gnδ − gδ ∈ L1(Rk) by 
+
+Z
+
+|gn(u)δ(u) − g(u)δ(u)| du ≤ Q
+
+Z
+
+|gn(u) − g(u)| du 
+
+≤ Q
+
+Z
+
+|gn(u)| du + Q
+
+Z
+
+|g(u)| du < ∞
+
+since g ∈ L1(Rk) and gn ∈ L1(Rk). By Rudin (1987, Theorem 1.33), we have for all 
+
+g ∈ L1(Rk) ∩ L∞(Rk) and for all n ∈ N that 
+
+Z
+
+g(u)δ(u)du − gn(u)δ(u)du ≤
+
+Z
+
+|gn(u)δ(u) − g(u)δ(u)| du. 
+
+This leads for all g ∈ L1(Rk) ∩ L∞(Rk) to lim 
+
+> n→∞
+
+Z
+
+g(u)δ(u) du − gn(u)δ(u) du ≤ lim 
+
+> n→∞
+
+Z
+
+|gn(u)δ(u) − g(u)δ(u)| du = 0 by Equation 30. Then it holds for all g ∈ L1(Rk) ∩ L∞(Rk) that lim 
+
+> n→∞
+
+Z
+
+g(u)δ(u) du −
+
+Z
+
+gn(u)δ(u) du = 0 and finally for all g ∈ L1(Rk) ∩ L∞(Rk) that 
+
+Z
+
+g(u)δ(u) du = lim 
+
+> n→∞
+
+Z
+
+gn(u)δ(u) du. 
+
+Further for all n ∈ N, there exist ( αin, τ in) ∈ R × Rk for i ∈ { 1, . . . , m n} with mn ∈ N, such that for win := w − Aτ in ∈ Rd it holds that lim 
+
+> n→∞
+
+Z
+
+gn(u)δ(u) du = lim 
+
+> n→∞
+
+Z mnX
+
+> i=1
+
+αin f M0 
+
+> w
+
+(u + τ in)δ(u) du 
+
+= lim 
+
+> n→∞
+> mn
+
+X
+
+> i=1
+
+αin
+
+Z
+
+pM0 
+
+> E
+
+(w − A(u + τ in)) δ(u) du 
+
+= lim 
+
+> n→∞
+> mn
+
+X
+
+> i=1
+
+αin
+
+Z
+
+pM0 
+
+> E
+
+(win − Au )δ(u) du 
+
+= lim 
+
+> n→∞
+> mn
+
+X
+
+> i=1
+
+αin
+
+Z
+
+pM0  
+
+> W|U
+
+(win | u)δ(u) du 
+
+32 SPICE 
+
+This follows from Equation 16 and Equation 17. The function δ ∈ L∞(Rk) was arbitrary and hence we have shown that for all g ∈ L1(Rk) ∩ L∞(Rk) and all δ ∈ L∞(Rk) there exists a sequence ( αin, w in) ∈ R × Rd such that 
+
+Z
+
+g(u)δ(u) du = lim 
+
+> n→∞
+> mn
+
+X
+
+> i=1
+
+αin
+
+Z
+
+pM0  
+
+> W|U
+
+(win | u)δ(u) du. (31) 
+
+E.5 We pick a specific g ∈ L1(Rk) ∩ L∞(Rk) in order to show that the error mechanism is complete according to Definition 5. 
+
+Pick a δ′ ∈ L∞(U) which satisfies the premise in Equation 3, that is, 
+
+Z
+
+> U
+
+pM0  
+
+> W|U
+
+(· | u)δ′(u) du ≡ 0.
+
+We extend δ′ ∈ L∞(U) to δ ∈ L∞(Rk) for all u ∈ Rk by 
+
+δ(u) = 
+
+(
+
+δ′(u) u ∈ U 
+
+0 else. We have that Z
+
+> Rk
+
+pM0  
+
+> W|U
+
+(· | u)δ(u) du ≡ 0. (32) Combining Equation 32 and Equation 31, it holds for all g ∈ L1(Rk) ∩ L∞(Rk) that 
+
+Z
+
+> Rk
+
+g(u)δ(u) du = 0 . (33) Let Σ denote the Lebesgue σ-algebra on Rk. For all S ∈ Σ, we define the function gS ∈ L1(Rk)for all u ∈ Rk as 
+
+gS (u) = 
+
+(
+
+N (u), if u ∈ S
+
+0, if u / ∈ S. 
+
+where we define N (·) := 1(2 π)f / 2 exp  − 12 ∥ · ∥ 22
+
+. The function N (·) is a multivariate standard Gaussian density and therefore for all S ∈ Σ it holds that gS ∈ L∞(Rk) and gS ∈ L1(Rk). Using Equation 33, we have for all S ∈ Σ that 
+
+Z
+
+> Rk
+
+gS (u)δ(u) du =
+
+Z
+
+> S
+
+N (u)δ(u) du = 0 .
+
+We can apply the fundamental property of integrals as in Rudin (1987, Theorem 1.39 b)) and hence 
+
+N δ ≡ 0almost everywhere on Rk. Since for all u ∈ Rk, we have that N (u)̸ = 0, we conclude that 
+
+δ ≡ 0
+
+33 Vollmer, Pfister ∗ and Weichwald ∗
+
+almost everywhere on Rk. This implies that 
+
+δ′ ≡ 0almost everywhere on U.The function δ′ ∈ L∞(U) was arbitrary and hence we have shown that for all δ′ ∈ L∞(U)that R 
+
+> U
+
+pM0  
+
+> W|U
+
+(· | u)δ′(u) du ≡ 0 implies δ′ ≡ 0 a.e. The error mechanism is L∞-complete. 
+
+Appendix F. Examples of a Non-vanishing Fourier Transform 
+
+We show that the Fourier transform of a univariate Gaussian distribution has no zeros. 
+
+Proof [Fourier transform of a univariate Gaussian distribution has no zeros] Let X be a univariate Gaussian random variable with mean m ∈ R and variance σ2 > 0. With a = 12σ2
+
+and b = mσ2 , we have that 
+
+Z ∞−∞ 
+
+1
+
+√2πσ 2 exp 
+
+
+
+− (x − m)2
+
+2σ2
+
+
+
+dx = 1 
+
+⇐⇒ 
+
+Z ∞−∞ 
+
+1
+
+√2πσ 2 exp 
+
+
+
+− x2
+
+2σ2 − m2
+
+2σ2 + xm σ2
+
+
+
+dx = 1 
+
+⇐⇒ 1
+
+p πa
+
+Z ∞−∞ 
+
+exp 
+
+
+
+−ax 2 − b2
+
+4a + bx 
+
+
+
+dx = 1 
+
+⇐⇒ 
+
+Z ∞−∞ 
+
+exp  −ax 2 + bx  dx =
+
+r πa exp 
+
+ b2
+
+4a
+
+
+
+. (34) The Fourier transform in Definition 15 is given for all t ∈ R by ˆf (t) = (2 π)− 12
+
+Z ∞−∞ 
+
+1
+
+√2πσ 2 exp 
+
+
+
+− (x − m)2
+
+2σ2
+
+
+
+exp( −itx ) dx 
+
+= 12πσ 
+
+Z ∞−∞ 
+
+exp 
+
+
+
+− (x − m)2
+
+2σ2 − itx 
+
+
+
+dx 
+
+= 12πσ exp 
+
+
+
+− m2
+
+2σ2
+
+ Z ∞−∞ 
+
+exp 
+
+
+
+− x2
+
+2σ2 +
+
+ mσ2 − it 
+
+
+
+x
+
+
+
+dx 
+
+= 12πσ exp 
+
+
+
+− m2
+
+2σ2
+
+ √π2σ2 exp 
+
+  mσ2 − it 242σ2
+
+!
+
+34 SPICE 
+
+where we use Equation 34 in the last equation with a = 12σ2 and b = mσ2 − it . We simplify further such that for all t ∈ R we have 12πσ exp 
+
+
+
+− m2
+
+2σ2
+
+ √π2σ2 exp 
+
+  mσ2 − it 242σ2
+
+!
+
+= 1
+
+√2π exp 
+
+− m2
+
+2σ2 +
+
+ m2 
+
+> (σ2)2
+
++ i2t2 − 2mit σ2
+
+
+
+σ2
+
+2
+
+
+
+= 1
+
+√2π exp 
+
+
+
+− m2
+
+2σ2 + m2
+
+2σ2 − t2σ2
+
+2 − mit 
+
+
+
+= 1
+
+√2π exp 
+
+
+
+− t2σ2
+
+2
+
+
+
+exp ( −mit ) .
+
+This leads for all t ∈ R to 
+
+ˆf (t) = 1
+
+√2π exp 
+
+
+
+− t2σ2
+
+2
+
+
+
+|exp ( −mit )|
+
+= 1
+
+√2π exp 
+
+
+
+− t2σ2
+
+2
+
+
+
+|cos( −mt ) + i sin( −mt )|
+
+= 1
+
+√2π exp 
+
+
+
+− t2σ2
+
+2
+
+ q 
+
+cos 2(−mt ) + sin 2(−mt )= 1
+
+√2π exp 
+
+
+
+− t2σ2
+
+2
+
+
+
+> 0where we use the formula by Euler (1748). This shows that the Fourier transform of a univariate Gaussian distribution has no zeros. 
+
+Appendix G. Sufficient Conditions for a Non-vanishing Fourier Transform 
+
+We prove the result of Proposition 10 and introduce the notions of the characteristic function, infinite divisibility and convolutionally infinitely divisible kernels. The Fourier transform of a probability density function with sign reversal is called the characteristic function of a random variable. We define it with respect to the Lebesgue measure as follows. 
+
+Definition 18 (characteristic function) . The characteristic function of a d-dimensional random variable X is defined for all t ∈ Rd by 
+
+φ(t) = 
+
+Z
+
+pX (x) exp( it T x) dx 
+
+with imaginary unit i.
+
+Now we turn to infinitely divisible characteristic functions. A probability distribution 
+
+P is infinitely divisible if it can be expressed as the probability distribution of the sum of an arbitrary number of independent and identically distributed random variables. The  
+
+> 35 Vollmer, Pfister ∗and Weichwald ∗
+
+corresponding characteristic function is called infinitely divisible. We denote the convolution of two distributions by ∗ as defined in Sato (1999, Definition 2.4). We define infinitely divisible distributions and characteristic functions based on Sato (1999, Definition 7.1) as follows. 
+
+Definition 19 (infinitely divisible characteristic function) . A probability distribution P on 
+
+Rd is infinitely divisible if for all n ∈ N, there exists a probability distribution Pn on Rd such that 
+
+P = Pn ∗ Pn ∗ · · · ∗ Pn
+
+| {z } 
+
+> ntimes
+
+.
+
+The characteristic function of P is called infinitely divisible. 
+
+We define convolutionally infinitely divisible kernels based on Nishiyama and Fukumizu (2016). 
+
+Definition 20 (convolutionally infinitely divisible kernel) . A kernel function k : Rd ×Rd → R
+
+is a convolutionally infinitely divisible kernel if for all (u, w ) ∈ Rd × Rd
+
+k(u, w ) = κ(w − u)
+
+where κ is a continuous and bounded density of a symmetric and infinitely divisible distribu-tion. 
+
+Next, we prove Proposition 10. 
+
+Proposition 10 (sufficient conditions for a non-vanishing Fourier transform) . Let M0 be the true PC-SCM from Setting 2 and assume that SPICE Assumption 8-(iii) holds. Further, assume that one of the following holds. (i) The characteristic function of E has no zeros. This means that for all t ∈ Rd, we have that Z
+
+pM0 
+
+> E
+
+(e) exp( it T e) de ̸ = 0 
+
+with imaginary unit i.(ii) The probability distribution P M0 
+
+> E
+
+is infinitely divisible. (iii) The density pM0 
+
+> E
+
+is a convolutionally infinitely divisible kernel. Then, SPICE Assumption 8-(iv) holds, that is, the Fourier transform of the density of E has no zeros. 
+
+Proof [of Proposition 10] (i). Starting from Assumption (i) of Proposition 10, we have for all t ∈ Rd that 
+
+Z
+
+pM0 
+
+> E
+
+(e) exp( it T e) de ̸ = 0 
+
+⇐⇒ (2 π)− d
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(e) exp( it T e) de ̸ = 0 (35) 
+
+⇐⇒ (2 π)− d
+
+> 2
+
+Z
+
+pM0 
+
+> E
+
+(e) exp( −it T e) de ̸ = 0 (36) 
+
+> 36 SPICE
+
+because (2 π)− d 
+
+> 2
+
+is non-zero and we can change the sign of t in Equation 35. The statement in Equation 36 is SPICE Assumption 8-(iv). (ii). By Sato (1999, Lemma 7.5), we have that Assumption (ii) of Proposition 10 implies for all t ∈ Rd that Z
+
+exp( it T e) P M0 
+
+> E
+
+(de )̸ = 0 .
+
+In combination with SPICE Assumption 8-(iii), we have for all t ∈ Rd that 
+
+Z
+
+exp( it T e)pM0 
+
+> E
+
+(e) de ̸ = 0 .
+
+By the proof in (i) above, this is equivalent to SPICE Assumption 8-(iv). (iii). We define for all ( u, w ) ∈ Rd × Rd a kernel function kM0 : Rd × Rd → R by 
+
+kM0 (u, w ) := pM0 
+
+> E
+
+(w − u).
+
+We have that pM0 
+
+> E
+
+is a continuous and bounded density of a symmetric and infinitely divisible distribution P M0 
+
+> E
+
+by Definition 20. This implicitly assumes that d = k,
+
+A = 1 d×d, Assumption (ii) of Proposition 10 holds and that P M0 
+
+> E
+
+is symmetric and bounded such that pM0 
+
+> E
+
+∈ L∞(Rd). Since P M0 
+
+> E
+
+is an infinitely divisible distribution, we have by the proof in (ii) above that this implies that SPICE Assumption 8-(iv) holds. 
+
+Appendix H. When the Error Mechanism is Not Complete 
+
+We define non-injective functions in Definition 21 and prove that the corresponding error mechanism is not complete. 
+
+Definition 21 (non-injective function of positive and finite measure) . A measurable function 
+
+g : U → Rd is non-injective of positive and finite measure if there exist two disjoint sets 
+
+U1 ⊆ U and U2 ⊆ U with ∞ > μ (U1) = μ(U2) > 0 such that for all u1 ∈ U 1 there exists a 
+
+u2 ∈ U 2 with u1̸ = u2 for which 
+
+g(u1) = g(u2).
+
+Proposition 11 (non-injective noise model is not complete) . Let M0 be the true PC-SCM from Setting 2. Assume the proxy follows an additive noise model where fW : ( U, E ) 7 →
+
+g(U )+ E for a measurable and non-injective function of positive and finite measure g : U → Rd
+
+and a random variable E ∈ E ⊆ Rd, which is independent of U , that is, 
+
+W = g(U ) + E with U ⊥⊥ E. 
+
+Further, assume that the distribution of E has a density on Rd with respect to a σ-finite measure μ.Then, the error mechanism is not L1-complete and not L∞-complete. 
+
+> 37
+
+Vollmer, Pfister ∗ and Weichwald ∗
+
+Proof [of Proposition 11] We have for all ( u, w ) ∈ Rk × Rd that 
+
+pM0  
+
+> W|U
+
+(w | u) = pM0 
+
+> E|U
+
+(w − g(u) | u) = pM0 
+
+> E
+
+(w − g(u)) by the change of variables formula (see for example Equation 2.89 in Murphy (2012)) and the independence of E and U . We define δ ∈ L1(U) ∩ L∞(U) by 
+
+δ(u) = 
+
+
+
+1 if u ∈ U 1
+
+−1 if u ∈ U 2
+
+0 otherwise where the sets U1 and U2 are some disjoint positive and finite measure sets and, per construction, witness the non-injectivity of g as in Definition 21. By construction of U1 and 
+
+U2, we have for all w ∈ Rd that 
+
+Z
+
+pM0 
+
+> E
+
+(w − g(u1)) μ(du 1) = 
+
+Z
+
+pM0 
+
+> E
+
+(w − g(u2)) μ(du 2).
+
+For all w ∈ Rd, it holds that 
+
+Z
+
+pM0 
+
+> E
+
+(w − g(u)) δ(u) μ(du ) = 0 .
+
+The premises in Definition 5-(i) and Definition 5-(ii) are satisfied, but since δ̸ ≡ 0, the error mechanism is not L1-complete and not L∞-complete. 
+
+Appendix I. Guarantees for SPICE-Net 
+
+Proposition 12 (population guarantee for SPICE-Net) . Let M0 be the true PC-SCM from Setting 2. Assume that the model for W | (X, Y ) is correctly specified, that is, there exists a gγ ∈ G such that for a multivariate standard Gaussian random variable E and for all 
+
+(x, y ) ∈ X × Y , it holds that gγ (x, y, E, E ) ∼ P M0  
+
+> W|(X,Y )=( x,y )
+
+. Furthermore, assume that the expectation in Equation 5 is finite. Then, for the solution g∗ 
+
+> γ
+
+in Equation 5, we have for almost all (x, y ) ∈ X × Y that 
+
+g∗ 
+
+> γ
+
+(x, y, E, E ) ∼ P M0  
+
+> W|(X,Y )=( x,y )
+
+.
+
+Moreover, by SPICE Assumption 8-(i) to (iii) there exists a matrix eA ∈ Rd×k with full column rank such that for almost all (x, y ) ∈ X × Y 
+
+g∗ 
+
+> γ
+
+(x, y, E, E ) − E ∼ P M0  
+
+> eAU |(X,Y )=( x,y )
+
+.
+
+Proof [of Proposition 12] Since the model for W | (X, Y ) is correctly specified we have by Shen and Meinshausen (2025, Proposition 1), which ultimately relies on the energy score being a strictly proper scoring rule (Sz´ ekely, 2002, Theorem 2), for almost all ( x, y ) ∈ X × Y 
+
+that 
+
+g∗ 
+
+> γ
+
+(x, y, E, E ) ∼ P M0  
+
+> W|(X,Y )=( x,y )
+
+.
+
+38 SPICE 
+
+By SPICE Assumption 8-(ii), there exists a eA ∈ Rd×k such that for almost all ( x, y ) ∈ X × Y 
+
+g∗ 
+
+> γ
+
+(x, y, E, E ) − E ∼ P M0  
+
+> eAU |(X,Y )=( x,y )
+
+.
+
+Proposition 13 (adjusting for b(U )) . Let M0 be the true PC-SCM from Setting 2. For all Borel measurable and injective functions b : Rk → Rd, we recover the causal function by adjusting for b(U ), that is, for all x ∈ X we have that 
+
+θM0 (x) = EM0 EM0 [Y | b(U ), X = x] a.s. 
+
+Proof [of Proposition 13] We define the random variable Z := b ◦ U . The causal function is given for all x ∈ X by 
+
+θM0 (x) = EM0;do (X:= x) [Y ] = EM0 EM0 [Y | U, X = x] .
+
+We consider conditional expectations with respect to the σ-algebra generated by a random variable. For this, we define the σ-algebra generated by U as ΣU := {U −1(B) | B ∈ B (Rk)} (37) where B(Rk) are the Borel sets of Rk. The σ-algebra generated by Z is given by ΣZ := {Z−1(B) | B ∈ B (Rd)}. (38) Next, we show that ΣU = Σ Z .
+
+For a Borel measurable and injective function b : Rk → Rd and for all B ∈ B (Rd) we have that 
+
+Z−1(B) = ( b ◦ U )−1(B) = ( U −1 ◦ b−1)( B).
+
+For all B ∈ B (Rd), we have that b−1(B) ∈ B (Rk) since b is Borel measurable and ( U −1 ◦
+
+b−1)( B) ∈ ΣU by definition in Equation 37. We have shown that ΣZ ⊆ ΣU . (39) Because b is an injective function, there exists a (bijective) left-inverse b′ : b(Rk) → Rk such that 
+
+U = b′ ◦ Z. 
+
+The function b′ has an inverse which we denote by b′′ : Rk → b(Rk). By Kechris (1995, Theorem 15.2) we have for all B ∈ B (Rk) that 
+
+b(B) ∈ B (Rd)
+
+39 Vollmer, Pfister ∗ and Weichwald ∗
+
+and 
+
+b′′ (B) ∈ B (b(Rk)) ⊆ B (Rd). (40) Then, we have for all B ∈ B (Rk) that 
+
+U −1(B) = ( b′ ◦ Z)−1(B) = ( Z−1 ◦ b′′ )( B).
+
+For all B ∈ B (Rk), we have that b′′ (B) ∈ B (Rd) by Equation 40 and ( Z−1 ◦ b′′ )( B) ∈ ΣZ by definition in Equation 38. We have shown that ΣU ⊆ ΣZ . (41) Equation 39 and Equation 41 lead to ΣU = Σ Z .
+
+Thus, we have for all x ∈ X that 
+
+EM0 [Y | U, X = x] = EM0 [Y | Z, X = x] a.s. and for all x ∈ X that 
+
+θM0 (x) = EM0 EM0 [Y | U, X = x] = EM0 EM0 [Y | Z, X = x] a.s. 
+
+Appendix J. Simulation 
+
+SPICE-Net is implemented in PyTorch (Paszke et al., 2017). In our simulations, we keep the neural network architecture of the first step of SPICE-Net and SPICE-Net-Approx fixed across all data sets A-D of Table 1. We only modify the distribution of E, which we sample from in the last layer of Figure 2, to match the data generating process in Table 1 while taking into account the standardisation with values given in Table 2. A. Gaussian B. Binary C. Exponential D. High-dim. loc = [0] loc = [0] rate = [1 .414] loc = [0 , 0, 0] scale = [0 .707] scale = [0 .707] covariance matrix =       
+
+> 
+> 0.5−0.095 0.149
+> −0.095 0.60.151 0.149 0.151 0.643
+> 
+
+Table 2: Parameter values used for SPICE-Net across the four data sets A-D of Table 1. The values correspond to parameters of a normal (A and B), exponential (C) and multivariate normal distribution (D) as implemented in PyTorch (Paszke et al., 2017). 
+
+40 SPICE 
+
+For SPICE-Net-Approx, we treat the parameters of E as unknown and estimate them from the data. Both methods are trained on 10 mini-batches over 4000 epochs with Adam optimization, an adaptive learning rate with an initial value of 10 −3 and ReLU activation functions. The neural networks have five hidden layers with 10 , 15 , 25 , 15 and 10 nodes, respectively, of which five are independent standard Gaussian noise nodes. The output dimension of the second-to-last layer, representing the unobserved confounder up to a linear transformation, is chosen to have the same dimension as the proxy variable. We use He et al. (2015) initialisation for the weights of the neural networks and estimate them by minimising the energy loss with a power parameter of one based on two samples as implemented by Shen and Meinshausen (2025). For the initial values of the parameters of the distribution of E for SPICE-Net-Approx, we use the fact that the variance of E does not exceed the variance of W . Since we standardise the data, the variance of W is one and the initial values are given in Table 3. A. Gaussian B. Binary C. Exponential D. High-dim. loc = [1] loc = [1] rate = [1] loc = [1 , 2, 3] scale = [1] scale = [1] covariance matrix = 
+
+
+
+1 0.7 0.40.7 1 −0.20.4 −0.2 1
+
+
+
+Table 3: Initial values used for SPICE-Net-Approx across the four data sets A-D of Table 1. The values correspond to parameters of a normal (A and B), exponential (C) and multivariate normal distribution (D) as implemented in PyTorch (Paszke et al., 2017). We use the nonparametric, regression adjustment estimator in Equation 6 to estimate the causal function in the second step of SPICE-Net and SPICE-Net-Approx as well as for Adj.-W and Adj.-U, following the approach by Zhang et al. (2025). We keep the parameters of the neural network fixed across the four models and across all data sets. We apply a neural network, using the scikit-learn function ’MLPregressor’ by Pedregosa et al. (2011), with one hidden layer with 100 neurons, ReLu activations, an adaptive learning rate and an initial learning rate of 0 .01. Moreover, we consider only using the treatment to predict the outcome, which we denote by No Adj. We use a neural network to estimate the causal function that has the same structure as the neural network in the second step of SPICE-Net but only uses the treatment and the outcome. The test errors of the causal function estimators are presented in Figures 3 and 6, with numerical values in Tables 4 and 5 for a training size of 2000 and 5000, respectively. In all plots, we apply the colour scheme by Petroff (2024). 
+
+> 41
+
+Vollmer, Pfister ∗ and Weichwald ∗Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0.0
+> 0.5
+> 1.0
+> MSE
+
+A. Gaussian Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0.0
+> 0.5
+> 1.0
+> MSE
+
+B. Binary Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> MSE
+
+C. Exponential Adj.-U 
+
+> Adj.-W
+> SPICE-Net
+> SPICE-Net-Approx
+> CEVAE
+> SKPV
+> SPMMR 0.0
+> 0.5
+> 1.0
+> MSE
+
+D. High-dim. 
+
+Figure 6: Mean squared error (MSE) of causal function estimators described in Section 5.1 and Appendix J for 5000 training samples from data sets A-D of Table 1 on a test set of size 500. For data set C, the median (standard deviation) of the MSE for CEVAE, SKPV and SPMMR are 3 .22 (3 .36), 12 .90 (15 .86) and 58 .53 (18 .39), respectively, and there is a different scale for the y-axis. Numerical values are given in Table 5. Our proposed method SPICE-Net achieves a MSE close to the ground-truth method Adj.-U. 
+
+42 SPICE 
+
+A. Gaussian B. Binary C. Exponential D. High-dim. Adj.-U 0.013 (0.015) 0.002 (0.006) 0.132 (0.092) 0.017 (0.014) Adj.-W 0.207 (0.063) 0.460 (0.089) 0.862 (0.354) 0.625 (0.119) SPICE-Net 0.024 (0.016) 0.004 (0.051) 0.276 (0.288) 0.058 (0.057) 
+
+SPICE-Net-Approx 0.192 (0.062) 0.256 (0.138) 0.292 (0.449) 0.529 (0.112) CEVAE 0.268 (0.082) 0.006 (0.018) 2.871 (4.702) 1.053 (0.231) SKPV 0.324 (0.060) 0.018 (0.005) 16.161 (14.950) 0.258 (0.126) SPMMR 0.265 (0.059) 0.078 (0.031) 58.183 (18.205) 0.353 (0.113) No Adj. 0.486 (0.089) 1.225 (0.194) 10.857 (5.635) 1.350 (0.157) 
+
+Table 4: Median (standard deviation) of the MSE of causal function estimators for training sample size 2000 from data sets A–D of Table 1 on a test set of size 500. The lowest MSE in each column, excluding the ground-truth method Adj.-U, is shown in bold. A description of the methods is given in Section 5.1 and Appendix J and a graphical representation in Figure 3. No Adj. is a neural network estimator that does not adjust for additional variables. A. Gaussian B. Binary C. Exponential D. High-dim. Adj.-U 0.011 (0.009) 0.001 (0.004) 0.058 (0.111) 0.006 (0.015) Adj.-W 0.205 (0.074) 0.415 (0.098) 0.943 (0.456) 0.631 (0.099) SPICE-Net 0.017 (0.024) 0.004 (0.007) 0.199 (0.247) 0.037 (0.054) 
+
+SPICE-Net-Approx 0.184 (0.061) 0.285 (0.148) 0.177 (0.308) 0.453 (0.181) CEVAE 0.247 (0.095) 0.013 (0.072) 3.216 (3.363) 1.060 (0.229) SKPV 0.349 (0.057) 0.021 (0.006) 12.903 (15.859) 0.372 (0.112) SPMMR 0.267 (0.057) 0.076 (0.027) 58.529 (18.390) 0.358 (0.113) No Adj. 0.517 (0.133) 1.313 (0.216) 12.955 (4.741) 1.338 (0.211) Table 5: Median (standard deviation) of the MSE of causal function estimators for training sample size 5000 from data sets A–D of Table 1 on a test set of size 500. The lowest MSE in each column, excluding the ground-truth method Adj.-U, is shown in bold. A description of the methods is given in Section 5.1 and Appendix J and a graphical representation in Figure 6. No Adj. is a neural network estimator that does not adjust for additional variables. 
+
+> 43
+
+Vollmer, Pfister ∗ and Weichwald ∗
+
+Appendix K. Real-world data 
+
+We run real-world experiments with the Light Tunnel Mk2 from the Causal Chamber ®
+
+(Gamella et al., 2025) in Figure 7. The parameters of the light tunnel for the experiments are given in Table 6. A Light Tunnel Mk2       
+
+> BChamber diagram
+> CGround-truth graph
+> current_ls_raw M
+> ir_1 Mir_2 M
+> green I
+> Light source Light sensor
+> Light sensor
+> ir_2 green current_ls_raw offset_current_ls sps_current_ls
+> IMPP
+> UV LED
+> M
+> ir_1 MIslope_f2
+
+Figure 7: The Light Tunnel Mk2 from Causal Chamber ® (A and B) with its ground-truth graph in C. The variable types are control inputs I, sensor parameters P and sensor measurements M. In the light tunnel, we consider green as the confounder, which is the brightness setting of the green LEDs on the main light source, ir 1 as the treatment, which is an infrared intensity measurement produced by the first light sensor, ir 2 as the outcome, which is an infrared intensity measurement produced by the second light sensor and current ls raw as the proxy, which is a measurement of the of the electric current drawn by the light source. See causalchamber.ai for a complete documentation. We consider the same methods as in the simulation in Section 5.1 with details given in Appendix J. For SPICE-Net, we approximate the noise distribution in the proxy-confounder relation with a zero-mean Gaussian distribution and a variance estimated with the additional experiment III in Table 6. Here, we set the confounder to zero and use the variance of the proxy variable current ls raw as an estimate for the variance of the noise, with values given in Table 7. We divide the standard deviations in Table 7 by the empirical standard deviation of the proxy in each data set to obtain the parameter values for SPICE-Net. For SPICE-Net-Approx, we initialise the parameters with values of one for both the mean and the standard deviation. Additionally, to prevent SPICE-Net-Approx from driving the learnt variance to zero, we reduce the initial learning rate of SPICE-Net-Approx to 10 −4. All other parameters of all methods are the same as for the simulation in Section 5.1 with details given in Appendix J. 
+
+44 SPICE 
+
+Variable I. Low noise II. Noisy III. SPICE-Net noise green N ∗(60 , 15) N ∗(60 , 15) 0sps current ls 4 7 {4, 7}
+
+offset current ls 2950 2950 2950 slope f2 0.064 0.064 0.064 Table 6: The parameter settings of the Light Tunnel Mk2 from Causal Chamber ® of Figure 7 in our experiments I-III. For the experiments I and II, we generate 5000 training samples and 500 test samples 20 times. The confounder green is generated from a truncated and discretized normal distribution with mean 60 and standard deviation 15 denoted by N ∗(60 , 15). That is a normal distribution rounded to integers with a minimal value of 0 and a maximal value of 255 in order to satisfy the supported values of the variable green. The parameter sps current ls is the data rate of the Analog-to-Digital Converter (ADC) producing the current ls raw (proxy) measurement. Lower values lead to more readings to produce the measurement and hence reduce the noise. The parameter offset current ls determines the reference voltage of the ADC producing the current ls raw (proxy) measurement and the input slope f2 influences the relation between the first infrared intensity measurement ir 1 (treatment) and the second infrared intensity measurement ir 2 (outcome). See causalchamber.ai for a complete documentation. In experiment III, we estimate the variance of the noise for the proxy-confounder relation with 5000 samples, which is used for SPICE-Net. We set sps current ls to its corresponding value depending on if we estimate the variance for experiment I or II. All other parameters remain constant. I. Low noise II. Noisy 13.592 37.921 Table 7: Estimates for the standard deviation of the noise distribution used for SPICE-Net for the experiments I and II by experiment III of Table 6.  
+
+> 45 Vollmer, Pfister ∗and Weichwald ∗
+
+The test errors for the causal function estimators relative to Adj.-U are presented in Table 8. I. Low noise II. Noisy Adj.-W 171 (82) 3259 (1183) SPICE-Net 396 (509) 640 (743) 
+
+SPICE-Net-Approx 833 (1563) 3180 (1715) CEVAE 9661 (2097) 9817 (2199) SKPV 23497 (3042) 19851 (2696) SPMMR 18824 (2918) 16515 (2489) No Adj. 14324 (1644) 13735 (1791) Table 8: Median (standard deviation) of the MSE of each method relative to Adj.-U across the two experiments of Table 6 on data from the Light Tunnel Mk2 from the Causal Chamber ® (Gamella et al., 2025). The lowest test error for each experiment is shown in bold. The methods are described in Sections 5.1 and 5.2 and Appendices J and K and a graphical representation of the results is given in Figure 4. No Adj. is a neural network estimator that does not adjust for additional variables. 
+
+Appendix L. Extensions of SPICE 
+
+Additional Observed Confounding. Consider a treatment X ∈ X ⊆ Rp, an outcome 
+
+Y ∈ Y ⊆ R, an unobserved confounder U ∈ U ⊆ Rk, a proxy variable W ∈ W ⊆ Rd and an observed covariate O ∈ O ⊆ Rl, where p, k, d, l ∈ N. The structural causal model M is given by 
+
+M :
+
+
+
+O ← NO
+
+U ← NU
+
+W ← fW (U, E )
+
+X ← fX (O, U, N X )
+
+Y ← fY (O, U, X, N Y )(42) with measurable functions fW , f X , f Y and mutual independent random noise terms (NO, N U , E, N X , N Y ). We assume that the joint distribution is absolutely continuous with respect to a σ-finite measure μ such that it has a density, that is, we have that 
+
+pM (o, u, w, x, y ) > 0 ⇐⇒ (o, u, w, x, y ) ∈ O × U × W × X × Y .
+
+We assume that we observe n ∈ N independent and identically distributed copies (O1, W 1, X 1, Y 1), . . . , (On, W n, X n, Y n) of the random variable ( O, W, X, Y ) generated by a structural causal model M0 from Equation 42. We assume that the error mechanism 
+
+{pM0  
+
+> W|U
+
+(· | u) | u ∈ U} is known. We assume that the causal function, which is given for all 
+
+> 46
+
+SPICE 
+
+x ∈ X as Z
+
+y
+
+Z
+
+pM0  
+
+> Y|O,U,X
+
+(y | o, u, x ) pM0 
+
+> O,U
+
+(o, u ) μ(do, du, dy )=
+
+Z
+
+y
+
+Z pM0  
+
+> U|O,X,Y
+
+(u | o, x, y )pM0 
+
+> O,X,Y
+
+(o, x, y )
+
+R pM0  
+
+> U|O,X,Y
+
+(u | o, x, y )pM0 
+
+> O,X,Y
+
+(o, x, y ) μ(dy )
+
+Z Z
+
+pM0  
+
+> U|O,X,Y
+
+(u | o, x, y )pM0 
+
+> O,X,Y
+
+(o, x, y ) μ(dx, dy )
+
+
+
+μ(do, du, dy ), (43) is uniquely defined and integrable. We show that if the error mechanism is complete according to Definition 5, where the SCM is given by Equation 42, the causal function is identifiable. Completeness of the error mechanism leads to Equation 13 of Appendix B, that is, we have for all for all M ∈ M (M0), for all ( x, y ) ∈ X × Y and for almost all u ∈ U that 
+
+pMU |X,Y (u | x, y ) = pM0  
+
+> U|X,Y
+
+(u | x, y ).
+
+In this extended setting, it holds that U is conditionally independent of O given X and Y .This implies for all M ∈ M (M0), for all ( o, x, y ) ∈ O × X × Y and for almost all u ∈ U that 
+
+pMU |O,X,Y (u | o, x, y ) = pM0  
+
+> U|O,X,Y
+
+(u | o, x, y ). (44) The causal function in Equation 43 only depends on observational quantities and on the conditional densities of the confounder given the additional covariates, the treatment and the outcome. By the equality of observational quantities and the equality in Equation 44, the causal function in Equation 43 is identifiable. 
+
+Noisy Treatment and Outcome. Consider a treatment X ∈ X ⊆ Rp, an outcome Y ∈Y ⊆ R, an unobserved confounder U ∈ U ⊆ Rk, a confounder-proxy variable W ∈ W ⊆ Rd,a treatment-proxy variable X∗ ∈ X ∗ ⊆ Rl and an outcome-proxy variable Y ∗ ∈ Y ∗ ⊆ Rm,where p, k, d, l, m ∈ N. The structural causal model M is given by 
+
+M :
+
+
+
+U ← NU
+
+W ← fW (U, E )
+
+X ← fX (U, N X )
+
+X∗ ← fX∗ (X, N X∗ )
+
+Y ← fY (U, X, N Y )
+
+Y ∗ ← fY ∗ (Y, N Y ∗ )(45) with measurable functions fW , f X , f X∗ , f Y , f Y ∗ and mutual independent random noise terms (NU , E, N X , N X∗ , N Y , N Y ∗ ). We assume that the joint distribution is absolutely continuous with respect to a σ-finite measure μ such that it has a bounded density, that is, there exists a Q ∈ R for which 
+
+Q ≥ pM (u, w, x, x ∗, y, y ∗) > 0 ⇐⇒ (u, w, x, x ∗, y, y ∗) ∈ U × W × X × X ∗ × Y × Y ∗.
+
+We assume that we observe n ∈ N independent and identically distributed copies (W1, X ∗ 
+
+> 1
+
+, Y ∗ 
+
+> 1
+
+), . . . , (Wn, X ∗
+
+> n
+
+, Y ∗ 
+
+> n
+
+) of the random variable ( W, X ∗, Y ∗) generated by a structural causal model M0 from Equation 45. We assume that the error mechanisms 
+
+{pM0  
+
+> W|U
+
+(· | u) | u ∈ U} ∪ { pM0 
+
+> X∗|X
+
+(· | x) | x ∈ X } ∪ { pM0  
+
+> Y∗|Y
+
+(· | y) | y ∈ Y} 
+
+47 Vollmer, Pfister ∗ and Weichwald ∗
+
+are known. We show that if all three error mechanisms are L∞-complete, the causal function in Definition 3 for a SCM of Equation 45 is identifiable. We start by considering the error mechanism for the relation between W and U . From the proof of Theorem 6 in Appendix B, and specifically from Equation 12 where we swap X with X∗ and Y with Y ∗, it follows for all M ∈ M (M0) and for all ( w, x ∗, y ∗) ∈ W × X ∗ × Y ∗ that 
+
+Z
+
+pM0  
+
+> W|U
+
+(w | u)
+
+
+
+pMU |X∗,Y ∗ (u | x∗, y ∗) − pM0   
+
+> U|X∗,Y ∗
+
+(u | x∗, y ∗)
+
+
+
+μ(du ) = 0 .
+
+For all M ∈ M (M0) and for all ( x∗, y ∗) ∈ X ∗ × Y ∗, we have that pMU |X∗,Y ∗ (· | x∗, y ∗) −
+
+pM0   
+
+> U|X∗,Y ∗
+
+(· | x∗, y ∗) ∈ L∞(U). Since we have that {pM0  
+
+> W|U
+
+(· | u) | u ∈ U} is L∞(U)-complete, it follows that for all M ∈ M (M0), for all ( x∗, y ∗) ∈ X ∗ × Y ∗ and for almost all u ∈ U that 
+
+pMU |X∗,Y ∗ (u | x∗, y ∗) = pM0   
+
+> U|X∗,Y ∗
+
+(u | x∗, y ∗)and 
+
+pMU,X ∗,Y ∗ (u, x ∗, y ∗) = pM0  
+
+> U,X ∗,Y ∗
+
+(u, x ∗, y ∗). (46) For all ( u, x ∗, y ∗) ∈ U × X ∗ × Y ∗, we have that 
+
+pM0  
+
+> U,X ∗,Y ∗
+
+(u, x ∗, y ∗) = 
+
+Z
+
+pM0  
+
+> U,X ∗,X,Y ∗
+
+(u, x, x ∗, y ∗) μ(dx )=
+
+Z
+
+pM0 
+
+> X∗|X
+
+(x∗ | x)pM0  
+
+> U,X,Y ∗
+
+(u, x, y ∗) μ(dx )=
+
+Z
+
+pM0 
+
+> X∗|X
+
+(x∗ | x)pM0  
+
+> X|U,Y ∗
+
+(x | u, y ∗)pM0  
+
+> U,Y ∗
+
+(u, y ∗) μ(dx )where the second equality holds because X∗ ⊥⊥ (U, Y ∗) | X. By the definition of M(M0)and by Equation 46, it holds for all M ∈ M (M0), for all ( x, x ∗, y ∗) ∈ X × X ∗ × Y ∗ and for almost all u ∈ U that 
+
+pMU,X ∗,Y ∗ (u, x ∗, y ∗) = pM0  
+
+> U,X ∗,Y ∗
+
+(u, x ∗, y ∗) , pMX∗|X (x∗ | x) = pM0 
+
+> X∗|X
+
+(x∗ | x) and 
+
+pMU,Y ∗ (u, y ∗) = pM0  
+
+> U,Y ∗
+
+(u, y ∗).
+
+This implies for all M ∈ M (M0), for all ( x, x ∗, y ∗) ∈ X × X ∗ × Y ∗ and for almost all u ∈ U 
+
+that Z
+
+pM0 
+
+> X∗|X
+
+(x∗ | x)pM0  
+
+> X|U,Y ∗
+
+(x | u, y ∗)pM0  
+
+> U,Y ∗
+
+(u, y ∗) μ(dx )=
+
+Z
+
+pM0 
+
+> X∗|X
+
+(x∗ | x)pMX|U,Y ∗ (x | u, y ∗)pM0  
+
+> U,Y ∗
+
+(u, y ∗) μ(dx )and hence 
+
+Z
+
+pM0 
+
+> X∗|X
+
+(x∗ | x)
+
+
+
+pMX|U,Y ∗ (x | u, y ∗)pM0  
+
+> U,Y ∗
+
+(u, y ∗) − pM0  
+
+> X|U,Y ∗
+
+(x | u, y ∗)pM0  
+
+> U,Y ∗
+
+(u, y ∗)
+
+
+
+μ(dx ) = 0 .
+
+48 SPICE 
+
+By the L∞(X )-completeness of {pM0 
+
+> X∗|X
+
+(· | x) | x ∈ X } , we have for all M ∈ M (M0), for all 
+
+y∗ ∈ Y ∗ and for almost all ( u, x ) ∈ U × X that 
+
+pMX|U,Y ∗ (x | u, y ∗)pM0  
+
+> U,Y ∗
+
+(u, y ∗) = pM0  
+
+> X|U,Y ∗
+
+(x | u, y ∗)pM0  
+
+> U,Y ∗
+
+(u, y ∗)and 
+
+pMU,X,Y ∗ (u, x, y ∗) = pM0  
+
+> U,X,Y ∗
+
+(u, x, y ∗). (47) We have for all ( u, x, y ∗) ∈ U × X × Y ∗ that 
+
+pM0  
+
+> U,X,Y ∗
+
+(u, x, y ∗) = 
+
+Z
+
+pM0  
+
+> U,X,Y,Y ∗
+
+(u, x, y, y ∗) μ(dy )=
+
+Z
+
+pM0  
+
+> Y∗|Y
+
+(y∗ | y)pM0 
+
+> U,X,Y
+
+(u, x, y ) μ(dy ).
+
+because Y ∗ ⊥⊥ (U, X ) | Y . By the definition of M(M0) and by Equation 47, we have for all 
+
+M ∈ M (M0), for all y ∈ Y and for almost all ( u, x ) ∈ U × X that 
+
+Z
+
+pM0  
+
+> Y∗|Y
+
+(y∗ | y)pMU,X,Y (u, x, y ) μ(dy ) = 
+
+Z
+
+pM0  
+
+> Y∗|Y
+
+(y∗ | y)pM0 
+
+> U,X,Y
+
+(u, x, y ) μ(dy )and hence 
+
+Z
+
+pM0  
+
+> Y∗|Y
+
+(y∗ | y)
+
+
+
+pMU,X,Y (u, x, y ) − pM0 
+
+> U,X,Y
+
+(u, x, y )
+
+
+
+μ(dy ) = 0 .
+
+By the L∞(Y)-completeness of {pM0  
+
+> Y∗|Y
+
+(· | y) | y ∈ Y} , we have for all M ∈ M (M0) and for almost all ( u, x, y ) ∈ U × X × Y that 
+
+pMU,X,Y (u, x, y ) = pM0 
+
+> U,X,Y
+
+(u, x, y ). (48) The causal function from Definition 3 for all x ∈ X is given by 
+
+θM0 (x) = 
+
+Z
+
+y
+
+Z
+
+pM0  
+
+> Y|U,X
+
+(y | u, x ) pM0 
+
+> U
+
+(u) μ(du, dy )=
+
+Z
+
+y
+
+Z pM0 
+
+> U,X,Y
+
+(u, x, y )
+
+pM0 
+
+> U,X
+
+(u, x )
+
+Z 
+
+pM0 
+
+> U,X,Y
+
+(u, x, y ) μ(dx, dy )
+
+
+
+μ(du, dy )=
+
+Z
+
+y
+
+Z pM0 
+
+> U,X,Y
+
+(u, x, y )
+
+R pM0 
+
+> U,X,Y
+
+(u, x, y ) μ(dy )
+
+Z 
+
+pM0 
+
+> U,X,Y
+
+(u, x, y ) μ(dx, dy )
+
+
+
+μ(du, dy ). (49) In Equation 49, the causal function only depends on the joint density of the confounder, the treatment and the outcome. By Equation 48, we have for all M ∈ M (M0) that 
+
+θM ≡ θM0 .
+
+49 Vollmer, Pfister ∗ and Weichwald ∗
+
+References 
+
+Sheldon Axler. Linear Algebra Done Right . Undergraduate Texts in Mathematics. Springer, New York, New York, 3rd edition, 2015. Ole Barndorff-Nielsen and Christian Halgreen. Infinite divisibility of the hyperbolic and generalized inverse gaussian distributions. Zeitschrift f¨ ur Wahrscheinlichkeitstheorie und Verwandte Gebiete , 38:309–311, 1977. Michele L. Bianchi, Svetlozar T. Rachev, Young S. Kim, and Frank J. Fabozzi. Tempered infinitely divisible distributions and processes. Theory of Probability and its Applications ,55(1):2–26, 2011. Stephan Bongers, Patrick Forr´ e, Jonas Peters, and Joris M. Mooij. Foundations of structural causal models with cycles and latent variables. The Annals of Statistics , 49(5):2885–2915, 2021. Jarrett E. K. Byrnes and Laura E. Dee. Causal inference with observational data and unobserved confounding variables. Ecology Letters , 28(1):e70023, 2025. David Card and Alan B. Krueger. Minimum wages and employment: A case study of the fast food industry in new jersey and pennsylvania. The American Economic Review , 84 (4):772–793, 1994. Raymond J. Carroll, David Ruppert, Leonard A. Stefanski, and Ciprian M. Crainiceanu. 
+
+Measurement Error in Nonlinear Models: A Modern Perspective . Chapman and Hall/CRC, Boca Raton, Florida, 2nd edition, 2006. Ben Deaner. Controlling for latent confounding with triple proxies. arXiv preprint arXiv:2204.13815 , 2023. Leonhard Euler. Introductio in analysin infinitorum . M.M. Bousquet, Lausanne, Switzerland, 1748. Gerald B. Folland. Real Analysis: Modern Techniques and Their Applications . John Wiley & Sons, New York, New York, 2nd edition, 1999. Juan L. Gamella, Jonas Peters, and Peter B¨ uhlmann. Causal chambers as a real-world physical testbed for ai methodology. Nature Machine Intelligence , 7:107–118, 2025. Simson Garfinkel. Differential privacy and the 2020 us census. MIT Case Studies in Social and Ethical Responsibilities of Computing , 2022. Richard D. Gill and James M. Robins. Causal inference for complex longitudinal data: The continuous case. The Annals of Statistics , 29(6):1785–1811, 2001. Tilmann Gneiting and Adrian E. Raftery. Strictly proper scoring rules, prediction, and estimation. Journal of the American Statistical Association , 102(477):359–378, 2007. 
+
+> 50 SPICE
+
+Sander Greenland and Timothy L. Lash. Bias analysis. In Sander Greenland Kenneth J. Rothman and Timothy L. Lash, editors, Modern Epidemiology , pages 345–380. Lippincott Williams & Wilkins, Philadelphia, Pennsylvania, 3rd edition, 2015. Emil Grosswald. The student t-distribution of any degree of freedom is infinitely divisible. 
+
+Zeitschrift f¨ ur Wahrscheinlichkeitstheorie und Verwandte Gebiete , 36:103–109, 1976. Helen Guo, Elizabeth L. Ogburn, and Ilya Shpitser. Comparing two proxy methods for causal identification. arXiv preprint arXiv:2512.00175 , 2025. Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Delving deep into rectifiers: Surpassing human-level performance on imagenet classification. In Proceedings of the 2015 IEEE International Conference on Computer Vision (ICCV) , page 1026–1034, Santiago, Chile, 2015. Roger A. Horn and Fred W. Steutel. On multivariate infinitely divisible distributions. 
+
+Stochastic Processes and their Applications , 6(2):139–151, 1978. Yingyao Hu and Susanne M. Schennach. Instrumental variable treatment of nonclassical measurement error models. Econometrica , 76(1):195–216, 2008. Lisa A. Jackson, Jennifer C. Nelson, Patti Benson, Kathleen M. Neuzil, Robert J. Reid, Bruce M. Psaty, Susan R. Heckbert, Eric B. Larson, and Noel S. Weiss. Functional status is a confounder of the association of influenza vaccine and risk of all cause mortality in seniors. International Journal of Epidemiology , 35(2):345–352, 2005. Alexander S. Kechris. Classical Descriptive Set Theory , volume 156 of Graduate Texts in Mathematics . Springer, New York, New York, 1995. Joseph B. Kruskal. Three-way arrays: rank and uniqueness of trilinear decompositions, with application to arithmetic complexity and statistics. Linear Algebra and its Applications ,18(2):95–138, 1977. Manabu Kuroki and Judea Pearl. Measurement bias and effect restoration in causal inference. 
+
+Biometrika , 101(2):423–437, 2014. Saskia le Cessie, Jan Debeij, Frits R. Rosendaal, Suzanne C. Cannegieter, and Jan P. Vandenbroucke. Quantification of bias in direct effects estimates due to different types of measurement error in the mediator. Epidemiology , 23(4):551–560, 2012. Zongyu Li, Xiaobo Guo, and Siwei Qiang. A survey of deep causal models and their industrial applications. Artificial Intelligence Review , 57(298), 2024. Kara Liu, Russ Altman, and Vasilis Syrgkanis. Detecting clinician implicit biases in diagnoses using proximal causal inference. In Russ B. Altman, Lawrence Hunter, Marylyn D. Ritchie, Tiffany Murray, and Teri E. Klein, editors, Biocomputing 2025 , pages 330–345. World Scientific, Singapore, Singapore, 2025.  
+
+> 51 Vollmer, Pfister ∗and Weichwald ∗
+
+Christos Louizos, Uri Shalit, Joris M. Mooij, David Sontag, Richard Zemel, and Max Welling. Causal effect inference with deep latent-variable models. In Proceedings of the 31st Conference on Neural Information Processing Systems , pages 6449–6459, Long Beach, California, 2017. Christine Y Lu. Observational studies: a review of study designs, challenges and strategies to reduce confounding. International Journal of Clinical Practice , 63(5):691–697, 2009. Eugene Lukacs. Characteristic Functions . Charles Griffin & Company Limited, London, United Kingdom, 2nd edition, 1970. Lutz Mattner. Some incomplete but boundedly complete location families. The Annals of Statistics , 21(4):2158–2162, 1993. Wang Miao, Zhi Geng, and Eric J. Tchetgen Tchetgen. Identifying causal effects with proxy variables of an unmeasured confounder. Biometrika , 105(4):987–993, 2018. Kevin P. Murphy. Machine Learning: A Probabilistic Perspective . MIT Press, Cambridge, Massachusetts, 2012. Yu Nishiyama and Kenji Fukumizu. Characteristic kernels and infinitely divisible distribu-tions. Journal of Machine Learning Research , 17(180):1–28, 2016. Chan Park, David B. Richardson, and Eric J. Tchetgen Tchetgen. Single proxy control. 
+
+Biometrics , 80(2):ujae027, 2024. Adam Paszke, Sam Gross, Soumith Chintala, Gregory Chanan, Edward Yang, Zachary DeVito, Zeming Lin, Alban Desmaison, Luca Antiga, and Adam Lerer. Automatic differentiation in pytorch. In Proceedings of the 31st Conference on Neural Information Processing Systems , Long Beach, California, 2017. Judea Pearl. Causality: Models, Reasoning and Inference . Cambridge University Press, Cambridge, United Kingdom, 2nd edition, 2009. Judea Pearl. On measurement bias in causal inference. In Proceedings of the Twenty-Sixth Conference on Uncertainty in Artificial Intelligence , pages 425–432, Santa Catalina Island, California, 2010. Judea Pearl and Elias Bareinboim. External validity: From do-calculus to transportability across populations. Statistical Science , 29(4):579–595, 2014. Fabian Pedregosa, Ga¨ el Varoquaux, Alexandre Gramfort, Vincent Michel, Bertrand Thirion, Olivier Grisel, Mathieu Blondel, Peter Prettenhofer, Ron Weiss, Vincent Dubourg, Jake Vanderplas, Alexandre Passos, David Cournapeau, Matthieu Brucher, Matthieu Perrot, and ´Edouard Duchesnay. Scikit-learn: Machine learning in python. Journal of Machine Learning Research , 12(85):2825–2830, 2011. Matthew A. Petroff. Accessible color sequences for data visualization. arXiv preprint arXiv:2107.02270 , 2024. 
+
+> 52 SPICE
+
+Svetlozar T. Rachev, Young S. Kim, Michele L. Bianchi, and Frank J. Fabozzi. Financial Models with L´ evy Processes and Volatility Clustering . Wiley & Sons, Hoboken, New Jersey, 2011. Grace V. Ringlein, Trang Q. Nguyen, Peter P. Zandi, Elizabeth A. Stuart, and Harsh Parikh. Demystifying proximal causal inference. arXiv preprint arXiv:2512.24413 , 2025. James Robins. A new approach to causal inference in mortality studies with a sustained exposure period—application to control of the healthy worker survivor effect. Mathematical Modelling , 7(9-12):1393–1512, 1986. Jeffrey S. Rosenthal. A First Look at Rigorous Probability Theory . World Scientific, Singapore, Singapore, 2nd edition, 2006. Jan Rosi´ nski. Tempering stable processes. Stochastic Processes and their Applications , 117 (6):677–707, 2007. Halsey L. Royden and Patrick M. Fitzpatrick. Real Analysis . Pearson, London, United Kingdom, 4th edition, 2010. Walter Rudin. Real and Complex Analysis . McGraw-Hill, Singapore, Singapore, 3rd edition, 1987. Walter Rudin. Functional Analysis . McGraw-Hill, Singapore, Singapore, 2nd edition, 1991. Ken-iti Sato. L´ evy Processes and Infinitely Divisible Distributions . Cambridge University Press, Cambridge, United Kingdom, 1999. Xinwei Shen and Nicolai Meinshausen. Engression: extrapolation through the lens of distributional regression. Journal of the Royal Statistical Society Series B: Statistical Methodology , 87(3):653–677, 2025. Lynn A. Steen and J. Arthur Seebach Jr. Counterexamples in Topology . Holt, Rinehart and Winston, New York, New York, 1970. G´ abor J. Sz´ ekely. ε-statistics: The energy of statistical samples. Technical Report 02-16, Bowling Green State University, Bowling Green, Ohio, 2002. Eric J. Tchetgen Tchetgen. The control outcome calibration approach for causal inference with unobserved confounding. American Journal of Epidemiology , 179(5):633–640, 2014. Eric J. Tchetgen Tchetgen, Andrew Ying, Yifan Cui, Xu Shi, and Wang Miao. An introduc-tion to proximal causal inference. Statistical Science , 39(3):375–390, 2024. Olof Thorin. On the infinite divisibility of the lognormal distribution. Scandinavian Actuarial Journal , 1977(3):121–148, 1977. U.S. Census Bureau. Disclosure avoidance for the 2020 census: An introduction. Technical report, U.S. Government Publishing Office, Washington, D.C., 2021.  
+
+> 53 Vollmer, Pfister ∗and Weichwald ∗
+
+Wouter A. C. van Amsterdam, Joost. J. C. Verhoeff, Netanja I. Harlianto, Gijs A. Bartholomeus, Aahlad M. Puli, Pim A. de Jong, Tim Leiner, Anne S. R. van Lindert, Marinus J. C. Eijkemans, and Rajesh Ranganath. Individual treatment effect estimation in the presence of unobserved confounding using proxies: a cohort study in stage III non-small cell lung cancer. Scientific Reports , 12:5848, 2022. Tyler J. VanderWeele and Peng Ding. Sensitivity analysis in observational research: Intro-ducing the e-value. Annals of Internal Medicine , 167(4):268–274, 2017. Tyler J. VanderWeele, Kofi Asomaning, Eric J. Tchetgen Tchetgen, Younghun Han, Mar-garet R. Spitz, Sanjay Shete, Xifeng Wu, Valerie Gaborieau, Ying Wang, John McLaughlin, Rayjean J. Hung, Paul Brennan, Christopher I. Amos, David C. Christiani, and Xihong Lin. Genetic variants on 15q25.1, smoking, and lung cancer: An assessment of mediation and interaction. American Journal of Epidemiology , 175(10):1013–1020, 2012. Norbert Wiener. Tauberian theorems. Annals of Mathematics , 33(1):1–100, 1932. Richard Wyss, Chen Yanover, Tal El-Hay, Dimitri Bennett, Robert W. Platt, Andrew R. Zullo, Grammati Sari, Xuerong Wen, Yizhou Ye, Hongbo Yuan, Mugdha Gokhale, Elis-abetta Patorno, and Kueiyu J. Lin. Machine learning for improving high-dimensional proxy confounder adjustment in healthcare database studies: An overview of the current literature. Pharmacoepidemiology and Drug Safety , 31(9):932–943, 2022. Liyuan Xu and Arthur Gretton. Kernel single proxy control for deterministic confounding. In 
+
+Proceedings of The 28th International Conference on Artificial Intelligence and Statistics ,pages 3736–3744, Mai Khao, Thailand, 2025. Liuyi Yao, Zhixuan Chu, Sheng Li, Yaliang Li, Jing Gao, and Aidong Zhang. A survey on causal inference. ACM Transactions on Knowledge Discovery from Data (TKDD) , 15(5): 1–46, 2021. Yikun Zhang, Yen-Chi Chen, and Alexander Giessing. Nonparametric inference on dose-response curves without the positivity condition. arXiv preprint arXiv:2405.09003 , 2025. Zhiheng Zhang and Xinyan Su. Partial identification with proxy of latent confoundings via sum-of-ratios fractional programming. In Proceedings of the Fortieth Conference on Uncertainty in Artificial Intelligence , pages 4140–4172, Barcelona, Spain, 2024.

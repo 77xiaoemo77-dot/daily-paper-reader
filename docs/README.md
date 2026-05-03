@@ -7,109 +7,205 @@
 
 ## 每次日报
 - 最新运行日期：2026-04-04 ~ 2026-05-03
-- 运行时间：2026-05-03 07:41:14 UTC
+- 运行时间：2026-05-03 08:21:32 UTC
 - 运行状态：成功
-- 本次总论文数：29
+- 本次总论文数：61
 - 精读区：0
-- 速读区：29
+- 速读区：61
 
 ### 今日简报（AI）
-深入速读 29 篇论文，聚焦深度强化学习与不确定环境下的决策优化。  
-最亮点方向是基于图神经网络的云调度节能方法及最优传输视角的策略优化。  
-建议继续关注强化学习在实际系统资源分配与能效控制中的应用突破。
+本月高效速读 61 篇论文，聚焦因果推断与自动化估计模型。  
+重点关注自演化因果效应估计与单代理变量识别方法，展现计算与理论并进的新趋势。  
+建议下阶段挑选高分论文精读，进一步理解自动化与非参数因果估计的应用潜力。
 - 详情：[/20260404-20260503/README](/20260404-20260503/README)
 
 ### 精读区论文标签
 - 本次无精读推荐。
 
 ### 速读区论文标签
-1. [On the Role of DAG topology in Energy-Aware Cloud Scheduling : A GNN-Based Deep Reinforcement Learning Approach](/20260404-20260503/2604.09202v1-on-the-role-of-dag-topology-in-energy-aware-cloud-scheduling--a-gnn-based-deep-reinforcement-learning-approach)  
-   标签：评分：9.0/10、query:optdl
-   evidence：结合运筹优化（云调度）与深度强化学习及图神经网络
-2. [Deep Learning for Sequential Decision Making under Uncertainty: Foundations, Frameworks, and Frontiers](/20260404-20260503/2604.11507v1-deep-learning-for-sequential-decision-making-under-uncertainty-foundations-frameworks-and-frontiers)  
-   标签：评分：9.0/10、query:optdl
-   evidence：深度学习用于不确定环境下的序贯决策，与运筹学交叉
-3. [Wasserstein Formulation of Reinforcement Learning. An Optimal Transport Perspective on Policy Optimization](/20260404-20260503/2604.14765v1-wasserstein-formulation-of-reinforcement-learning-an-optimal-transport-perspective-on-policy-optimization)  
-   标签：评分：9.0/10、query:optdl
-   evidence：通过Wasserstein几何进行强化学习中的策略优化
-4. [NCO4CVRP: Neural Combinatorial Optimization for the Capacitated Vehicle Routing Problem](/20260404-20260503/2604.16581v1-nco4cvrp-neural-combinatorial-optimization-for-the-capacitated-vehicle-routing-problem)  
-   标签：评分：9.0/10、query:optdl
-   evidence：神经组合优化解决车辆路径问题
-5. [Scalable Production Scheduling: Linear Complexity via Unified Homogeneous Graphs](/20260404-20260503/2604.23841v1-scalable-production-scheduling-linear-complexity-via-unified-homogeneous-graphs)  
-   标签：评分：9.0/10、query:optdl
-   evidence：强化学习求解作业车间调度，运筹优化与深度学习结合
-6. [Sample-efficient Neuro-symbolic Proximal Policy Optimization](/20260404-20260503/2604.25534v1-sample-efficient-neuro-symbolic-proximal-policy-optimization)  
-   标签：评分：9.0/10、query:optdl
-   evidence：神经符号PPO用于策略优化
-7. [Multi-Robot Multi-Queue Control via Exhaustive Assignment Actor-Critic Learning](/20260404-20260503/2604.03605v1-multi-robot-multi-queue-control-via-exhaustive-assignment-actor-critic-learning)  
-   标签：评分：8.0/10、query:optdl
-   evidence：强化学习用于多机器人任务分配优化
-8. [Neural Global Optimization via Iterative Refinement from Noisy Samples](/20260404-20260503/2604.03614v1-neural-global-optimization-via-iterative-refinement-from-noisy-samples)  
-   标签：评分：8.0/10、query:optdl
-   evidence：使用迭代细化从噪声样本中进行全局优化，一种用于优化问题的深度学习技术
-9. [Boosted Distributional Reinforcement Learning: Analysis and Healthcare Applications](/20260404-20260503/2604.04334v2-boosted-distributional-reinforcement-learning-analysis-and-healthcare-applications)  
-   标签：评分：8.0/10、query:optdl
-   evidence：强化学习用于决策优化
-10. [Optimizing Service Operations via LLM-Powered Multi-Agent Simulation](/20260404-20260503/2604.04383v1-optimizing-service-operations-via-llm-powered-multi-agent-simulation)  
-   标签：评分：8.0/10、query:optdl
-   evidence：基于大语言模型的多智能体仿真优化服务运营
-11. [Graph Signal Diffusion Models for Wireless Resource Allocation](/20260404-20260503/2604.05175v1-graph-signal-diffusion-models-for-wireless-resource-allocation)  
-   标签：评分：8.0/10、query:optdl
-   evidence：使用扩散模型策略进行无线资源分配优化
-12. [Smart Commander: A Hierarchical Reinforcement Learning Framework for Fleet-Level PHM Decision Optimization](/20260404-20260503/2604.07171v1-smart-commander-a-hierarchical-reinforcement-learning-framework-for-fleet-level-phm-decision-optimization)  
+1. [InferenceEvolve: Towards Automated Causal Effect Estimators through Self-Evolving AI](/20260404-20260503/2604.04274v1-inferenceevolve-towards-automated-causal-effect-estimators-through-self-evolving-ai)  
+   标签：评分：9.0/10、query:q10
+   evidence：资源约束下的因果推断方法
+2. [Nonparametric Identification and Estimation of Causal Effects on Latent Outcomes](/20260404-20260503/2604.08681v1-nonparametric-identification-and-estimation-of-causal-effects-on-latent-outcomes)  
+   标签：评分：9.0/10、query:q10
+   evidence：实验中对潜在结果的因果推断方法
+3. [Identifying Causal Effects Using a Single Proxy Variable](/20260404-20260503/2604.09135v1-identifying-causal-effects-using-a-single-proxy-variable)  
+   标签：评分：9.0/10、query:q10
+   evidence：使用代理变量进行因果推断处理未观测混杂
+4. [Causal Graphs for Conditional Parallel Trends](/20260404-20260503/2604.12818v1-causal-graphs-for-conditional-parallel-trends)  
+   标签：评分：9.0/10、query:q11
+   evidence：因果推断方法与框架
+5. [On causal inference with marked point process data](/20260404-20260503/2604.12977v1-on-causal-inference-with-marked-point-process-data)  
+   标签：评分：9.0/10、query:q11
+   evidence：因果推断方法与框架
+6. [IndiaFinBench: An Evaluation Benchmark for Large Language Model Performance on Indian Financial Regulatory Text](/20260404-20260503/2604.19298v1-indiafinbench-an-evaluation-benchmark-for-large-language-model-performance-on-indian-financial-regulatory-text)  
+   标签：评分：9.0/10、query:q9
+   evidence：引入了一个用于评估大语言模型在金融监管文本上表现的基准
+7. [Efficient Symbolic Computations for Identifying Causal Effects](/20260404-20260503/2604.20516v1-efficient-symbolic-computations-for-identifying-causal-effects)  
+   标签：评分：9.0/10、query:q11
+   evidence：因果推断方法与框架
+8. [Deep FinResearch Bench: Evaluating AI's Ability to Conduct Professional Financial Investment Research](/20260404-20260503/2604.21006v1-deep-finresearch-bench-evaluating-ais-ability-to-conduct-professional-financial-investment-research)  
+   标签：评分：9.0/10、query:q9
+   evidence：评估AI金融研究的基准，与金融LLM的基准数据集和评估指标一致
+9. [Neyman Jackknife: Design-Based Variance Estimation for Causal Inference under Interference](/20260404-20260503/2604.24017v1-neyman-jackknife-design-based-variance-estimation-for-causal-inference-under-interference)  
+   标签：评分：9.0/10、query:q11
+   evidence：干扰下的因果推断方差估计
+10. [Flexible semiparametric modeling with application to Causal Inference](/20260404-20260503/2604.26729v1-flexible-semiparametric-modeling-with-application-to-causal-inference)  
+   标签：评分：9.0/10、query:q11
+   evidence：因果推断方法与框架
+11. [A Novel Computational Framework for Causal Inference: Tree-Based Discretization with ILP-Based Matching](/20260404-20260503/2604.27307v1-a-novel-computational-framework-for-causal-inference-tree-based-discretization-with-ilp-based-matching)  
+   标签：评分：9.0/10、query:q10
+   evidence：基于树离散化和ILP匹配的因果推断框架
+12. [Document-Level Numerical Reasoning across Single and Multiple Tables in Financial Reports](/20260404-20260503/2604.03664v1-document-level-numerical-reasoning-across-single-and-multiple-tables-in-financial-reports)  
+   标签：评分：8.0/10、query:q4
+   evidence：财务报表数值推理
+13. [PolySwarm: A Multi-Agent Large Language Model Framework for Prediction Market Trading and Latency Arbitrage](/20260404-20260503/2604.03888v1-polyswarm-a-multi-agent-large-language-model-framework-for-prediction-market-trading-and-latency-arbitrage)  
+   标签：评分：8.0/10、query:q8
+   evidence：多智能体大模型框架用于预测市场交易和延迟套利
+14. [TimeSeek: Temporal Reliability of Agentic Forecasters](/20260404-20260503/2604.04220v1-timeseek-temporal-reliability-of-agentic-forecasters)  
+   标签：评分：8.0/10、query:q2
+   evidence：评估大语言模型在金融二元市场中的预测能力
+15. [SenseAI: A Human-in-the-Loop Dataset for RLHF-Aligned Financial Sentiment Reasoning](/20260404-20260503/2604.05135v1-senseai-a-human-in-the-loop-dataset-for-rlhf-aligned-financial-sentiment-reasoning)  
+   标签：评分：8.0/10、query:q4
+   evidence：带有人机回环验证的金融情感推理数据集
+16. [Data-Driven Function Calling Improvements in Large Language Model for Online Financial QA](/20260404-20260503/2604.05387v1-data-driven-function-calling-improvements-in-large-language-model-for-online-financial-qa)  
+   标签：评分：8.0/10、query:q1
+   evidence：大语言模型用于金融问答与API集成
+17. [Market-Bench: Benchmarking Large Language Models on Economic and Trade Competition](/20260404-20260503/2604.05523v1-market-bench-benchmarking-large-language-models-on-economic-and-trade-competition)  
+   标签：评分：8.0/10、query:q9
+   evidence：LLM在经济任务上的基准测试
+18. [Bivariate Causal Discovery Using Rate-Distortion MDL: An Information Dimension Approach](/20260404-20260503/2604.05829v1-bivariate-causal-discovery-using-rate-distortion-mdl-an-information-dimension-approach)  
+   标签：评分：8.0/10、query:q11
+   evidence：使用MDL的双变量因果发现
+19. [FrontierFinance: A Long-Horizon Computer-Use Benchmark of Real-World Financial Tasks](/20260404-20260503/2604.05912v1-frontierfinance-a-long-horizon-computer-use-benchmark-of-real-world-financial-tasks)  
+   标签：评分：8.0/10、query:q1
+   evidence：LLM在真实金融任务上的基准测试
+20. [Smart Commander: A Hierarchical Reinforcement Learning Framework for Fleet-Level PHM Decision Optimization](/20260404-20260503/2604.07171v1-smart-commander-a-hierarchical-reinforcement-learning-framework-for-fleet-level-phm-decision-optimization)  
    标签：评分：8.0/10、query:optdl
    evidence：分层强化学习用于机队级决策优化
-13. [Adaptive Simulation Experiment for LLM Policy Optimization](/20260404-20260503/2604.08779v1-adaptive-simulation-experiment-for-llm-policy-optimization)  
+21. [Better Measurement or Larger Samples? Data Collection for Policy Learning with Unobserved Heterogeneity](/20260404-20260503/2604.07181v1-better-measurement-or-larger-samples-data-collection-for-policy-learning-with-unobserved-heterogeneity)  
+   标签：评分：8.0/10、query:q19
+   evidence：基于未观测异质性的政策学习与因果推断用于决策优化
+22. [PRAGMA: Revolut Foundation Model](/20260404-20260503/2604.08649v1-pragma-revolut-foundation-model)  
+   标签：评分：8.0/10、query:q1
+   evidence：基于Transformer的银行事件序列基础模型
+23. [A novel hybrid approach for positive-valued DAG learning](/20260404-20260503/2604.08935v1-a-novel-hybrid-approach-for-positive-valued-dag-learning)  
+   标签：评分：8.0/10、query:q11
+   evidence：正数值数据的因果发现方法
+24. [FinTrace: Holistic Trajectory-Level Evaluation of LLM Tool Calling for Long-Horizon Financial Tasks](/20260404-20260503/2604.10015v1-fintrace-holistic-trajectory-level-evaluation-of-llm-tool-calling-for-long-horizon-financial-tasks)  
+   标签：评分：8.0/10、query:q4
+   evidence：评估LLM在长期金融任务中的工具调用能力
+25. [FinTrace: Holistic Trajectory-Level Evaluation of LLM Tool Calling for Long-Horizon Financial Tasks](/20260404-20260503/2604.10015v2-fintrace-holistic-trajectory-level-evaluation-of-llm-tool-calling-for-long-horizon-financial-tasks)  
+   标签：评分：8.0/10、query:q4
+   evidence：评估LLM在长期金融任务中的工具调用能力，直接相关于财务报表和报告的自动分析
+26. [Relational Probing: LM-to-Graph Adaptation for Financial Prediction](/20260404-20260503/2604.10212v1-relational-probing-lm-to-graph-adaptation-for-financial-prediction)  
+   标签：评分：8.0/10、query:q4
+   evidence：通过关系探测自动分析财务报表和报告
+27. [Causal mediation in cluster-randomized trials with multiple mediators: spillover-aware decomposition, identification, and semiparametric efficient inference](/20260404-20260503/2604.10710v1-causal-mediation-in-cluster-randomized-trials-with-multiple-mediators-spillover-aware-decomposition-identification-and-semiparametric-efficient-inference)  
+   标签：评分：8.0/10、query:q11
+   evidence：集群随机试验中的因果中介分析
+28. [When Valid Signals Fail: Regime Boundaries Between LLM Features and RL Trading Policies](/20260404-20260503/2604.10996v1-when-valid-signals-fail-regime-boundaries-between-llm-features-and-rl-trading-policies)  
+   标签：评分：8.0/10、query:q2
+   evidence：LLM特征用于金融市场的强化学习交易策略
+29. [Prediction decomposition for causal analysis](/20260404-20260503/2604.11168v1-prediction-decomposition-for-causal-analysis)  
+   标签：评分：8.0/10、query:q11
+   evidence：使用机器学习预测进行因果分析
+30. [BankerToolBench: Evaluating AI Agents in End-to-End Investment Banking Workflows](/20260404-20260503/2604.11304v1-bankertoolbench-evaluating-ai-agents-in-end-to-end-investment-banking-workflows)  
+   标签：评分：8.0/10、query:q4
+   evidence：投资银行工作流程中AI代理的基准测试，包括财务报表分析
+31. [Causal inference for spatiotemporal point processes in the presence of outcome spillover and carryover](/20260404-20260503/2604.12124v1-causal-inference-for-spatiotemporal-point-processes-in-the-presence-of-outcome-spillover-and-carryover)  
+   标签：评分：8.0/10、query:q10
+   evidence：时空点过程因果推断，考虑结果溢出效应
+32. [Which Voices Move Markets? Speaker Identity and the Cross-Section of Post-Earnings Returns](/20260404-20260503/2604.13260v1-which-voices-move-markets-speaker-identity-and-the-cross-section-of-post-earnings-returns)  
+   标签：评分：8.0/10、query:q4
+   evidence：使用FinBERT分析财报电话会议记录进行金融分析
+33. [Interpretable Systematic Risk around the Clock](/20260404-20260503/2604.13458v1-interpretable-systematic-risk-around-the-clock)  
+   标签：评分：8.0/10、query:q1
+   evidence：使用大语言模型对新闻叙事进行分类以分析系统性风险
+34. [Fact4ac at the Financial Misinformation Detection Challenge Task: Reference-Free Financial Misinformation Detection via Fine-Tuning and Few-Shot Prompting of Large Language Models](/20260404-20260503/2604.14640v1-fact4ac-at-the-financial-misinformation-detection-challenge-task-reference-free-financial-misinformation-detection-via-fine-tuning-and-few-shot-prompting-of-large-language-models)  
+   标签：评分：8.0/10、query:q1
+   evidence：微调和少样本提示大语言模型用于金融虚假信息检测
+35. [QuantCode-Bench: A Benchmark for Evaluating the Ability of Large Language Models to Generate Executable Algorithmic Trading Strategies](/20260404-20260503/2604.15151v1-quantcode-bench-a-benchmark-for-evaluating-the-ability-of-large-language-models-to-generate-executable-algorithmic-trading-strategies)  
+   标签：评分：8.0/10、query:q1
+   evidence：评估LLM生成交易策略的基准
+36. [JFinTEB: Japanese Financial Text Embedding Benchmark](/20260404-20260503/2604.15882v1-jfinteb-japanese-financial-text-embedding-benchmark)  
+   标签：评分：8.0/10、query:q9
+   evidence：金融文本嵌入基准
+37. [LLM-Extracted Covariates for Clinical Causal Inference: Rethinking Integration Strategies](/20260404-20260503/2604.16763v1-llm-extracted-covariates-for-clinical-causal-inference-rethinking-integration-strategies)  
+   标签：评分：8.0/10、query:q11
+   evidence：使用LLM提取协变量进行临床因果推断
+38. [LLM-Extracted Covariates for Clinical Causal Inference: Rethinking Integration Strategies](/20260404-20260503/2604.16763v2-llm-extracted-covariates-for-clinical-causal-inference-rethinking-integration-strategies)  
+   标签：评分：8.0/10、query:q10
+   evidence：使用大语言模型提取协变量进行临床因果推断
+39. [Learning to Trade Like an Expert: Cognitive Fine-Tuning for Stable Financial Reasoning in Language Models](/20260404-20260503/2604.16862v1-learning-to-trade-like-an-expert-cognitive-fine-tuning-for-stable-financial-reasoning-in-language-models)  
+   标签：评分：8.0/10、query:q1
+   evidence：大语言模型用于金融交易和决策
+40. [Co-evolving Agent Architectures and Interpretable Reasoning for Automated Optimization](/20260404-20260503/2604.17708v1-co-evolving-agent-architectures-and-interpretable-reasoning-for-automated-optimization)  
    标签：评分：8.0/10、query:optdl
-   evidence：大语言模型策略优化用于运营管理
-14. [Pseudoconvex Problems in Operational Decision Systems: Algorithms for Joint Learning and Optimization](/20260404-20260503/2604.10778v1-pseudoconvex-problems-in-operational-decision-systems-algorithms-for-joint-learning-and-optimization)  
-   标签：评分：8.0/10、query:optdl
-   evidence：运营决策系统中的联合优化与学习
-15. [Gradient-Variation Regret Bounds for Unconstrained Online Learning](/20260404-20260503/2604.11151v1-gradient-variation-regret-bounds-for-unconstrained-online-learning)  
-   标签：评分：8.0/10、query:optdl
-   evidence：深度学习技术用于优化问题
-16. [Robust Optimization for Mitigating Reward Hacking with Correlated Proxies](/20260404-20260503/2604.12086v1-robust-optimization-for-mitigating-reward-hacking-with-correlated-proxies)  
-   标签：评分：8.0/10、query:optdl
-   evidence：鲁棒强化学习与代理奖励及奖励黑客缓解
-17. [HUANet: Hard-Constrained Unrolled ADMM for Constrained Convex Optimization](/20260404-20260503/2604.13179v1-huanet-hard-constrained-unrolled-admm-for-constrained-convex-optimization)  
-   标签：评分：8.0/10、query:optdl
-   evidence：将ADMM展开为神经网络用于约束凸优化
-18. [Hierarchical Reinforcement Learning with Runtime Safety Shielding for Power Grid Operation](/20260404-20260503/2604.14032v1-hierarchical-reinforcement-learning-with-runtime-safety-shielding-for-power-grid-operation)  
-   标签：评分：8.0/10、query:optdl
-   evidence：强化学习用于电网运行决策优化
-19. [Empirical Evaluation of Policy-Based Reinforcement Learning for Dynamic Service Control in an M/M/1 Queue](/20260404-20260503/2604.14406v1-empirical-evaluation-of-policy-based-reinforcement-learning-for-dynamic-service-control-in-an-mm1-queue)  
-   标签：评分：8.0/10、query:optdl
-   evidence：基于策略的强化学习用于队列动态服务控制
-20. [Multi-Objective Bayesian Optimization via Adaptive \varepsilon-Constraints Decomposition](/20260404-20260503/2604.15959v1-multi-objective-bayesian-optimization-via-adaptive-varepsilon-constraints-decomposition)  
-   标签：评分：8.0/10、query:optdl
-   evidence：多目标贝叶斯优化方法
-21. [DARLING: Detection Augmented Reinforcement Learning with Non-Stationary Guarantees](/20260404-20260503/2604.16684v1-darling-detection-augmented-reinforcement-learning-with-non-stationary-guarantees)  
-   标签：评分：8.0/10、query:optdl
-   evidence：非平稳MDP中的无模型强化学习用于决策优化
-22. [AutoOR: Scalably Post-training LLMs to Autoformalize Operations Research Problems](/20260404-20260503/2604.16804v1-autoor-scalably-post-training-llms-to-autoformalize-operations-research-problems)  
-   标签：评分：8.0/10、query:optdl
-   evidence：使用大语言模型自动形式化运筹优化问题
-23. [Co-evolving Agent Architectures and Interpretable Reasoning for Automated Optimization](/20260404-20260503/2604.17708v1-co-evolving-agent-architectures-and-interpretable-reasoning-for-automated-optimization)  
-   标签：评分：8.0/10、query:optdl
-   evidence：基于大语言模型的运筹研究自动化
-24. [Accelerating Optimization and Machine Learning through Decentralization](/20260404-20260503/2604.19518v1-accelerating-optimization-and-machine-learning-through-decentralization)  
-   标签：评分：8.0/10、query:optdl
-   evidence：去中心化优化用于机器学习
-25. [V-tableR1: Process-Supervised Multimodal Table Reasoning with Critic-Guided Policy Optimization](/20260404-20260503/2604.20755v1-v-tabler1-process-supervised-multimodal-table-reasoning-with-critic-guided-policy-optimization)  
-   标签：评分：8.0/10、query:optdl
-   evidence：强化学习策略优化用于推理
-26. [SOC-ICNN: From Polyhedral to Conic Geometry for Learning Convex Surrogate Functions](/20260404-20260503/2604.22355v1-soc-icnn-from-polyhedral-to-conic-geometry-for-learning-convex-surrogate-functions)  
-   标签：评分：8.0/10、query:optdl
-   evidence：提出用于优化问题的凸神经网络
-27. [ML-Guided Primal Heuristics for Mixed Binary Quadratic Programs](/20260404-20260503/2604.23053v1-ml-guided-primal-heuristics-for-mixed-binary-quadratic-programs)  
-   标签：评分：8.0/10、query:optdl
-   evidence：机器学习引导的混合二元二次规划原始启发式方法
-28. [A Layer Separation Optimization Framework for Cross-Entropy Training in Deep Learning](/20260404-20260503/2604.23225v1-a-layer-separation-optimization-framework-for-cross-entropy-training-in-deep-learning)  
-   标签：评分：8.0/10、query:optdl
-   evidence：深度学习优化与交叉熵损失
-29. [A Reward-Free Viewpoint on Multi-Objective Reinforcement Learning](/20260404-20260503/2604.24532v1-a-reward-free-viewpoint-on-multi-objective-reinforcement-learning)  
-   标签：评分：8.0/10、query:optdl
-   evidence：多目标强化学习用于决策优化
+   evidence：大语言模型自动化运筹优化任务
+41. [Causal inference for social network formation](/20260404-20260503/2604.17952v1-causal-inference-for-social-network-formation)  
+   标签：评分：8.0/10、query:q11
+   evidence：社交网络形成的因果推断
+42. [Architecture Matters More Than Scale: A Comparative Study of Retrieval and Memory Augmentation for Financial QA Under SME Compute Constraints](/20260404-20260503/2604.17979v1-architecture-matters-more-than-scale-a-comparative-study-of-retrieval-and-memory-augmentation-for-financial-qa-under-sme-compute-constraints)  
+   标签：评分：8.0/10、query:q1
+   evidence：在计算资源受限下比较检索与记忆增强用于金融问答
+43. [MFMDQwen: Multilingual Financial Misinformation Detection Based on Large Language Model](/20260404-20260503/2604.18272v1-mfmdqwen-multilingual-financial-misinformation-detection-based-on-large-language-model)  
+   标签：评分：8.0/10、query:q4
+   evidence：自动分析财务报表和报告以检测虚假信息
+44. [Shrinkage through multiple identifiability](/20260404-20260503/2604.18430v1-shrinkage-through-multiple-identifiability)  
+   标签：评分：8.0/10、query:q11
+   evidence：提出聚合因果估计量的经验贝叶斯框架
+45. [QRAFTI: An Agentic Framework for Empirical Research in Quantitative Finance](/20260404-20260503/2604.18500v1-qrafti-an-agentic-framework-for-empirical-research-in-quantitative-finance)  
+   标签：评分：8.0/10、query:q1
+   evidence：用于量化金融研究的多智能体框架
+46. [Cross-Stock Predictability via LLM-Augmented Semantic Networks](/20260404-20260503/2604.19476v1-cross-stock-predictability-via-llm-augmented-semantic-networks)  
+   标签：评分：8.0/10、query:q2
+   evidence：利用大语言模型增强语义网络进行跨股票预测
+47. [Cross-Stock Predictability via LLM-Augmented Semantic Networks](/20260404-20260503/2604.19476v2-cross-stock-predictability-via-llm-augmented-semantic-networks)  
+   标签：评分：8.0/10、query:q2
+   evidence：利用大语言模型增强语义网络进行跨股票预测
+48. [Time Series Augmented Generation for Financial Applications](/20260404-20260503/2604.19633v1-time-series-augmented-generation-for-financial-applications)  
+   标签：评分：8.0/10、query:q1
+   evidence：评估大语言模型在量化金融任务中的推理能力
+49. [ChatGPT as a Time Capsule: The Limits of Price Discovery](/20260404-20260503/2604.21433v1-chatgpt-as-a-time-capsule-the-limits-of-price-discovery)  
+   标签：评分：8.0/10、query:q1
+   evidence：LLM检查点从截止前文本中提取金融信号
+50. [Causal Discovery in Multivariate Extremes via Tail Asymmetry](/20260404-20260503/2604.21620v1-causal-discovery-in-multivariate-extremes-via-tail-asymmetry)  
+   标签：评分：8.0/10、query:q11
+   evidence：极端值因果发现
+51. [Agentic Artificial Intelligence in Finance: A Comprehensive Survey](/20260404-20260503/2604.21672v1-agentic-artificial-intelligence-in-finance-a-comprehensive-survey)  
+   标签：评分：8.0/10、query:q1
+   evidence：金融领域自主人工智能综述
+52. [A Riesz Representer Perspective on Targeted Learning](/20260404-20260503/2604.21721v1-a-riesz-representer-perspective-on-targeted-learning)  
+   标签：评分：8.0/10、query:q11
+   evidence：因果推断方法与框架
+53. [From Local to Cluster: A Unified Framework for Causal Discovery with Latent Variables](/20260404-20260503/2604.22416v1-from-local-to-cluster-a-unified-framework-for-causal-discovery-with-latent-variables)  
+   标签：评分：8.0/10、query:q11
+   evidence：含潜变量的因果发现统一框架
+54. [Causal Identification under Interference: The Role of Treatment Assignment Independence](/20260404-20260503/2604.22532v1-causal-identification-under-interference-the-role-of-treatment-assignment-independence)  
+   标签：评分：8.0/10、query:q10
+   evidence：干扰下的因果识别与处理分配独立性
+55. [MOCA: A Transformer-based Modular Causal Inference Framework with One-way Cross-attention and Cutting Feedback](/20260404-20260503/2604.23107v1-moca-a-transformer-based-modular-causal-inference-framework-with-one-way-cross-attention-and-cutting-feedback)  
+   标签：评分：8.0/10、query:q11
+   evidence：使用transformer的因果推断框架
+56. [Causal Discovery as Dialectical Aggregation: A Quantitative Argumentation Framework](/20260404-20260503/2604.23633v1-causal-discovery-as-dialectical-aggregation-a-quantitative-argumentation-framework)  
+   标签：评分：8.0/10、query:q11
+   evidence：使用论证框架的因果发现方法
+57. [Hindsight Preference Optimization for Financial Time Series Advisory](/20260404-20260503/2604.23988v1-hindsight-preference-optimization-for-financial-time-series-advisory)  
+   标签：评分：8.0/10、query:q2
+   evidence：使用语言模型进行金融时间序列咨询
+58. [Comparative Evaluation of Modern Deep Learning Methodologies for Portfolio Optimization](/20260404-20260503/2604.24486v1-comparative-evaluation-of-modern-deep-learning-methodologies-for-portfolio-optimization)  
+   标签：评分：8.0/10、query:q3
+   evidence：结合深度学习与传统金融模型的组合优化框架
+59. [Network-aware IV Regression for Causal Node Discovery and Estimation](/20260404-20260503/2604.24969v1-network-aware-iv-regression-for-causal-node-discovery-and-estimation)  
+   标签：评分：8.0/10、query:q10
+   evidence：高维数据下的工具变量回归因果推断
+60. [Optimization-Free Topological Sort for Causal Discovery via the Schur Complement of Score Jacobians](/20260404-20260503/2604.25295v1-optimization-free-topological-sort-for-causal-discovery-via-the-schur-complement-of-score-jacobians)  
+   标签：评分：8.0/10、query:q11
+   evidence：使用得分雅可比矩阵的因果发现方法
+61. [Observable Neural ODEs for Identifiable Causal Forecasting in Continuous Time](/20260404-20260503/2604.26070v1-observable-neural-odes-for-identifiable-causal-forecasting-in-continuous-time)  
+   标签：评分：8.0/10、query:q11
+   evidence：连续时间序列决策中的因果推断
 
 
 <div class="dpr-home-promo-card">

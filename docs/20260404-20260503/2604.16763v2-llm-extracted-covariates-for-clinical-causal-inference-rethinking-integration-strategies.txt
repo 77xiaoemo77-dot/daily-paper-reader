@@ -1,0 +1,791 @@
+Title: LLM-Extracted Covariates for Clinical Causal Inference: Rethinking Integration Strategies
+
+URL Source: https://arxiv.org/pdf/2604.16763v2
+
+Published Time: Wed, 22 Apr 2026 00:32:28 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+> Preprint: Under Review 1–25, 2026
+
+# LLM-Extracted Covariates for Clinical Causal Inference: Rethinking Integration Strategies 
+
+Lei Liu lliu 04@arcadia.edu 
+
+Department of Computer Science and Mathematics Arcadia University Glenside, PA, USA 
+
+Jialin Chen ∗ jialin.chen@yale.edu 
+
+Department of Computer Science Yale University New Haven, CT, USA 
+
+Kathy Macropol ∗ macropolk@arcadia.edu 
+
+Department of Computer Science and Mathematics Arcadia University Glenside, PA, USA 
+
+> ∗
+
+Corresponding authors. 
+
+Abstract 
+
+Causal inference from electronic health records (EHR) is fundamentally limited by unmea-sured confounding: critical clinical states such as frailty, goals of care, and mental status are documented in free-text notes but absent from structured data. Large language mod-els can extract these latent confounders as interpretable, structured covariates, yet how to effectively integrate them into causal estimation pipelines has not been systematically studied. Using the MIMIC-IV database with 21,859 sepsis patients, we compare seven covariate-integration strategies for estimating the effect of early vasopressor initiation on 28-day mortality, spanning tabular-only baselines, traditional NLP representations, and three LLM-augmented approaches. A central finding is that not all integration strategies are equally effective: directly augmenting the propensity score model with LLM covari-ates achieves the best performance, while dual-caliper matching on text-derived categorical distances restricts the donor pool and degrades estimation. In semi-synthetic experiments with known ground-truth effects, LLM-augmented propensity scores reduce estimation bias from 0.0143 to 0.0003 relative to tabular-only methods, and this advantage persists under substantial simulated extraction error. On real data, incorporating LLM-extracted covari-ates reduces the estimated treatment effect from 0.055 to 0.027, directionally consistent with the CLOVERS randomized trial, and a doubly robust estimator yielding 0.019 con-firms the robustness of this finding. Our results offer practical guidance on when and how text-derived covariates improve causal estimation in critical care. 
+
+1. Introduction 
+
+Sepsis is a leading cause of mortality in intensive care units, and the optimal timing of va-sopressor initiation remains a subject of ongoing clinical debate (Evans et al., 2021; Singer et al., 2016; Permpikul et al., 2019). The 2021 Surviving Sepsis Campaign guidelines recom-  
+
+> ©2026 L. Liu, J. Chen ∗& K. Macropol ∗.
+> arXiv:2604.16763v2 [cs.LG] 21 Apr 2026 Rethinking LLM Covariate Integration
+
+mend vasopressors to maintain a mean arterial pressure above 65 mmHg within the first hour of care (Evans et al., 2021), yet the evidence base remains mixed. Observational studies have reached conflicting conclusions: some reported that earlier norepinephrine reduced mortal-ity (Bai et al., 2014; Ospina-Tasc´ on et al., 2020; Xu et al., 2022), while others found delayed initiation was associated with worse outcomes (Black et al., 2020; Hidalgo et al., 2020), and Waechter et al. (Waechter et al., 2014) identified complex fluid-vasopressor interactions. Randomized trials have not resolved the debate: the CENSER trial (Permpikul et al., 2019) showed early norepinephrine reduced shock control time, but the larger CLOVERS trial (Shapiro et al., 2023) found no significant mortality difference. This persistent un-certainty motivates the use of observational EHR data to complement trial evidence, but the validity of such analyses hinges on adequately controlling for confounders that influence both treatment decisions and outcomes. A fundamental limitation of EHR-based causal inference is that structured tabular data—lab values, vital signs, diagnosis codes—capture only a fraction of the clinical state driving treatment decisions (Schneeweiss et al., 2009; Hern´ an and Robins, 2016; Yadav et al., 2018). Critical factors such as baseline functional status (Muscedere et al., 2017; Bagshaw et al., 2014), delirium severity (Eidelman et al., 1996), goals-of-care preferences (Burns and Truog, 2016), and infection source heterogeneity (Stortz et al., 2020; O’Brien Jr et al., 2007) are extensively documented in free-text clinical notes but absent from structured fields. This 
+
+unmeasured confounding biases treatment effect estimates and limits the credibility of ob-servational findings (Hager et al., 2024; Austin, 2011; Rubin, 1974). Even sophisticated approaches such as high-dimensional propensity score adjustment (Schneeweiss et al., 2009) and target trial emulation (Hern´ an and Robins, 2016) cannot fully address confounders that exist only in unstructured text. The result is a persistent gap between the clinical reality captured in notes and the statistical models built from structured data alone. Recent advances in large language models (LLMs) have demonstrated strong zero-shot capabilities for clinical information extraction (Nori et al., 2023; Agrawal et al., 2022; Alsentzer et al., 2023; Sivarajkumar et al., 2024). Unlike traditional NLP approaches that produce opaque embeddings (Alsentzer et al., 2019), LLMs can output structured, inter-pretable covariates directly from clinical narratives. Several works have explored using text data to address confounding in observational studies (Veitch et al., 2020; Keith et al., 2020; Feder et al., 2022; Roberts et al., 2020). However, a critical gap remains: given that LLMs can extract clinically meaningful covariates from notes, how should these covariates be integrated into a causal inference pipeline to most effectively reduce confounding bias? 
+
+In this work, we address this question through a systematic empirical evaluation. Using the MIMIC-IV database (Johnson et al., 2023), we study the effect of early vasopressor initiation on 28-day mortality in a cohort of 21,859 sepsis patients meeting Sepsis-3 cri-teria (Singer et al., 2016). We extract seven structured clinical covariates from discharge summaries using an LLM as a zero-shot feature extractor, and compare seven strategies for integrating these covariates and alternative text representations into causal estimation. We validate estimates using semi-synthetic experiments with known treatment effects and ro-bustness tests under simulated extraction noise, assess sensitivity via E-value analysis (Van-derWeele and Ding, 2017), and investigate heterogeneous treatment effects using causal forests (Wager and Athey, 2018) with LLM-derived covariates as candidate effect modifiers. Because clinical causal inference demands transparency, auditability, and long-term repro-
+
+> 2Rethinking LLM Covariate Integration
+
+ducibility that proprietary APIs cannot guarantee, we additionally fine-tune an open-source model (Qwen3-14B) (Yang et al., 2025) on multi-model consensus labels—labels obtained by majority vote across three frontier LLMs (GPT-4o, Gemini-2.5-Pro, Claude Sonnet 4). The fine-tuned model achieves higher extraction accuracy than the proprietary baseline. 
+
+Generalizable Insights . Our evaluation yields three insights relevant to the broader ML-for-health community: 1. Integration strategy matters. We provide empirical evidence on whether the method of incorporating text-derived covariates—direct propensity score augmenta-tion, two-stage matching, or inverse probability weighting—meaningfully affects treat-ment effect estimates, or whether the primary value lies in simply having access to these covariates. 2. Interpretable extraction outperforms black-box embeddings. By comparing LLM-extracted structured covariates against BioClinicalBERT embeddings (Alsentzer et al., 2019), we show that interpretable covariates achieve lower bias in semi-synthetic experiments while remaining clinically auditable. We further fine-tune Qwen3-14B (Yang et al., 2025) as a locally deployable alternative that surpasses the proprietary extrac-tion baseline, addressing data privacy concerns in clinical settings by enabling covari-ate extraction without transmitting protected health information to external APIs. 3. LLM-derived covariates enable novel heterogeneous treatment effect (HTE) discovery. We demonstrate that text-derived clinical concepts such as functional sta-tus and goals of care can serve as effect modifiers, identifying patient subgroups with differential treatment responses that are invisible to structured-data-only approaches. 
+
+2. Related Work 
+
+Causal inference from EHR data. Propensity score methods are the standard ap-proach for estimating treatment effects from observational EHR data (Austin, 2011; Rubin, 1974; Schneeweiss et al., 2009), and have been widely applied to study vasopressor timing in critical care (Bai et al., 2014; Ospina-Tasc´ on et al., 2020; Waechter et al., 2014; Xu et al., 2022; Hidalgo et al., 2020; Permpikul et al., 2019; Shapiro et al., 2023). A widely acknowl-edged limitation across these studies is unmeasured confounding: structured EHR fields omit critical clinical states such as frailty (Muscedere et al., 2017; Bagshaw et al., 2014), goals of care (Burns and Truog, 2016), mental status (Eidelman et al., 1996), and infection source heterogeneity (Stortz et al., 2020; O’Brien Jr et al., 2007) that drive treatment deci-sions. Hern´ an and Robins (Hern´ an and Robins, 2016) emphasized target trial emulation for observational causal inference, and Schneeweiss et al. (Schneeweiss et al., 2009) proposed high-dimensional propensity scores, but neither approach can capture confounders that exist only in unstructured text. More broadly, causal estimation under partial or systematically missing covariates has been studied in settings where key confounders are incompletely ob-served (Parbhoo et al., 2018, 2020), and causal inference frameworks have been applied to sepsis detection (Li et al., 2024). Recent benchmarks have begun evaluating LLM-derived features in clinical prognostic tasks (Wang et al., 2026), though the integration of such fea-tures into causal estimation pipelines remains unexplored. Our work directly targets this gap. 
+
+> 3Rethinking LLM Covariate Integration
+
+NLP for confounding adjustment. Several lines of work have explored using text-derived features to reduce confounding in observational studies. Veitch et al. (Veitch et al., 2020) proposed adapting text embeddings for causal inference, showing that document rep-resentations can serve as proxies for unmeasured confounders in a semi-supervised frame-work. Keith et al. (Keith et al., 2020) provided a comprehensive review of methods for using text to remove confounding, identifying key challenges including the choice of text representation and the assumption that text captures all relevant confounders. Feder et al. (Feder et al., 2022) presented a broader survey situating causal inference within the NLP landscape, covering settings where text serves as outcome, treatment, or confounder. Roberts et al. (Roberts et al., 2020) demonstrated text matching for confounding adjust-ment in political science, establishing that controlling for text can substantially reduce bias when relevant confounders are expressed in documents. Weld et al. (Weld et al., 2022) provided an empirical evaluation framework for text-based confounding adjustment, high-lighting challenges in distinguishing genuine bias reduction from overfitting. Pryzant et al. (Pryzant et al., 2021) studied causal effects of linguistic properties, introducing meth-ods for estimating effects when treatments are embedded in text. Yadav et al. (Yadav et al., 2018) surveyed EHR mining approaches including text-based feature extraction for clinical prediction and decision-making. Most existing approaches rely on dense embed-dings from pretrained language models such as BioClinicalBERT (Alsentzer et al., 2019), which capture semantic information but produce opaque feature vectors that are difficult to validate clinically (Keith et al., 2020; Veitch et al., 2020; Feder et al., 2022). Closer to our work, several studies have focused on interpretable text-derived confounders for clinical causal inference—uncovering confounders from oncology notes (Zeng et al., 2022), integrat-ing EHR text across imputation and matching (Mozer et al., 2023), constructing substitute confounders via probabilistic factor models (Zhang et al., 2019), and using LLM classi-fication with measurement error correction to recover unobserved confounders (Lee and Wood-Doughty, 2024). Our work differs by comparing black-box embeddings against LLM-extracted interpretable covariates, and by systematically evaluating multiple integration strategies rather than proposing a single method. 
+
+LLMs for clinical information extraction. Large language models have demonstrated strong performance on medical reasoning benchmarks, with GPT-4 achieving approximately 91% on USMLE-style questions (Nori et al., 2023). Hager et al. (Hager et al., 2024) fur-ther evaluated LLM limitations in clinical decision-making, identifying persistent challenges in reliability and calibration. In clinical NLP, LLMs have been applied to a broad range of extraction tasks. Agrawal et al. (Agrawal et al., 2022) showed that LLMs are effec-tive few-shot clinical information extractors, matching or exceeding supervised baselines with minimal labeled data. Yang et al. (Yang et al., 2022) developed GatorTron, a large clinical language model trained on over 82 billion words of clinical text, demonstrating strong performance on clinical NLP benchmarks. Alsentzer et al. (Alsentzer et al., 2023) demonstrated zero-shot phenotyping of postpartum hemorrhage from discharge notes using a publicly available LLM, achieving high fidelity with interpretable concept-level extraction. Sivarajkumar et al. (Sivarajkumar et al., 2024) conducted a comprehensive evaluation of prompting strategies for zero-shot clinical NLP across multiple tasks and models, comparing GPT-3.5, LLaMA-2, and Gemini. Earlier work on clinical text representations by Alsentzer 
+
+> 4Rethinking LLM Covariate Integration
+
+et al. (Alsentzer et al., 2019) introduced BioClinicalBERT, pretrained on MIMIC-III clinical notes, which remains a widely used baseline for clinical embedding tasks. Despite these ad-vances in extraction capability (Nori et al., 2023; Agrawal et al., 2022; Alsentzer et al., 2023; Yang et al., 2022; Sivarajkumar et al., 2024), existing work focuses on evaluating whether 
+
+LLMs can extract clinical information accurately. The question of how these extracted variables should be integrated into downstream statistical analyses—particularly causal in-ference pipelines where covariate selection and balance directly affect validity (Austin, 2011; Keith et al., 2020; Veitch et al., 2020)—remains largely unexplored. Our contribution ad-dresses this gap: we treat LLM extraction as a feature engineering step within a causal inference pipeline and systematically compare integration strategies on both semi-synthetic and real clinical data. 
+
+3. Methods 
+
+We introduce causal problem formulation in §3.1. Our proposed approach consists of three stages: (1) text-derived feature extraction via TF-IDF, BioClinicalBERT, or LLM-based structured extraction ( §3.2), (2) seven causal estimation strategies spanning propensity score matching (PSM) and inverse probability weighting (IPW) ( §3.3), and (3) validation through semi-synthetic benchmarks, E-value analysis, and heterogeneous treatment effect discovery ( §3.4). Figure 1 demonstrates the overall workflow and summarizes our key em-pirical findings. 
+
+3.1. Problem Formulation 
+
+We adopt the potential outcomes framework (Rubin, 1974). Let Ti ∈ { 0, 1} denote whether patient i received early vasopressor initiation within 4 hours of sepsis onset, Yi denote 28-day all-cause mortality, and Xi denote observed baseline covariates. The average treatment effect (ATE) is 
+
+τ = EYi(1) − Yi(0)  (1) where E[·] denotes expectation over the patient population and Yi(t) is the potential out-come under treatment t. Identification of τ requires consistency ( Yi = Yi(Ti)), positivity (0 < P (Ti = 1 | Xi) < 1 for all Xi in the support, where P (·) denotes probability), and conditional ignorability ( {Yi(0) , Y i(1) } ⊥ ⊥ Ti | Xi) (Rubin, 1974; Rosenbaum and Rubin, 1983). The key threat to conditional ignorability is that structured EHR data omit clinically important confounders documented in free-text clinical notes but absent from tabular fields. Let Xtab  
+
+> i
+
+denote the structured tabular covariates and Xllm  
+
+> i
+
+denote covariates extracted from clinical text by an LLM. When only structured covariates are available, the ignorability assumption is likely violated: 
+
+{Yi(0) , Y i(1) }̸ ⊥ ⊥ Ti | Xtab  
+
+> i
+
+(2) We hypothesize that augmenting structured covariates with text-derived variables can better approximate conditional ignorability: 
+
+{Yi(0) , Y i(1) } ⊥ ⊥ Ti | Xtab  
+
+> i
+
+, Xllm 
+
+> i
+
+ (3) 
+
+> 5
+
+Rethinking LLM Covariate Integration Structured EHR (observed) 
+
+• Demographics 
+
+• Vital signs 
+
+• Labs 
+
+• Diagnoses (ICD) 
+
+• Procedures 
+
+• Medications 
+
+Clinical Notes (unstructured) 
+
+"…Frailty and poor 
+
+functional status. 
+
+DNR/DNI, comfort 
+
+measures only. 
+
+Waxing and waning 
+
+mental status… "
+
+> Zero -shot
+> Extraction
+
+Structured Covariates 
+
+> Functional status
+> Mental status
+> Code status
+> Infection source
+> Substance use
+> + more …
+
+Baselines (Text Representations) 
+
+M1  (Structured EHR only) 
+
+M2 
+
+M3 
+
+Propensity 
+
+Score 
+
+Modeling 
+
+> (Logistic Regression)
+
+Full PSM 
+
+> (Sensitivity) all 7 LLM covariates
+
+Validation Framework 
+
+Balance Assessment 
+
+> (Standardized Mean Difference)
+
+Lower SMD 
+
+is better 
+
+Semi -Synthetic Experiments 
+
+> (Known Ground -Truth ATE)
+
+Evaluate Bias 
+
+& RMSE 
+
+Real -World Application 
+
+> ATE & HTE Subgroup Discovery
+
+Robustness & 
+
+Interpretability 
+
+1 Best Covariate Balance           
+
+> Me an SMD across 26 covariates (lower is better)
+> M1 Tabular Only
+> M2 TF -IDF + PS
+> M3 Bio Clinical BERT + PS
+> M5 Dual -Caliper Match
+> M6 IPW Weighting
+> M4 Direct PS Augmentation
+> Best
+> Balance!
+
+M7
+
+LLM -Augmented Strategies 
+
+M4
+
+M5
+
+M6
+
+Tabular Only 
+
+> (Traditional NLP)
+
+TF -IDF + PS 
+
+> (Embedding)
+
+BioClinicalBERT + PS   
+
+> PS(T | Xtab , X LLM )
+
+Direct PS Augmentation 
+
+> (PS caliper + Text distance)
+
+Dual -Caliper Matching  
+
+> (Using IPW with Xtab , X LLM )
+
+IPW Weighting 
+
+Covariate Integration Strategies 
+
+LLM Extraction of Interpretable Covariates 
+
+2 Lowest Bias in Semi -Synthetic Data              
+
+> Bias of ATE estimate (vs. true τ=-0.05 ,lower is better)
+> M1 Tabular Only
+> M2 TF -IDF + PS
+> M3 Bio Clinical BERT + PS
+> M5 Dual -Caliper Match
+> M6 IPW Weighting
+> 0. 014
+> M7 Full PSM
+> M4 Direct PS Augmentation 0.0 00 3
+> 0. 011
+> 0.008
+> 0. 014
+> 0. 0012
+> 0.0005
+> lower bias
+> vs. Tabular Only!
+
+3 Discovers New Effect Heterogeneity  
+
+> Top Effect Modifiers Identified Using LLM Covariates
+> Code status (DNR/DNI)
+
+★★★★★ 
+
+> Functional status
+
+★★★★ 
+
+> Mental status
+
+★★★☆☆ 
+
+> Infection source
+
+★★★☆☆  
+
+> ……
+> Covariate Strength of Heterogeneity
+> (Treatment effect difference)
+> New clinical
+> subgroups
+> uncovered!
+
+Key Findings 
+
+★★★☆☆ 
+
+★★★★ 
+
+Figure 1: Method overview and key findings. Left: We extract structured covariates from MIMIC-IV discharge summaries via zero-shot LLM extraction and compare seven in-tegration strategies (M1–M3: baselines; M4–M6: LLM-augmented; M7: sensitivity analysis using all seven covariates). Right: Direct propensity score augmentation (M4) achieves the best covariate balance (mean SMD 0.014 across 26 tabular covariates) and lowest bias in semi-synthetic experiments (0.0003 vs. true τ = −0.05). LLM-extracted covariates also enable exploratory heterogeneous treatment effect discovery. We define four feature sets: Xtab containing 26 structured EHR variables, Xtfidf containing TF-IDF representations, Xbert containing BioClinicalBERT embeddings, and Xllm contain-ing LLM-extracted structured covariates. Among the LLM covariates, we distinguish Xllm core 
+
+(five confounders used in the primary analysis, M4–M6) from Xllm all (all seven covariates, including two sensitivity variables used only in M7). See covariate details in Table 1. 
+
+3.2. Text-Derived Feature Extraction 
+
+We extract three classes of features from discharge summaries (processing details in Sec-tion 4.2). 
+
+TF-IDF representation. We apply L2-normalized term frequency–inverse document frequency weighting to discharge summary text, producing a sparse bag-of-words represen-tation used as a baseline for text-based confounding adjustment. 
+
+BioClinicalBERT embeddings. We extract dense contextual embeddings from Bio-ClinicalBERT (Alsentzer et al., 2019), a transformer pretrained on MIMIC-III clinical notes, serving as a black-box embedding baseline. 
+
+6Rethinking LLM Covariate Integration 
+
+LLM-extracted covariates. We prompt GPT-4o-mini as a zero-shot clinical feature extractor, which returns a structured JSON object containing seven pre-specified clinical covariates (as listed in Table 1) We provide full prompts in Appendix A. Unlike the preceding representations, these covariates are fully interpretable and clinically auditable. The final five core confounders selected for the primary analysis are functional sta-tus (Muscedere et al., 2017; Bagshaw et al., 2014), mental status (Eidelman et al., 1996), code status (Burns and Truog, 2016), infection source (Stortz et al., 2020), and substance use history (O’Brien Jr et al., 2007). Each was chosen because it plausibly confounds the relationship between vasopressor initiation and mortality, and is routinely documented in clinical notes but absent from structured EHR fields. Two additional sensitivity covariates— source control and family support—are included only in M7 due to ambiguous temporal relationships to treatment. Table 1: LLM-extracted clinical covariates. Core confounders enter the primary analysis M4–M6; all seven enter M7. Code status abbreviations: DNR (do not resuscitate), DNI (do not intubate), CMO (comfort measures only).                 
+
+> Covariate Categories Role
+> Functional status independent, partial, fully dependent Core Mental status alert, confused, delirious, obtunded, comatose Core Code status full code, DNR, DNI, comfort measures Core Infection source pulmonary, abdominal, urinary, skin, blood, CNS Core Substance use none, alcohol, opioids, stimulants, multiple Core Source control achieved, not achieved, N/A, pending Sensitivity Family support involved, limited, absent, conflicted Sensitivity
+
+3.3. Causal Estimation Strategies 
+
+We evaluate seven strategies in three groups (Table 2). All propensity scores are estimated via logistic regression (Rosenbaum and Rubin, 1983) with coefficients estimated by maxi-mum likelihood. Matching uses 1:1 nearest-neighbor without replacement with a caliper of 0.2 standard deviations of the logit propensity score (Austin, 2011), with Abadie–Imbens heteroskedasticity-robust standard errors (Abadie and Imbens, 2016). 
+
+Baselines (M1–M3). These methods do not use LLM-extracted covariates. M1 esti-mates propensity scores from Xtab alone. M2 appends Xtfidf features. M3 appends Xbert 
+
+embeddings. The ATE is estimated as (Austin, 2011): ˆτPSM = 1
+
+N1
+
+X 
+
+> i:Ti=1
+
+Yi − Yj(i)
+
+ (4) where j(i) denotes the matched control for treated unit i and N1 is the number of treated patients. 
+
+LLM-augmented (M4–M6). M4 directly appends Xllm core to the propensity score model and estimates τ via Eq. (4). 
+
+> 7
+
+Rethinking LLM Covariate Integration 
+
+M5 uses a two-stage procedure: patients are first matched on the tabular propensity score, then the final pair is selected to minimize Hamming distance in the LLM-covariate space: 
+
+j(i) = arg min 
+
+> k∈C (i)
+
+dH
+
+ Xllm core ,i , Xllm core ,k 
+
+ (5) where dH(·, ·) denotes the Hamming distance between two categorical vectors and C(i) is the set of controls within the caliper of 0.2 standard deviations. 
+
+M6 uses the same covariates as M4 but applies stabilized inverse probability weight-ing (Robins et al., 2000): ˆτIPW = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+"
+
+Ti Yi ˆP (T =1) ˆei
+
+− (1 − Ti) Yi ˆP (T =0) 1 − ˆei
+
+#
+
+(6) where N is the total number of patients, ˆ ei is the estimated propensity score for patient i,and ˆP (T =1) denotes the marginal treatment probability used for stabilization. Propensity scores are clipped to [0 .01 , 0.99] and weights are truncated at the 1st and 99th percentiles to mitigate extreme values, followed by within-group renormalization. Variance is estimated using robust sandwich standard errors. Further implementation details are provided in Appendix B. 
+
+Sensitivity (M7). M7 repeats the M4 design with Xllm core replaced by Xllm all , adding source control and family support. Table 2: Summary of the seven estimation strategies. 
+
+Covariates Estimator Group 
+
+M1 Xtab PSM Baseline M2 Xtab + Xtfidf PSM Baseline M3 Xtab + Xbert PSM Baseline M4 Xtab + Xllm core PSM LLM-aug. M5 Xtab then Xllm core Dual-caliper LLM-aug. M6 Xtab + Xllm core IPW LLM-aug. M7 Xtab + Xllm all PSM Sensitivity 
+
+3.4. Validation Framework 
+
+We assess credibility through three complementary evaluation strategies (Figure 1). 
+
+Covariate balance assessment. We report standardized mean differences (SMD) across all covariates before and after adjustment, with adequate balance defined as SMD below 0.1 for each individual covariate (Austin, 2011). 
+
+Semi-synthetic experiments. We construct semi-synthetic datasets that preserve the observed MIMIC-IV covariate structure while imposing known treatment assignment and outcome mechanisms with a pre-specified ground-truth ATE (Appendix C). Each method’s ability to recover the true effect is evaluated via bias, RMSE, and 95% confidence interval coverage. 
+
+8Rethinking LLM Covariate Integration 
+
+Real-world application. On the observed MIMIC-IV cohort, we estimate the ATE of early vasopressor initiation on 28-day mortality and assess robustness through E-value sen-sitivity analysis (VanderWeele and Ding, 2017), which quantifies the minimum unmeasured confounder strength needed to explain away each observed effect. We further explore hetero-geneous treatment effects using causal forests (Wager and Athey, 2018) with LLM-extracted covariates as candidate effect modifiers and tabular covariates as nuisance confounders, ap-plying propensity score trimming to enforce overlap (Crump et al., 2009). As a directional reference, we compare our estimates against the CLOVERS trial (Shapiro et al., 2023), a multicenter RCT of early vasopressor versus liberal fluid strategies in septic shock. 
+
+4. Cohort 
+
+4.1. Cohort Selection 
+
+We extract adult patients from MIMIC-IV v3.1 (Johnson et al., 2023) meeting Sepsis-3 criteria (Singer et al., 2016) and apply three sequential exclusion criteria: ICU stay under 6 hours to avoid survivorship bias (Seymour et al., 2017; Leisman et al., 2017), vasopressor administration prior to sepsis onset to restrict the study to incident treatment (Waechter et al., 2014; Bai et al., 2014), and missing discharge summaries required for LLM-based extraction. As shown in Figure 2, the final cohort comprises 21,859 patients, of whom 2,184 received early vasopressors and 19,675 did not, with an overall 28-day mortality rate of 17.3%. 
+
+4.2. Data Extraction Sepsis -3 Patients in MIMIC -IV v3.1 (age ≥ 18) 
+
+n = 32,899 
+
+> After ICU duration filter
+
+n = 32,861 
+
+> After vasopressor timing filter
+
+n = 22,125 
+
+> Final Analytic Cohort
+
+n = 21,859    
+
+> Early Vasopressor
+> (Treated)
+> n = 2,184 (10.0%)
+> No Early Vasopressor
+> (Control)
+> n = 19,675 (90.0%)
+> 28 -day Mortality:
+> 3,789 (17.3%)
+> Exclude:
+> ICU stay < 6h
+> → −38 patients
+> Exclude:
+> Pre -onset vasopressor
+> → −10,736 patients
+> Exclude:
+> Missing discharge notes
+> → −266 patients
+
+Figure 2: Cohort selection flowchart. Starting from 32,899 Sepsis-3 patients, three exclusion criteria yield a final co-hort of 21,859 patients. 
+
+Treatment and outcome. Early vasopressor initiation is defined as the first administration of norepinephrine, vasopressin, phenylephrine, epinephrine, or dopamine within 4 hours of sep-sis onset, with 28-day all-cause mortality as the outcome. 
+
+Structured covariates. We extract 26 base-line structured variables from MIMIC-IV de-rived tables (Johnson et al., 2023)—demographics, severity scores, first-day vital signs, laboratory values, and early interventions—all measured at or before sepsis onset. Missing values are im-puted using multivariate imputation by chained equations (MICE) (van Buuren and Groothuis-Oudshoorn, 2011) with LLM-extracted covari-ates as auxiliary variables. 
+
+Clinical text. Discharge summaries are ex-tracted from MIMIC-IV-Note for all 21,859 pa-tients; the extraction prompt restricts output to pre-treatment and admission states (Appendix A). 
+
+9Rethinking LLM Covariate Integration 
+
+As summarized in Table 3, treated patients had substantially higher illness severity (Sim-plified Acute Physiology Score II, SAPS-II: 47.9 vs. 37.6) and greater imbalance on LLM-extracted covariates, consistent with confounding by indication. Text-derived features are processed as follows: TF-IDF retains the top 500 features by document frequency, BioClin-icalBERT embeddings are reduced from 768 to 50 dimensions via PCA, and LLM-extracted covariates are one-hot encoded. Further implementation details are in Appendix B. Table 3: Baseline characteristics by treatment group. Values are mean (SD) or n (%).                                                                    
+
+> Characteristic Treated ( n=2 ,184) Control ( n=19 ,675) SMD
+> Demographics & Severity
+> Age, years 66.9 (15.0) 65.6 (16.9) 0.081 Female sex 872 (39.9%) 8579 (43.6%) 0.075 SOFA score 3.6 (1.9) 3.2 (1.6) 0.280 SAPS-II 47.9 (15.9) 37.6 (13.0) 0.713 Charlson index 5.5 (2.8) 5.4 (3.0) 0.025
+> Vital Signs
+> Heart rate, bpm 88.9 (16.8) 87.3 (16.3) 0.099 MAP, mmHg 72.6 (7.9) 78.1 (11.3) 0.570 Resp. rate, /min 20.0 (4.1) 19.9 (4.2) 0.033 Temp., ◦C36.9 (0.7) 36.9 (0.5) 0.071 SpO 2, % 97.0 (3.0) 96.8 (2.1) 0.080
+> Laboratory Values
+> Creatinine, mg/dL 2.1 (2.5) 1.8 (1.9) 0.123 WBC, 10 3/μ L17.6 (15.1) 14.0 (12.6) 0.253 Platelets, 10 3/μ L166.3 (111.3) 190.8 (113.1) 0.219 Bilirubin, mg/dL 2.7 (5.4) 2.3 (5.3) 0.067
+> LLM-Extracted Confounders
+> Fully dependent 277 (12.7%) 2,082 (10.6%) 0.066 Altered mental status 1,170 (53.6%) 10,186 (51.8%) 0.036 Code status limitation 430 (19.7%) 3,244 (16.5%) 0.083 Pulmonary infection 509 (23.3%) 5,591 (28.4%) 0.117 Active substance use 673 (30.8%) 6,192 (31.5%) 0.014 28-day mortality 573 (26.2%) 3,216 (16.3%) 0.243
+> Outcome
+> 28-day mortality 573 (26.2%) 3216 (16.3%) 0.243
+
+4.3. Results on Synthetic Experiments 
+
+We construct semi-synthetic datasets that preserve the real MIMIC-IV covariates but im-pose known treatment and outcome mechanisms where both depend on LLM covariates, creating unmeasured confounding by construction for tabular-only methods (Appendix C). Over 200 replications with τ = −0.05, the LLM-augmented methods M4, M6, and M7 concentrate tightly around the true value (Figure 3), with M4 achieving the lowest bias of 0.0003 and 97.0% coverage. The dual-caliper method M5 performs poorly at 0.0137, comparable to the tabular-only baseline. M4 maintains lower bias than M1 even under 
+
+> 10 Rethinking LLM Covariate Integration
+
+20% simulated extraction misclassification, confirming robustness to imperfect extraction (Appendix C, Table 8). Full numerical results are in Appendix C. 
+
+Figure 3: Distribution of ATE estimates across 200 simulations with true τ = −0.05. LLM-augmented methods M4, M6, and M7 concentrate tightly around the true value, while M1 shows substantial upward bias. 
+
+5. Results on Real Data 
+
+5.1. LLM Extraction Quality 
+
+A reference standard for evaluating extraction accuracy is established via majority vote across three frontier models—GPT-4o, Gemini-2.5-Pro, and Claude Sonnet 4—applied to 3,200 discharge summaries, with consensus exceeding 95% for all covariates (Appendix D). As shown in Table 4, the zero-shot GPT-4o-mini model used in all primary analyses achieves a core mean accuracy of 55.6%. Fine-tuning Qwen3-14B on consensus labels substantially improves extraction quality, raising core mean accuracy to 72.7% and yielding the largest gains on code status, from 65.7% to 88.3%, and substance use, from 44.7% to 85.5%. As demonstrated by the noise robustness analysis in Section 4.3, even imperfect extraction reduces confounding bias relative to omitting these covariates entirely. The fine-tuned Qwen3-14B is released as an open-source, locally deployable alternative to the proprietary API. 
+
+5.2. Covariate Balance 
+
+Table 5 summarizes covariate balance across all methods. M4 achieves the best balance on tabular covariates with mean SMD of 0.014 and all 26 covariates balanced, as well as on LLM-extracted covariates with mean SMD of 0.012. The tabular-only baseline leaves 
+
+> 11 Rethinking LLM Covariate Integration
+
+Table 4: Extraction accuracy against three-model consensus labels. GPT-4o-mini is eval-uated zero-shot on all 3,200 samples; Qwen3-14B is evaluated on the held-out test set (n = 640) after LoRA fine-tuning. Core covariates (used in M4–M6) are above the line; sensitivity covariates (M7 only) are below.                                          
+
+> GPT-4o-mini Qwen3-14B Covariate Acc. F1 Acc. F1
+> Code status 65.7% 0.495 88.3% 0.709
+> Infection source 65.9% 0.573 63.1% 0.383 Functional status 55.7% 0.542 72.5% 0.547
+> Mental status 46.2% 0.341 54.1% 0.305 Substance use 44.7% 0.291 85.5% 0.447 Core mean 55.6% 0.448 72.7% 0.478
+> Family support 72.8% 0.375 80.9% 0.335 Source control 17.6% 0.206 57.3% 0.285 Overall mean 52.7% 0.403 71.7% 0.430
+
+substantial imbalance on LLM covariates at mean SMD of 0.058, confirming that these con-founders are not controlled without explicit text-derived adjustment. IPW achieves weaker balance with only 18 of 26 tabular covariates meeting the threshold and an effective sample size of 1,433 out of 2,184 treated. Additionally, using LLM-extracted covariates as auxiliary variables in MICE imputation improves imputation quality across most tabular covariates (Figure 4). The full covariate-level love plot (Figure 6) and LLM-covariate balance details are provided in Appendix D. Table 5: Covariate balance summary. Mean and maximum absolute SMDs over 26 tabular covariates. Balanced: SMD < 0.1.                         
+
+> Method Mean SMD Max SMD Balanced
+> Unmatched 0.243 0.765 8/26 M1: Tabular PSM 0.023 0.072 26/26 M2: TF-IDF PSM 0.025 0.060 26/26 M3: BERT PSM 0.023 0.065 26/26 M4: LLM PSM 0.014 0.042 26/26 M5: Dual-caliper 0.038 0.125 24/26 M6: LLM IPW 0.093 0.386 18/26
+
+5.3. Treatment Effect Estimates 
+
+Table 6 presents the ATE estimates. All methods yield a positive ATE, suggesting that early vasopressor initiation is associated with increased 28-day mortality in this observational cohort, though the magnitude varies substantially across methods. The corresponding forest plot is provided in Appendix D. 
+
+> 12 Rethinking LLM Covariate Integration
+
+Figure 4: Imputation quality across tabular covariates. Normalized RMSE is computed via repeated holdout masking of observed entries: for each covariate, 10% of observed values are randomly masked and imputed under each method, and RMSE against the true values is normalized by each covariate’s standard deviation. LLM-augmented MICE reduces normalized RMSE on most variables relative to standard MICE without auxiliary LLM covariates. The tabular-only baseline M1 estimates an ATE of 0.055, indicating a 5.5 percentage point increase in mortality. Incorporating LLM-extracted covariates into the propensity score model via M4 reduces this to 0.027—approximately half the magnitude—suggesting that part of the apparent harm is attributable to unmeasured confounding captured by the LLM covariates. The TF-IDF method M2 produces the smallest and non-significant estimate of 0.008 at p = 0 .53, though this may reflect noise from high-dimensional sparse features rather than genuine confounding adjustment. The positive direction of all estimates is broadly consistent with the near-null finding of the CLOVERS trial (Shapiro et al., 2023), although the estimands differ in both outcome window and treatment definition, and this comparison serves as a rough directional check rather than formal validation. As a robustness check, a doubly robust ATE estimated via augmented inverse probability weighting (AIPW) with ForestDRLearner and the same covariate set as M4 yields 0.019 with 95% CI from −0.004 to 0.043, closely matching the M4 PSM estimate and confirming that our findings are not sensitive to estimator choice. To verify that results are not driven by post-treatment information leakage from discharge summaries, we additionally restrict the input text to admission-time paragraphs only—physically excluding hospital course and all post-discharge sections—and obtain an M4 estimate of 0.026, consistent with the primary analysis at 0.027. E-values are reported in Table 6; computation details are in Appendix B. 
+
+> 13 Rethinking LLM Covariate Integration
+
+Table 6: Estimated ATE of early vasopressor initiation on 28-day mortality. Positive values indicate increased mortality.                                 
+
+> Method ATE 95% CI pE-value
+> M1: Tabular PSM 0.055 [0.030, 0.080] <0.001 2.01 M2: TF-IDF PSM 0.008 [−0.018, 0.034] 0.530 1.28 M3: BERT PSM 0.038 [0.012, 0.063] 0.004 1.76 M4: LLM PSM 0.027 [0.001, 0.052] 0.041 1.60 M5: Dual-caliper 0.060 [0.035, 0.085] <0.001 2.07 M6: LLM IPW 0.052 [0.030, 0.074] <0.001 1.97 AIPW (DR) 0.019 [−0.004, 0.043] 0.105 1.46
+
+5.4. Heterogeneous Treatment Effects 
+
+To explore treatment effect heterogeneity, we fit a CausalForestDML model (Wager and Athey, 2018) with the five core LLM-extracted covariates as candidate effect modifiers; implementation details are in Appendix B. Variable importance analysis identifies code status (0.28), infection source (0.25), and functional status (0.21) as the three most influential modifiers, collectively accounting for 74% of the total importance. Mental status (0.17) and source control (0.10) contribute the remainder. All subgroup confidence intervals include zero, and these results should be treated as exploratory. Nonetheless, clinically plausible patterns emerge: patients with full code status show the smallest estimated effect at 0.011 while those with DNR status show 0.035, and functionally independent patients show a near-zero effect at 0.005 while fully dependent patients show 0.032. These gradients illustrate a key advantage of interpretable LLM-derived covariates: the ability to define clinically meaningful subgroups invisible to structured-data-only analyses. The variable importance plot and detailed subgroup condi-tional average treatment effect (CATE) tables are in Appendix D. 
+
+6. Discussion 
+
+This study systematically evaluates how LLM-extracted clinical covariates should be inte-grated into observational causal inference pipelines. Three key findings emerge. 
+
+The simplest integration strategy is the most effective. Among the three LLM-augmented approaches, directly incorporating structured covariates into the propensity score model achieves the best covariate balance and reduces the estimated ATE from 0.055 to 0.027, halving the effect magnitude. In contrast, the two-stage dual-caliper approach performs poorly, producing an ATE of 0.060 that exceeds even the tabular-only baseline. The underperformance likely reflects a fundamental trade-off: enforcing near-exact match-ing on categorical LLM covariates via Hamming distance severely restricts the donor pool, forcing acceptance of poorer matches on continuous tabular covariates. With only 2,184 treated patients and seven categorical variables, the combinatorial matching space is too constrained to simultaneously optimize both dimensions. IPW yields a reasonable point es-timate but achieves weaker balance, with only 18 of 26 covariates meeting the 0.1 threshold. These results suggest that practitioners should prefer direct propensity score augmentation over more complex integration strategies. 
+
+> 14 Rethinking LLM Covariate Integration
+
+Interpretable LLM covariates outperform black-box embeddings. In semi-synthetic experiments, the LLM-augmented propensity score method achieves bias of 0.0003 compared to 0.0082 for BioClinicalBERT embeddings—a reduction of over 95%. In real data, the LLM method produces a smaller ATE that is more consistent with the near-null finding of the CLOVERS trial. The advantage of structured covariates likely stems from their direct alignment with clinical confounders: a variable explicitly encoding comfort-measures-only status captures a specific, well-defined confounder, whereas a 768-dimensional embedding distributes this signal across many latent dimensions, diluting its influence in the propensity score model. 
+
+LLM-derived covariates reveal clinically plausible heterogeneity patterns. 
+
+Causal forest analysis identifies code status and functional status as the strongest effect modifiers—variables entirely absent from structured EHR data. While all subgroup effects remain statistically imprecise, the observed gradient is clinically plausible: functionally in-dependent patients show a near-null effect, while fully dependent patients show a larger pos-itive effect. These exploratory findings illustrate the unique value of text-derived covariates for generating hypotheses about treatment effect heterogeneity and warrant confirmatory investigation in larger, multi-center cohorts. Taken together, our results suggest that the primary value of LLM extraction lies not in enabling sophisticated integration methods but in providing access to clinically meaningful confounders that are otherwise invisible. Even the simplest integration strategy yields sub-stantial bias reduction when the right covariates are available. We emphasize that improved covariate balance is a necessary but not sufficient condition for valid causal inference; resid-ual bias from unmeasured or post-treatment confounders may persist even when observed balance metrics appear favorable. 
+
+Limitations. Our study extracts covariates from discharge summaries, which are writ-ten after the clinical encounter and may capture post-treatment states despite prompt-level temporal restrictions; restricting extraction to admission or early nursing notes would more rigorously ensure pre-exposure measurement. Additionally, our static propensity score framework treats vasopressor initiation as a point exposure, whereas marginal structural models or target trial emulation (Hern´ an and Robins, 2016) would more appropriately handle the time-varying nature of this treatment decision. Finally, this is a single-center study using MIMIC-IV; external validation on multi-center datasets is needed to establish generalizability. 
+
+References 
+
+Alberto Abadie and Guido W. Imbens. Matching on the estimated propensity score. Econo-metrica , 84(2):781–807, 2016. Monica Agrawal, Stefan Hegselmann, Hunter Lang, Yoon Kim, and David Sontag. Large language models are few-shot clinical information extractors. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing , pages 1998–2022, 2022. 
+
+> 15 Rethinking LLM Covariate Integration
+
+Emily Alsentzer, John Murphy, William Boag, Wei-Hung Weng, Di Jindi, Tristan Naumann, and Matthew McDermott. Publicly available clinical BERT embeddings. In Proceedings of the 2nd Clinical Natural Language Processing Workshop , pages 72–78, 2019. Emily Alsentzer, Matthew J. Rasmussen, Romy Fontoura, Alexis L. Cull, Brett Beaulieu-Jones, Kathryn J. Gray, David W. Bates, and Vesela P. Kovacheva. Zero-shot inter-pretable phenotyping of postpartum hemorrhage using large language models. npj Digital Medicine , 6(1):212, 2023. Peter C. Austin. An introduction to propensity score methods for reducing the effects of confounding in observational studies. Multivariate Behavioral Research , 46(3):399–424, 2011. Sean M. Bagshaw, H. Thomas Stelfox, Robert C. McDermid, Darryl B. Rolfson, Ross T. Tsuyuki, Nadia Baig, Barbara Artiuch, Quazi Ibrahim, Daniel E. Stollery, Ella Rokosh, et al. Association between frailty and short- and long-term outcomes among critically ill patients: a multicentre prospective cohort study. Canadian Medical Association Journal ,186(2):E95–E102, 2014. Xiaowu Bai, Wenkui Yu, Wu Ji, Zhiliang Lin, Shanjun Tan, Kaipeng Duan, Yi Dong, Lin Xu, and Ning Li. Early versus delayed administration of norepinephrine in patients with septic shock. Critical Care , 18(5):532, 2014. Lauren Page Black, Michael A. Puskarich, Carmen Smotherman, Taylor Miller, Rosemarie Fernandez, and Faheem W. Guirgis. Time to vasopressor initiation and organ failure pro-gression in early septic shock. Journal of the American College of Emergency Physicians Open , 1(3):222–230, 2020. Jeffrey P. Burns and Robert D. Truog. The DNR order after 40 years. New England Journal of Medicine , 375(6):504–506, 2016. Richard K. Crump, V. Joseph Hotz, Guido W. Imbens, and Oscar A. Mitnik. Dealing with limited overlap in estimation of average treatment effects. Biometrika , 96(1):187–199, 2009. Leonid A. Eidelman, Debby Putterman, Chaim Putterman, and Charles L. Sprung. The spectrum of septic encephalopathy: definitions, etiologies, and mortalities. JAMA , 275 (6):470–473, 1996. Laura Evans, Andrew Rhodes, Waleed Alhazzani, Massimo Antonelli, Craig M. Cooper-smith, Craig French, Fl´ avia R. Machado, Lauralyn Mcintyre, Marlies Ostermann, Hal-lie C. Prescott, et al. Surviving sepsis campaign: International guidelines for management of sepsis and septic shock 2021. Critical Care Medicine , 49(11):e1063–e1143, 2021. Amir Feder, Katherine A. Keith, Emaad Manzoor, Reid Pryzant, Dhanya Sridhar, Zach Wood-Doughty, Jacob Eisenstein, Justin Grimmer, Roi Reichart, Margaret E. Roberts, Brandon M. Stewart, Victor Veitch, and Diyi Yang. Causal inference in natural lan-guage processing: Estimation, prediction, interpretation and beyond. Transactions of the Association for Computational Linguistics , 10:1138–1158, 2022. 
+
+> 16 Rethinking LLM Covariate Integration
+
+Paul Hager, Friederike Jungmann, Robbie Holland, Kunal Bhagat, Inga Hubrecht, Manuel Knauer, Jakob Vielhauer, Marcus Makowski, Rickmer Braren, Georgios Kaissis, et al. Evaluation and mitigation of the limitations of large language models in clinical decision-making. Nature Medicine , 30(9):2613–2622, 2024. Miguel A. Hern´ an and James M. Robins. Using big data to emulate a target trial when a randomized trial is not available. American Journal of Epidemiology , 183(8):758–764, 2016. Daniel Colon Hidalgo, Jaimini Patel, Dalila Masic, David Park, and Megan A. Rech. De-layed vasopressor initiation is associated with increased mortality in patients with septic shock. Journal of Critical Care , 55:145–148, 2020. Alistair E. W. Johnson, Lucas Bulgarelli, Lu Shen, Alvin Gayles, Ayad Shammout, Steven Horng, Tom J. Pollard, Sicheng Hao, Benjamin Moody, Brian Gow, et al. MIMIC-IV, a freely accessible electronic health record dataset. Scientific Data , 10(1):1, 2023. Katherine Keith, David Jensen, and Brendan O’Connor. Text and causal inference: Areview of using text to remove confounding from causal estimates. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 5332–5344, 2020. Samuel Lee and Zach Wood-Doughty. Controlling for unobserved confounding with large language model classification of patient smoking status. arXiv preprint arXiv:2411.03004 ,2024. Daniel E. Leisman, Martin E. Doerfler, Mary Frances Ward, Kevin D. Masick, Benjamin J. Wie, Jeanie L. Gribben, Eric Hamilton, Zachary Klein, Andrea R. Bianculli, Meredith B. Akerman, et al. Survival benefit and cost savings from compliance with a simplified 3-hour sepsis bundle in a series of prospective, multisite, observational cohorts. Critical Care Medicine , 45(3):395–406, 2017. Qiang Li, Dongchen Li, He Jiao, Zhenhua Wu, and Weizhi Nie. CISepsis: a causal inference framework for early sepsis detection. Frontiers in Cellular and Infection Microbiology ,14, 2024. doi: 10.3389/fcimb.2024.1488130. Reagan Mozer, Aaron R Kaufman, Leo A Celi, and Luke Miratrix. Leveraging text data for causal inference using electronic health records. arXiv preprint arXiv:2307.03687 , 2023. John Muscedere, Braden Waters, Aditya Varambally, Sean M. Bagshaw, J. Gordon Boyd, David Maslove, Stephanie Sibley, and Kenneth Rockwood. The impact of frailty on intensive care unit outcomes: a systematic review and meta-analysis. Intensive Care Medicine , 43(8):1105–1122, 2017. Harsha Nori, Nicholas King, Scott Mayer McKinney, Dean Carignan, and Eric Horvitz. Capabilities of GPT-4 on medical challenge problems. arXiv preprint arXiv:2303.13375 ,2023. 
+
+> 17 Rethinking LLM Covariate Integration
+
+James M. O’Brien Jr, Bo Lu, Naeem A. Ali, Greg S. Martin, Scott K. Aberegg, Clay B. Marsh, Stanley Lemeshow, and Ivor S. Douglas. Alcohol dependence is independently associated with sepsis, septic shock, and hospital mortality among adult intensive care unit patients. Critical Care Medicine , 35(2):345–350, 2007. Gustavo A. Ospina-Tasc´ on, Glenn Hernandez, Ingrid Alvarez, Luis E. Calder´ on-Tapia, Ramiro Manzano-Nunez, Alvaro I. S´ anchez-Ortiz, Egardo Qui˜ nones, Juan E. Ruiz-Yucuma, Jos´ e L. Aldana, Jean-Louis Teboul, et al. Effects of very early start of nore-pinephrine in patients with septic shock: a propensity score-based analysis. Critical Care ,24(1):52, 2020. Sonali Parbhoo, Mario Wieser, and Volker Roth. Estimating causal effects with partial covariates for clinical interpretability, 2018. Sonali Parbhoo, Mario Wieser, Aleksander Wieczorek, and Volker Roth. Cause-effect deep information bottleneck for systematically missing covariates, 2020. Chairat Permpikul, Surat Tongyoo, Tanuwong Viarasilpa, Thavinee Trainarongsakul, Tipa Chakorn, and Suthipol Udompanturak. Early use of norepinephrine in septic shock resus-citation (CENSER): A randomized trial. American Journal of Respiratory and Critical Care Medicine , 199(9):1097–1105, 2019. Reid Pryzant, Dallas Card, Dan Jurafsky, Victor Veitch, and Dhanya Sridhar. Causal ef-fects of linguistic properties. In Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technolo-gies , pages 4095–4109, 2021. Margaret E. Roberts, Brandon M. Stewart, and Richard A. Nielsen. Adjusting for confound-ing with text matching. American Journal of Political Science , 64(4):887–903, 2020. James M. Robins, Miguel A. Hern´ an, and Babette Brumback. Marginal structural models and causal inference in epidemiology. Epidemiology , 11(5):550–560, 2000. Paul R. Rosenbaum and Donald B. Rubin. The central role of the propensity score in observational studies for causal effects. Biometrika , 70(1):41–55, 1983. Donald B. Rubin. Estimating causal effects of treatments in randomized and nonrandomized studies. Journal of Educational Psychology , 66(5):688–701, 1974. Sebastian Schneeweiss, Jeremy A. Rassen, Robert J. Glynn, Jerry Avorn, Helen Mogun, and M. Alan Brookhart. High-dimensional propensity score adjustment in studies of treatment effects using health care claims data. Epidemiology , 20(4):512–522, 2009. Christopher W. Seymour, Foster Gesten, Hallie C. Prescott, Marcus E. Friedrich, Theodore J. Iwashyna, Gary S. Phillips, Stanley Lemeshow, Tiffany Osborn, Kathleen M. Terry, and Mitchell M. Levy. Time to treatment and mortality during mandated emer-gency care for sepsis. New England Journal of Medicine , 376(23):2235–2244, 2017. 
+
+> 18 Rethinking LLM Covariate Integration
+
+Nathan I. Shapiro, Ivor S. Douglas, Roy G. Brower, Samuel M. Brown, Matthew C. Exline, Adit A. Ginde, Michelle N. Gong, Colin K. Grissom, Douglas Hayden, Catherine L. Hough, et al. Early restrictive or liberal fluid management for sepsis-induced hypotension. 
+
+New England Journal of Medicine , 388(6):499–510, 2023. Mervyn Singer, Clifford S. Deutschman, Christopher Warren Seymour, Manu Shankar-Hari, Djillali Annane, Michael Bauer, Rinaldo Bellomo, Gordon R. Bernard, Jean-Daniel Chiche, Craig M. Coopersmith, et al. The third international consensus definitions for sepsis and septic shock (Sepsis-3). JAMA , 315(8):801–810, 2016. Sonish Sivarajkumar, Mark Kelley, Alyssa Samolyk-Mazzanti, Shyam Visweswaran, and Yanshan Wang. An empirical evaluation of prompting strategies for large language models in zero-shot clinical natural language processing: Algorithm development and validation study. JMIR Medical Informatics , 12:e55318, 2024. Julie A. Stortz, Michael C. Cox, Russell B. Hawkins, Gabriela L. Ghita, Babette A. Brum-back, Alicia M. Mohr, Lyle L. Moldawer, Philip A. Efron, Scott C. Brakenridge, and Frederick A. Moore. Phenotypic heterogeneity by site of infection in surgical sepsis: a prospective longitudinal study. Critical Care , 24(1):203, 2020. Stef van Buuren and Karin Groothuis-Oudshoorn. mice: Multivariate imputation by chained equations in R. Journal of Statistical Software , 45(3):1–67, 2011. Tyler J. VanderWeele and Peng Ding. Sensitivity analysis in observational research: Intro-ducing the E-value. Annals of Internal Medicine , 167(4):268–274, 2017. Victor Veitch, Dhanya Sridhar, and David Blei. Adapting text embeddings for causal inference. In Conference on Uncertainty in Artificial Intelligence (UAI) , pages 919–928, 2020. Jason Waechter, Anand Kumar, Stephen E. Lapinsky, John Marshall, Peter Dodek, Yaseen Arabi, Joseph E. Parrillo, R. Phillip Dellinger, Allan Garland, et al. Interaction between fluids and vasoactive agents on mortality in septic shock: a multicenter, observational study. Critical Care Medicine , 42(10):2158–2168, 2014. Stefan Wager and Susan Athey. Estimation and inference of heterogeneous treatment effects using random forests. Journal of the American Statistical Association , 113(523):1228– 1242, 2018. Linna Wang, Zhixuan You, Qihui Zhang, Jiunan Wen, Ji Shi, Yimin Chen, Yusen Wang, Fanqi Ding, Ziliang Feng, and Li Lu. REACT-LLM: A benchmark for evaluating LLM integration with causal features in clinical prognostic tasks. Proceedings of the AAAI Conference on Artificial Intelligence , 40(31):26337–26345, 2026. Galen Weld, Peter West, Maria Glenski, David Arbour, Ryan A. Rossi, and Tim Althoff. Adjusting for confounders with text: Challenges and an empirical evaluation framework for causal inference. In Proceedings of the International AAAI Conference on Web and Social Media , volume 16, pages 1109–1120, 2022. 
+
+> 19 Rethinking LLM Covariate Integration
+
+Fei Xu, Rong Zhong, Shanyang Shi, Yiqian Zeng, and Zhanhong Tang. Early initiation of norepinephrine in patients with septic shock: a propensity score-based analysis. The American Journal of Emergency Medicine , 54:287–296, 2022. Pranjul Yadav, Michael Steinbach, Vipin Kumar, and Gyorgy Simon. Mining electronic health records (EHRs): A survey. ACM Computing Surveys , 50(6):1–40, 2018. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. Xi Yang, Aokun Chen, Nima PourNejatian, Hoo Chang Shin, Kaleb E. Smith, Christopher Parisien, Colin Compas, Cheryl Martin, Anthony B. Costa, Mona G. Flores, et al. Alarge language model for electronic health records. npj Digital Medicine , 5(1):194, 2022. Jiaming Zeng, Michael F Gensheimer, Daniel L Rubin, Susan Athey, and Ross D Shachter. Uncovering interpretable potential confounders in electronic medical records. Nature communications , 13(1):1014, 2022. Linying Zhang, Yixin Wang, Anna Ostropolets, Jami J Mulgrave, David M Blei, and George Hripcsak. The medical deconfounder: assessing treatment effects with electronic health records (ehrs). Proceedings of Machine Learning Research , 1:22, 2019. 
+
+> 20
+
+Rethinking LLM Covariate Integration 
+
+Appendix A. LLM Extraction 
+
+The following system prompt is used for all LLM-based covariate extraction. All calls use temperature 0 and structured JSON output mode with enum validation. 
+
+You are a senior critical care physician extracting clinical variables from a discharge summary for a causal inference study on vasopressor therapy in sepsis. You must return a JSON object with EXACTLY these 7 keys and ONLY the allowed values listed below. {"functional_status": one of ["independent", "partially_dependent", "fully_dependent", "unknown"], "mental_status": one of ["alert", "confused", "delirious", "obtunded", "comatose", "unknown"], "code_status": one of ["full_code", "DNR", "DNI", "comfort_measures_only", "unknown"], "infection_source": one of ["pulmonary", "abdominal", "urinary", "skin_soft_tissue", "bloodstream", "CNS", "other", "unknown"], "source_control": one of ["achieved", "not_achieved", "not_applicable", "pending", "unknown"], "family_support": one of ["actively_involved", "limited_involvement", "absent", "conflicted", "unknown"], "substance_use": one of ["none", "alcohol", "opioids", "stimulants", "multiple", "other", "unknown"] }DEFINITIONS: - functional_status: BASELINE before acute illness. - mental_status: At ICU ADMISSION, BEFORE sedation. - code_status: Goals-of-care EARLY in admission. - infection_source: Primary site causing sepsis. - source_control: Procedurally controlled. - family_support: Family/surrogate involvement. - substance_use: History affecting hemodynamics. RULES: 1. Extract ONLY pre-treatment / admission state. 2. If absent or ambiguous, use "unknown". 3. Return ONLY the flat JSON object. 
+
+Open-source fine-tuning. To construct a gold-standard training set, we sample 3,200 discharge summaries and independently extract the seven covariates using GPT-4o, Gem-ini 2.5 Pro, and Claude Sonnet 4. For each covariate, the final label is determined by majority vote across the three models. We fine-tune Qwen3-14B-Instruct (Yang et al., 2025) on 2,560 consensus-labeled examples using LoRA (rank 16, learning rate 2 × 10 −4, 3 epochs) and evaluate on the remaining 640. 
+
+21 Rethinking LLM Covariate Integration 
+
+Appendix B. Implementation Details 
+
+Propensity score estimation. All propensity scores are estimated via logistic regres-sion. M2 uses an L2 penalty with C = 1 .0 to mitigate overfitting from the 500-dimensional TF-IDF input; all other methods use unregularized logistic regression. LLM-extracted cat-egorical covariates are one-hot encoded before entering the propensity score model. All structured tabular covariates enter without further transformation. 
+
+Matching. Matching uses 1:1 nearest-neighbor without replacement on the logit propen-sity score with a caliper of 0.2 standard deviations. Variance is estimated using Abadie– Imbens heteroskedasticity-robust standard errors. 
+
+Inverse probability weighting. For M6, stabilized IPW weights use the marginal treat-ment probability ˆP (T =1) as the stabilization factor. Propensity scores are clipped to [0 .01 , 0.99] to enforce positivity. Weights are truncated at the 1st and 99th percentiles and renormalized within treatment groups. Variance is estimated using robust sandwich standard errors. 
+
+BioClinicalBERT processing. We extract [CLS] token embeddings from BioClinical-BERT (Alsentzer et al., 2019). For notes exceeding 512 tokens, we apply a sliding window with mean pooling. The 768-dimensional embeddings are reduced to 50 dimensions via PCA. 
+
+Heterogeneous treatment effects. CausalForestDML (Wager and Athey, 2018) uses the five core LLM-extracted covariates as candidate effect modifiers and the 26 tabular covariates as nuisance confounders. Following Crump et al. (Crump et al., 2009), patients with extreme propensity scores outside [0 .02 , 0.98] are excluded, retaining 17,724 patients. 
+
+Doubly robust estimation. As a sensitivity analysis to assess robustness against mis-specification of the propensity score model, we estimate an augmented inverse probability weighting (AIPW) treatment effect using ForestDRLearner from the EconML library with 5-fold cross-fitting. Both outcome and propensity score models are implemented as gradient-boosted forests with 200 trees, and the covariate set matches M4. Variance is estimated via honest forest bootstrap. 
+
+E-value computation. E-values were computed on the risk ratio scale following Van-derWeele and Ding (VanderWeele and Ding, 2017): given an estimated ATE on the risk difference scale ∆ and baseline risk p0 = 0 .173, we convert to a risk ratio RR = ( p0 + ∆) /p 0
+
+and then compute E-value = RR + pRR × (RR − 1). 
+
+Appendix C. Semi-Synthetic Experiments 
+
+Let N = 21 ,859 denote the total number of patients indexed by i, σ(z) = (1 + e−z )−1
+
+denote the logistic function, e· denote standardization to zero mean and unit variance, and 
+
+⊮[·] denote the indicator function. Continuous covariates are median-imputed before stan-dardization; categorical LLM covariates are one-hot encoded. 
+
+> 22
+
+Rethinking LLM Covariate Integration 
+
+Treatment model. Ti ∼ Bernoulli  σ(si) where si is the linear predictor: 
+
+si = β1 ^SOFA i + β2 gAge i + β3^MAP i + β4 ^Lactate i
+
+| {z }
+
+> tabular confounders
+
++ γ1⊮[full code] i + γ2⊮[CMO] i + γ3⊮[fully dep] i
+
+| {z }
+
+> LLM confounders
+
++ γ4⊮[obtunded/coma] i + γ5⊮[pulmonary] i
+
+| {z }
+
+> LLM confounders (cont.)
+
++β0 (7) Coefficients β correspond to tabular covariates and γ to LLM covariates. The intercept β0
+
+is calibrated so that the marginal treatment probability E[P (T = 1)] ≈ 0.10 matches the observed treatment rate. 
+
+Parameter Value Role 
+
+β0 (intercept) −1.50 calibrates E[π] ≈ 0.10 
+
+β1 (SOFA) +0 .15 tabular 
+
+β2 (Age) +0 .08 tabular 
+
+β3 (MAP) −0.20 tabular 
+
+β4 (Lactate) +0 .12 tabular 
+
+γ1 (full code) +0 .10 LLM 
+
+γ2 (CMO) −0.50 LLM 
+
+γ3 (fully dep.) +0 .15 LLM 
+
+γ4 (obtunded/coma) +0 .20 LLM 
+
+γ5 (pulmonary) +0 .10 LLM 
+
+Outcome model. Yi(t) ∼ Bernoulli  σ(ri + τ · t), where ri is the baseline risk linear predictor and τ is the treatment effect on the logit scale: 
+
+ri = α1 ^SOFA i + α2 gAge i + α3^MAP i + α4 ^Lactate i
+
+| {z }
+
+> tabular risk factors
+
++ δ1⊮[CMO] i + δ2⊮[fully dep] i + δ3⊮[obtunded/coma] i
+
+| {z }
+
+> LLM risk factors
+
++α0 (8) Coefficients α correspond to tabular covariates and δ to LLM covariates. The intercept α0
+
+is calibrated so that the marginal mortality rate ≈ 0.17 matches the observed rate. 
+
+Parameter Value Role 
+
+α0 (intercept) −1.20 calibrates mortality ≈ 0.17 
+
+α1 (SOFA) +0 .20 tabular 
+
+α2 (Age) +0 .10 tabular 
+
+α3 (MAP) −0.15 tabular 
+
+α4 (Lactate) +0 .15 tabular 
+
+δ1 (CMO) +0 .40 LLM 
+
+δ2 (fully dep.) +0 .25 LLM 
+
+δ3 (obtunded/coma) +0 .30 LLM 
+
+We set τ = −0.05 in the main experiment and τ = 0 in the null experiment. 
+
+23 Rethinking LLM Covariate Integration 
+
+Confounding structure. Both si and ri depend on LLM covariates, so {Y (0) , Y (1) }̸ ⊥ ⊥
+
+T | Xtab . Methods omitting Xllm face unmeasured confounding by construction. 
+
+Protocol. We run J = 200 replications indexed by j ∈ { 1, . . . , 200 }; covariates are held fixed while Ti and Yi are resampled in each replication with seed 42 + j. For each method 
+
+m, we report the following metrics, where ˆ τ (j) 
+
+> m
+
+is the ATE estimate from replication j under method m and CI (j) 
+
+> m
+
+is its 95% confidence interval: Bias m = ¯ˆτm − τ , RMSE m =
+
+q 1
+
+> J
+
+P 
+
+> j
+
+(ˆ τ (j) 
+
+> m
+
+− τ )2 (9) Coverage m = 1
+
+> J
+
+P 
+
+> j
+
+⊮τ ∈ CI (j)
+
+> m
+
+ (10) where ¯ˆτm = 1
+
+> J
+
+P 
+
+> j
+
+ˆτ (j) 
+
+> m
+
+is the mean estimate across replications. 
+
+Extraction noise. For each LLM covariate m with Km categories, we simulate misclassifi-cation by independently corrupting observations: ˜Xi,m = Xi,m with probability 1 −pflip , else ˜Xi,m ∼ Uniform {1, . . . , K m}. Treatment and outcome are generated using true covariate values; only the estimation step uses corrupted values. We evaluate pflip ∈ { 0.05 , 0.10 , 0.20 }.
+
+Results. Table 7 reports per-method bias, RMSE, and 95% CI coverage across 200 sim-ulations under both a beneficial treatment effect ( τ = −0.05) and a null effect ( τ = 0). Table 8 summarizes robustness to simulated extraction misclassification at error rates rang-ing from 0% to 20%, and Figure 5 visualizes the distribution of ATE estimates under the null scenario. Table 7: Semi-synthetic validation over 200 simulations. Bias = |mean ATE − τ |; Coverage = fraction of 95% CIs containing τ .
+
+Mean ATE Bias RMSE Coverage 
+
+True τ = −0.05 M1: Tabular PSM −0.0357 0.0143 0.0185 78.0% M2: TF-IDF PSM −0.0389 0.0111 0.0167 85.0% M3: BERT PSM −0.0418 0.0082 0.0149 91.5% M4: LLM PSM −0.0503 0.0003 0.0117 97.0% M5: Dual-caliper −0.0363 0.0137 0.0184 79.5% M6: LLM IPW −0.0512 0.0012 0.0080 95.5% M7: Full PSM −0.0495 0.0005 0.0118 96.0% 
+
+True τ = 0 (null effect) 
+
+M1: Tabular PSM +0.0123 0.0123 0.0175 81.5% M2: TF-IDF PSM +0.0102 0.0102 0.0158 87.0% M3: BERT PSM +0.0064 0.0064 0.0143 92.5% M4: LLM PSM −0.0027 0.0027 0.0126 95.5% M5: Dual-caliper +0.0110 0.0110 0.0158 90.0% M6: LLM IPW −0.0036 0.0036 0.0095 94.0% M7: Full PSM −0.0011 0.0011 0.0115 97.0% 24 Rethinking LLM Covariate Integration 
+
+Figure 5: ATE distribution under null effect ( τ = 0) across 200 simulations. Table 8: Robustness to extraction noise. M4 bias remains below M1 bias at all error rates. 
+
+Error rate M1 bias M4 bias M4 coverage 
+
+0% 0.0143 0.0003 97.0% 5% 0.0143 0.0023 96.5% 10% 0.0143 0.0045 93.0% 20% 0.0143 0.0081 93.0% 
+
+Appendix D. Supplementary 
+
+Table 9: Inter-model consensus rates on 3,200 sampled notes. Consensus: two or more of three frontier models agree. 
+
+Covariate Consensus No consensus 
+
+Functional status 95.1% 4.9% Mental status 93.1% 6.9% Code status 97.0% 3.0% Infection source 96.5% 3.5% Source control 88.8% 11.2% Family support 99.4% 0.6% Substance use 98.8% 1.2% Overall 95.5% 4.5% 25 Rethinking LLM Covariate Integration 
+
+Figure 6: Love plot of standardized mean differences across 26 tabular covariates. Gray circles show unmatched imbalances; colored markers show post-adjustment balance for each method. Dashed line indicates the SMD = 0 .1 threshold. Table 10: Post-matching SMD on LLM-extracted covariates. 
+
+Covariate Unmatched M1 M4 
+
+Functional: fully dependent 0.066 0.040 0.011 Functional: independent 0.064 0.020 0.006 Mental: obtunded 0.114 0.087 0.002 Mental: comatose 0.088 0.095 0.021 Code: full code 0.233 0.227 0.002 Code: CMO 0.146 0.055 0.000 Infection: pulmonary 0.117 0.041 0.021 Substance: alcohol 0.067 0.038 0.003 
+
+Mean (all) 0.087 0.058 0.012 Max (all) 0.288 0.227 0.036 
+
+26 Rethinking LLM Covariate Integration 
+
+Figure 7: Forest plot of ATE estimates across methods. Dashed line indicates zero effect. 
+
+> 27 Rethinking LLM Covariate Integration
+
+Figure 8: Propensity score distributions for IPW (M6) by treatment group. 
+
+Figure 9: Variable importance from CausalForestDML on the PS-trimmed cohort of 17,724 patients. Code status, infection source, and functional status collectively account for 74% of importance. 
+
+> 28
+
+Rethinking LLM Covariate Integration 
+
+Table 11: Subgroup CATE by code status (PS-trimmed, n = 17 ,724). All estimates are exploratory. 
+
+Subgroup CATE 95% CI n
+
+Full code 0.011 [−0.033, 0.054] 6,005 DNI 0.027 [−0.026, 0.080] 94 CMO 0.025 [−0.028, 0.079] 1,293 DNR 0.035 [−0.058, 0.127] 1,673 Unknown 0.026 [−0.046, 0.099] 8,659 
+
+Table 12: Subgroup CATE by functional status (PS-trimmed, n = 17 ,724). All estimates are exploratory. 
+
+Subgroup CATE 95% CI n
+
+Independent 0.005 [−0.030, 0.040] 3,769 Partially dep. 0.021 [−0.043, 0.084] 6,430 Fully dependent 0.032 [−0.048, 0.112] 2,021 Unknown 0.031 [−0.044, 0.106] 5,504 
+
+Figure 10: Subgroup CATE estimates by functional status. All confidence intervals include zero. 
+
+29 Rethinking LLM Covariate Integration 
+
+Figure 11: Subgroup CATE estimates by infection source. All confidence intervals include zero.

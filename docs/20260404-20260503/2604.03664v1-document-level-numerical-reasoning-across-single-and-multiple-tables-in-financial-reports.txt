@@ -1,0 +1,600 @@
+Title: Document-Level Numerical Reasoning across Single and Multiple Tables in Financial Reports
+
+URL Source: https://arxiv.org/pdf/2604.03664v1
+
+Published Time: Tue, 07 Apr 2026 00:29:49 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+## Document-Level Numerical Reasoning across Single and Multiple Tables in Financial Reports 
+
+Yi-Cheng Wang *1 Wei-An Wang *1,2 Chu-Song Chen 1,21Department of Computer Science and Information Engineering, National Taiwan University 
+
+> 2
+
+FinTech Center, National Taiwan University 
+
+{d13922033, r12922114, chusong}@csie.ntu.edu.tw 
+
+Abstract 
+
+Despite the strong language understanding abil-ities of large language models (LLMs), they still struggle with reliable question answering (QA) over long, structured documents, partic-ularly for numerical reasoning. Financial an-nual reports exemplify this difficulty: finan-cial statement analysis often hinges on accurate arithmetic, and analysts derive key indicators by integrating evidence scattered across mul-tiple tables and narrative text. However, exist-ing benchmarks focus largely on single-table settings, leaving cross-table document-level numerical reasoning underexplored. To ad-dress this gap, we introduce FinLongDocQA ,a dataset for both single-table and cross-table 
+
+financial numerical reasoning in long-context reports. Evaluating both closed-source and open-source LLMs on FinLongDocQA re-veals two bottlenecks: (1) annual reports of-ten exceed 129k tokens, exacerbating the con-text rot problem for locating relevant tables; and (2) even when relevant evidence is lo-cated, LLMs remain prone to errors in multi-step numerical reasoning. We propose Fin-LongDocAgent , a Multi-Agent Multi-Round Retrieval-Augmented Generation (RAG) ap-proach that iteratively retrieves evidence, per-forms intermediate calculations, and verifies results across rounds. Experiments highlight the importance of iterative retrieval and veri-fication for reliable numerical QA in long fi-nancial documents. Our dataset and code are available on https://github.com/AI-Application-and-Integration-Lab/FinLongDocQA .
+
+1 Introduction 
+
+Despite recent progress in LLMs (OpenAI, 2025; Google, 2025; Yang et al., 2025; Liu et al., 2025), building systems that reliably perform human-level reasoning remains challenging, particularly when decisions require integrating information from het-erogeneous sources. Finance is a representative 
+
+> *Equal contribution.
+
+domain of this challenge, as many analytical tasks depend on combining numerical and textual evi-dence from complex documents. Financial numerical reasoning (Chen et al., 2021; Zhu et al., 2021) refers to the ability to interpret numerical values, perform arithmetic operations, and derive meaningful ratios and trends. Many financial analysis tasks can be decomposed into such operations, including trend analysis, margin computation, and liquidity ratio estimation. While these tasks may appear straightforward, perform-ing numerical reasoning over long-form financial reports is challenging even for human analysts ,as it requires identifying relevant tables across dif-ferent sections and linking numerical values with associated textual descriptions. This process often involves iterative cross-referencing, making it both time-consuming and cognitively demanding. Figure 1 shows a example: computing the Debt Service Coverage Ratio (DSCR) requires com-bining operating income from the income state-ment (Page 50) with depreciation and amortiza-tion from the cash flow statement (Page 51), while also retrieving interest expense from an income/-expense table (Page 31) and principal repayment details from a long-term debt note in the text span (Page 34). As a result, the core difficulty is not only performing arithmetic, but also locating the correct evidence across sections and heterogeneous formats (e.g., tables and text). However, existing benchmarks largely focus on cross-text or single-table settings. As sum-marized in Table 1, early financial datasets such as Financial PhraseBank (Malo et al., 2014) and FiQA-SA (Maia et al., 2018) target text-only se-mantic analysis, while numerical reasoning bench-marks such as FinQA (Chen et al., 2021) and TAT-QA (Zhu et al., 2021) associate each ques-tion with a single table and a passage. More recent RAG-oriented benchmarks (e.g., FinDER (Choi et al., 2025) and FinTMMBench (Zhu et al., 2025)) 
+
+> arXiv:2604.03664v1 [cs.CL] 4 Apr 2026 Figure 1: An example QA instance from FinLongDocQA. The figure shows only the relevant tables and text for presentation; in practice, the model must retrieve them from the full annual report before computing the answer.
+
+broaden task coverage and incorporate additional modalities, but they do not specifically target document-level numerical reasoning that requires retrieving and aggregating evidence across multiple tables within a long report. This leaves a gap for multi-table, multi-text workflows that are common in practical financial analysis. Motivated by these challenges and the limita-tions of existing datasets, we introduce FinLong-DocQA , a document-level dataset designed for both single-table and cross-table financial numer-ical reasoning in long-context settings. FinLong-DocQA is constructed from S&P 500 companies’ annual reports from 2022 ∼2024, and consists of 1,456 reports and 7,527 QA pairs, with an average input length of approximately 129k tokens. Due to the structured nature of financial reports, meaningful numerical questions often rely on ta-bles located within nearby pages, where related information is organized into coherent sections. While long-distance dependencies do exist, they are less frequent in practice. During dataset construc-tion, we observed that cases requiring excessively remote evidence often led to ambiguous questions and were therefore excluded to ensure quality and answerability. Notably, our dataset still includes 1,280 questions whose supporting evidence spans over 40 pages on average, with a maximum span of 607 pages. This scale and level of long-range evi-dence aggregation exceeds prior benchmarks such as DocFinQA (Reddy et al., 2024), which focus on single-table evidence and therefore do not involve cross-page, multi-table reasoning. We use FinLongDocQA to evaluate both closed-source (e.g., GPT (Achiam et al., 2023) and Gemini (Google, 2025)) and open-source (e.g., Qwen3 (Yang et al., 2025) and DeepSeek-v3.2 (Liu et al., 2025)) LLMs. Our findings indicate two key challenges. First, the extreme length and structure of annual reports make it difficult for models to reli-ably locate relevant evidence, especially when sup-porting tables are distributed across distant pages, reflecting a context rot (Hong et al., 2025; Liu et al., 2024) problem. Second, even when relevant evi-dence pages are retrieved, models remain error-prone in multi-step numerical reasoning (Singh et al., 2024), including extracting incorrect table values, misapplying formulas, and mixing units. These observations suggest that solving FinLong-DocQA requires both robust evidence discovery and reliable computation over retrieved content. To establish a strong baseline for document-Dataset Task Input Modality Doc RAG Cross Table Tab. Text Img.                                                                                                       
+
+> FiQA-SA (WWW’18) Semantic analysis ✗✓✗✗✗
+> FinQA (EMNLP’21) Numerical reasoning ✓✓✗✗✗
+> TAT-QA (ACL’21) Numerical reasoning ✓✓✗✗✗
+> TAT-DQA (MM’22) Numerical reasoning ✗✓✓✗✗
+> MultiHiertt (ACL’22) Numerical reasoning ✓✓✗✗✓
+> DocFinQA (ACL’24) Numerical reasoning ✓✓✗✓✗
+> DocMath-Eval (ACL’24) Numerical reasoning ✓✓✗✓✗
+> AlphaFin (LREC’24) Stock prediction ✗✓✗✓✗
+> CodeFinQA (ACL’24) Code generation ✓✓✗✗✗
+> FinanceMath (ACL’24) Math reasoning ✓✓✗✓✗
+> FinDER (ICAIF’25) Retrieval ✓✓✗✓✗
+> FinTMMBench (MM’25) Mix (Include 10 tasks) ✓✓✓✓✗
+> FinMMR (ICCV’25) Numerical reasoning ✓✓✓✗✗
+> XFinBench (ACL’25) Complex reasoning ✓✓✓✗✗
+> FCMR (ACL’25) Cross-modal reasoning ✓✓✓✓✗
+> FinanceReasoning (ACL’25) Numerical reasoning ✓✓✗✗✗
+> FinLongDocQA (ours) Numerical reasoning ✓✓✗✓✓
+
+Table 1: Comparison of financial QA datasets. Doc RAG denotes settings where QA is grounded in a full document and retrieval is required to find evidence. 
+
+level cross-table numerical QA, we introduce Fin-LongDocAgent , a Multi-Agent Multi-Round RAG method. FinLongDocAgent decomposes the task into iteratively refines retrieval and reasoning: agents generate domain-aware queries to retrieve candidate tables and text spans, perform intermedi-ate calculations, and verify results across multiple rounds. This iterative design aims to improve ev-idence coverage in long documents and enhance numerical reliability in cross-table reasoning. Our contributions are summarized as follows. 
+
+• We create FinLongDocQA , the first benchmark (to our knowledge) targeting document-level finan-cial numerical QA that requires reasoning across 
+
+multiple tables within long-form annual reports. 
+
+• We provide page-grounded evidence annotations and executable programs for every instance, en-abling fine-grained evaluation. 
+
+• We introduce FinLongDocAgent , an agent-based RAG method, and provide detailed analysis identifying key challenges of FinLongDocQA. 
+
+2 Related Work 
+
+Financial QA Benchmarks. Early benchmarks such as Financial PhraseBank (Malo et al., 2014) and FiQA-SA (Maia et al., 2018) mainly target sentiment analysis and opinion mining in financial text. FinQA (Chen et al., 2021) and TAT-QA (Zhu et al., 2021) shift to numerical QA over financial reports in a given-evidence setting, where models perform arithmetic over provided table and text snippets. MultiHiertt (Zhao et al., 2022) extends this setting to multiple tables, increasing the need for multi-step reasoning. Recent benchmarks broaden the scope in two directions. First, several datasets incorporate vi-sual and layout information from documents and 
+
+Figure 2: Illustration of the construction steps for our FinLongDocQA dataset. 
+
+charts, including TAT-DQA (Zhu et al., 2022), Fin-MMR (Tang et al., 2025a), FCMR (Kim et al., 2025), and FinTMMBench (Zhu et al., 2025). Second, benchmarks such as AlphaFin (Li et al., 2024) and XFinBench (Zhang et al., 2025) eval-uate a wider range of financial analysis skills beyond report QA. To better assess calculation correctness, FinanceMath (Zhao et al., 2024), BizBench (Krumdick et al., 2024), and FinanceRea-soning (Tang et al., 2025b) emphasize formula-based reasoning and program-style solutions (e.g., Program-of-Thought (Chen et al., 2023)). Work on long-context financial QA, such as DocFinQA (Reddy et al., 2024), DocMath-Eval, and FinDER (Choi et al., 2025), highlights evi-dence localization challenges in lengthy documents. However, these settings do not require combining evidence across multiple tables dispersed through-out an entire report. In practice, financial statement analysis often requires aggregating values across several tables and accompanying text, motivating our focus on document-level cross-table numerical reasoning. 
+
+Cross-Table Reasoning. Multiple benchmarks in the general domain evaluate cross-table reason-ing. MMQA (Wu et al., 2025b) targets multi-hop QA over relationally linked tables with explicit pri-mary/foreign keys, while TableBench (Wu et al., 2025c) and LongTableBench (Li et al., 2025) assess table understanding and long-context reasoning across diverse non-financial domains. Financial re-ports pose a different challenge: table relations are typically implicit and must be inferred from report-ing structure and narrative references rather than database-style keys. In contrast to these general-domain benchmarks, our proposed FinLongDocQA requires integrating evidence from multiple tables dispersed throughout a long annual report. Stage # QA pairs       
+
+> Raw data generated by LLM 13,375
+> Rule-based filtering stage
+> Removal of single-table solvable cases 4,120 Removal of calculation errors 657 Removal of incoherent answers 268 Manual review filtering stage 803
+> Final dataset 7,527
+
+Table 2: Dataset construction and filtering statistics. 
+
+Retrieval-Augmented Generation (RAG). Re-cent advances in LLMs have focused on long-context reasoning and explicit “thinking” capabili-ties. Closed-source models such as GPT-5.2 (Ope-nAI, 2025) and Gemini-3 (Google, 2025), as well as open-source models like Qwen3 (Yang et al., 2025) and DeepSeek-V3.2 (Liu et al., 2025), gen-erate reasoning traces to handle complex tasks. In the financial domain, Fin-o1 (Qian et al., 2025) fur-ther enhances reasoning by training on specialized financial corpora with reinforcement learning (RL). However, LLMs remain prone to context rot (Hong et al., 2025; Liu et al., 2024) failures when locating relevant evidence in long-form documents. RAG mitigates this issue by retrieving compact sets of relevant evidence instead of processing the entire context. In finance, FinQAPT (Singh et al., 2024) optimizes context extraction for the FinQA dataset but reports performance degradation when scaled to full-length reports, and its system is not publicly released. To better capture complex dependencies in general-domain corpora, graph-based RAG approaches such as GraphRAG (Edge et al., 2024), LightRAG (Guo et al., 2025), and HippoRAG 2 (Gutiérrez et al., 2025) build graph indices over entities and relations, enabling global reasoning across documents. More recently, research has moved toward agen-tic RAG, where models autonomously plan and ex-ecute search trajectories. ReAct (Yao et al., 2022) pioneered the combination of reasoning traces with task-specific actions. Subsequent work, such as Search-R1 (Jin et al., 2025) and WebDancer (Wu et al., 2025a) uses RL to optimize multi-turn search interactions for information seeking. While these agents are effective for retrieval and general search, they are not designed for the iterative numerical verification required in cross-table analysis.       
+
+> Statistic Value
+> Documents
+> #Reports 1,456 #Companies 489 Tables 150,251 Tokens (mean/median) 129,589 / 115,182
+> Question-answer pairs
+> Total QA pairs 7,527
+
+Table 3: FinLongDocQA dataset overview.       
+
+> Statistic Value
+> Question types
+> Mixed / Table / Text 5,951 / 1,319 / 257
+> Question length
+> Tokens (mean/median) 15.31 / 15 Characters (mean/median) 92.41 / 90
+> Evidence
+> Evidence pages (mean/median/min/max) 2.02 / 2 / 2 / 4
+> Annotations & code
+> Code lines (mean/median/max) 3.02 / 3 / 12
+
+Table 4: Question, evidence, and annotation statistics in FinLongDocQA. 
+
+3 FinLongDocQA Dataset 
+
+FinLongDocQA is a document-level financial QA dataset designed to evaluate both single-table and cross-table numerical reasoning in annual reports. It comprises 1,456 complete SEC filings from S&P 500 companies for fiscal years 2022–2024, paired with 7,527 QA instances. Each instance is annotated with supporting evidence pages, en-abling retrieval and verification in long-document settings. We construct FinLongDocQA using a three-stage pipeline (Figure 2). In Stage 1 (QA genera-tion) , we parse each filing into a Markdown report, segment it into page-level chunks, and use an LLM to generate initial QA candidates from randomly sampled page ranges. In Stage 2 (rule-based filter-ing) , we automatically discard low-quality candi-dates by enforcing that each question has a valid nu-merical answer, executable Python code for the cal-culation, and evidence that requires multiple hops across pages rather than a single local lookup. In 
+
+Stage 3 (human review) , we apply LLM-assisted checks and manual inspection to remove QA pairs that are off-topic, or poorly grounded, yielding the final dataset with traceable evidence pages suitable for cross-table, document-level financial reasoning. 1-20 
+
+> 21-40
+> 41-60
+> 61-80
+> 81-100
+> 101-120
+> 121-140
+> 141-160
+> 161-180
+> 181-200
+> 201-220
+> 221-240
+> 241-260
+> 261+
+> Page range within the document
+> 1.0K
+> 2.0K
+> 3.0K
+> 4.0K
+> Evidence page occurrences
+
+Figure 3: Distribution of evidence page occurrences across page ranges in annual reports. 
+
+3.1 Data Collection 
+
+We collect the corresponding PDF filings from the SEC EDGAR system 1. For each PDF, we apply MinerU (Wang et al., 2024) to extract tables, sec-tion titles, and text, converting each report into a Markdown file. This representation supports down-stream indexing and retrieval while preserving the report content and much of its original layout. Doc-ument statistics are summarized in Table 3. 
+
+3.2 QA Generation 
+
+Manual expert annotation for document-level fi-nancial QA is costly, and recent work has increas-ingly turned to LLMs for automatic data construc-tion. We follow this direction and use an LLM (GPT-4o-mini ) to generate candidate QA pairs that require numerical computation across tables lo-cated on different pages of the report. To create cross-page questions, we adopt a page-sampling strategy that selects disjoint subsets of pages from the early, middle, and late sections of each report. For each filing, we sample 40 pages from these regions and prompt the LLM to generate up to ten QA pairs using a template that includes chain-of-thought style reasoning and in-context ex-amples. For each instance, the model produces not only the question and final numerical answer, but also (i) executable Python code that specifies how to compute the answer, (ii) a natural language rea-soning trace, and (iii) the page indices that contain the supporting evidence. This initial QA generation procedure yields 13,375 raw QA pairs. Appendix Figure 6 presents the prompt used for QA generation. 
+
+3.3 Data Quality Assurance 
+
+To ensure that FinLongDocQA require document-level financial reasoning, we apply a two-stage fil-tering process included of automatic rule-based 
+
+> 1https://www.sec.gov/search-filings
+
+checks followed by manual review. Table 2 sum-marizes the filtering statistics. 
+
+Rule-based filtering. We remove 4,120 questions whose answers can be derived from a single table, as these do not require cross-page or cross-table reasoning. We then execute the generated Python code associated with each QA pair and discard 657 instances with incorrect calculations. Finally, 268 QA pairs with incoherent, incomplete, or non-numeric answers are removed. After this stage, 8,330 QA pairs remain. 
+
+Human review. The remaining QA pairs are fur-ther refined through a manual screening process conducted by two annotators with complementary backgrounds in computer science and finance. For 
+
+inter-annotator agreement , we adopt a conserva-tive review protocol. Each QA pair is indepen-dently reviewed by both annotators. An instance is discarded if either annotator identifies issues such as ambiguity, overly explicit hints, inappropriate constraints, or lack of financial relevance. This pro-tocol prioritizes precision and ensures that retained questions require well-defined reasoning. We define the following criteria for discarding or modifying QA pairs: (i) Overly explicit hints: 
+
+questions that reveal formulas or definitions di-rectly (e.g., explicitly writing “ROA = Net income / Average assets”) are edited to avoid trivializing the reasoning process. (ii) Page-range constraints: 
+
+questions restricted to a narrow set of pages are removed if the answer would differ when consid-ering the full report, as such constraints do not reflect realistic document-level analysis. (iii) Non-financial focus: questions unrelated to financial reasoning (e.g., general workforce demographics) are discarded to maintain domain specificity. This manual stage removes 803 QA pairs, yield-ing a final set of 7,527 finance-focused QA in-stances that require cross-table numerical reasoning grounded in complete annual reports. QA statistics are summarized in Table 4. 
+
+3.4 Dataset Details 
+
+To verify that FinLongDocQA reflects cross-table reasoning demands, we examine the distribution of pages from which evidence is drawn. Figure 3 shows that evidence spans a wide range of locations within each report. Many QA pairs arise from the first 150 pages, where consolidated statements and management discussions typically appear, while a meaningful portion originates from later sections containing detailed segment analyses, regulatory Question : What is the Debt Service Coverage Ratio (DSCR) ratio in percentage of the company in 2002?        
+
+> Debt Service Coverage Ratio ratio = EBITDA / (Interest Expense + Principal
+> Repayments) Query : [EBITDA, Interest Expense, Principal Repayments]
+> Retrieval with [EBITDA, Interest Expense, Principal Repayments]
+> Thought:
+> DSCR = EBITDA / (Interest Expense + Principal Repayments).
+> Interest Expense for 2002 is $11 million (Page 31).
+> Principal Repayments is not provided.
+> EBITDA is not provided.
+> Cite Pages 31.
+> To calculate the company's Debt Service Coverage Ratio (DSCR) for 2002,
+> we use the formula:
+> From the report, we have:
+> -Interest Expense (2002) : $11 million (Page 31)
+> -Principal Repayments (2002) :Not provided in the report
+> -EBITDA (2002) :Not provided in the report
+> Without EBITDA and Principal Repayments, the DSCR cannot be calculated.
+
+User 
+
+Expansion 
+
+Agent 
+
+Solving 
+
+Agent 
+
+Evaluation 
+
+Agent         
+
+> Calculation of answer is incomplete because of insufficient information.
+> EBITDA and Principal Repayments not provided.
+> Missing: [EBITDA, Principal Repayments]
+> EBITDA = Operating Income + Depreciation & Amortization Query :
+> [Operating Income, Depreciation & Amortization, Principal Repayments]
+> Retrieval with [Operating Income, Depreciation & Amortization,
+> Principal Repayments]
+> Thought:
+> DSCR = (Operating Income + Depreciation & Amortization) / (Interest
+> Expense + Principal Repayments).
+> Interest Expense for 2002 is $11 million (Page 31).
+> Operating Income for 2002 is $17 million (Page 50).
+> Depreciation & Amortization for 2002 is $118 million (Page 51).
+> Principal Repayments is not provided.
+> Cite Pages 31, 50, and 51.
+> To calculate the company's Debt Service Coverage Ratio (DSCR) for 2002,
+> we use the formula:
+> From the report, we have:
+> -Operating Income (2002) : $17 million (Page 50)
+> -Depreciation & Amortization (2002) : $118 million (Page 51)
+> -Interest Expense (2002) : $11 million (Page 31)
+> -Principal Repayments (2002) :Not provided in the report
+> Without Principal Repayments, the DSCR cannot be calculated.
+
+Expansion 
+
+Agent 
+
+Solving 
+
+Agent 
+
+Evaluation 
+
+Agent         
+
+> Calculation of answer is incomplete because of insufficient information.
+> Principal Repayments not provided. Need to further expand the query term.
+> Missing: [Principal Repayments]
+> Principal Repayments refer to the portion of debt that a company repays,
+> excluding interest. Query : [Principal Repayments, Debt, Interest
+> Retrieval with [Debt, Interest]
+> Thought:
+> DSCR = (Operating Income + Depreciation & Amortization) / (Interest
+> Expense + Principal Repayments).
+> Interest Expense for 2002 is $11 million (Page 31).
+> Operating Income for 2002 is $17 million (Page 50).
+> Depreciation & Amortization for 2002 is $118 million (Page 51).
+> Principal Repayments for 2002 is $0 million (Page 34).
+> Cite Pages 31, 34, 50, and 51.
+> From the report, we have:
+> -Operating Income (2002) : $17 million (Page 50)
+> -Depreciation & Amortization (2002) : $118 million (Page 51)
+> -Interest Expense (2002) : $11 million (Page 31)
+> -Principal Repayments (2002) : $0 million (Page 34)
+> Now substituting these values into the formula:
+> Rounding to two decimal places, the DSCR is: 12.27
+
+Expansion 
+
+Agent 
+
+Solving 
+
+Agent 
+
+Evaluation 
+
+Agent  
+
+> Correct calculation process. The answer is: 12.27
+
+Round 1  Round 2  Round 3 Figure 4: A running example of FinLongDocAgent showing multi-agent interaction across retrieval rounds. 
+
+disclosures, and risk factor notes. 
+
+4 FinLongDocAgent Method 
+
+To establish a strong baseline for FinLongDocQA, we design an agentic RAG method tailored to its central challenge: retrieving and integrating dis-persed financial evidence to perform cross-table numerical reasoning over long annual reports. Fi-nancial analysts typically work in an iterative man-ner to locate relevant line items and compute inter-mediate values. When discrepancies appear, they revisit earlier sections of the report to refine the analysis. Agent-based systems (Yao et al., 2022; Jin et al., 2025; Shen et al., 2025) naturally reflect this workflow by coordinating stepwise reasoning with targeted search and verification. Motivated by this observation, we introduce Fin-LongDocAgent , a multi-agent, multi-round RAG method built on AutoGen (Wu et al., 2024). The method retrieves evidence in multiple rounds, com-putes candidate answers from the retrieved content, and verifies whether all necessary components have been incorporated before returning a final result. 
+
+4.1 Multi-Agent Architecture 
+
+As shown in Figure 4, FinLongDocAgent consists of three agents that operate over multiple rounds. 
+
+Expansion Agent converts the input question into a compact, formula-like expression that explicitly enumerates the financial line items needed for com-putation (e.g., mapping a ratio query to its numer-ator and denominator accounts). When feedback from previous rounds is available, the expansion input is augmented with the missing components identified by the evaluator, encouraging the agent to revise the expression to include unresolved ac-counts and their report-specific variants. 
+
+Solving Agent performs numerical reasoning using the retrieved context. It takes as input the original question, the expanded formula, and the retrieved report pages. To ensure traceability, it is instructed to justify each step with explicit page_number ref-erences and the corresponding formula used. If the retrieved pages do not contain sufficient infor-mation to support a valid computation, the agent outputs a default value {{0}}. 
+
+Evaluation Agent verifies whether the proposed answer is complete and faithful to the question. It inspects the solving agent’s output and checks two aspects: whether any critical components required for the computation are missing, and whether the accounts used match exactly those specified in the question. If the answer is complete, the evaluator returns a termination signal (i.e., NONE ). Otherwise, it outputs a structured list of missing components together with common synonyms that may appear in annual reports. This output is fed back into the next expansion round, enabling targeted refinement of retrieval queries and reducing error propagation. 
+
+4.2 Document Indexing 
+
+Each annual report is provided in Markdown for-mat and segmented into page-level chunks using explicit page delimiters. This page-level segmenta-tion preserves the document’s native organization (e.g., statements, notes, and tables) while providing retrieval units that are sufficiently fine-grained for evidence localization. We study alternative chunk-ing strategies in Appendix A.4. For each document, we construct a dense retrieval index once and reuse it across all questions associated with that report. Overall, FinLongDocAgent combines multi-agent execution with iterative retrieval to better align with real financial analysis workflows. Ap-pendix Figure 7 presents the prompts used by Fin-LongDocAgent for each agent. 
+
+5 Experimental Setup 
+
+5.1 LLMs 
+
+We evaluate both closed-source and open-source LLMs: GPT-4o-mini (Achiam et al., 2023) and 
+
+Gemini-3-Flash 2 (Google, 2025) (closed-source), and Qwen3-Thinking-30B 2 (Yang et al., 2025) and 
+
+DeepSeek-v3.2 2 (Liu et al., 2025) (open-source). All models are run in a zero-shot setting using a shared instruction template. 
+
+5.2 Compared Methods 
+
+We compare the following settings: 
+
+LLM-only. We provide only the question to the model (without context), measuring how often models can answer from internal knowledge alone. 
+
+Long-context prompting. We feed the model a report 3 prefix without any retrieval component, to test its ability to reason over long inputs. 
+
+Single-round RAG. We implement a standard retrieve-then-generate pipeline. The report is seg-mented into page-level chunks; we embed chunks and retrieve the top-k (k = 30 ) pages using a dense retriever (BGE (Chen et al., 2024)). 
+
+Graph-based RAG. We include GraphRAG (Edge et al., 2024) and HippoRAG2 (Gutiérrez et al., 2025). For both methods, we construct report-level indices by following their original pipelines, and adopt GPT-4o-mini as the backbone LLM to en-sure consistency with their procedures. 
+
+Agentic RAG. We include strong agentic retrieval 
+
+WebDancer-30B (Wu et al., 2025a). Since Web-Dancer is designed for web navigation, we adapt it by replacing web actions with retrieval over report chunks using the same BGE dense retriever.                                                             
+
+> 2These models provide explicit reasoning capabilities and being enabled during inference
+> 3Truncated to each model’s maximum input length.
+> Model EM Tol. Acc F1
+> Without context
+> GPT-4o-mini 0.12 0.13 0.56 Gemini-3-Flash 3.24 4.52 18.06 Qwen3-Thinking 30B 0.24 0.28 4.09 DeepSeek-v3.2 1.18 1.47 10.39
+> With report (long-context prompting)
+> GPT-4o-mini 7.88 11.73 15.06 Gemini-3-Flash 17.79 21.98 26.03 Qwen3-Thinking 30B 13.84 18.88 23.16 DeepSeek-v3.2 13.45 18.51 22.25
+> With BGE retriever
+> GPT-4o-mini 19.07 28.09 36.40 Gemini-3-Flash 33.03 41.93 49.90 Qwen3-Thinking 30B 27.21 36.47 42.43 DeepSeek-v3.2 27.66 38.71 45.44
+> Graph-based RAG
+> GraphRAG (arXiv’24) 12.14 18.11 25.41 HippoRAG2 (ICML’25) 15.12 22.77 30.83
+> Agentic RAG
+> WebDancer-30B (NeurIPS’25) 22.60 31.80 38.27
+> FinLongDocAgent (Ours)
+> GPT-4o-mini 20.97 30.51 36.97 Gemini-3-Flash 41.34 43.54 51.29
+> Qwen3-Thinking 30B 30.10 37.14 43.01 DeepSeek-v3.2 31.06 40.03 47.30
+
+Table 5: Main results on FinLongDocQA. 
+
+5.3 Retrieval Corpus and Chunking 
+
+Each report is converted into Markdown and seg-mented into page-level chunks. For retrieval-based methods, chunks are embedded and indexed within the corresponding report. 
+
+5.4 FinLongDocAgent Configuration 
+
+FinLongDocAgent is implemented in Auto-Gen (Wu et al., 2024) and uses the same BGE retriever. We run at most 5 rounds, retrieving the top-k chunks per round with k=15 .
+
+5.5 Evaluation Metrics 
+
+We report Exact Match (EM), Tolerance Accuracy (Tol. Acc), and token-level F1, following prior nu-merical QA benchmarks (Zhu et al., 2021). The full evaluation protocol is provided in Appendix A.3. 
+
+6 Experimental Results 
+
+Table 5 summarizes results on F IN LONG DOC QA. Overall, access to document evidence is essential: all models perform near-zero without context, and accuracy increases substantially when evidence is provided via long-context prompting or retrieval. 
+
+6.1 QA Results No context. When only the question is provided, all models fail to reliably recover the gold numeric Retriever Recall@5 Recall@10 Recall@30 
+
+TF-IDF 26.04 36.86 57.65 BM25 22.58 31.91 51.12 E5-Mistral-7B 25.95 36.68 59.81 BGE-M3 28.14 39.06 62.22 
+
+Table 6: Retrieval effectiveness on FinLongDocQA. 
+
+answers (Table 5). This confirms that F IN LONG -DOC QA cannot be solved by internal knowledge alone and requires grounding in report content. 
+
+Long-context prompting. Prepending the report as a prefix improves all models, but performance re-mains limited (e.g., Gemini-3-Flash : 17.79 EM). This approach is susceptible to context rot, where salient evidence in later footnotes or dispersed ta-bles is ignored as input length grows, highlighting the difficulty of reliable evidence localization in long financial reports. 
+
+Single-round dense RAG. Single-round dense re-trieval yields a large jump across backbones. With BGE retrieval, Gemini-3-Flash reaches 33.03 EM and GPT-4o-mini reaches 19.07 EM. These gains indicate that retrieving globally relevant pages mit-igates missing-evidence failures that long-context prompting cannot address. 
+
+Graph-based RAG. GraphRAG and HippoRAG2 underperform dense RAG methods. Annual reports contain many table-local quantities and implicit linkages that are not captured reliably by entity-relation graphs, so graph indices can lose necessary context around table cells. 
+
+Agentic RAG. WebDancer-30B improves over long-context prompting but remains weaker than dense RAG methods, which may indicate limited generalization to long-document financial reason-ing beyond its training domain. In contrast, Fin-LongDocAgent consistently outperforms single-round RAG across all evaluated backbones. For 
+
+Gemini-3-Flash , FinLongDocAgent achieves the best overall performance, reaching 41.34 EM, 43.54 Tol. Acc., and 51.29 F1. These results sug-gest that iterative retrieval with explicit verification is particularly beneficial when required operands are scattered across multiple tables and notes. 
+
+6.2 Retriever Effectiveness. 
+
+Table 6 reports Recall@ k against the gold evidence pages. BGE achieves the highest recall at all cut-offs. While dense retrievers generally outperform sparse baselines, Recall@30 remains far from satu-rated, indicating that evidence localization is still a                                                           
+
+> Model Exact Match
+> Easy
+> (3,695)
+> Medium
+> (3,721)
+> Hard
+> (110)
+> Without context
+> GPT-4o-mini 0.19 0.00 0.00 Gemini-3-Flash 3.75 2.50 0.00 Qwen3-Thinking 30B 0.36 0.04 0.00 DeepSeek-v3.2 1.24 1.10 0.91
+> With report (long-context prompting)
+> GPT-4o-mini 8.92 6.39 0.00 Gemini-3-Flash 19.40 15.47 6.36 Qwen3-Thinking 30B 15.87 10.69 5.45 DeepSeek-v3.2 14.21 12.31 9.09
+> With BGE retriever
+> GPT-4o-mini 19.45 18.63 13.64 Gemini-3-Flash 34.33 31.14 24.55 Qwen3-Thinking 30B 29.50 23.73 15.55 DeepSeek-v3.2 29.19 25.60 13.64
+> Graph-based RAG
+> GraphRAG (arXiv’24) 13.27 10.40 7.27 HippoRAG2 (ICML’25) 16.42 13.12 9.09
+> Agentic RAG
+> WebDancer-30B (NeurIPS’25) 23.37 21.71 11.82
+> FinLongDocAgent (Ours)
+> GPT-4o-mini 22.68 18.28 14.55 Gemini-3-Flash 43.99 36.99 35.45
+> Qwen3-Thinking 30B 33.93 23.89 20.00 DeepSeek-v3.2 34.01 26.32 22.46
+
+Table 7: Exact Match (EM) performance on FinLong-DocQA across different difficulty levels, categorized by the number of table evidence sources: Easy ( ≤1 table), Medium (2 tables), and Hard ( ≥3 tables). 
+
+Setting EM Tol. Acc F1 
+
+Solving Agent 33.03 41.93 49.90 + Expansion Agent 36.74 42.12 50.01 + Evaluation Agent 41.34 43.54 51.29 
+
+Table 8: Ablation study of FinLongDocAgent compo-nents (LLM: Gemini-3-Flash). 
+
+major bottleneck in FinLongDocQA. 
+
+6.3 Detailed Analysis Ablation Study. Table 8 ablates FinLongDocA-gent components using Gemini-3-Flash . Adding the query expansion agent improves EM from 33.03 to 36.74, suggesting that metric-aware re-formulation increases evidence recall. Adding the evaluation agent yields the largest gain, raising EM to 41.34 and improving Tol. Acc to 43.54. Quali-tatively, the evaluation agent reduces failures due to missing operands, unit/scale mismatches, and in-consistent intermediate computations by triggering additional retrieval rounds when needed. 
+
+Question Difficulty Evaluation. We categorize questions based on the number of unique evidence Error Analysis                                        
+
+> Retrieval Error (62%)
+> Q: What was the 2023 net sales per facility in Europe, the Middle East & Africa?
+> G: 518.75
+> Retrieved: 29, 32, 36, 37, 39 (+10 more)
+> Failure cue: Missing required operands (EMEA net sales; # facilities).
+> P: Retrieved pages do not contain (2023 EMEA Net Sales) / (2023 EMEA # Facilities).
+> Evidence Utilization Error (19%)
+> Q: What was the total lease liability per proved BoE of reserves at year-end 2022?
+> G: 0.06 (GT: p.101, p.105) Retrieved: 101, 105, 104, 108, 107 (+10 more)
+> Failure cue: Gold pages are retrieved, but the model uses reserves from the wrong page.
+> P: 296+33+584+182 ( p. 101) 4,238 ( p. 107) = 0 .26
+> Value Extraction Error (11%)
+> Q: What is the absolute difference between 2022 underlying net income available to common stockholders and GAAP net income?
+> G: 352 (GT: p.16, p.17) Retrieved: 16, 17, 15, 14, 18 (+10 more)
+> Failure cue: Evidence is retrieved and used, but the model extracts a wrong GAAP value.
+> P: |2312 −2073 |= 239 (should be 352)
+> Reasoning / Calculation Error (8%)
+> Q: What was the cash conversion ratio in fiscal 2023?
+> G: 0.82 (GT: p.71, p.74) Retrieved: 71, 74, 75, 64, 60 (+10 more)
+> Failure cue: Operands appear correct, but the model com-putes the ratio incorrectly.
+> P: FCF = 640 −183 = 457 ,CCR =457 783 = 0 .584
+
+Table 9: Error analysis of FinLongDocAgent. Q: ques-tion, G: golden answer, P: model prediction. 
+
+tables required to derive the answer: Easy ( ≤1), Medium (2), and Hard ( ≥3), containing 3,695, 3,721, and 110 questions, respectively. Table 7 reports Exact Match (EM) performance across these difficulty levels. Performance consistently de-creases as the number of required tables increases, highlighting the difficulty of cross-table numerical reasoning in long financial documents. 
+
+Error Analysis. Table 9 categorizes FinLong-DocAgent failures into four types. The dominant source of error is retrieval failure (62%), where at least one required page is not retrieved. The remaining errors arise even when relevant pages are present in the retrieved set: evidence utiliza-tion errors (19%) occur when the model utilizes an incorrect page among the retrieved candidates, 
+
+value extraction errors (11%) result from using wrong table entries, and reasoning/calculation er-rors (8%) are due to incorrect arithmetic or an in-correct formulation. Overall, these findings suggest that improving evidence recall is necessary but not sufficient; robust evidence utilization and accurate extraction from retrieved tables remain critical. 
+
+6.4 Token-Budget Fairness 
+
+A potential concern is that the improvements of Fin-LongDocAgent may arise from accessing a larger total context budget rather than from its agentic design. In our implementation, FinLongDocAgent retrieves up to 15 chunks per round for a maximum of 5 rounds, yielding at most 75 retrieved chunks. To control for this factor, we evaluate a single-round RAG with the same maximum retrieval bud-get (75 chunks). With GPT-4o-mini , the stan-dard single-round RAG baseline using 30 retrieved chunks achieves 19.07 EM. Increasing the retrieval budget to 75 chunks reduces performance to 16.64 EM, likely due to increased noise in the context. In contrast, FinLongDocAgent achieves 20.97 EM on GPT-4o-mini and 41.34 EM on 
+
+Gemini-3-Flash . These results suggest that simply increasing the retrieval budget does not improve performance. Instead, the gains of FinLongDocAgent stem from iterative query rewriting and verification, which progressively filter irrelevant context and ensure that required operands are collected before numerical reasoning. 
+
+7 Conclusion 
+
+We introduced FinLongDocQA , a document-level QA dataset for both single-table and cross-table 
+
+numerical reasoning in annual reports. FinLong-DocQA is challenging because models must lo-cate relevant operands across multiple pages and heterogeneous formats (e.g., tables and textual de-scriptions), and then perform multi-step compu-tations. Experiments on both closed-source and open-source LLMs show that performance remains limited. To address this challenge, we propose Fin-LongDocAgent , a multi-agent, multi-round RAG framework with iterative retrieval and verification, which consistently outperforms single-round and other baseline methods. Our error analysis further reveals that retrieval remains the primary bottle-neck in document-grounded financial numerical QA. Looking forward, we hope FinLongDocQA will foster research on more robust long-document evidence discovery, structure-aware grounding over tables, and reliable executable numerical reasoning. Limitations 
+
+Our benchmark and baselines involve several prac-tical design choices. Converting filings into Mark-down enables scalable indexing but may not pre-serve all layout cues, such as multi-column read-ing order, which can affect value extraction in some cases. FinLongDocAgent improves robust-ness through iterative retrieval and explicit verifica-tion, at the cost of increased inference overhead and continued dependence on retrieval quality. Finally, FinLongDocQA is constructed from S&P 500 an-nual reports from 2022–2024; extending evaluation to other time periods, modalities, and markets re-mains an important direction for future work. 
+
+Ethical Considerations 
+
+FinLongDocQA is constructed from publicly avail-able SEC filings and does not involve private or user-generated data. Although filings may contain names of company executives as part of the public record, we do not curate questions that target indi-viduals. Models evaluated on this benchmark may produce incorrect retrievals or numerical reasoning; if deployed without appropriate safeguards, such errors could lead to misleading financial interpre-tations. Accordingly, FinLongDocQA is intended solely for research evaluation, and its scope is lim-ited to S&P 500 filings from 2022–2024. We use an LLM ( GPT-4o-mini ) to generate initial QA can-didates. To mitigate risks from synthetic artifacts, we apply rule-based filtering, verify calculations, and perform careful manual review. 
+
+References 
+
+Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, and 1 others. 2023. Gpt-4 techni-cal report. arXiv preprint arXiv:2303.08774 .Jianlyu Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian, and Zheng Liu. 2024. M3-embedding: Multi-linguality, multi-functionality, multi-granularity text embeddings through self-knowledge distillation. In Findings of ACL .Wenhu Chen, Xueguang Ma, Xinyi Wang, and William W. Cohen. 2023. Program of thoughts prompting: Disentangling computation from reason-ing for numerical reasoning tasks. Transactions on Machine Learning Research .Zhiyu Chen, Wenhu Chen, Charese Smiley, Sameena Shah, Iana Borova, Dylan Langdon, Reema Moussa, Matt Beane, Ting-Hao Huang, Bryan Routledge, and William Yang Wang. 2021. FinQA: A dataset of numerical reasoning over financial data. In EMNLP .Chanyeol Choi, Jihoon Kwon, Jaeseon Ha, Hojun Choi, Chaewoon Kim, Yongjae Lee, Jy-yong Sohn, and Alejandro Lopez-Lira. 2025. Finder: Finan-cial dataset for question answering and evaluating retrieval-augmented generation. In ICAIF .Darren Edge, Ha Trinh, Newman Cheng, Joshua Bradley, Alex Chao, Apurva Mody, Steven Truitt, Dasha Metropolitansky, Robert Osazuwa Ness, and Jonathan Larson. 2024. From local to global: A graph rag approach to query-focused summarization. 
+
+arXiv preprint arXiv:2404.16130 .Google. 2025. Gemini 3. https://deepmind. google/models/gemini/ . Accessed via official API. Zirui Guo, Lianghao Xia, Yanhua Yu, Tu Ao, and Chao Huang. 2025. LightRAG: Simple and fast retrieval-augmented generation. In Findings of EMNLP .Bernal Jiménez Gutiérrez, Yiheng Shu, Weijian Qi, Sizhe Zhou, and Yu Su. 2025. From RAG to memory: Non-parametric continual learning for large language models. In ICML .Kelly Hong, Anton Troynikov, and Jeff Huber. 2025. Context rot: How increasing input tokens impacts llm performance. Technical report, Chroma. Bowen Jin, Hansi Zeng, Zhenrui Yue, Jinsung Yoon, Sercan O Arik, Dong Wang, Hamed Zamani, and Jiawei Han. 2025. Search-r1: Training LLMs to rea-son and leverage search engines with reinforcement learning. In COLM .Seunghee Kim, Changhyeon Kim, and Taeuk Kim. 2025. FCMR: Robust evaluation of financial cross-modal multi-hop reasoning. In ACL .Michael Krumdick, Rik Koncel-Kedziorski, Viet Dac Lai, Varshini Reddy, Charles Lovering, and Chris Tanner. 2024. BizBench: A quantitative reasoning benchmark for business and finance. In ACL .Liyao Li, Jiaming Tian, Hao Chen, Wentao Ye, Chao Ye, Haobo Wang, Ningtao Wang, Xing Fu, Gang Chen, and Junbo Zhao. 2025. LongTableBench: Bench-marking long-context table reasoning across real-world formats and domains. In Findings of EMNLP .Xiang Li, Zhenyu Li, Chen Shi, Yong Xu, Qing Du, Mingkui Tan, and Jun Huang. 2024. Al-phaFin: Benchmarking financial analysis with retrieval-augmented stock-chain framework. In 
+
+LREC-COLING .Aixin Liu, Aoxue Mei, Bangcai Lin, Bing Xue, Bingx-uan Wang, Bingzheng Xu, Bochao Wu, Bowei Zhang, Chaofan Lin, Chen Dong, and 1 others. 2025. Deepseek-v3. 2: Pushing the frontier of open large language models. arXiv preprint arXiv:2512.02556 .Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paran-jape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024. Lost in the middle: How language mod-els use long contexts. Transactions of the Association for Computational Linguistics , 12:157–173. Macedo Maia, Siegfried Handschuh, André Freitas, Brian Davis, Ross McDermott, Manel Zarrouk, and Alexandra Balahur. 2018. Www’18 open challenge: Financial opinion mining and question answering. In 
+
+WWW .Pekka Malo, Ankur Sinha, Pekka Korhonen, Jyrki Wal-lenius, and Pyry Takala. 2014. Good debt or bad debt: Detecting semantic orientations in economic texts. J. Assoc. Inf. Sci. Technol. , 65(4):782–796. OpenAI. 2025. GPT-5 system card. 
+
+https://cdn.openai.com/pdf/ 3a4153c8-c748-4b71-8e31-aecbde944f8d/ oai_5_2_system-card.pdf . Accessed: 2026-01-05. Lingfei Qian, Weipeng Zhou, Yan Wang, Xueqing Peng, Han Yi, Yilun Zhao, Jimin Huang, Qianqian Xie, and Jian-yun Nie. 2025. Fino1: On the transferability of reasoning-enhanced llms and reinforcement learning to finance. arXiv preprint arXiv:2502.08127 .Varshini Reddy, Rik Koncel-Kedziorski, Viet Dac Lai, Michael Krumdick, Charles Lovering, and Chris Tan-ner. 2024. DocFinQA: A long-context financial rea-soning dataset. In ACL .Yiqing Shen, Jingshu Zhang, Feng Chen, Kaiyuan Yan, and Hongguang Li. 2025. FinSearch: A Temporal-Aware Search Agent Framework for Real-Time Fi-nancial Information Retrieval with Large Language Models .Kuldeep Singh, Simerjot Kaur, and Charese Smiley. 2024. Finqapt: Empowering financial decisions with end-to-end llm-driven question answering pipeline. In ICAIF .Zichen Tang, Haihong E, Jiacheng Liu, Zhongjun Yang, Rongjin Li, Zihua Rong, Haoyang He, Zhuodi Hao, Xinyang Hu, Kun Ji, Ziyan Ma, Mengyuan Ji, Jun Zhang, Chenghao Ma, Qianhe Zheng, Yang Liu, Yil-ing Huang, Xinyi Hu, Qing Huang, and 2 others. 2025a. Finmmr: Make financial numerical reasoning more multimodal, comprehensive, and challenging. In ICCV .Zichen Tang, Haihong E, Ziyan Ma, Haoyang He, Ji-acheng Liu, Zhongjun Yang, Zihua Rong, Rongjin Li, Kun Ji, Qing Huang, Xinyang Hu, Yang Liu, and Qianhe Zheng. 2025b. FinanceReasoning: Bench-marking financial numerical reasoning more credible, comprehensive and challenging. In ACL .Bin Wang, Chao Xu, Xiaomeng Zhao, Linke Ouyang, Fan Wu, Zhiyuan Zhao, Rui Xu, Kaiwen Liu, Yuan Qu, Fukai Shang, and 1 others. 2024. Mineru: An open-source solution for precise document content extraction. arXiv preprint arXiv:2409.18839 .Jialong Wu, Baixuan Li, Runnan Fang, Wenbiao Yin, Liwen Zhang, Zhenglin Wang, Zhengwei Tao, Ding-Chu Zhang, Zekun Xi, Xiangru Tang, Yong Jiang, Pengjun Xie, Fei Huang, and Jingren Zhou. 2025a. Webdancer: Towards autonomous information seek-ing agency. In NeurIPS .Jian Wu, Linyi Yang, Dongyuan Li, Yuliang Ji, Manabu Okumura, and Yue Zhang. 2025b. MMQA: Eval-uating LLMs with multi-table multi-hop complex questions. In ICLR .Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Beibin Li, Erkang Zhu, Li Jiang, Xiaoyun Zhang, Shaokun Zhang, Jiale Liu, Ahmed Hassan Awadallah, Ryen W White, Doug Burger, and Chi Wang. 2024. Autogen: Enabling next-gen LLM applications via multi-agent conversations. In COLM .Xianjie Wu, Jian Yang, Linzheng Chai, Ge Zhang, Jia-heng Liu, Xeron Du, Di Liang, Daixin Shu, Xianfu Cheng, Tianzhen Sun, Tongliang Li, Zhoujun Li, and Guanglin Niu. 2025c. Tablebench: a comprehensive and complex benchmark for table question answering. In AAAI .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, and 1 others. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R Narasimhan, and Yuan Cao. 2022. React: Synergizing reasoning and acting in language models. In ICLR .Zhihan Zhang, Yixin Cao, and Lizi Liao. 2025. XFin-Bench: Benchmarking LLMs in complex financial problem solving and reasoning. In Findings of ACL .Yilun Zhao, Yunxiang Li, Chenying Li, and Rui Zhang. 2022. MultiHiertt: Numerical reasoning over multi hierarchical tabular and textual data. In ACL .Yilun Zhao, Hongjun Liu, Yitao Long, Rui Zhang, Chen Zhao, and Arman Cohan. 2024. Financemath: Knowledge-intensive math reasoning in finance do-mains. In ACL .Fengbin Zhu, Wenqiang Lei, Fuli Feng, Chao Wang, Haozhou Zhang, and Tat-Seng Chua. 2022. Towards complex document understanding by discrete reason-ing. In MM .Fengbin Zhu, Wenqiang Lei, Youcheng Huang, Chao Wang, Shuo Zhang, Jiancheng Lv, Fuli Feng, and Tat-Seng Chua. 2021. TAT-QA: A question answering benchmark on a hybrid of tabular and textual content in finance. In ACL .Fengbin Zhu, Junfeng Li, Liangming Pan, Wenjie Wang, Fuli Feng, Chao Wang, Huanbo Luan, and Tat-Seng Chua. 2025. Towards temporal-aware multi-modal retrieval augemented generation in finance. In MM .A Appendix 
+
+Outline. Section A.1 details dataset construction. Section A.2 provides FinLongDocAgent implemen-tation details. Section A.3 defines evaluation met-rics. Section A.4 reports additional experiments, and case studies. 
+
+A.1 Dataset Construction Details Document preprocessing and table extraction. 
+
+We convert each filing PDF into a page-level Mark-down document using MinerU. Each page chunk contains: (i) running text extracted from the PDF, (ii) detected tables serialized into Markdown, and (iii) the page identifier. We keep page boundaries to enable evidence supervision and recall evaluation. 
+
+QA generation prompt and post-processing. We generate candidate QA pairs using GPT-4o-mini .The prompt instructs the model to propose a finance-relevant metric whose computation re-quires evidence from multiple pages, output the final numerical answer, produce executable Python code that computes the answer, and specify the page indices containing the supporting evidence. Figure 6 presents the prompt we used. 
+
+Rule-based filtering heuristics. This paragraph details the automatic rules used in Stage 2 (Sec-tion 3.3). Multi-page / multi-hop constraint: We require at least two distinct evidence pages. We additionally remove cases where all operands ap-pear in a single table on one page by checking whether the referenced values are co-located in the same extracted table block. Answer type con-straint: We discard questions with non-numeric answers or answers dependent on unverifiable tex-tual judgments (e.g., “Is the company optimistic?”). 
+
+Executable program constraint: We execute the provided program and remove instances where: (i) the program fails, (ii) the result is not numeric, or (iii) the program output deviates from the stated answer beyond a tolerance threshold. Incoherence constraint: We remove instances where the ques-tion is ambiguous (missing year/segment) or the reasoning trace contradicts the program. 
+
+Human review protocol. Two annotators con-duct manual review on a FinLongDocQA. The re-view follows a checklist: (1) financial relevance, (2) clear definition of the requested quantity (year, seg-ment, unit), (3) evidence sufficiency (pages truly support operands), (4) absence of overly explicit hints (e.g., directly stating full formula), (5) no de-pendence on outside knowledge. Disagreements 5 10 30        
+
+> k
+> 0.3
+> 0.4
+> 0.5
+> Recall@k
+> chunk:256
+> chunk:512
+> chunk:800
+> chunk:1200
+> Page-level chunk
+> Figure 5: Recall@k for different chunk sizes.
+> Methods Prompting Design FinQA †
+> FinQAPT (Singh et al., 2024) Few-shot 62.0 FinLongDocAgent (ours) Zero-shot 66.2
+> Table 10: Comparison with a prior SOTA method on FinQA. †Modified setting where the full document is provided as input.
+
+are resolved by discussion. 
+
+A.2 FinLongDocAgent: Additional Method Details Implementation details for retrieval. Indexing: 
+
+We build a per-report index over page chunks. For dense retrieval, we embed each chunk using BGE-M3 and retrieve via inner-product similar-ity. Query formulation: For single-round RAG, the query is the question text. For FinLongDocA-gent, the query expansion agent produces metric-aware queries (Section 4.1), e.g., adding synonyms and likely line-item names found in reports (“net sales” → “revenue”, “interest expense” → “interest and other expense”). Top-k choices: Single-round RAG uses k=30 . FinLongDocAgent uses k=15 
+
+per round for up to five rounds. Figure 7 presents the prompts used for each agent. 
+
+A.3 Evaluation Metrics 
+
+We report EM, Tolerance Accuracy (Tol. Acc), and token-level F1. Normalization: Predictions and gold answers are normalized by removing commas, currency symbols, and whitespace, and converting parentheses negatives (e.g., “(1,234)”) to −1234 .Percent answers are converted to either fraction or percentage consistently based on question cues (we store an explicit flag when available). 
+
+Exact Match (EM): EM is 1 if the normalized pre-diction string matches the normalized gold answer string exactly, otherwise 0. Tolerance Accuracy (Tol. Acc): A prediction ˆa is correct if: |ˆa − a| ≤ atol + rtol · max( |a|, ϵ ), where 
+
+atol =10 −4, rtol =10 −3, and ϵ=10 −12 .
+
+Token-level F1: We tokenize normalized predic-tions and references using whitespace and punctua-tion delimiters to compute token-level F1. 
+
+A.4 Additional Experiments and Reproducibility Effect of Chunk Granularity. We ablate chunk granularity for BM25 retrieval while keeping evalu-ation page-grounded. We vary chunk length ({256, 512, 800, 1200} tokens), chunking within each page . We report page-level Recall@{5,10,30} and include a page-level chunk method that indexes each page as one unit. As shown in Figure 5, page-level chunking slightly exceeds sub-page chunking across k, suggesting that treating a page as the retrieval unit may better preserve page-level evi-dence structure (e.g., keeping tables intact rather than fragmenting rows/cells across chunks). 
+
+Comparison with FinQAPT. FinQAPT (Singh et al., 2024) reports strong performance on FinQA (Chen et al., 2021), but the system is not publicly released, which limits its evaluation on FinLongDocQA. As a reference point, we evalu-ate FinLongDocAgent on FinQA under the full-document input setting (i.e., using complete reports rather than pre-selected evidence), following the protocol described in FinQAPT. As shown in Ta-ble 10, FinLongDocAgent achieves 66.2 EM on FinQA, outperforming FinQAPT’s reported 62.0 EM. Our approach operates in a zero-shot setting without curated exemplars, whereas FinQAPT re-lies on dynamic few-shot prompting. 
+
+Full prompt templates. Figures 6, 7a, 7b, and 7c show the full prompt templates used for (i) QA gen-eration and (ii) each agent role in FinLongDocA-gent, respectively. QA Generation Prompt 
+
+You are a seasoned financial analyst. Your task is to read a company 's annual report (provided below in Markdown) and generate challenging, multi-page numerical reasoning questions and answers. 
+
+> ,→
+> ,→
+
+- For each QA pair, first **think step by step** about which line items you need and on which pages they appear. ,→
+
+- Show your chain-of-thought (labeled “Thought: . . . ”) to justify each calculation. - Then give the final answer in a clear formulaic layout. ### Examples Q1: What is the Inventory turnover ratio in percentage of the company in 2002? A1: Inventory turnover ratio = COGS cost of goods sold / average inventory = 4139/[(45+11)/2] = 147.82 ,→
+
+Q2: What is the Debt Service Coverage Ratio (DSCR) ratio in percentage of the company in 2002? A2: Debt Service Coverage Ratio (DSCR) ratio = EBITDA earnings before interest,taxes,depreciation and amortization/ (Interest Expense+Principal Repayments) = 17 / (11+0) = 1.55 ,→
+
+Q3: What is the Altman Z-Score in percentage of the company in 2002? A3: Altman Z-Score = 1.2*(Working Capital/Total Assets) + 1.4*(Retained Earnings/Total Assets) + 3.3*(EBITDA/Total Assets) + 0.6*(Market Value of Equity/Total Liabilities) + 1.0*(Sales/Total Assets) = 1.2x(3730/6298) + 1.4x(2325/6298) + 3.3x(17/6298) + 0.6x(4925/2203) + 1.0x(5742/6298) = 3.49 
+
+> ,→
+> ,→
+> ,→
+
+### Now: Generate **10** new QA pairs in this exact format, each requiring data from at least two different pages of the provided report. ,→
+
+Be sure to: - Prepend each reasoning with “Thought:” - Cite the page numbers in your chain-of-thought. - Show each formula calculation step by step. - Deliver the final answer as python code based on the formula under the concept of rounding to two decimal places. ,→
+
+- Run the code to get the final answer. - Data must strictly come from *at least 2 to 3 different pages*. - If the page is already used in the previous question, it is not allowed to be used again. - Present your response in a strictly structured format through the json format below: {"id": "unique_id_for_this_qa_pair", "company": "Company Name", "year": "Year of the report", "question": "What is the ...?", "type": "If the data sources are from table, please answer 'table '; if the data sources are from text, please answer 'text '; if the data sources are from both table and text, please answer 
+
+'mixed '", 
+
+> ,→
+> ,→
+
+"thoughts": "Thought: ...", "page_numbers": [1, 2, 3], "python_code": "Based on the formula under the concept of strictly rounding to two decimal places.", ,→
+
+"answer": "Numerical answer here" }IMPORTANT: Return only the raw JSON array—no Markdown fences! 
+
+Figure 6: Full prompt template used for QA generation. FinLongDocAgent Expansion Agent System Prompt 
+
+You are an expert at financial text understanding. Given a user 's question about a financial ratio in an annual report, think of which accounts will feed into that formula, and *only* return the complete formula as a whole—no explanations. 
+
+> ,→
+> ,→
+
+(a) Expansion Agent. 
+
+FinLongDocAgent Solving Agent System Prompt 
+
+You are a helpful assistant that answers financial QA based on the provided annual report in Markdown form. ,→
+
+You should clearly show your data source through page_number and formula to justify each calculation. ,→
+
+Your final numerical answer must be rounded to two decimal places and enclosed in double curly braces {{}} with no extra text or units. ,→
+
+If the information is insufficient, put 0 inside the {{}}. Given a user 's question about a financial ratio in an annual report, think of which line items (accounts) will feed into that formula, and *only* return the complete formula as a whole-no explanations. 
+
+> ,→
+> ,→
+
+(b) Solving Agent. 
+
+FinLongDocAgent Evaluation Agent System Prompt 
+
+You are an expert assistant that inspects a generated answer against the question. You have two tasks: 1) If the answer is missing any critical components needed to compute the numeric result, return a comma-separated list of exactly those missing components (e.g., 'net income ', 'total assets '). For each missing component, also include common synonyms or variant phrasings that might appear in the report (e.g., for 'COGS ': 'cost of goods sold ', 'cost of sales '). 
+
+> ,→
+> ,→
+> ,→
+
+2) If the answer is not using 'exactly ' the same accounts as the question stated (e.g., 
+
+'Consolidated other assets ' vs 'Condensed other assets '), return a comma-separated list of the exact account names mentioned in the question. For each incorrect account, also include common synonyms or variant phrasings that might appear in the report (e.g., for 'COGS ':
+
+'cost of goods sold ', 'cost of sales '). 
+
+> ,→
+> ,→
+> ,→
+> ,→
+
+If nothing is missing and the answer uses exactly the same accounts as in the question, reply with 'NONE '.,→
+
+(c) Evaluation Agent. 
+
+Figure 7: System prompts used in FinLongDocAgent.

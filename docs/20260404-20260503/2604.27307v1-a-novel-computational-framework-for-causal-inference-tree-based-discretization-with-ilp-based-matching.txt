@@ -1,0 +1,765 @@
+Title: A Novel Computational Framework for Causal Inference: Tree-Based Discretization with ILP-Based Matching
+
+URL Source: https://arxiv.org/pdf/2604.27307v1
+
+Published Time: Fri, 01 May 2026 00:26:40 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# A Novel Computational Framework for Causal Inference: Tree-Based Discretization with ILP-Based Matching 
+
+Tianyu Yang Department of Mechanical and Industrial Engineering Northeastern University, Boston, MA 02115, USA 
+
+yang.tianyu@northeastern.edu 
+
+Md. Noor-E-Alam Department of Mechanical and Industrial Engineering Northeastern University, Boston, MA 02115, USA 
+
+mnalam@northeastern.edu 
+
+Abstract 
+
+Causal inference is essential for data-driven decision-making, as it aims to uncover causal relationships from observational data. How-ever, identifying causality remains challenging due to the potential for confounding and the distinction between correlation and causation. While recent advances in causal machine learning and matching algo-rithms have improved estimation accuracy, these methods often face trade-offs between interpretability and computational efficiency. This paper proposes a novel approach that combines a tree-based discretiza-tion technique, tailored for causal inference, with an integer linear programming-based matching algorithm. The discretization ensures approximately linear relationships for control datasets within strata, enabling effective matching, while the optimization framework opti-mizes for global balance. The resulting algorithm yields computational efficiency and less biased ATT estimates compared to state-of-the-art algorithms. Empirical evaluations demonstrate the proposed method’s practical advantages over existing techniques in causal inference sce-narios. 
+
+Keywords: causal inference, discretization, M5 model tree, integer linear programming, average treatment effect 1
+
+> arXiv:2604.27307v1 [stat.ML] 30 Apr 2026
+
+# 1 Introduction 
+
+Causal inference is a widely used approach for understanding the impact of interventions, policies, and decisions, and is essential for drawing valid causal conclusions (Yao et al. 2021). Unlike purely predictive modeling techniques, causal inference aims to uncover cause-and-effect relationships from observational data across various domains, such as economics, health-care, and the social sciences (Spirtes 2010). This enables robust and reliable decision-making that goes beyond identifying mere correlations. Theoretically, the most reliable approach for achieving an unbiased esti-mation of the causal quantities in causal inference is the Randomized Con-trolled Trial (RCT) (Nitsch et al. 2006, Kovesdy and Kalantar-Zadeh 2012). RCTs eliminate confounding biases by randomly assigning subjects to treat-ment and control groups, ensuring balance in both observed and unobserved covariates. However, RCTs are often impractical in observational studies due to high costs in time and money, as well as ethical concerns (Nitsch et al. 2006). Causal inference methods therefore leverage some advanced techniques to address this concern, as well as improve estimation accuracy and enhance generalizability. In recent years, causal inference methods have increasingly focused on two major approaches: causal machine learning algorithms and matching algorithms (Yao et al. 2021). Causal machine learning methods focus on predicting the counterfactual effects, i.e., the unobserved counterfactual out-comes for observations in the treatment group to estimate the average treat-ment effect on the treated (ATT) (Spirtes 2010). Despite their effectiveness, these methods are often criticized for their lack of interpretability (Moraffah et al. 2020). Evaluating their performance is also challenging, as counter-factual outcome of treatment units are derived from predictive models, and hypothesis tests between the two groups are not applicable. This limitation reduces their practicality in real-world decision-making contexts (Moraffah et al. 2020). In contrast, matching algorithms, which are designed to balance covari-ates between the selected treated and control groups, are generally more preferable in real world applications since they are interpretable. By select-ing specific treated and control groups from the raw dataset, matching al-lows for an evaluation of balance using common test statistics and p-values. As long as the covariate balance is achieved, matching algorithm can be approximately regarded as a simulation of RCTs and thus will achieve unbi-ased estimation of causal quantity (Belitser et al. 2011). Although powerful, most matching algorithms suffer from the curse of dimensionality when es-2timating treatment effects, which limits their practical applicability in real-world situations. While matching methods find applications across diverse domains including record linkage and case-control studies (Christen 2012, Austin 2011), our focus is on the causal inference setting where specific methodological requirements—particularly achieving covariate balance—are essential for unbiased treatment effect estimation. One of the most widely used approaches to overcome the challenges of these two methods is to leverage the propensity score of the dataset. The propensity score is defined as the probability of an observation receiving the treatment, and can be estimated using regression models on the treatment variable (Belitser et al. 2011). By mapping all features in the dataset to a single scalar value, the propensity score significantly reduces the computa-tional cost of matching. This technique is known as the Propensity Score Matching (PSM) algorithm. However, many critics argue that PSM may not accurately estimate the true ATT, as balancing on the propensity score does not guarantee balance across the full feature space. Moreover, PSM shows higher bias than other matching algorithm in many synthetic datasets (King and Nielsen 2019). In this paper, we propose a novel interpretable and computationally feasible matching algorithm that leverages machine learning techniques for discretization and optimization techniques for lower bias of ATT estimation compared to the state-of-the-art algorithms. Our proposed framework is computationally efficient to the large-scale datasets. The results from our proposed framework also show a small bias among the synthetic datasets. The rest of the paper is structured as follows: Section 2 presents re-lated literature. Section 3 details our proposed tree-based discretization techniques inspired by the M5 model tree. Section 4 discusses different matching strategies and motivates the development of our ILP formulation. In Section 5, we formally introduce our proposed matching algorithm as an integer linear programming problem. Section 6 provides an overview for the proposed framework. Section 7 presents experimental results on syn-thetic datasets using widely adopted causal inference metrics. Section 8 demonstrates the practicality of our proposed framework by applying it to a large-scale real-world dataset. Finally, Section 9 concludes the paper. 
+
+# 2 Literature Review 
+
+The primary goal of causal inference through observational studies is to generate unbiased estimates of causal effects. To achieve this, three key 3assumptions are raised based on the potential outcome frameworks (Yao et al. 2021). First, the Stable Unit Treatment Value Assumption (SUTVA), which states that the treatment status of any unit does not affect the poten-tial outcomes of other units, and for each unit, there are no different forms or versions of each treatment level, which lead to different potential out-comes. Secondly, the conditional ignorability assumption, meaning that the outcome Y is independent of the treatment T given covariates X. Third, the positivity assumption, which ensures that for any value of X, the probability of receiving treatment is strictly between 0 and 1. Matching algorithms, which aim to equate the balance between the treat-ment and control groups, are widely used techniques in real-world causal inference studies. The simplest matching method is exact matching, which pairs treatment and control individuals with identical covariate values (Stu-art 2010). However, this approach becomes impractical when plenty of co-variates are involved. Therefore, nearest-neighbor matching (NNM) are pro-posed to approximate the exact matching process. However, it often fails to achieve a satisfactory covariate balance, leading to biased ATT estima-tion. Coarsened exact matching (CEM) offers an alternative approach to approximate exact matching by stratifying data into multiple bins and es-timating causal effects using weighted averages (Blackwell et al. 2009). It is effective when the outcome model is highly nonlinear in the confounders since it is a non-parametric method (Iacus et al. 2012). However, CEM’s bins grow exponentially with increasing dimensionality, making it challeng-ing to find exact matches for every treated unit in high-dimensional settings. Other non-parametric models, such as Balance Optimization Subset Selec-tion (BOSS) (Nikolaev et al. 2013) are proposed to approximate covariate balance for each bin. However, BOSS utilizes simulated annealing to achieve results, which is computationally intensive, making it impractical for large-scale datasets. Another approach to achieving covariate balance is distance-based match-ing. This method typically involves learning a distance matrix over the co-variates to prioritize balance on more important variables through reduced weighted imbalance and thus achive lower bias in ATT estimation. A typical method is Mahalanobis distance matching (MDM), which defines closeness using the Mahalanobis distance matrix (Gu and Rosenbaum 1993). A vari-ant of this method is Genetic Matching (Diamond and Sekhon 2013), which uses a generalized Mahalanobis distance while adaptively assigning weights to covariates. However, both methods require large amount of time to cal-culate matrix inversion and therefore not scalable to the high dimensional datasets. Other distance learning methods, such as matching after learn-4ing to stretch (MALTS) (Parikh et al. 2022) and fast large-scale almost matching exactly (FLAME) (Wang et al. 2021), provide alternative solu-tions. MALTS learns the distance matrix by assigning large penalties to the imbalance of important covariates. However, it still faces computational challenges in learning distance matrices for large-scale datasets. FLAME utilizes backward feature selection and optimizes based on a combination of two factors. While efficient in computing the distance matrix, its estima-tion of the causal quantity is highly sensitive to the chosen discretization strategies. It is also recommended to apply FLAME when the features are composed of only categorical features (Wang et al. 2021). Many studies have proposed propensity-score-based approaches (Stuart 2010). The propensity score represents the probability of a unit receiv-ing treatment. The problem to balance the covariates is then transformed to balance the propensity score in the datasets. This method reduces the dimensionality of the covariates to a single scalar, mitigating the curse of dimensionality in matching. However, critics argue that balancing on the propensity score does not fully replicate a blocked randomized experimen-tal design, potentially leading to biased causal estimates (King and Nielsen 2019). This occurs because the propensity score collapses p-dimensional co-variates into a single scalar: balancing this scalar does not guarantee that individual covariates are balanced, as different covariate combinations can yield identical propensity scores. One of the most effective strategies for maintaining both interpretability and computational efficiency in matching algorithms is the use of discretiza-tion techniques. For example, coarsened exact matching (CEM) (Blackwell et al. 2009) applies equal-width or user-defined rules to discretize the dataset and form coarsened bins. Similarly, balance optimization subset selection (BOSS) (Nikolaev et al. 2013) uses grid-based discretization of the feature space to reduce computational burden. Despite the promise of these ap-proaches in improving the scalability of matching algorithms, relatively few studies have focused on discretization techniques. A possible reason is that discretization may introduce bias—for instance, through arbitrary bound-aries that violate outcome continuity or within-stratum heterogeneity—and the extent of this bias can vary depending on the specific technique em-ployed. We provide a detailed discussion of these mechanisms and how our method addresses them in Section 3 and 6. Although matching algorithms are highly interpretable and often pro-vide accurate estimates of causal quantities, most of them are computa-tionally intensive and suffer from the curse of dimensionality. As a result, many researchers turn to predictive modeling techniques to estimate causal 5effects more efficiently. For example, random forests have demonstrated strong performance across many datasets. Bayesian Additive Regression Trees (BART), which construct an ensemble of shallow-split trees to pre-dict counterfactual outcomes, are particularly powerful for achieving unbi-ased ATT estimation in high-dimensional, nonlinear settings. Furthermore, meta-learners such as the X-Learner and R-Learner have been proposed to integrate predictive modeling into the estimation of counterfactual effects for individual observations. Despite their effectiveness, these methods are often criticized for their lack of interpretability, making decision makers hesitate to apply them in practical situations. There are several methods available to assess the quality of matching be-tween the treatment and control groups produced by matching algorithms. The absolute standardized mean difference (SMD) (Belitser et al. 2011, Zhang et al. 2019, Lin et al. 2023, Nikolaev et al. 2013) standardizes the mean difference between matched groups through dividing it by the pooled variance (Zhang et al. 2019). Typically, SMD values below 0.1 across all dimensions indicate good balance (Lin et al. 2023). Variance Ratio (VR) (Belitser et al. 2011) measures the ratio of variances between the two groups, with values closer to 1 indicating better balance. Many studies use a thresh-old of 0.5 to 2 across all dimensions as the criterion for balance (Rubin 2001, Stuart 2010). Kolmogorov–Smirnov (K-S) Distance (Belitser et al. 2011, Nikolaev et al. 2013) quantifies the maximum vertical distance be-tween the cumulative distribution functions (CDFs) of the matched groups, where smaller values indicate greater similarity. Lastly, the Overlap Coef-ficient (OVL) (Belitser et al. 2011, Lin et al. 2023) measures the overlap between two distributions, with values closer to 1 indicating better balance. Although these metrics indicate the balance between the treatment and con-trol groups, they should be viewed only as reference measures. This is be-cause, in most cases, different features contribute unequally to the outcome and thus vary in importance. We address the challenges above with several novel aspects that dis-tinguish our approach from existing methods. Existing optimization-based matching methods differ fundamentally in problem formulation and opti-mization strategy. Table 2 provides a systematic comparison of the state-of-the-art matching algorithms. Our contribution lies in three aspects. First, we formulate matching at the individual treatment unit level with explicit optimization of standardized mean difference and variance ratio—the standard balance metrics in causal inference—rather than using surrogate distance metrics. Second, we provide exact linearization of these balance metrics for integer programming, en-6Table 1: Comparison of Optimization-Based Matching Methods                     
+
+> Method Optimization Type Problem Formulation Solution Quality Scalability
+> BOSS Simulated annealing Stratum-level balance Heuristic approximation Limited Genetic Matching Evolutionary search Distance matrix learning Local optimum Medium MALTS Gradient descent Distance metric learning Local optimum Medium
+> Proposed Approach ILP Individual-level balance Exact per unit High
+
+abling optimal solutions for each treatment unit via commercial ILP solvers rather than relying on heuristic search. Third, we systematically integrate this optimization framework with adaptive tree-based discretization that ensures approximate linearity within strata (Theorem 3.1), exploiting local structure to improve both matching quality and computational efficiency. While we solve a separate ILP for each treatment unit rather than jointly optimizing across all units, this design prioritizes scalability while ensuring each unit achieves optimal balance within its candidate set. Empirically, our method demonstrates superior performance compared to state-of-the-art approaches (Section 7) while maintaining computational tractability on datasets with hundreds of thousands of observations (Section 8). The proposed framework has the following key contributions: 1. Causal Tree-Based Discretization with Theoretical Guaran-tees . We develop a control-based causal M5 tree designed specifi-cally for ATT estimation under treatment imbalance. By restricting splits to the control group and adopting an adjusted R2–based stop-ping rule, the resulting leaf nodes approximately satisfy a local lin-earity condition (Theorem 1). This structural property ensures that within-leaf outcome heterogeneity is controlled, facilitating statisti-cally coherent matching while maintaining computational scalability for high-dimensional datasets. 2. Individual-Level ILP Matching with Direct Balance Opti-mization . We propose an integer programming formulation that di-rectly optimizes standardized mean difference (SMD) and variance ra-tio at the individual treatment-unit level. Through exact linearization of a hierarchical objective, each matching problem is solved to optimal-ity per treatment unit using standard ILP solvers. This formulation provides transparent balance control and enables personalized con-trol selection for ATT (and IATT) estimation, distinguishing it from distance-learning or heuristic-based matching approaches. 3. Integrated Framework with Empirical Validation . We integrate tree-based discretization and optimization-based matching into a uni-7fied framework in which each component is theoretically motivated and empirically validated. Ablation studies isolate the contribution of the ILP component, and extensive synthetic and real-data experiments demonstrate stable and competitive ATT estimation across diverse data-generating scenarios. 
+
+# 3 Discretization Techniques 
+
+Discretization is the process of partitioning a continuous or high-dimensional feature space into a finite number of discrete strata. In causal inference, dis-cretization addresses the curse of dimensionality in exact matching: With 
+
+p covariates, the number of possible covariate patterns grows exponentially, quickly rendering exact matching computationally infeasible even for mod-erate p. For example, discretizing age from a continuous variable into strata such as [18 , 30), [30 , 50), [50 , 80] enables tractable matching within each stratum while approximating the conditions of a randomized experiment. However, discretization introduces a fundamental trade-off between tractabil-ity and bias. It can introduce bias through three mechanisms: (1) arbitrary boundaries may violate continuity of covariate-outcome relationships (e.g., treating individuals aged 29 and 31 as dissimilar); (2) within-stratum het-erogeneity occurs when observations with different outcomes are grouped together; and (3) loss of information arises from collapsing continuous varia-tion. The extent of this bias depends critically on the discretization strategy employed. Although widely used in causal inference algorithms, existing discretiza-tion strategies exhibit distinct limitations (Table 2). Equal-width binning creates arbitrary boundaries. Grid-based approaches (CEM, BOSS) suf-fer exponential growth ( O(kp) strata), limiting scalability. Quantile meth-ods may inappropriately split regions where outcomes vary smoothly. K-means clustering ignores outcome information. Entropy-based methods are prone to overfitting. Our tree-based method addresses these limitations by adaptively partitioning based on outcome prediction quality ( R2adj ), en-suring within-stratum homogeneity at computational efficiency O(pn log n). Critically, we employ a single decision tree rather than an ensemble, preserv-ing interpretability through explicit, human-readable split rules. As Theo-rem 1 demonstrates (Section 3.2), this approach ensures approximate lin-earity within leaves, essential for unbiased treatment effect estimation when combined with our optimization-based matching procedure (Section 5). 8Table 2: Comparison of Discretization Techniques for Matching Algorithms                          
+
+> Method Approach Complexity Limitations
+> Equal-width Equal-sized intervals O(n)Arbitrary boundaries; unequal bin sizes Quantile Equal sample sizes O(nlog n)May split smooth regions K-means Distance-based clustering O(nkp )Ignores outcome; expensive Grid (CEM, BOSS) Cartesian product O(kp)Exponential growth Entropy Minimize entropy O(n2p)Overfitting; small bins
+> Tree (ours) Outcome-based O(pn log n)Assumes local linearity
+
+3.1 Causal M5 Model Tree 
+
+M5 model tree is a tree-based structure which is designed to generate leaf nodes where the linearity assumption holds (Pal and Deswal 2009). The linearity assumption is a powerful property for estimating ATT. Suppose the dataset D = {T, X, Y }, where T refers to the binary treatment variable and is n × 1, T = 1 if this unit gets treated, and T = 0 if this unit does not receive treatment. X refers to the feature space and is n × p, and Y refers to the outcome variable that we concern and is n × 1. With linear assumption 
+
+Y = αT +Xβ +ϵ, then the unbiased ATT estimation from potential outcome framework would be exactly E(Y (T = 1) |T = 1) − E(Y (T = 0) |T = 1) = α.Additionally, the local linearity assumption at each node aligns with the theory of heterogeneous treatment effects. This assumption not only has the potential to reduce the computational cost of the matching algorithm but also enhances its interpretability. However, to the best of our knowledge, M5 model tree is rarely used in causal inference applications. One reason the researcher may hesitate to implement the M5 model tree is that its key assumption often does not hold when applied directly to the original dataset. Specifically, treatment and control units will not generally fall under the same linear model unless the treatment variable T is uncorrelated with all covariates in X, or the true ATT within the leaf node is exactly zero. To explain this, let us consider leaf node Ol, l ∈ { 1, 2, ..., l }, it contains both control units and treatment units to estimate ATT (otherwise the positivity assumption discussed in 2 will be violated). Then we have the following proposition and proof. 
+
+Proposition 3.1 (Linearity Within a Node) . Within a node, the treatment and control units will not fall into the same linear model unless T is uncor-related with all covariates in X or the true ATT for this node is 0. 
+
+The proof for Proposition 3.1 is presented in the Online Supplement Appendix S1 Appendix A .Proposition 3.1 provides theoretical motivation for our control-based tree 9construction. This design choice reflects an inductive bias that prioritizes stability under severe treatment imbalance, at the cost of potentially missing effect modifiers that do not influence baseline outcomes. Practical consid-erations further support this design choice. In many observational studies, the number of treated units is substantially smaller than that of controls. If tree splits were determined using treated units, even a small number of splits could result in leaf nodes containing too few treated observations, lead-ing to unstable estimation, inflated variance, or violations of the positivity assumption. To address this challenge, we adapt the M5 model tree to the causal inference setting by proposing a causal M5 model tree, in which the tree structure is learned exclusively from the control subset D0 ⊂ D. Specif-ically, splitting rules are determined using only control units, and linear models are fitted within each leaf under the assumption that sufficient con-trol data are available to support reliable estimation. Treatment units are subsequently assigned to the learned leaves for treatment effect estimation, but they do not influence the tree construction process. Under the condi-tional ignorability assumption ( Y (0) , Y (1)) ⊥ T | X, the control outcome 
+
+Y (0) encodes confounding relationships between covariates and potential outcomes. Our control-based splitting criterion, which maximizes standard deviation reduction in Y (0), naturally identifies covariates associated with confounding. The subsequent ILP optimization (Section 5) explicitly en-forces balance on these covariates within each leaf, ensuring conditions for unbiased ATT estimation. Empirical evidence further clarifies the operating regime of this design choice. As shown in Online Supplement S1 Ap-pendix H.2 , this inductive bias tends to be advantageous in settings where treated and control units exhibit covariate distribution shift, while under covariate alignment the two constructions perform comparably. This design prioritizes structural stability and statistical reliability un-der severe treatment imbalance. While the tree is constructed without di-rect access to treatment outcomes, this does not preclude the discovery of heterogeneous treatment effects. When treatment effect heterogeneity is associated with covariates that also predict the control outcome, different leaves naturally exhibit different treatment effects. We empirically demon-strate this behavior in Section 8. Importantly, this approach introduces an explicit inductive bias: it assumes that relevant treatment effect hetero-geneity is aligned with variations in the control outcome surface. Under this assumption, restricting splits to the control group enables robust and interpretable tree structures while avoiding unreliable partitioning driven by sparse treated samples. 10 The split rule of our causal M5 model tree is based on standard deviation reduction (SDR), defined as follows: 
+
+SDR = σ(D0) −
+
+ |D01||D0| · σ(D01) + |D02||D0| · σ(D02)
+
+
+
+(1) Here, D0 denotes the subset of the control group that reaches the parent node, while D01 and D02 represent the corresponding subsets that fall into the two child nodes after the split. The function σ(·) computes the standard deviation of the target variable within a node, and | · | denotes the number of samples in the corresponding subset. The splitting rule facilitates effi-cient partitioning of the dataset by grouping data points with similar target values into the same child node. By maximizing the reduction in standard deviation, the split encourages the formation of more homogeneous subsets, which not only speeds up the tree construction process but also improves the accuracy of the local linear models fitted at the leaves. Different from the original M5 model tree, we decide whether we should split further for the tree based on the R2 
+
+> adj
+
+, which is defined as below: 
+
+R2 
+
+> adj
+
+= 1 − (1 − R2) · |D0| − 1
+
+|D0| − p − 1 (2) Here, p refers to the number of features in the feature space. The R2
+
+is computed by fitting a linear regression model to the control data within each node. We define S1 and S2 as binary indicators for whether the left and right child nodes, respectively, meet the splitting criterion based on R2adj 
+
+improvement. Consequently, the decision to further split the tree is decided by the following rule: 
+
+S1 = I(R2 
+
+> adj
+
+(D01) − R2 
+
+> adj
+
+(D0) − λI (θ − | D01| > 0) > 0) (3) 
+
+S2 = I(R2 
+
+> adj
+
+(D02) − R2 
+
+> adj
+
+(D0) − λI (θ − | D02| > 0) > 0) (4) 
+
+S = S1 ∨ S2 (5) Here, θ is a hyperparameter representing the minimum number of control units required in a child node to maintain reliable linear model fitting. To ensure adequate degrees of freedom while guarding against overfitting, we set 
+
+θ = max(30 , 2p), where p is the number of features. This adaptive criterion ensures each leaf contains sufficient observations relative to dimensionality, maintaining a minimum sample-to-parameter ratio of 2:1. For datasets with 
+
+p ≤ 20 (typical in our experiments), this yields θ ≤ 40, providing ( nl − p −
+
+11 1) ≥ p degrees of freedom for reliable R2adj estimation. Critically, while θ
+
+determines leaf size for establishing linearity, the computational complexity of subsequent matching is controlled independently by the candidate set size ψ in Algorithm 2, ensuring scalability regardless of θ. S is a boolean value indicating whether the split should be performed for this node. A split is allowed when S = 1, which means, at least one child node satisfies the adjusted R2 improvement criterion after penalization. Since the adjusted R2
+
+indicates the linearity of the control model, the causal M5 model tree can efficiently address the local interpretability and enables further subgroup analysis. 
+
+3.2 Theoretical Justification for Linearity Within Leaf Nodes 
+
+The causal M5 model tree creates leaf nodes where control data approxi-mately satisfy linearity through iterative splitting. Consider leaf node Ol
+
+containing control data D0 
+
+> l
+
+with |D0 
+
+> l
+
+| = nl observations. Our splitting crite-rion selects the split maximizing standard deviation reduction and proceeds only if at least one child node achieves R2adj improvement over the parent node (Equations 3 to 5). When the splitting process terminates at a leaf, we can bound the residual variance relative to the total variance. 
+
+Theorem 3.1 (Residual Bound Within Leaves) . Let Yi denote the outcome for observation i in leaf node Ol with control data D0 
+
+> l
+
+, and let ˆYi = β0 +XTi β
+
+denote the prediction from the fitted linear model. If the adjusted R-squared satisfies R2
+
+> adj
+
+(D0 
+
+> l
+
+) = ζ, then the mean squared residual satisfies 
+
+1
+
+nl
+
+X
+
+> i∈D0
+> l
+
+(Yi − ˆYi)2 ≤ (1 − ζ) · nl − 1
+
+nl − p − 1 · Var (Y | D0 
+
+> l
+
+). (6) The proof of Theorem 3.1 is provided in Online Supplement S1 Ap-pendix B .This theorem quantifies the quality of linear approximation within each leaf while providing built-in protection against overfitting. The factor ( nl −
+
+1) /(nl − p − 1) plays a dual role: it accounts for degrees of freedom in the residual bound, and it reflects how adjusted R-squared guards against spuri-ous fit. With the selection of θ = max(30 , 2p), leaves with high R2adj provide stronger evidence of meaningful linear relationships rather than overfitting. 
+
+3.3 Limitations of the Causal M5 Tree Model 
+
+While our splitting criterion promotes linearity within leaves, certain scenar-ios may challenge this assumption. First, the method requires sufficient sam-12 Algorithm 1: Discretization Through Causal M5 Model Tree 
+
+Input: Dataset D with p features, λ ← 0.1, θ ← max(30 , 2p)
+
+Output: Fully developed binary tree T ree 
+
+Initialize T ree and normalize dataset D;
+
+D0 ← D(T = 0) // Extract control dataset from original dataset Split( T ree, D 0);
+
+Function Split( T ree, D 0)
+
+SDR ← −∞ ;
+
+SP ← None; 
+
+η ← −∞ ;
+
+R2 
+
+> prt
+
+← R2 from regressing Y on X using D0;(R2
+
+> prt
+
+)adj ← 1 − (1 − R2
+
+> prt
+
+) · |D0|− 1 
+
+> |D0|− p−1
+
+;
+
+for j = 1 , 2, . . . , p do 
+
+Sj ← unique set of values of feature j;
+
+for sj ∈ Sj do 
+
+(D01 )tmp ← left child node split by Xj ≤ sj ;(D02 )tmp ← right child node split by Xj > s j ;
+
+SDR tmp ←
+
+σ(D0) −
+
+ |(D01 )tmp ||D0| σ(( D01 )tmp ) + |(D02 )tmp ||D0| σ(( D02 )tmp )
+
+
+
+;
+
+if SDR tmp > SDR then 
+
+SDR ← SDR tmp ;
+
+SP ← Xj ;
+
+η ← sj ;
+
+D01 ← left child node split by SP ≤ η;
+
+D02 ← right child node split by SP > η ;
+
+R2 
+
+> lc
+
+← R2 from regressing Y on X using D01 ;
+
+R2 
+
+> rc
+
+← R2 from regressing Y on X using D02 ;(R2
+
+> lc
+
+)adj ← 1 − (1 − R2
+
+> lc
+
+) · |D01 |− 1  
+
+> |D01|− p−1
+
+;(R2
+
+> rc
+
+)adj ← 1 − (1 − R2
+
+> rc
+
+) · |D02 |− 1  
+
+> |D02|− p−1
+
+;
+
+if (R2
+
+> lc
+
+)adj − λI (θ − | D01 | > 0) > (R2
+
+> prt
+
+)adj or 
+
+(R2
+
+> rc
+
+)adj − λI (θ − | D02 | > 0) > (R2
+
+> prt
+
+)adj then 
+
+T ree ← add split point and threshold ( SP, η ) to T ree ;
+
+Split( T ree, D 01 );
+
+Split( T ree, D 02 );
+
+else return T ree ;
+
+return T ree ;
+
+13 ple size relative to dimensionality. The stopping criterion θ = max(30 , 2p)necessitates adequate control sample size to support multiple leaf nodes. When Nc/p is small, the tree may produce too few leaves to capture out-come heterogeneity effectively. Second, sharp discontinuities in the outcome function may resist linear approximation, although the tree typically splits near such boundaries, creating leaves where the outcome is approximately constant. Third, datasets exhibiting complex global nonlinearity may not benefit from a locally linear approach. Fourth, control-based construction may be less effective when treatment effect heterogeneity is driven by pure effect modifiers —covariates that modify τ (X) but have little influence on the baseline outcome Y (0). Because splits are determined using control outcomes, such covariates may not trigger partitioning, potentially pooling units with heterogeneous treatment effects within the same leaf. In these settings, more flexible ensemble methods may be preferable, albeit at the cost of interpretability. 
+
+# 4 Matching Strategies and Robust ATT Estima-tion 
+
+In this section, we explore the relationship between different matching strate-gies (1:1, 1:k, k:k) for estimating the ATT. Building on these insights, we then introduce our proposed integer linear programming method in Section 5. In this section, we discuss the compatibility of three matching strategies with stratification techniques, including tree-based discretization: (1) 1:1 matching, where each treated unit is matched to a single control unit; (2) 1:k matching, where each treated unit is matched to multiple control units; and (3) k:k matching, where treated units are divided into one or more groups, and each group is matched to a corresponding group of control units. Stratification techniques apply specific rules to partition the data into multiple strata. The within-stratum covariate balance is assumed to hold. We present an example of a stratum in Table 3. In the table, Y T repre-sents the outcome value for treatment units, while Y C represents the out-come value for control units. For example, the first row indicates that the outcome value for observation T1 is 1 and outcome value for observation C1
+
+is 0. Assume we are using 1:1 matching, the robust ATT estimation can be achieved if and only if the maximum discordant pairs are matched within 14 Table 3: Example for robust ATT estimation within a stratum. Y T repre-sents the outcome value for treatment units, while Y C represents the out-come value for control units                       
+
+> TYTYCCT110C1
+> T210C2
+> T300C3
+> T400C4
+> T500C5
+> 1C6
+> 1C7
+
+the stratum (Islam et al. 2019). Therefore, the matched groups Ω 1:1 ={(T1,
+
+C1), ( T2, C2), ( T3, C6), ( T4, C7)}. The mean of the ATT estimation will be 
+
+AT T 1:1 = mean (AT T Ω{1,1}) = 0. We now consider the robust matched pairs for 1:k matching, which gives Ω1: k={(T1, C1 ∼ C7), ( T2, C1 ∼ C7), ( T3, C1 ∼ C7), ( T4, C1 ∼ C7), ( T5,
+
+C1 ∼ C7)}, the robust ATT then can be calculated accordingly, AT T 1: k =((1 − 2/7) · 2 + (0 − 2/7) · 3) /5 = 0 .114. If we consider k:k matching, then Ωk:k={(T1 ∼ T5, C1 ∼ C7)}. The robust ATT can be calculated through 
+
+AT T k:k = 2 /5 − 2/7 = 0 .114. The example provides an interesting insight: robust ATT estimation is not necessarily equivalent between the three matching strategies (1:1, 1:k, and k:k matching) within the stratum. This raises an important question: which approach yields unbiased ATT estimates? We argue that unbiased estimation is achieved by 1:k matching and k:k matching. When applying a stratum-based technique, covariate balance is assumed within each stratum, meaning that balance holds at the group level rather than for individual units. Consider C1 ∼ C7 as seven indepen-dent observations with identical covariate values; their observered outcomes should be consistent (either all 0 or all 1). Otherwise, this would violate the Stable Unit Treatment Value Assumption (SUTVA) discussed in Section 2. Compared to 1:1 matching, 1:k and k:k matching align with the group-level balance assumption, making them more appropriate for unbiased ATT estimation in stratified settings. The discussion above rules out 1:1 matching under stratum-based match-ing algorithms, as it introduces unexpected bias in the estimation of causal quantities. One may question whether 1:k matching and k:k matching always yield the same robust estimation of ATT. To address this, we provide the following theorem along with its proof: 15 Figure 1: Example of stratum-level equivalence for 1:k matching and k:k matching, the overall average ATT is the average ATT estimation for each decomposed stratum. 
+
+Theorem 4.1 (Stratum-Based Matching Equivalence) . For stratum-based matching methods, the robust ATT estimation within each stratum remains the same for both 1:k matching and k:k matching. 
+
+The proof for Theorem 4.1 is presented in Online Supplement S1 Appendix B . Theorem 4.1 also leads to an interesting proposition below: 
+
+Proposition 4.1 (Stratum-level equivalence for ATT Estimation) . Assume a dataset utilize stratification techniques and generate B strata. For stratum 
+
+b, b = {1, 2, ..., B }, there are nbt treatment units and nbc control units, the following two methods to calculate the overall ATT is equivalent: 1. Calculate ATT directly by the weighted average of ATT estimation for all stratum, with the weights defined by wb = nbt / PBb=1 nbt . Assume the ATT estimation for stratum b is τ b, then 
+
+AT T =
+
+> B
+
+X
+
+> b=1
+
+wbτ b = 1
+
+PBb=1 nbtBX
+
+> b=1
+
+nbt · τ b. (7) 
+
+2. Decompose each stratum b into nbt strata. The decomposed stratum 
+
+κ, κ = {1, 2, ..., n bt } contains 1 treatment unit and nc control units. The individual-level ATT (IATT) can be calculated accordingly, denote as τ κ,the overall ATT can be calculated by 
+
+16 AT T = 1
+
+PBb=1 nbt
+
+·
+
+> B
+
+X
+
+> b=1
+> nbt
+
+X
+
+> κ=1
+
+τ κ (8) Proposition 4.1 provides an alternative interpretation of matching within a stratum. For example, we can interpret Table 3 as 5 strata of 1:k matching stratum in Figure 1. Proposition 4.1 also indicates that 1:k matching is more flexible than k:k matching as it allows unit-level stratification. For example, in Table 3, k:k matching must assign T1 ∼ T5 to C1 ∼ C7. However, it probably happens that, C8 is spatially close to T2 but not the others, then we could add 
+
+C8 in the decomposed stratum in T2 only. This makes 1:k matching more flexible than k:k matching. This strategy can alleviate the bias introduced by stratification in many stratification-based k:k matching algorithms and will lead to an ATT estimation with lower bias. It is worth noting that 1:1 matching and 1:k matching are suitable for calculating individual ATT (IATT), whereas k:k matching is not. The ability to compute IATT is crucial in certain causal inference applications. For example, estimating the individual treatment effect for each treated patient can support personalized treatment recommendations. This consideration further motivates our framework’s use of 1:k matching. 
+
+# 5 Integer Linear Programming Construction for 1:k Matching 
+
+Before presenting our integer linear programming formulation, we establish notation used throughout this section. Table 4 defines all indices, deci-sion variables, and parameters in our optimization model. Throughout this section, κ indexes strata associated with single treatment units, i indexes control units within a stratum, and j indexes features. Proposition 4.1 in Section 4 indicates that a large stratum can be inter-preted by multiple smaller strata, each containing a single treatment unit and multiple control units. While this approach mitigates the between-strata bias, the within-stratum bias remains unsolved. For example, T1 may ideally be matched only to C1 and C3, whereas matching T1 to C1 ∼ C7
+
+could introduce a relatively larger bias. Therefore, in this section, we lever-age the integer programming approach to efficiently eliminate within-strata bias and achieve smaller bias of ATT estimation. 17 Table 4: Notation for Integer Linear Programming Formulation 
+
+Symbol Type Definition 
+
+Indices 
+
+κ Index Decomposed strata associated with single treatment unit, κ ∈ { 1, . . . , N t}
+
+i Index Control unit in stratum κ, i ∈ { 1, . . . , n κc }
+
+j Index Feature (covariate), j ∈ { 1, . . . , p }
+
+Decision Variables 
+
+gi Binary Equals 1 if control unit i is selected, 0 otherwise 
+
+ϵ Continuous Maximum weighted mean difference across features 
+
+a Continuous Maximum weighted deviation of selected controls 
+
+Parameters 
+
+xκij Continuous Value of feature j for control unit i in stratum κμκj Continuous Value of feature j for the treatment unit in κwj Continuous Weight for feature j (from OLS regression) 
+
+M1 Constant Constraint enforcement constant (set to 10 6)
+
+M2 Constant Objective prioritization constant (any value larger than 10 · p · max j wj , here we set it to be 10 6)
+
+5.1 SMD and Variance Ratio for 1:k Matching 
+
+Before introducing our proposed integer programming framework, we first present two widely used metrics for assessing matching quality, as our pro-posed matching framework is constructed leveraging these metrics to achieve covariate balance. The first metric is called standardized mean difference (SMD), SMD measures the difference in means between the treatment and control groups. The other metric is called variance ratio, which quantifies the difference in variance between the two groups. Ideally, if the two groups are perfectly matched, then the absolute SMD should be 0, and variance ratio should be 1. For continuous features, the absolute SMD and variance ratio is defined below: 
+
+|SM D | = |μ1 − μ0|
+
+p(σ21 + σ20 )/2 (9) 
+
+V R = σ21 /σ 20 (10) Here, σ21 refers to the variance of the treatment group for the target feature, σ20 refers to the variance of the control group for the target feature. In Equation 10, since each decomposed stratum contains only one treat-ment unit, σ21 = 0. Therefore, to achieve balance (VR ≈ 1), σ20 should be 18 minimized. However, in Equation 9, when σ21 = 0 and σ20 ≈ 0, the denominator p(σ21 + σ20 )/2 becomes extremely small (approaching zero). Consequently, even a small numerator |μ1 − μ0| would result in an extremely large SMD. Therefore, it is critical to minimize |μ1 −μ0| to prevent SMD from becoming unbounded. This is why minimizing the mean difference |μ1 − μ0| must take priority over minimizing variance σ20 in our objective function formulation. We provide a simple numerical example to illustrate the characteristics of a well-balanced control group. Suppose we are balancing only one feature 
+
+X within stratum b. The stratum includes one treatment unit X bt = 5 and five control units X bc = {3, 4, 4.5, 6, 7}. When apply 1:k matching, one might consider several choices of control groups: (Ω b
+
+> 0
+
+)1 = {4.5}, (Ω b
+
+> 0
+
+)2 =
+
+{3, 4, 6, 7}, (Ω b
+
+> 0
+
+)3 = {3, 7}, (Ω b
+
+> 0
+
+)4 = {4, 6}. In this case, we believe (Ω b
+
+> 0
+
+)4 is the best choice of set of control units. Specifically, the mean of (Ω b
+
+> 0
+
+)4 is 5, while selecting additional units in (Ω b
+
+> 0
+
+)2 would introduce greater variability. 
+
+5.2 Constraints of the Integer Program and Linearization 
+
+Based on the previous discussion, we introduce the construction of ILP to minimize the SMD and variance ratio within each stratum. Our optimiza-tion problem is hierarchical in nature. We first enforce covariate balance between treated and control units, and only refine the solution based on secondary criteria among well-balanced candidates. Assume the datasets include Nt treatment units, and Nc control units. For stratum κ, κ ∈ (1 , Nt), it includes one treatment unit tκ and nκ 
+
+> 0
+
+control units {cκ 
+
+> 1
+
+, c κ 
+
+> 2
+
+, ..., c κnκ 
+
+> 0
+
+}, nκ 
+
+> 0
+
+< Nc. Although nκ 
+
+> 0
+
+control units are included in stratum κ, we are supposed to select a subset of these control units to minimize the within-stratum balance. Therefore, we call the group of control units candidate control units for tκ.To indicate which control units in the candidate control group is selected for the matched control group, we define indicators gi, i ∈ (1 , n κ 
+
+> 0
+
+). If gi = 1, then cκi is selected in the matched control group; if gi = 0, then control unit 
+
+cκi is not selected for the control group. We consider balancing across p features, indexed by j ∈ { 1, . . . , p }. For treatment unit tκ, the value of feature j is μκj , while for control units cκi ,
+
+i ∈ { 1, . . . , n κc }, the value is xκij . The weight for feature j given by the OLS estimation from linear regression is wj , then the weighted distance between 
+
+cκi and tκ for feature j is given by wj |xκij −μκj |. Since gi indicates whether this control unit cκi is selected, the absolute mean difference between the Tκ and the matched control group would be Pn0 
+
+> i=0
+
+giwj |xκij −μκj |. Clearly, minimizing 19 this value should be part of the objective function in order to achieve a close-to-zero SMD within the stratum. Now considering variability of the selected control units, the maximum weighted deviation across all features is max i,j {giwj |xκij − μκj |} . This value should be minimized as well to reduce 
+
+σ20 in Eq.10. As discussed in Section 5.1, the absolute SMD is more powerful than variance ratio. We assume M2 is a large enough value defined in Table 4, the objective function derived from the theory to minimize balance metrics across all p features should be: min max  
+
+> i,j
+
+{giwj |xκij − μκj |} + M2 max 
+
+> j∈{ 1,...,p }
+
+
+
+> nκc
+
+X
+
+> i=1
+
+giwj |xκij − μκj |
+
+ (11) It is obvious that this objective function is too complicated for prac-tical implementation. Now we introduce ϵ ≥ 0 to represent the maximum weighted mean difference across all features j: ϵ = max j∈{ 1,...,p }
+
+Pnκc 
+
+> i=1
+
+giwj |xκij −
+
+μκj |, which represents the maximum weighted distance between the mean of the matched control group and the treatment unit tκ across all dimensions. Consequently, ϵ can represent the second term in Eq.11. Similarly, we define 
+
+a = argmax i,j {giwj |xκij − μκj |} , a ≥ 0 as the maximum weighted distance to 
+
+tκ across all dimensions. To enforce this, we introduce M1 defined in Table 4 and the constraint wj |xkij − μκj | − M1(1 − gi) ≤ a.1. if gi = 1, then the constraint simplifies to wj |xkij − μκj | ≤ a, effectively bounding the maximum deviation within the selected control units. 2. If gi = 0, then M1(1 − gi) is large enough to make the constraint trivially satisfied, ensuring that it does not influence the choice of a.By incorporating ϵ and a, we then have the following two constraints: (i) Pn0 
+
+> i=1
+
+giwj |xκij − μκj | ≤ ϵ (ii) wj |xκij − μκj | − M1(1 − gi) ≤ a. Noticing that the two constraints are nonlinear, we adopt linearization techniques to handle the absolute value terms. Our formulation prioritizes minimizing covariate imbalance( ϵ) before minimizing variance ( a). The constant M2 en-forces this hierarchy, serving as a computational surrogate for lexicographic optimization. Consequently, the final proposed integer linear program (ILP) framework is presented below: 20 min a + M2ϵ (12a) 
+
+> nκc
+
+X
+
+> i=1
+
+giwj (xκij − μκj ) ≤ ϵ, ∀j ∈ { 1, . . . , p } (12b) 
+
+> nκc
+
+X
+
+> i=1
+
+giwj (μκj − xκij ) ≤ ϵ, ∀j ∈ { 1, . . . , p } (12c) 
+
+wj (xκij − μκj ) − M1(1 − gi) ≤ a, ∀i, j (12d) 
+
+wj (μκj − xκij ) − M1(1 − gi) ≤ a, ∀i, j (12e) 
+
+> nκc
+
+X
+
+> i=1
+
+gi ≥ 1 (12f) The variance term a refines the solution among groups achieving compa-rable ϵ: since Theorem 3.1 ensures only approximate (not strict) linearity, minimizing a reduces bias from residual heterogeneity within leaves. Here, we employ two constants: M1 = M2 = 10 6. The constant M1
+
+enforces constraint validity for unselected units (Equations 12d–12e), while 
+
+M2 enforces hierarchical prioritization in the objective (Equation 12a). The choice of M2 is grounded in the following result (proof in Online Supple-ment Appendix S1 ): 
+
+Proposition 5.1 (Sufficient Condition for Hierarchical Prioritization) . Let 
+
+¯a := nκc max j wj (max feat − min feat ). Assume ϵ is optimized with fixed pre-cision ∆ > 0. If M2 > ¯a/ ∆, then any feasible solution with smaller ϵ is preferred regardless of a.
+
+After normalization to [0 , 1] with nκc = 20 and max j wj ≤ 10, this re-quires M2 > 200. We set a sufficiently large value of M2 to enforce the hierarchical objective while maintaining computational efficiency relative to lexicographic optimization. We note that Proposition 5.1 provides a suffi-cient rather than tight condition, and smaller values of M2 may still perform well in practice. We also add constraint (12f) to avoid the solution where all gi = 0, ensuring the feasibility of a reasonable solution. This constraint agrees with the positivity assumption of matching. The simplest way to estimate wj is to conduct a linear regression of the features on the outcome. We also provide graphical interpretations in Figure 2 to illustrate the role of ϵ and a in the proposed framework. In Figure (2(a)), the distance of 21 the mean of selected control units to tκ is {ϵκ 
+
+> 1
+
+, ϵ κ 
+
+> 2
+
+, ..., ϵ κp } is a p dimensional vector, where each element ϵκj represents the components of the weighted dis-tance in feature j. The scalar ϵκ is then computed as ϵκ = argmax j ϵκj . By minimizing ϵκ in Eq.12, the mean difference of the selected control units and 
+
+tκ is controlled. In Figure (2(b)), denote the difference between each individ-ual selected control unit and tκ to be giaκi , i ≤ 1 ≤ nκc . Then aκ represents the largest value among selected control units and across all the dimensions, i.e., argmax i,j {giaκi,j }. By minimizing aκ in Eq.12, tκ and selected control groups achieve close-to-zero absolute SMD and low within-stratum variance. By enforcing these conditions, the framework effectively balances covariates while controlling variability, leading to more reliable causal effect estimates.       
+
+> (a) Graph Interpretation of ϵof stra-tum κ
+> (b) Graph Interpretation of aof stra-tum κ
+
+Figure 2: The Graph interpretation of ϵ and a in Eq.12, the green rectangle denoted by μκc in (a) refers to the mean of selected control units (control units with gi = 1) One notable observation is that, based on our experiments, the normal-ization of the feature space X will increase the quality of the selected control units. When processing our datasets, we utilized the default MinMaxScaler 
+
+function from Python package. By combining the causal M5 model tree discretization technique with stratum-based 1:k ILP matching, we construct matched datasets without relying on predictive models to estimate counterfactual outcomes. We refer to this model-free approach as the M5 causal tree with model-free estimation (M5C MF ). 
+
+# 6 Overview for the Proposed Algorithm 
+
+In this section, we provide an overview of the proposed algorithm. The method first discretizes the dataset using the proposed M5 tree, as described in Section 3. Then, for each treatment unit within each leaf node, the 22 ILP approach introduced in Section 5 is applied. The overall workflow is illustrated in Figure 3. 
+
+6.1 Quality of ILP 
+
+According to our experiments, omitting the discretization step can lead to biased ATT estimation, even if commonly used balance metrics, such as standardized mean difference (SMD), variance ratio, Kolmogorov–Smirnov (K-S) statistic, and overlap appear satisfactory after ILP. One possible ex-planation for this is the varied importance of each feature across different strata. 
+
+Figure 3: Flowchart for implementation of the proposed framework 
+
+6.2 Interpretability 
+
+Our framework prioritizes interpretability through two design choices that distinguish it from existing methods (Table 5). As discussed in Section 2, causal machine learning methods such as BART, Random Forests, and meta-learners lack interpretability due to ensemble predictions and black-box counterfactual estimation (Bassan et al. 2025). In contrast, our algorithm uses a single decision tree with explicit split rules, enabling stakeholders to understand stratification logic without machine learning expertise. For in-stance, rules such as “if BMI > 30 and Age < 50” are directly interpretable for healthcare practitioners or policymakers. Equally important, interpretability requires verifiable validation. Coun-terfactual prediction methods produce unverifiable estimates, as true coun-terfactual outcomes are never observed. Our ILP-based matching instead 23 Table 5: Comparison of Interpretability Across Causal Inference Methods                       
+
+> Method Prediction Mechanism Interpretability Challenge Validation Approach
+> BART Ensemble of trees Averaging obscures decision logic Unverifiable counterfac-tual predictions Random Forest Bootstrap aggrega-tion Black-box predictions Unverifiable counterfac-tual predictions Meta-learners Nested ML models Multiple model layers Model fit diagnostics only PSM Propensity score May not capture full balance Balance on propensity score only
+> Ours Single tree plus ILP Human-readable split rules Standard metrics on all covariates
+
+constructs explicit groups from observed data, enabling validation through standard balance diagnostics (SMD, variance ratio, K-S tests). This allows practitioners to audit matching quality, verify that confounding has been addressed, and conduct sensitivity analyses—capabilities essential for justi-fying causal claims in high-stakes applications. As noted in Section 1, this verifiability distinguishes matching algorithms from predictive models and makes our approach accessible to non-technical stakeholders. 
+
+6.3 Addressing Discretization Challenges 
+
+Having introduced all components of our framework—the causal M5 tree (Section 3), matching strategies (Section 4), and ILP formulation (Sec-tion 5)—we now discuss how their combination addresses the three key challenges of discretization identified in Section 3. First, our tree design eliminates arbitrary boundaries through adaptive splitting based on standard deviation reduction (Equation 1). Unlike fixed schemes (equal-width, quantile) that impose predetermined split points, our approach selects boundaries to maximize outcome homogeneity within child nodes, ensuring split points emerge naturally from the data structure and align with genuine outcome variation. Second, our R2adj -based stopping criterion (Equations 3–5) directly mit-igates within-stratum heterogeneity . As established in heorem 3.1, this en-sures control data within each leaf approximately satisfy a linearity assump-tion, with mean squared residual bounded by (1 − τ ) · nl−1 
+
+> nl−p−1
+
+· Var( Y |D0 
+
+> l
+
+)24 when achieving R2adj = τ . This prevents grouping heterogeneous observa-tions and enables unbiased ATT estimation (Section 5). Third, while discretization inherently involves information loss , our frame-work minimizes its impact through two mechanisms: (1) local linearity (The-orem 3.1) ensures minimal bias from collapsing continuous features, and (2) individual-level 1:k matching (Theorem 4.1) allows each treated unit to be matched to a tailored subset of controls, preserving more granular informa-tion than group-level k:k matching. Table 6 summarizes our design choices. Table 6: How Our Framework Addresses Discretization Challenges                     
+
+> Challenge Description Our Solution
+> Arbitrary boundaries Fixed discretization schemes impose splits that may violate covariate-outcome continuity Adaptive splitting based on stan-dard deviation reduction (Eq. 1); boundaries emerge from data structure Within-stratum het-erogeneity Observations with different outcomes grouped together violate local homogeneity as-sumption
+> R2adj stopping criterion ensures approximate linearity within leaves (Theorem 1) Information loss Discretization reduces granu-larity of continuous features Local linearity reduces bias impact; 1:k matching preserves individual-level information (Theorem 2)
+
+6.4 Time Complexity 
+
+In the first stage of the proposed algorithm, we employ a tree-based frame-work based on the M5 model tree for discretization. Let n denote the number of samples and p the number of features. The overall time complexity of constructing the tree is O(p · nlogn ). In the second stage of the proposed algorithm, assume there are nt treat-ment units and nc control units. First we consider ψ nearest control units as the candidate control units, this step takes O(ncp). Then we solve an integer linear program using Gurobi solver. Assume the worst case iteration to be 
+
+L, then the time complexity is O(Lp 3 + Lψp ). Since we only consider ATT, the overall time compelxity for this step is O(ntncp + Lp 3nt + Lψpn t). In our experiment, we set ψ = 20 and L = 1000. By combining the time complexity together, the final time complexity of the proposed algorithm is O(pnlogn + ntncp + Lp 3nt + Lψpn t). 25 Algorithm 2: Stratum Based Algorithm for 1:k Matching 
+
+Input: M ← 1,000,000, ψ ← 20, dataset D
+
+Output: Estimated Average Treatment Effect on the Treated (ATT) 
+
+w ← array of OLS coefficients of linear regression on X to Y
+
+Initialize empty list of dataframe CCU // CCU is the candidate control units set 
+
+Nt ← number of treatment units in dataset D
+
+NC ← number of control units in dataset Dp ← dimension of the features of dataset D
+
+for κ = 1 , 2, ..., Nt do 
+
+Initialize Dist to the size of NC for i = 1 , 2, ..., NC do 
+
+Update Dist i ←
+
+qPpj=1 wj (tκj − cκij )2 // j refers to the index of the current feature 
+
+CCU κ ← select ψ nearest control units based on Dist 
+
+Ωκc ← output from Solver (tκ, CCU κ, M ) with ILP constructed by Eq.12 
+
+if Ωκc not empty then 
+
+CCU κ ← Ωκc
+
+τ κ ← y(tκ) − 1
+
+> |cκ|
+
+P 
+
+> cκ∈Ωκc
+
+y(cκ)// Individual ATT for treatment unit tκ
+
+τ ← 1 
+
+> |τκ|
+
+PNt 
+
+> κ=1
+
+τ κ // The overall ATT for dataset D
+
+return τ
+
+26 7 Experimental Results 
+
+In this section, we compare the ATT estimation performance of our proposed algorithm with several state-of-the-art methods. We evaluated our proposed framework on three synthetic datasets. We present results for one dataset here and reporting the other two in Online Supplement S1 Appendix E .For our proposed methods, we include two frameworks: (i) M5C M, which first applies the propose discretization techniques to the dataset and then predicts the counterfactual outcomes using a linear regression model within each leaf node, we present this method in detail in Online Supple-ment S1 Appendix D ; and (ii) M5C MF, which also utilizes the proposed discretization technique, but subsequently use the integer linear program-ming (ILP) procedure described in Section 5 within each node. The proposed algorithms are implemented in Python. The benchmark algorithms considered include: (iii) Inverse Probability of Treatment Weighting (IPTW), (iv) One-to-One Nearest Neighbor Match-ing on Propensity Score (1-PSNNM), (v) Bayesian Additive Regression Trees (BART) (Hill 2011), (vi) Random Forests (RF) (Wager and Athey 2018), (vii) R-learner (Zhao and Liu 2023), and (viii) Genetic Matching (Diamond and Sekhon 2013). Genetic Matching is implemented in R, while the other benchmark algorithms are implemented in Python. All experiments are conducted on a 2.4 GHz Quad-Core Intel Core i5 processor. 
+
+Synthetic Dataset : Dataset hyb 20 var :This dataset is generated through the following DGP: 
+
+xi, 1..., x i, 5 iid 
+
+∼ U (0 , 10) , p j iid 
+
+∼ U (0 .1, 0.9) , x i,j iid 
+
+∼ B (pj ), j = 6 , 7, ..., 20 
+
+ϵi iid 
+
+∼ U (0 , 1) , Nt = 200 , Nc = 19 , 800 
+
+y0 = 0 .5xi, 1 + 0 .3xi, 2 + 0 .2xi, 1xi, 6 + 0 .5sin (xi, 3) + 0 .5x2 
+
+> i, 4
+
++ 0 .3I(x7 = 1) + ϵi
+
+y1 = 0 .5xi, 1 + 0 .3xi, 2 + 0 .2xi, 1xi, 6 + 0 .5sin (xi, 3) + 0 .5x2 
+
+> i, 4
+
++ 0 .3I(x7 = 1) + 2 + ϵi
+
+XNt+Nc 
+
+> i=1
+
+ti = Nt, t i = {0, 1}
+
+y = y1ti + y0(1 − ti)In this DGP, we included 20 variables. The first 5 variables are contin-uous variable, while the rest 15 variables are binary variable. Among 20 variables, 7 variables are used to generate the outcome. We randomly select 200 units out of 20,000 to receive the treatment, with the remaining units 27 serving as controls. The true ATT in this DGP is 2. We repeat this process for 30 iterations and record the absolute bias in the estimated ATT for each run. When benchmarking this dataset, we include an additional baseline algo-rithm, Almost Matching Exactly (FLAME) (Wang et al. 2021), using the R package FLAME . During preprocessing, we discretize each continuous variable into quantile-based bins. We present the absolute bias with respect to the true ATT estimation in Figure 4. Specifically, Figure 4(a) shows the boxplot of the absolute estimation bias regarding ATT estimation across all runs, while Figure 4(b) illustrates the corresponding confidence intervals of the bias to the ATT estimation. Figure 4 shows that in this case, the performance of M5C MF consistently achieves smaller bias compared to the other state-of-the-art algorithms. This indicates that M5C MF is preferable when robust and accurate estimation of ATT is required. 
+
+> (a) Absolute bias for the ATT estimation
+> (b) 95% confidence interval for the abso-lute bias
+
+Figure 4: Absolute bias to the ATT estimation for hyb 20 var 
+
+The results on the three synthetic datasets show that the proposed algo-rithm achieves low bias while maintaining interpretability. In particular, the 28 M5C MF method consistently yields lower bias and demonstrates robustness in terms of confidence interval. 
+
+# 8 Case Study: CDC Diabetes Dataset 
+
+The CDC Diabetes Health Indicators Dataset is a public health dataset provided by the U.S. Centers for Disease Control and Prevention (CDC) and hosted by the UCI Machine Learning Repository. It originates from the 2015 Behavioral Risk Factor Surveillance System (BRFSS), the largest ongoing telephone-based health survey system in the world. The dataset includes responses from 253,680 adults in the United States and covers 21 health-related indicators. Among these, 2 are continuous variables and the remaining are categorical. After applying one-hot encoding to the cate-gorical variables, the dataset contains a total of 27 features. The primary objective of analyzing this dataset is to explore the prevalence and correlates of type 2 diabetes, as well as general health behaviors within the U.S. adult population. In this case study, the outcome variable is Diabetes binary , where a value of 1 indicates that the individual has been diagnosed with diabetes, and 0 otherwise. We consider the variable GenHlth as the treatment. No-tably, GenHlth receives the highest absolute coefficient in a logistic regression model predicting Diabetes binary , suggesting a strong association between general health status and diabetes diagnosis. GenHlth represents the partic-ipants’ self-evaluation of their general health status. A value of 5 indicates that the individual considers themselves to be in “poor” health. Therefore, we define the treatment variable as 1 for participants whose GenHlth value is 5 (indicating poor health), and 0 for the rest values. The dataset includes 12,081 adults with a GenHlth value of 5 and 241,599 adults with a GenHlth 
+
+value other than 5. When analyzing this dataset, we employed a bootstrap strategy that randomly selects 500 participants with a treatment value of 1, while keeps the full control dataset. We repeated this process 30 times across the dataset, applying both our proposed method and several benchmark algorithms. For each iteration, we computed the ATT estimation for each method, along with the corresponding confidence interval. The results are presented in Figure 5. According to Figure 5, our proposed algorithm consistently estimates a positive and statistically significant ATT, which aligns with the intuition that individuals who perceive themselves to be in poor health ( GenHlth =29 (a) ATT estimation for each algorithm 
+
+(b) 95% confidence interval of the ATT estimation 
+
+Figure 5: ATT estimation for CDC diabetes dataset for each algorithm 30 5) are more likely to have diabetes than other groups. In contrast, in the benchmark algorithms, propensity score based algorithm frequently produce counterintuitive results. While methods such as BART and Random For-est also yield positive ATT estimates, the magnitudes are relatively small and some values are not significant, potentially making it more difficult for decision-makers to draw meaningful conclusions. The average time spent for running each algorithm is displayed in Table 7. Table 7: CPU time for each method to process CDC dataset (in seconds)             
+
+> Model M5C M M5C MF IPTW 1PSNNM BART RF
+> CPU Time 44.046 117.827 0.130 0.708 165.763 67.966
+
+Figure 6: Comparison for the distribution of three top important features 
+
+HighBP (1 = high, 0 = no high), HighChol (1 = high, 0 = no high), and 
+
+HvyAlcoholConsump (1 = heavy, 0 = no heavy) from linear regression before and after matching We also present the distributions of the top three most important vari-ables ( HighBP , HighChol , and HvyAlcoholConsump ) before and after match-ing in Figure 6 (The large graph is presented in Online Supplement S1 Appendix F ), based on a coefficients of the logistic regression model fit-ted to predict the outcome variable Diabetes binary . The average stan-dardized mean differences (SMDs) for these three variables after matching are {0.005420, 0.009771, 0.000208 }, indicating strong balance after match-ing. The corresponding average variance ratios are {0.994167, 0.992210, 1.001186 }. These metrics suggest that there is no significant distributional differences regarding the important features between the treatment and con-trol groups. 31 9 Conclusion 
+
+This paper proposes a novel matching algorithm for causal inference that combines tree-based discretization with integer linear programming. It first utilizes a causal M5 model tree for discretization, with each split improves the adjusted R-square metric for the datasets. The tree is constructed us-ing split rules derived exclusively from the control group, and the technique enables the resulting nodes to approximately satisfy the linearity assump-tion within the control data. Based on this discretization, the algorithm formulates a new integer programming approach to reduce within-stratum bias, thereby yielding more accurate ATT estimates. Compared to state-of-the-art causal inference methods, the proposed algorithm preserves both interpretability and accuracy. Its strong empirical performance suggests high potential for practical applications, particularly in domains such as healthcare and social media, where robust causal decision-making is essen-tial. 
+
+# References 
+
+Austin PC (2011) An introduction to propensity score methods for reducing the ef-fects of confounding in observational studies. Multivariate behavioral research 
+
+46(3):399–424. Bassan S, Amir G, Zehavi M, Katz G (2025) What makes an ensemble (un) inter-pretable? arXiv preprint arXiv:2506.08216 .Belitser SV, Martens EP, Pestman WR, Groenwold RH, De Boer A, Klungel OH (2011) Measuring balance and model selection in propensity score methods. 
+
+Pharmacoepidemiology and drug safety 20(11):1115–1129. Blackwell M, Iacus S, King G, Porro G (2009) cem: Coarsened exact matching in stata. The Stata Journal 9(4):524–546. Christen P (2012) The data matching process. Data matching: concepts and tech-niques for record linkage, entity resolution, and duplicate detection , 23–35 (Springer). Diamond A, Sekhon JS (2013) Genetic matching for estimating causal effects: A general multivariate matching method for achieving balance in observational studies. Review of Economics and Statistics 95(3):932–945. Gu XS, Rosenbaum PR (1993) Comparison of multivariate matching methods: Structures, distances, and algorithms. Journal of Computational and Graph-ical Statistics 2(4):405–420. Hill JL (2011) Bayesian nonparametric modeling for causal inference. Journal of Computational and Graphical Statistics 20(1):217–240. 
+
+32 Iacus SM, King G, Porro G (2012) Causal inference without balance checking: Coarsened exact matching. Political analysis 20(1):1–24. Islam MS, Morshed MS, Young GJ, Noor-E-Alam M (2019) Robust policy evalua-tion from large-scale observational studies. PloS one 14(10):e0223360. King G, Nielsen R (2019) Why propensity scores should not be used for matching. 
+
+Political analysis 27(4):435–454. Kovesdy CP, Kalantar-Zadeh K (2012) Observational studies versus randomized controlled trials: avenues to causal inference in nephrology. Advances in chronic kidney disease 19(1):11–18. Lin S, Xu M, Zhang X, Chao SK, Huang YK, Shi X (2023) Balancing approach for causal inference at scale. Proceedings of the 29th ACM SIGKDD conference on knowledge discovery and data mining , 4485–4496. Moraffah R, Karami M, Guo R, Raglin A, Liu H (2020) Causal interpretability for machine learning-problems, methods and evaluation. ACM SIGKDD Explo-rations Newsletter 22(1):18–33. Nikolaev AG, Jacobson SH, Cho WKT, Sauppe JJ, Sewell EC (2013) Balance opti-mization subset selection (boss): An alternative approach for causal inference with observational data. Operations Research 61(2):398–412. Nitsch D, Molokhia M, Smeeth L, DeStavola BL, Whittaker JC, Leon DA (2006) Limits to causal inference based on mendelian randomization: a compar-ison with randomized controlled trials. American journal of epidemiology 
+
+163(5):397–403. Pal M, Deswal S (2009) M5 model tree based modelling of reference evapotranspi-ration. Hydrological Processes: An International Journal 23(10):1437–1443. Parikh H, Rudin C, Volfovsky A (2022) Malts: Matching after learning to stretch. 
+
+Journal of Machine Learning Research 23(240):1–42. Rubin DB (2001) Using propensity scores to help design observational studies: application to the tobacco litigation. Health Services and Outcomes Research Methodology 2:169–188. Spirtes P (2010) Introduction to causal inference. Journal of Machine Learning Research 11(5). Stuart EA (2010) Matching methods for causal inference: A review and a look forward. Statistical science: a review journal of the Institute of Mathematical Statistics 25(1):1. Wager S, Athey S (2018) Estimation and inference of heterogeneous treatment effects using random forests. Journal of the American Statistical Association 
+
+113(523):1228–1242. Wang T, Morucci M, Awan MU, Liu Y, Roy S, Rudin C, Volfovsky A (2021) Flame: A fast large-scale almost matching exactly approach to causal inference. Jour-nal of Machine Learning Research 22(31):1–41. Yao L, Chu Z, Li S, Li Y, Gao J, Zhang A (2021) A survey on causal inference. 
+
+ACM Transactions on Knowledge Discovery from Data (TKDD) 15(5):1–46. 
+
+33 Zhang Z, Kim HJ, Lonjon G, Zhu Y, et al. (2019) Balance diagnostics after propen-sity score matching. Annals of translational medicine 7(1):16. Zhao Y, Liu Q (2023) Causal ml: Python package for causal inference machine learning. SoftwareX 21:101294. 
+
+34

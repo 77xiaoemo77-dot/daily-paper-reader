@@ -1,0 +1,966 @@
+Title: Efficient Symbolic Computations for Identifying Causal Effects
+
+URL Source: https://arxiv.org/pdf/2604.20516v1
+
+Published Time: Thu, 23 Apr 2026 00:55:25 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# Efficient Symbolic Computations for Identifying Causal Effects 
+
+Benjamin Hollering ∗ Pratik Misra † Nils Sturma ‡
+
+Abstract 
+
+Determining identifiability of causal effects from observational data under latent confounding is a central challenge in causal inference. For linear structural causal models, identifiability of causal effects is decidable through symbolic computation. However, standard approaches based on Gröbner bases become computationally infeasible beyond small settings due to their doubly exponential complexity. In this work, we study how to practically use symbolic computation for deciding rational identifiability. In particular, we present an efficient algorithm that provably finds the lowest degree identifying formulas. For a causal effect of interest, if there exists an identification formula of a prespecified maximal degree, our algorithm returns such a formula in quasi-polynomial time. 
+
+# 1 Introduction 
+
+Identifiability of causal effects refers to studying whether it is feasible to infer cause-effect relation-ships under clearly detailed assumptions about the data-generating process. Determining whether causal effects are identifiable is crucial for any downstream task, such as robust estimation of ef-fects or generalization across environments. The main challenge in identifying causal relations is the ubiquitous presence of latent (unobserved) variables, so we only observe marginal distributions. One of the most popular tools that allow us to argue about causal relationships are structural causal models (Spirtes et al., 2000; Pearl, 2009). Applied sciences widely make use of linear structural causal models, which are valued for their simple interpretation (Bollen, 1989). Linear structural causal models were introduced by Wright (1921, 1934) and are also referred to as path diagrams. The precise setting is described as follows. Let X = ( Xv)v∈V be a random vector that is indexed by a finite set V . Each linear causal model is defined by a directed graph G = ( V, D, B ), where the nodes V correspond to the random variables, the directed edges D ⊆ V × V encode the causal relationships, and the bidirected edges B ⊆ V × V encode latent confounding. Note that (v, w ) ∈ B
+
+if and only (w, v ) ∈ B. We suppose that all variables are related by noisy linear equations, that is, 
+
+Xv = X
+
+> w∈pa (v)
+
+λwv Xw + εv, (1) where pa (v) is the of parents of v in the graph G, and εv are stochastic noise variables with mean zero and finite variance. The distributional assumption is that, for v̸ = w, the variables εv and 
+
+εw are independent whenever there is no bidirected edge between v and w. Now, the question of identification of a direct causal effect λwv refers to whether it is possible to recover λwv from the 
+
+> ∗Max Planck Institute for Mathematics in the Sciences, Germany; benjamin.hollering@mis.mpg.de
+> †Binghamton University, USA; pmisra@binghamton.edu
+> ‡École Polytechnique Fédérale de Lausanne, Switzerland; nils.sturma@epfl.ch
+
+1
+
+> arXiv:2604.20516v1 [stat.ML] 22 Apr 2026
+
+L
+
+T A Y
+
+Figure 1: Mixed graph corresponding to a conditionally randomized trial with imperfect adherence. covariance matrix of the observable random vector X. Writing the structural equations (1) in vector form, we get that 
+
+X = Λ ⊤X + ε, 
+
+where ε = ( εv)v∈V is the noise vector and Λ is the matrix of direct causal effects, that is, Λwv = λwv 
+
+whenever there is a directed edge from w to v in G and Λwv = 0 else. By solving for X, we find that X = ( I − Λ) −⊤ ε and therefore the covariance matrix is given by 
+
+Σ := Var [X] = ( I − Λ) −⊤ Ω( I − Λ) −1, (2) where Ω = ( ωvw ) = Var [ε]. If it is possible to recover Λ from the covariance matrix Σ = ( σvw ) via rational formulas in the entries of Σ, then the graph G is said to be rationally identifiable ; we refer to Section 2 for a precise definition. 
+
+Example 1.1. Consider a conditionally randomized study designed to evaluate the effect of a treatment on an outcome Y . Let T denote the assigned treatment dose, which is randomized conditional on a baseline covariate L. Since not all individuals adhere to their assigned treatment, we introduce A, representing the treatment actually received; see Hernán and Robins (2025, Section 16) for background on adherence. The primary interest then is in the direct causal effect of the treatment actually taken A on the outcome Y . In practice, an investigator may wish to account for latent confounding that partially explains the association between A and Y . The corresponding data-generating process of this study can be represented by the mixed graph in Figure 1. It was noted by Garcia-Puente et al. (2010) that rational identifiability of a given graph is always decidable by computational algebraic geometry involving Gröbner basis computations. Indeed, if the graph is acyclic, each entry of the covariance matrix Σ is a polynomial in the λvw and ωij 
+
+variables and thus deciding rational identifiability is identical to solving the polynomial system given in (2). However, the complexity of standard Gröbner basis methods can in the worst case be double exponential in the size of the graph (Mayr, 1997; Cox et al., 2015). Hence, they become infeasible even for small graphs on 5 nodes. Recently, Dörfler et al. (2024) showed that rational identifiability can be decided in exponential running time. However, their algorithm is of a theo-retical nature and it does not return the formulas for identification, which are of crucial interest in practice. It is an open problem to graphically characterize which graphs are rationally identifiable. Nevertheless, many graphical criteria have been given that are sufficient conditions for rational identifiability. Crucially, they are efficient in the sense that they can be checked in polynomial time. They search for patterns in the covariance matrix and rely on maximum flow computations (Sullivant et al., 2010; Cormen et al., 2009). The first sufficient condition was the instrumental vari-able criterion, see Wright (1928) and Bowden and Turkington (1984). A major break through was the half trek criterion by Foygel et al. (2012a). Improvements and follow-up works include criteria based on auxiliary variables (Chen et al., 2016 and Chen et al., 2017), decomposition techniques (Tian, 2005) and several generalizations and further developments, cf. Tian (2009), Drton and Weihs (2016), Weihs et al. (2017), Kumor et al. (2019). To our knowledge, the most recent polynomial time 2sufficient condition for rational identifiability is the auxiliary cutset criterion by Kumor et al. (2020). In this paper, we take a different approach and remind ourselves that deciding rational identifiability corresponds to solving polynomial systems. Building on Garcia-Puente et al. (2010), we study how symbolic computations based on Gröbner bases can be made practical for deciding rational identi-fiability. Roughly speaking, we apply two key ideas: First, we work with homogenized equations: A polynomial is homogeneous if all of its components are of the same degree. Second, we work degree by degree. That is, we always search for formulas with the lowest degree possible to identify a parameter. If no identifying formula is found up to the current degree bound, we increase the bound by one and repeat our computations. These two key ideas allow us to exploit the fact that degree-bounded Gröbner basis computations of homogeneous ideals are polynomial time. Moreover, to keep the degree during the computations as low as possible, we allow formulas that identify a new parameter to depend on the already identified parameters. Abbott et al. (2017) considered a similar approach for efficiently computing implicit descriptions of hypersurfaces, a well-known challenge in the computational algebra community. If a graph G is rationally identifiable, then we denote by ID G the maximal degree of the polynomials appearing in the identifying formulas, when choosing each identifying formula with the lowest degree possible. Our main algorithm takes as input a mixed graph and a maximal degree d. A shortened version of our main result then reads as follows. 
+
+Theorem 1.2. Let G = ( V, D, B ) be an acyclic mixed graph. If G is rationally identifiable and 
+
+d ≥ ID G, then Algorithm 1 returns “yes”. If G is not rationally identifiable, then Algorithm 1 returns “no” for all input degrees d ∈ N. The computational complexity of Algorithm 1 is of order 
+
+O
+
+
+
+d|V |5{3d|V |} 4αd 2 log(3 d|V |)
+
+,
+
+where α is a constant such that row reduction of a n×n matrix can be performed in O(nα) operations. 
+
+Said differently, if there exists an identification formula up to a pre-specified degree d, our algorithm finds it in quasi-polynomial time. Note that our algorithm also returns the symbolic formulas for identifying the direct causal effects. Moreover, our result implies that any identification method restricted to searching for formulas of bounded degree is subsumed by our approach: whenever such a formula exists, our method will also find it in quasi-polynomial time. 
+
+Example 1.3. We return to the earlier example of a conditionally randomized study with imperfect adherence, represented by the graph in Figure 1. For this graph, all direct causal effects in the linear model (1) are rationally identifiable. If we apply the standard Gröbner basis methods as in Garcia-Puente et al. (2010), we find the identification formulas 
+
+λLT = σLT 
+
+σLL 
+
+, λLY = σLY 
+
+σLL 
+
+, λT A = σT A 
+
+σT T 
+
+, λAY = σLT σLY − σLL σT Y 
+
+σLT σLA − σLL σT A 
+
+,
+
+where, for example, the causal effect λAY corresponds to the directed edge A → Y . However, the effect λAY is also identified via the formula 
+
+λAY = σT Y − λLY σLT 
+
+σT A 
+
+3whenever the effect λLY is identified beforehand. By clearing the denominators of both identification formulas, we obtain two “identifying polynomials” for the effect λAY , which are as follows: 
+
+λAY (σLT σLA − σLL σT A ) − σLT σLY + σLL σT Y and λAY σT A − σT Y + λLY σLT .
+
+Note that the degree of the second polynomial is lower. Our algorithm finds identifying polynomials of the lowest possible degree, resulting in significantly more efficient computations. The organization of the paper is as follows. In Section 2, we introduce necessary tools and provide a definition of rational identifiability. In Section 3, we recall complexity results for Gröbner bases, and in Section 4 we establish how to check rational identifiability with homogeneous equations. Based on this, we then present our main result and our identification algorithm in Section 5. In Section 6, we compare our algorithm with the standard symbolic algorithm by Garcia-Puente et al. (2010) in numerical experiments. Finally, in Section 7, we relate our algorithm to the polynomial-time sufficient criteria that exist in the literature. The Appendix contains the proofs of all results. 
+
+# 2 Rational Identifiability 
+
+Let G = ( V, D, B ) be a mixed graph, where V = {1, . . . , p } is the set of nodes and D, B ⊆ V × V
+
+are two sets of edges. We say that an element (v, w ) ∈ D is a directed edge, and we represent it as v → w ∈ D. We say that an element (v, w ) ∈ B is a bidirected edge, and we assume that bidirected edges have no orientation, that is, (v, w ) ∈ B if and only if (w, v ) ∈ B. We represent a bidirected edge as v ↔ w. Neither the directed part nor the bidirected part contain self-loops, that is, v → v̸ ∈ D and v ↔ v̸ ∈ B for all v ∈ V . In this paper, we restrict ourselves to acyclic mixed graphs, in which the directed parts do not contain cycles. For the purpose of deciding rational identifiability, we may identify the linear structural equation model with a set of covariance matrices of the form (2). To formally define this, we first introduce the necessary notation, which is from Foygel et al. (2012a). We write RD for the set of real p × p
+
+matrices Λ = ( λwv ) with support D, that is λwv = 0 if w → v̸ ∈ D. If the graph G is acyclic, then the matrix I − Λ is invertible for all Λ ∈ RD, where I denotes the p × p identity matrix. Finally, we write PD (p) for the cone of positive definite p × p matrices Ω = ( ωwv ) and we let PD (B) be the subcone of matrices with support B, that is, ωwv = 0 if w ↔ v̸ ∈ B.
+
+Definition 2.1. The linear structural equation model given by the acyclic mixed graph G =(V, D, B ) with V = {1, . . . , p } is the set of all p × p covariance matrices 
+
+Σ = ( I − Λ) −⊤ Ω( I − Λ) −1
+
+for Λ ∈ RD and Ω ∈ PD (B).A linear structural equation model is identifiable if the parameter matrices Λ ∈ RD and Ω ∈ PD (B)
+
+can be uniquely recovered from Σ. In other words, identifiability holds if the parametrization 
+
+(Λ , Ω) 7 → (I − Λ) −⊤ Ω( I − Λ) −1 (3) is injective on the domain RD × PD (B), or on a dense open subset. Since the parametrization is a rational function, the inverse, if it exists, is an algebraic function. Most interest in the literature is given to rational identifiability , which refers to settings where the inverse is also given by a rational function. That is, each direct causal effect λwv is identified by a rational formula, i.e., 41 2 3
+
+Figure 2: Mixed graph for the instrumental variable model. 
+
+λwv = b(σ)/a (σ), where a and b are polynomials in the entries of the covariance matrix Σ = ( σij ),and where a(σ) is not the zero polynomial. We now explain how methods from computational algebra can be used for deciding whether a given graph allows for rational identifiability of the parameters. Let R[x1, . . . , x m] be a polynomial ring, i.e., the set of all polynomials in the indeterminates x1, . . . , x m with real coefficients. In our setting, we work with indeterminates corresponding to the matrices Λ, Ω and Σ. To define this, let λ = {λuv : u → v ∈ D} be indeterminates corresponding to the directed edges and let 
+
+ω = {ωuv : u ↔ v ∈ B, u < v } ∪ { ωvv : v ∈ V } be indeterminates corresponding to the bidirected edges. For convenience, we will denote by θ = λ ∪ ω the set all indeterminates corresponding to the directed and the bidirected edges. Moreover, let σ = {σuv : 1 ≤ u ≤ v ≤ p} be indeterminates representing the entries of the covariance matrix. From now on, we will consider the matrix Λ as a matrix of symbolic indeterminates with entries Λuv = λuv if u → v ∈ D and Λuv = 0 else. Similarly, the matrix Ω has entries Ωuv = Ω vu = ωuv if u ↔ v ∈ B or u = v, and Ωuv = 0 else. The matrix Σ
+
+has entries Σuv = σuv for u ≤ v and Σuv = σvu else. It is useful to consider the mapping between polynomial rings 
+
+τG : R[σ] −→ R[θ]
+
+σuv 7 −→ [( I − Λ) −⊤ Ω( I − Λ) −1]uv ,
+
+which is dual to the parametrization in (3). Acyclicity of G ensures that τG(σuv ) is a polynomial. This polynomial exhibits a nice combinatorial structure given by treks. A trek in a mixed graph G
+
+is a walk whose consecutive edges do not have colliding arrowheads. In other words, a trek between nodes vl and ur is of one of the two following forms: 
+
+vl ← · · · ← v1 ↔ u1 → · · · → ur,
+
+or 
+
+vl ← · · · ← v1 = u1 → · · · → ur,
+
+where l, r ≥ 1. The nodes v1, . . . , v l are pairwise distinct and the nodes u1, . . . , u r are pairwise distinct, but the sets {v1, . . . , v l} and {u1, . . . , u r} are allowed to intersect. We refer to Sullivant et al. (2010) and references therein for more details on treks. For any trek π, we associate a trek monomial given by 
+
+π(θ) = ωv1u1
+
+> l−1
+
+Y
+
+> k=1
+
+λvk vk+1 
+
+> r−1
+
+Y
+
+> k=1
+
+λuk uk+1 ∈ R[θ].
+
+Denote by T (v, w ) the set of all treks from v to w. Then, the trek rule (Spirtes et al., 2000; Wright, 1934) says that the image τG(σuv ) is given as the summation over all treks, i.e., 
+
+τG(σuv ) = [( I − Λ) −⊤ Ω( I − Λ) −1]uv = X 
+
+> π∈T (u,v )
+
+π(θ).
+
+Example 2.2. Consider the graph in Figure 2 with nodes V = {1, 2, 3}. Then, the treks between 
+
+2 and 3 are given by 2 ↔ 3, 2 → 3, and 2 ← 1 → 2 → 3. Hence, we have that 
+
+τG(σ23 ) = ω23 + ω22 λ23 + ω11 λ212 λ23 .
+
+5Now, we return to studying identifiability of the parameters θ. An algebraic definition of rational identifiability is given as follows. 
+
+Definition 2.3. The parameter q ∈ θ is rationally identifiable if there exist polynomials a, b ∈ R[σ]
+
+such that a̸ ∈ ker( τG) and τG(b)/τ G(a) = q. The mixed graph G = ( V, D, B ) is said to be rationally identifiable if all parameters q ∈ θ are rationally identifiable. The requirement that a is not in ker( τG) guarantees that τG(a) is not the zero polynomial, ensuring that we do not divide by zero. 
+
+Example 2.4. We return to the graph in Figure 2. The parameter λ23 is rationally identifiable by taking b(σ) = σ13 and a(σ) = σ12 . This can be seen by calculating τG(b) = τG(σ13 ) = ω11 λ12 λ23 
+
+and τG(a) = τG(σ12 ) = ω11 λ12 , which implies that τG(b)/τ G(a) = λ23 . Moreover, we note that 
+
+τG(a) is not the zero polynomial. 
+
+Remark 2.5. If all parameters λ ⊆ θ are rationally identifiable, then all remaining parameters 
+
+ω = θ \ λ are rationally identifiable since Ω = ( I − Λ) ⊤Σ( I − Λ) by Definition 2.1. We now introduce some core concepts from algebra which we will use throughout the remainder of this paper. A subset of a polynomial ring R[x1, . . . , x m] is called an ideal if it is closed under addition and under multiplication by an arbitrary polynomial; see Cox et al. (2015, Section 1.4) for a precise definition. A basic example of an ideal is one that is generated by a given set of polynomials. For polynomials f1, . . . , f p ∈ R[x1, . . . , x m], we write 
+
+⟨f1, . . . , f p⟩ := 
+
+( pX
+
+> i=1
+
+gifi : gi ∈ R[x1, . . . , x m]
+
+)
+
+,
+
+that is, the collection of all polynomial combinations of the fi. By Hilbert’s basis theorem, every ideal can be expressed as one generated by finitely many polynomials. Working with ideals allows us to check rational identifiability of a given parameter λuv by checking whether a certain ideal I
+
+contains an identifying polynomial .We will work with the ideal I ⊆ R[θ, σ ] of the graph of the parametrization τG. It is generated by the polynomials 
+
+σuv − τG(σuv ) for u ≤ v. 
+
+Note that a polynomial g(θ, σ ) ∈ R[θ, σ ] is an element of I if and only if g(θ, τ G(σ)) = 0 , where 
+
+τG(σ) is the element-wise application of the function τG to the variables in σ. The following result is Lemma 7 in Foygel et al. (2012b); also see Garcia-Puente et al. (2010) for a more detailed discussion. 
+
+Lemma 2.6 (Foygel et al., 2012b, Lemma 7) . The parameter q ∈ θ is rationally identifiable if and only if I contains an element of the form qa (σ) − b(σ) with a, b ∈ R[σ] and a̸ ∈ ker( τG).
+
+In Lemma 2.6, note that ker( τG) is given by I ∩ R[σ]. Since we want to keep the degree of the polynomials a and b as low as possible, we will allow them to depend on the already identified parameters. For this, we show a refined version of Lemma 2.6. Let θid ⊆ θ be a subset of parameters that is already known to be rationally identifiable, and let θrem := θ\θid be the remaining parameters. 
+
+Lemma 2.7. The parameter q ∈ θrem is rationally identifiable if and only if the ideal I contains an element of the form qa (θid , σ ) − b(θid , σ ) with a, b ∈ R[θid , σ ] and a̸ ∈ I ∩ R[θid , σ ].
+
+Lemma 2.7 justifies the following definition. 61
+
+2 3 4
+
+Figure 3: Another mixed graph. 
+
+Definition 2.8. Let ≺ be a total order on θ. We say that gq ∈ I is an identifying polynomial for 
+
+q ∈ θ with respect to the order ≺ if there is a subset θid ⊆ θ with s ≺ q for all s ∈ θid such that gq
+
+is of the form gq = qa (θid , σ ) − b(θid , σ ) with a, b ∈ R[θid , σ ] and a̸ ∈ I ∩ R[θid , σ ].If an identifying polynomial gq exists for all q ∈ θ with respect to the order ≺, then we say that ≺
+
+is an identifying order , and we denote P≺ = {gq : q ∈ θ}.Note that, for a given identifying order, there might exist multiple sets of identifying polynomials 
+
+P≺. For any such set of of identifying polynomials it holds that |P≺| = |θ|.
+
+Example 2.9. For the graph in Figure 3, we verified with Algorithm 1 that the ideal I contains the three polynomials 
+
+λ12 σ11 − σ12 , λ14 σ11 − σ14 , λ34 σ23 + λ12 σ14 − σ24 . (4) Hence, any order on the parameters for which λ12 is smaller than λ34 and all parameters in ω are larger than the parameters in λ is an identifying order. For such an order, identifying polynomials for the parameters in λ are given in (4), and identifying polynomials for the parameters in ω are then given via the formula in Remark 2.5. Clearly, a mixed graph G is rationally identifiable if and only if there exists an identifying order. In general, there might be multiple identifying orders on θ. We will later derive an algorithm that finds the one such that the total degree of any identifying polynomial that appears is minimal. 
+
+Definition 2.10. Let G be rationally identifiable and suppose that P≺ is a set of identifying polynomials with respect to the identifying order ≺. We denote by deg( P≺) the maximal total degree of the polynomials in P≺. Moreover, we say that ID G := min ≺ min P≺ deg( P≺) is the identifying degree , where the first minimum is taken over all identifying orders and the second minimum is taken over all sets of identifying polynomials for a given order. 
+
+# 3 Complexity of Efficient Gröbner Basis Algorithms 
+
+Gröbner bases are at the core of most algorithms in computational algebra. We now discuss how they can be used to determine if identifying polynomials exist in I and how to compute them. 
+
+3.1 Gröbner Bases 
+
+An accessible introduction to Gröbner bases is provided in Cox et al. (2015). We briefly outline the key properties, orienting ourselves to the exposition in Garcia-Puente et al. (2010). For an integer vector u ∈ Nm, we denote a monomial in R[x1, . . . , x m] by xu = xu1 
+
+> 1
+
+xu2 
+
+> 2
+
+· · · xum 
+
+> m
+
+. A monomial order ≺ on the polynomial ring R[x1, . . . , x m] is a total ordering of all monomials in the ring, which respects multiplication and sets 1 as the smallest monomial. Concretely, this means that whenever xu ⪯ xv then xw · xu ⪯ xw · xv and that 1 ⪯ xu for all u ∈ Nn. Because ≺ is a 7total order, each polynomial f ∈ R[x1, . . . , x m] contains a uniquely determined largest monomial, which we denote by in ≺(f ) and which we call the initial term or the leading term. For an ideal 
+
+I ⊆ R[x1, . . . , x m], we define its initial ideal by in ≺(I) = ⟨in ≺(f ) : f ∈ I⟩.
+
+Definition 3.1. A finite set G ⊆ I is called a Gröbner basis of I (with respect to ≺) if in ≺(I) = ⟨in ≺(f ) : f ∈ G⟩.
+
+A Gröbner basis is said to be reduced if, for all f ∈ G, the coefficient of the leading term in ≺(g) is 
+
+1 and no monomial of f is divisible by any other leading term in ≺(g) with g ∈ G \ { f }.Gröbner bases have many nice properties including that the reduced Gröbner basis of an ideal is unique for a fixed monomial order. For the purpose of determining identifiability, we will use lexicographic and elimination orders (Ene and Herzog, 2012, Chapter 3), which we explain now. In the lexicographic order, to decide whether xu ≺ xv, we examine the vector v − u and find the first nonzero entry; then we declare xu ≺ xv exactly when that entry is positive. Intuitively, the variable x1 has the highest priority, so its degree determines the comparison. If two monomials have the same degree in x1, we then compare their degrees in x2, and proceed similarly through the remaining variables. Elimination orders generalize the lexicographic order. Suppose that the variables x1, . . . , x m are partitioned into two blocks B1 ∪ B2. Then, a monomial order on R[x1, . . . , x m] is an elimination order for B1 if xu ≺ xv whenever xv has larger degree in the B1 variables than xu. If the two monomials xu and xv have the same degree in the B1 variables, then another term order is used to break ties. The following is a more formal definition. 
+
+Definition 3.2. Let R[x1, . . . , x m] be a polynomial ring with variables partitioned into blocks 
+
+B1 and B2. For each block i = 1 , 2, let ≺i be a monomial order on R[Bi]. For a monomial 
+
+xu ∈ R[x1, . . . , x m], denote by xuBi the restriction of xu to the variables in block Bi. A monomial order ≺ on R[x1, . . . , x m] is called an elimination order for B1 if xv ≻ xu whenever xvB1 ≻1 xuB1
+
+or xvB1 = xuB1 and xvB2 ≻2 xuB2 . Moreover, we say that an elimination order ≺ for B1 is a 
+
+lex-elimination order if ≺1 is the lexicographic order for some permutation of the variables in B1.Lex-elimination orders are useful for determining identifiability via Gröbner bases. Recall that we denote by θid ⊆ θ the already identified parameters, and by θrem = θ \ θid the remaining parameters. To check the condition from Lemma 2.7, that is, whether the ideal I contains an identifying polynomial for the parameters q ∈ θrem , we have the following result. 
+
+Proposition 3.3. Let F be a reduced Gröbner basis of the ideal I with respect to a lex-elimination order on R[θ, σ ] for the variables in θrem . Then, all parameters q ∈ θrem are rationally identifiable if and only if, for each parameter q ∈ θrem , the Gröbner basis F contains an element that has leading term q · a(θid , σ ) for some a ∈ R[θid , σ ].
+
+Example 3.4. For the graph in Figure 3, suppose that the parameters θid = {λ12 , λ 14 } are already identified. For the remaining parameters θrem , consider the lex-order for (ω11 , ω 22 , ω 33 , ω 44 , ω 23 ,ω34 , λ 34 ), that is, the variable λ34 is the smallest and has lowest priority. Since we have already seen in Example 2.9 that the graph is rationally identifiable, the Gröbner basis with respect to any such lex-elimination order for the variables in θrem contains the element 
+
+λ34 σ23 + λ12 σ14 − σ24 .
+
+8The standard way to compute Gröbner bases is via Buchberger’s algorithm, which is an extension of the division algorithm for univariate polynomials. It proceeds by canceling leading terms until no term in the remainder can be divided by the leading term of the divisor. Unfortunately, the computational complexity can be double exponential in the number of input variables (Mayr, 1997). Hence, using Proposition 3.3 becomes infeasible in practice already for graphs on 5 to 6 nodes. However, computing Gröbner bases of homogeneous ideals is much more efficient since we can compute the Gröbner basis degree by degree. 
+
+3.2 Homogeneous Ideals 
+
+In this section, we recall several complexity results for computing Gröbner bases of homogeneous ideals, which we will use in the remainder of this paper. A polynomial is homogeneous if all its terms have the same total degrees. An ideal is homogeneous if it can be generated by homogeneous polynomials Cox et al. (2015, Section 8.3). When working with homogeneous ideals, we consider graded monomial orders, which are monomial orders that first compare monomials by total degree and only break ties using a secondary order. Now, suppose that we compute the reduced Gröbner basis G≺ of a homogeneous ideal via Buch-berger’s algorithm with respect to a graded monomial ordering ≺. Due to the grading of the ordering, we always process lower degree polynomials first, and, importantly, when all elements of degree ≤ d have been processed, all elements of the Gröbner basis in degrees ≤ d have been found (Cox et al., 2015, Section 10.1). In contrast, when computing Gröbner bases of non-homogeneous ideals, lower-degree elements can appear at any stage. In this way, we can find the set of all elements of G≺ of degree at most d, which we denote by G≺,d .This idea is leveraged by Faugére’s F4 algorithm (Faugére, 1999; Faugère, 2002) which uses linear algebra to greatly speed up Gröbner basis computation. More recently, it was observed that com-puting Gröbner bases becomes simpler in weighted homogeneous systems (Faugère et al., 2016). A weighting in a polynomial ring R[x1, . . . , x m] is given by a weight vector w = ( w1, . . . , w m) ∈ Nm.The weighting w defines a w-grading of the ring by setting the degree of the variables to its weight. That is, the weighted degree of a monomial is given by deg w(xu1 
+
+> 1
+
+xu2 
+
+> 2
+
+· · · xum 
+
+> m
+
+) = Pmi=1 wiui. More-over, a polynomial f is said to be homogeneous with respect to the weighting w, or w-homogeneous, if the weighted degree of all the monomials in f coincide. In this setting, we have the following complexity bound for computing Gröbner bases up to the weighted degree dw.
+
+Proposition 3.5 (Faugère et al., 2016, Section 5.1) . Suppose that w = ( w1, . . . , w m) ∈ Nm is a weighting. Let I = ⟨f1, . . . , f p⟩ ⊆ R[x1, . . . , x m] be a w-homogeneous ideal and let ≺ be a w-graded monomial ordering. The complexity (in terms of arithmetic operations in R) to compute G≺,d w is bounded by 
+
+O
+
+ 1(Qmi=1 wi)α
+
+m + dw − 1
+
+dw
+
+α
+
+,
+
+where α is a constant such that row reduction of a n×n matrix can be performed in O(nα) operations. 
+
+This complexity result follows naturally from the standard encoding of Gröbner basis computation into linear algebra which state-of-the-art algorithms such as F4 and F5 leverage. These algorithms are typically implemented in such a way that they compute degree-by-degree as described above. Observe that since O( m+dw −1
+
+> dw
+
+) = O(( m+dw)dw ), the computation of G≺,d w is actually polynomial in the number of variables m, but still grows exponentially in the degree dw. In the context of identification, this means that if we know a-priori that there is a set of homogenized identifying 9polynomials for a graph G such that all of them are of degree at most dw for a specific weighting, then these identifying polynomials can be computed in polynomial time in the size of the vertex and edge set of G. This will be the main focus of our next section. 
+
+# 4 Weighting and Homogenization 
+
+As shown in Section 2, deciding identifiability of a parameter q ∈ θ is equivalent to deciding whether I contains an identifying polynomial. In this section, we transfer this problem to an ideal that is homogeneous with respect to a specific weighting. We set the weight of σuv to w(σuv ) = deg( τG(σuv )) . Observe that deg( τG(σuv )) is equal to the maximal length of any trek between u and 
+
+v, where the length of a trek π is the total degree of the trek monomial π(θ). If there is no trek between two nodes u and v, then we set the maximal trek length between u and v to 1. In this way, we define the trek weighting w in the ring R[θ, σ ] by setting 
+
+w(q) = 1 for all q ∈ θ, w(σuv ) = maximal length of any trek between u and v. (5) Moreover, we denote by wtrek to be the length of the longest trek in G. Now, we consider the w-homogenized ideal Iwh = ⟨f wh : f ∈ I⟩ ⊆ R[θ, σ, h ], where f wh denotes the weighted homogeniza-tion with respect to a new variable h with weight w(h) = 1 . The weighted homogenization of a poly-nomial f (x1, . . . , x m) ∈ R[x1, . . . , x m] is given by f wh (x1, . . . , x m, h ) = hdw f (x1/h w1 , . . . , x m/h wm ),where dm is the w-degree of f and w = ( w1, . . . , w m) is a weighting. Checking identifiability will then correspond to deciding whether Iwh contains a homogenized identifying polynomial. The ad-vantage is that we can organize our Gröbner basis computations degree-by-degree and apply the efficiency result given in Proposition 3.5. Recall that for a w-homogeneous ideal J, the dehomoge-nized ideal is given by Jdeh = {f deh : f ∈ J}, where f deh is the usual dehomogenization obtained by plugging-in 1 for the variable h. In our proofs, we use fundamental properties of homogenization and dehomogenization as described in Kreuzer and Robbiano (2005, Section 4.3). In particular, 
+
+(Iwh )deh = I and f ∈ I wh if and only if f deh ∈ I for a weighted homogeneous polynomial f .The next proposition shows that Iwh is generated by the polynomials σuv − τG(σuv )wh , which are 
+
+w-homogeneous by the definition of the trek-weighting. 
+
+Proposition 4.1. Let ¯I ⊆ R[θ, σ, h ] be the ideal generated by σuv − τG(σuv )wh , u ≤ v. Then, ¯I is homogeneous with respect to the trek weighting, and it holds that (i) ¯I = Iwh , and (ii) Iwh ∩ R[θid , σ, h ] = ( I ∩ R[θid , σ ]) wh for any subset θid ⊆ θ.
+
+Now, checking identifiability can be done in Iwh . This is shown in the following lemma. 
+
+Lemma 4.2. The parameter q ∈ θrem is rationally identifiable if and only if the ideal Iwh contains an element of the form qa (θid , σ, h ) − b(θid , σ, h ) with a, b ∈ R[θid , σ, h ] and a̸ ∈ I wh ∩ R[θid , σ, h ].
+
+We say that the polynomial qa (θid , σ, h ) − b(θid , σ, h ) is a homogenized identifying polynomial for 
+
+q ∈ θrem . By computing a reduced Gröbner basis, we can check whether Iwh contains such a polynomial. For this, we define w-graded elimination orders, which we will use to compute Gröbner bases of Iwh . These orders first compare monomials by their weighted degree and then break ties using an elimination order. 10 Definition 4.3. Let R[x1, . . . , x m] be a polynomial ring with variables partitioned into blocks B1
+
+and B2. Suppose that w = ( w1, . . . , w m) ∈ Nm is a weighting. A monomial order on R[x1, . . . , x m]
+
+is a w-graded (lex-)elimination order, if we first compare monomials by their weighted degree, and break ties using a (lex-)elimination order. 
+
+Theorem 4.4. Let F be a reduced Gröbner basis of the ideal Iwh ⊆ R[θ, σ, h ] with respect to a 
+
+w-graded lex-elimination order for θrem , where the weighting w is the trek-weighting. Then, all parameters q ∈ θrem are rationally identifiable if and only if, for each q ∈ θrem , the basis F contains an element that has leading term q · a(θid , σ, h ) for some a ∈ R[θid , σ, h ].
+
+Of course, by Lemma 4.2, whenever the Gröbner basis from Theorem 4.4 contains an identifying polynomial qa (θid , σ, h ) − b(θid , σ, h ), then the parameter q ∈ θ is rationally identifiable. Now, a key observation is that if there is a parameter q ∈ θrem that is rationally identifiably, then it is usually not necessary to compute the full Gröbner basis F in Theorem 4.4. Instead we compute the elements in reduced Gröbner basis F degree by degree. As soon as we obtain an homogenized identifying polynomial for some q ∈ θrem , we can stop the computation. The following corollary certifies that we will find polynomials that have the lowest possible degree with such a strategy. 
+
+Corollary 4.5. Suppose that a graph G = ( V, D, B ) is rationally identifiable. Let ≺ be a total order on θ and let P≺ ⊆ R[θ, σ ] be a set of identifying polynomials such that ID G = deg( P≺). Let 
+
+q ∈ θ and suppose that the set of preceding variables is known to be rationally identifiable, that is, 
+
+{s ∈ θ : s ≺ q} = θid . Moreover, suppose that the w-graded lex-elimination order for θrem is such that 
+
+q is the smallest variable among the θrem -variables. Then, the Groebner basis F from Theorem 4.4 contains a polynomial gq := qa (θid , σ, h ) − b(θid , σ, h ) that satisfies deg w(gq) ≤ ID G · wtrek .
+
+Before describing our full algorithm to verify rational identifiability of a graph G, we study in the next section the complexity of degree-bounded Gröbner basis computations. 
+
+# 5 Degree-Bounded Identification via Adaptive Orderings 
+
+A mixed graph is rationally identifiable if and only if all parameters are rationally identifiably. We now propose an algorithm that recursively certifies parameters to be rationally identifiable. At the beginning we let θid = ∅ and we compute all elements up to a small total degree in the reduced Gröbner basis F of the ideal Iwh with respect to a w-graded lex-elimination order. If F contains a homogenized identifying polynomial for some q ∈ θrem , we add q to the set θid and remove it from the set θrem . We then refine our w-graded lex-elimination order accordingly, and repeat the procedure until we find the next variable that is certified to be rationally identifiable. This procedure is formalized in Algorithm 1. 
+
+Theorem 5.1. Let G = ( V, D, B ) be an acyclic mixed graph. If G is rationally identifiable and 
+
+d ≥ ID G, then Algorithm 1 returns “yes”. If G is not rationally identifiable, then Algorithm 1 returns “no” for all d ∈ N. The computational complexity of Algorithm 1 is of order 
+
+O
+
+
+
+d|V |5{3d|V |} 4αd 2 log(3 d|V |)
+
+,
+
+where α is a constant such that row reduction of a n×n matrix can be performed in O(nα) operations. Moreover, if wtrek ≥ 2d log(3 d|V |), then the complexity of Algorithm 1 is O(d|V |5), and if wtrek ≤ C
+
+for an absolute constant C, then the complexity of Algorithm 1 is O(d|V |5{3d|V |} 2αdC ).
+
+11 Algorithm 1 Degree-bounded identification in a mixed graph 
+
+Input: Generators of the ideal Iwh ⊆ R[θ, σ, h ], maximal degree d ≥ 2.
+
+Initialize: Let θid = ∅ be the rationally identifiable parameters and set θrem = θ \ θid . Let w be the trek-weighting.  
+
+> 1:
+
+Let d′ = d · wtrek where wtrek is the length of the maximal length of a trek in G. 
+
+> 2:
+
+repeat  
+
+> 3:
+
+for k = 1 , . . . , d ′ do  
+
+> 4:
+
+for q ∈ θrem do  
+
+> 5:
+
+Let ≺ be a w-graded lex-elimination order for θrem s.t. q is the smallest element of θrem . 
+
+> 6:
+
+Using a degree-bounded Gröbner basis algorithm, compute the reduced Gröbner basis 
+
+F≤k up to the weighted degree k with respect to the order ≺. 
+
+> 7:
+
+for q ∈ θrem do  
+
+> 8:
+
+if qa (θid , σ, h ) − b(θid , σ, h ) ∈ F≤k then  
+
+> 9:
+
+θid = θid ∪ { q} and θrem = θrem \ { q}. 
+
+> 10:
+
+break all for-loops  
+
+> 11:
+
+end if  
+
+> 12:
+
+end for  
+
+> 13:
+
+end for  
+
+> 14:
+
+end for  
+
+> 15:
+
+until θid = θ or no change has occurred in the last iteration.  
+
+> 16:
+
+Output: “yes” if θid = θ, “no” otherwise. Theorem 5.1 certifies that, for fixed input degree d, Algorithm 1 is quasi-polynomial time in the number of nodes of the graph. If the maximal trek length is either bounded by a constant or grows fast enough with the number of nodes, then the algorithm is polynomial time. The key ingredient to the proof of Theorem 5.1 is the next lemma. It relates the product of all trek weights to the superfactorial. 
+
+Lemma 5.2. Let G = ( V, D, B ) be an acyclic mixed graph. Consider the trek-weighting w defined in (5) and let wtrek be the maximum length of any trek in G. Then, we have 
+
+Y
+
+> u≤v
+
+w(σuv )
+
+
+
+> 4
+
+≥ sf (wtrek ),
+
+where sf (n) = Qni=1 i! is the n-th superfactorial for n ∈ N.
+
+The proof of Theorem 4.4 is based on Lemma 5.2 and the asymptotic behavior of the superfactorial, which is well understood. In particular, we relate the asymptotic behavior of sf (wtrek ) to |V |wtrek ,depending on how fast wtrek growths with the number of nodes |V |.
+
+Remark 5.3. If it is possible to bound ID G by a constant, then our procedure provides a quasi-polynomial time algorithm to check rational identifiability. 
+
+Remark 5.4. We can further reduce the complexity of checking rational identifiability via a graph composition due to Tian (Tian, 2005). For an acyclic mixed graph G = ( V, D, B ), denote by 
+
+C1, . . . , C k the pairwise disjoint node sets of the connected components of the bidirected part (V, B ).Let Bi = B ∩ (Ci × Ci) be the corresponding bidirected edges in the i-th component for all i ∈ [k].Moreover, for all i ∈ [k], let Vi = Ci ∪ { pa (v) : v ∈ Ci} be the nodes obtained as a union of Ci and 12 all parents of nodes in Ci. Finally, let Dj = D ∩ (Vj × Cj ) be the set of directed edges that point from a node v ∈ Vj to a node c ∈ Cj . Then, the Tian decomposition of G is given by the mixed components Gj = ( Vj , D j , B j ) for j = 1 , . . . , k ; see Foygel et al. (2012a, Section 8) for examples. Note that the node sets V1, . . . , V k need not be pairwise disjoint, but the mixed components give a partition of the edges of G. Crucially, an acyclic mixed graph G is rationally identifiable if and only if all of its mixed components G1, . . . , G k are rationally identifiable (Tian, 2005; Foygel et al., 2012a). Therefore, when checking identifiability via Algorithm 1, we always first compute the Tian decomposition, which has low computational complexity. We then apply Algorithm 1 to each component separately. Note that if there are many mixed components in large graphs then this provides a significant reduction of the worst-case complexity stated in Theorem 5.1. We implemented Algorithm 1 in the open-source computer algebra software Macaulay2 (Grayson and Stillman, 2025). Our code is available on GitHub: https://github.com/NilsSturma/ DegBoundedIdentifiability and builds on top of the GraphicalModels package (Améndola et al., 2020). In our implementation, we also return the dehomogenized identifying polynomials. More-over, we stop the algorithm as soon as identifying polynomials for all variables in λ have been found since the identifying polynomials for the remaining variables in ω are then given via the formula in Remark 2.5. 
+
+Example 5.5. The following M2 code uses our implementation of Algorithm 1 to verify rational identifiability of the graph in Figure 3. 
+
+load ("DegBoundedIdentification.m2") M = { {{0, 1, 0, 1}, {0, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 0} }, {{0, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 1}, {0, 0, 1, 0} }}n=4 (A1, A2) = toSequence(M / matrix); D = digraph(toList(1..n), A1); B = bigraph(toList(1..n), A2); G = mixedGraph(D, B); degBd = 2; maxTime = 10; tian = true; DegBoundedIdentification(G, degBd, maxTime, tian) 
+
+Lastly, we note that one might improve the implementation of our algorithm by parallelizing the for-loop in line 4 of Algorithm 1. We leave this open for future work. 13 GP DegBd 0.02  0.05  0.20  0.50  2.00  5.00  20.00 
+
+> Seconds
+
+Figure 4: Boxplots of computing times of the Garcia-Puente algorithm (GP) and Algorithm 1 (DegBd) for certifying rationally identifiable of acyclic mixed graphs on 4 nodes. Note that the scale is logarithmic. 
+
+# 6 Numerical Experiments 
+
+We conduct two small simulation studies to demonstrate the practical applicability of Algorithm 1. We compare our algorithm to the standard method for deciding identifiability using computational algebra developed by Garcia-Puente et al. (2010). All computations were performed on a MacBook Pro (Apple M4 chip, 10-core CPU, 24 GB RAM) using the computer algebra software Macaulay 2, version 1.25.06; see https://github.com/NilsSturma/DegBoundedIdentifiability for the corresponding code. In the first study, we consider all acyclic mixed graphs on |V | = 4 nodes with at most  |V |
+
+> 2
+
+ = 6 
+
+edges. Note that any mixed graph with more than  |V |
+
+> 2
+
+ edges is trivially not generically identifiable since the number of parameters exceeds the dimension of the set of covariance matrices; compare Foygel et al. (2012a, Proposition 2). In total, there are 715 such mixed graphs on 4 nodes. For such graphs, the method of Garcia-Puente et al. (2010) that checks identifiability by computing the whole Gröbner basis in a standard way is computationally feasible. Recall that this method verifies rational identifiability as in Proposition 3.3. We find that in total 343 graphs are rationally identifiable. Using Algorithm 1 with maximal degree d = 5 , we certify the same 343 graphs to be rationally identifiable. For those 343 graphs, Figure 4 shows two histograms of computation times that were needed to certify rational identifiability. On 4 nodes, most times the Garcia-Puente algorithm computes the Gröbner basis immediately. However, there are already a handful of graphs were this method already takes considerably longer time, up to 20 seconds. In contrast, our method via degree-bounded Gröbner bases is very fast for all graphs on 4 nodes. The slight difference 14 # Edges Total GP-ID Time GP DegBd-ID Time DegBd 7 2 1 0.15 1 0.13 9 6 4 0.71 5 0.19 10 8 7 0.69 7 0.17 11 22 13 0.95 13 0.17 12 30 19 1.11 25 0.19 13 43 19 1.48 31 0.22 14 69 21 2.49 53 0.24 15 82 24 1.25 65 0.27 16 91 12 3.34 64 0.32 17 106 5 1.27 75 0.41 18 103 5 1.09 66 0.54 19 91 2 3.19 63 0.72 20 100 - - 68 0.99 21 71 - - 46 1.53 22 56 - - 39 2.13 23 43 - - 30 1.74 24 26 - - 18 3.36 25 18 - - 10 3.81 26 11 - - 6 5.09 27 10 - - 8 3.97 28 5 - - 3 4.70 29 4 - - - -31 3 - - 1 8.44 Table 1: Counts and average computing time of 1000 randomly sampled graphs on 10 nodes. We compare the Garcia-Puente algorithm (GP) with Algorithm 1 (DegBd). in the median runtime is mainly due to the preprocessing steps we do for Algorithm 1, such as computing the trek length grading. For larger examples, this preprocessing is negligible. Note that we were not able to carry-out the Garcia-Puente algorithm on all graphs on m = 5 nodes. There exist more than 100 , 000 such graphs and for many of them the Garcia-Puente algorithm does not finish within reasonable time. Since differences in computing time are greater on larger graphs, we consider a second experimental setup. We randomly generate 1000 acyclic mixed graphs on m = 10 nodes. Both directed and bidirected edges are sampled from an Erdős–Rényi model with edge probability 0.2. Again, we set the maximal degree in Algorithm 1 to d = 5 . Since the Garcia-Puente algorithm does not finish on a large fraction of the sampled graphs within reasonable time, we set a maximal time limit for both algorithms to 10 seconds. Said differently, we compare how many graphs each of the methods is able to identify if we allow a maximal computing time of 10 seconds. Note that in our experience, either the Gröbner basis computations in the Garcia-Puente method finish immediately or almost “never”. Table 1 reports the number of identified graphs and the average computational time needed to certify identifiability among the graphs that are rationally identifiable. While the GP-algorithm only certifies identifiability of 132 graphs in total, Algorithm 1 certifies 697 graphs to be identifiable. Remarkably, for graphs with 20 or more edges, the Garcia-Puente algorithm did 15 not identify any graph while our method is still able to verify rational identifiability of many graphs within reasonable time. 
+
+# 7 Comparison to Existing Sufficient Criteria 
+
+In this section, we show that our algorithm subsumes many polynomial-time sufficient criteria in the literature under a bound on the maximal number of parents. This means that our algorithm certifies rational identifiability for a given input graph if d is large enough whenever the given criteria certify it. A caveat is that the criteria from the literature are polynomial time, while our algorithm is, in general, only quasi-polynomial time. On the other hand, our algorithm provably finds an identification formula up to degree d whenever such a formula exists, while the criteria in the literature are only sufficient conditions. To show that Algorithm 1 subsumes another criterion, observe that by Corollary 4.5 it suffices to show that the criterion yields an identifying order together with a set of identifying polynomials such that the maximum degree of the identifying polynomials is bounded. 
+
+Assumption 7.1. There is a constant s ≥ 1 such that |pa (v)| ≤ s for all v ∈ V .The Half-Trek Criterion by Foygel et al. (2012a, Theorem 1) was a breakthrough in developing sufficient graphical criteria for rational identifiability that run in polynomial time. If a graph G is certified to be rationally identifiable by recursively applying the Half-Trek Criterion, we say that G
+
+is HTC-identifiable. 
+
+Proposition 7.2. Let G be HTC-identifiable and suppose that Assumption 7.1 holds. Then there is an identifying order ≺ and a corresponding set of identifying polynomials P≺ such that max g∈P≺
+
+deg( g) ≤ 2s + 1 .
+
+Next, we consider the Instrumental Cutset criterion by (Kumor et al., 2019, Theorem 5.1). It also runs in polynomial time but only applies to acyclic graphs. A mixed graph G = ( V, D, B ) is acyclic if the induced directed graph (V, D ) is acyclic. If a graph G is certified to be rationally identifiable by recursively applying the Instrumental Cutset criterion, we say that G is IC-identifiable. 
+
+Proposition 7.3. Let an acyclic mixed graph G be IC-identifiable and suppose that Assumption 7.1 holds. Then there is an identifying order ≺ and a corresponding set of identifying polynomials P≺
+
+such that max g∈P≺ deg( g) ≤ 2s + 1 .
+
+Finally, we consider the Auxiliary Cutset criterion, that is, to the best of our knowledge, the current state-of-the art criterion for rational identification of acyclic mixed graphs that runs in polynomial time. If a graph G is certified to be rationally identifiable by the Auxiliary Cutset identification algorithm (Kumor et al., 2020), we say that G is AC-identifiable. 
+
+Proposition 7.4. Let an acyclic mixed graph G be AC-identifiable and suppose that Assumption 7.1 holds. Then there is an identifying order ≺ and a corresponding set of identifying polynomials P≺
+
+such that max g∈P≺ deg( g) ≤ s4 + 2 s3 + s2.
+
+# 8 Conclusion 
+
+We have proposed an algorithm for deciding rational identifiability in linear structural equation models using computational algebra. The algorithm provides a sufficient criterion for identifiability and provably finds all identification formulas up to a prespecified degree in quasi-polynomial time 16 relative to the size of the graph that specifies the model. In graphs that are either highly connected or very sparse, that is, when the maximal trek length grows rapidly or is bounded by a constant, our algorithm runs in polynomial time. Importantly, even when not all causal effects are identifiable within the chosen degree bound, the algorithm still returns all available identification formulas for a subset of the parameters. A key advantage is that these formulas can be applied directly to downstream tasks such as estimation. Moreover, we expect the underlying algebraic theory to extend naturally to settings that allow for feedback loops, in which the graph may contain cycles. We also note that while we focused on the application of Algorithm 1 to linear structural equation models, it can actually be applied to any algebraic statistical model for which there exists a positive weight vector w such that the elimination ideal of the parametrization is homogeneous with respect to the grading. Examples include sparse factor analysis models (Sturma et al., 2026), Lyapunov models (Dettling et al., 2023), and phylogenetic models (Sullivant, 2018, Chapter 15). The most important problem that should be tackled in the future is understanding the growth of the maximal degree that appears in an identification formula with respect to the growth and the structure of the graph. Our complexity results would then directly yield complexity bounds for deciding rational identifiability. 
+
+# Acknowledgments 
+
+The project has received funding from the European Research Council (ERC) under the European Union’s Horizon 2020 research and innovation programme (grant agreement No 883818). Benjamin Hollering was partially supported by the Alexander von Humboldt Foundation. 
+
+# References 
+
+Abbott, J., Bigatti, A. M., and Robbiano, L. (2017). Implicitization of hypersurfaces. Journal of Symbolic Computation , 81:20–40. Améndola, C., Puente, L. D. G., Pons, R. H., Kuznetsova, O., Motwani, H. J., Petrovic, S., Stillman, M., and Sullivant, S. (2020). GraphicalModels: discrete and Gaussian graphical models. Ver-sion 2.0. A Macaulay2 package available at https://github.com/Macaulay2/M2/tree/stable/ M2/Macaulay2/packages .Bollen, K. A. (1989). Structural equations with latent variables . Wiley Series in Probability and Mathematical Statistics: Applied Probability and Statistics. John Wiley & Sons, Inc., New York. Bowden, R. J. and Turkington, D. A. (1984). Instrumental variables , volume 8 of Econometric Society Monographs in Quantitative Economics . Cambridge University Press, Cambridge. Chen, B., Kumor, D., and Bareinboim, E. (2017). Identification and model testing in linear struc-tural equation models using auxiliary variables. In Proceedings of the 34th International Confer-ence on Machine Learning , pages 757–766. JMLR. Chen, B., Pearl, J., and Bareinboim, E. (2016). Incorporating knowledge into structural equation models using auxiliary variables. In Proceedings of the 25th International Joint Conference on Artificial Intelligence , pages 3577–3583. AAAI Press. Cormen, T. H., Leiserson, C. E., Rivest, R. L., and Stein, C. (2009). Introduction to algorithms .MIT Press, Cambridge, MA, third edition. 17 Cox, D. A., Little, J., and O’Shea, D. (2015). Ideals, varieties, and algorithms . Undergraduate Texts in Mathematics. Springer, Cham, fourth edition. Dettling, P., Homs, R., Améndola, C., Drton, M., and Hansen, N. R. (2023). Identifiability in continuous Lyapunov models. SIAM Journal on Matrix Analysis and Applications , 44(4):1799– 1821. Dörfler, J., van der Zander, B., Bläser, M., and Liśkiewicz, M. (2024). On the complexity of identification in linear structural causal models. In Advances in Neural Information Processing Systems , volume 37, pages 100108–100130. Curran Associates, Inc. Drton, M. and Weihs, L. (2016). Generic identifiability of linear structural equation models by ancestor decomposition. Scandinavian Journal of Statistics. Theory and Applications , 43(4):1035– 1045. Ene, V. and Herzog, J. (2012). Gröbner bases in commutative algebra , volume 130 of Graduate Studies in Mathematics . American Mathematical Society, Providence, RI. Faugére, J.-C. (1999). A new efficient algorithm for computing Gröbner bases (F4). Journal of Pure and Applied Algebra , 139(1-3):61–88. Faugère, J.-C. (2002). A new efficient algorithm for computing Gröbner bases without reduction to zero (F5). In Proceedings of the 2002 International Symposium on Symbolic and Algebraic Computation , pages 75–83. ACM, New York. Faugère, J.-C., Safey El Din, M., and Verron, T. (2016). On the complexity of computing Gröbner bases for weighted homogeneous systems. Journal of Symbolic Computation , 76:107–141. Finch, S. R. (2019). Mathematical constants. II , volume 169 of Encyclopedia of Mathematics and its Applications . Cambridge University Press, Cambridge. Foygel, R., Draisma, J., and Drton, M. (2012a). Half-trek criterion for generic identifiability of linear structural equation models. The Annals of Statistics , 40(3):1682–1713. Foygel, R., Draisma, J., and Drton, M. (2012b). Supplement to half-trek criterion for generic identifiability of linear structural equation models. The Annals of Statistics , 40(3). Garcia-Puente, L. D., Spielvogel, S., and Sullivant, S. (2010). Identifying causal effects with com-puter algebra. In Proceedings of the 26th Conference on Uncertainty in Artificial Intelligence .AUAI Press. Grayson, D. R. and Stillman, M. E. (2025). Macaulay2, a software system for research in algebraic geometry. Version 1.25.11, available at https://www.macaulay2.com .Hernán, M. and Robins, J. (2025). Causal Inference: What If . Chapman & Hall/CRC Monographs on Statistics & Applied Probab. CRC Press. Kreuzer, M. and Robbiano, L. (2005). Computational commutative algebra. 2 . Springer-Verlag, Berlin. Kumor, D., Chen, B., and Bareinboim, E. (2019). Efficient identification in linear structural causal models with instrumental cutsets. In Advances in Neural Information Processing Systems , vol-ume 32, pages 12477–12486. Curran Associates, Inc. 18 Kumor, D., Cinelli, C., and Bareinboim, E. (2020). Efficient identification in linear structural causal models with auxiliary cutsets. In Proceedings of the 37th International Conference on Machine Learning , volume 119 of Proceedings of Machine Learning Research , pages 5501–5510. PMLR. Mayr, E. W. (1997). Some complexity results for polynomial ideals. Journal of Complexity ,13(3):303–325. Pearl, J. (2009). Causality . Cambridge University Press, Cambridge, second edition. Spirtes, P., Glymour, C., and Scheines, R. (2000). Causation, prediction, and search . Adaptive Computation and Machine Learning. MIT Press, Cambridge, MA, second edition. Sturma, N., Kranzlmueller, M., Portakal, I., and Drton, M. (2026). Matching criterion for identifi-ability in sparse factor analysis. Psychometrika , page 1–20. Sullivant, S. (2018). Algebraic statistics , volume 194 of Graduate Studies in Mathematics . American Mathematical Society, Providence, RI. Sullivant, S., Talaska, K., and Draisma, J. (2010). Trek separation for Gaussian graphical models. 
+
+The Annals of Statistics , 38(3):1665–1685. Tian, J. (2005). Identifying direct causal effects in linear models. In Proceedings of the 20th National Conference on Artificial Intelligence , pages 346–352. Association for the Advancement of Artificial Intelligence, AAAI Press. Tian, J. (2009). Parameter identification in a class of linear structural equation models. In Proceed-ings of the 21st International Joint Conference on Artificial Intelligence , pages 1970–1975. AAAI Press. Voros, A. (1987). Spectral functions, special functions and the Selberg zeta function. Communica-tions in Mathematical Physics , 110(3):439 – 465. Weihs, L., Robinson, B., Dufresne, E., Kenkel, J., Kubjas Reginald McGee II, K., Reginald, M. I., Nguyen, N., Robeva, E., and Drton, M. (2017). Determinantal generalizations of instrumental variables. Journal of Causal Inference , 6(1). Wright, P. G. (1928). Tariff on Animal and Vegetable Oils . Macmillan Company, New York. Wright, S. (1921). Correlation and causation. Journal of agricultural research , 20(7):557 – 585. Wright, S. (1934). The method of path coefficients. The Annals of Mathematical Statistics ,5(3):161–215. 19 Appendix 
+
+# A Proofs of Sections 2 - 4 
+
+Proof of Lemma 2.7. If q is rationally identifiable, then by Lemma 2.6 the ideal I contains an element of the form qa (σ) − b(σ) with a, b ∈ R[σ] ⊆ R[θid , σ ] and a̸ ∈ ker( τG) = I ∩ R[σ]. Since a is a polynomial only in σ, it follows that a̸ ∈ I ∩ R[θid , σ ].Conversely, suppose that I contains an element of the form qa (θid , σ ) − b(θid , σ ) with a, b ∈ R[θid , σ ]
+
+and a̸ ∈ I ∩ R[θid , σ ], which implies that q = b(θid ,τ G(σ))  
+
+> a(θid ,τ G(σ))
+
+. Since all variables ¯q ∈ θid are rationally identifiable, there exist polynomials ¯a, ¯b ∈ R[σ] such that ¯a̸ ∈ ker( τG) and τG(¯b)/τ G(¯ a) = ¯ q. By plugging in τG(¯b)/τ G(¯ a) for each ¯q ∈ θid , it follows that 
+
+q = τG(eb(σ)) 
+
+τG(ea(σ)) (6) for polynomials ea, eb ∈ R[σ] that we obtain from clearing denominators and using that τG is a ring homomorphism. Equation (6) implies that qea − eb ∈ I . Since τG(ea) can not be the zero polynomial, we also have that ea̸ ∈ ker( τG). Hence, we conclude by Lemma 2.6 that q is rationally identifiable. 
+
+Proof of Proposition 3.3. The statement directly follows from the proof of Algorithm 1 in Foygel et al. (2012a, Appendix, Section 8), also see Garcia-Puente et al. (2010, Proposition 4). We also refer to the proof of our Theorem 4.4, which implies the statement. 
+
+Proof of Proposition 4.1. By the definition of the trek weighting, each polynomial σw(σuv ) 
+
+> uv
+
+−
+
+τG(σuv )wh is w-homogeneous. Hence, the ideal ¯I is w-homogeneous with respect to the trek weight-ing w. For Claim (i), note that the generators σuv − τG(σuv ) form a Groebner basis F of I with respect to any w-graded elimination order for σ in R[θ, σ ]. This is true since the leading mono-mial of σuv − τG(σuv ) is given by σuv and therefore any pair of leading monomials of the gener-ators are relatively prime, which means that all S-polynomials of the generators reduce to zero modulo F , see Cox et al. (2015, Chapter 2). We conclude that the w-homogenized polynomials 
+
+(σuv − τG(σuv )) wh = σuv − τG(σuv )wh are a basis of Iwh , see Theorem 4 in Cox et al. (2015, Section 8.4). To show Claim (ii), consider a polynomial f ∈ I ∩ R[θid , σ ]. It follows that f wh ∈ I wh ∩ R[θid , σ, h ],and thus we have shown the inclusion “ ⊇”. On the other hand, if f ∈ I wh ∩ R[θid , σ, h ], then f deh ∈
+
+(Iwh ∩R[θid , σ, h ]) deh and hence f deh ∈ (Iwh )deh ∩R[θid , σ ] = I ∩ R[θid , σ ]. But if f deh ∈ I ∩ R[θid , σ ],then it must also be the case that f ∈ (I ∩ R[θid , σ ]) wh .
+
+Proof of Lemma 4.2. First, note that by Proposition 4.1 (ii), it holds that Iwh ∩ R[θid , σ, h ] = (I ∩ R[θid , σ ]) wh . Now, suppose that q ∈ θrem is rationally identifiable. Then, by Lemma 2.7, the ideal I contains an element of the form qa (θid , σ )−b(θid , σ ) with a, b ∈ R[θid , σ ] and a̸ ∈ I ∩ R[θid , σ ].Hence, the ideal Iwh contains the polynomial (qa (θid , σ ) − b(θid , σ )) wh = q˜a(θid , σ, h ) − ˜b(θid , σ, h )
+
+with ˜a, ˜b ∈ R[θid , σ, h ]. Since ˜adeh = a and a̸ ∈ I ∩ R[θid , σ ], it holds that ˜a̸ ∈ (I ∩ R[θid , σ ]) wh .For the other direction, suppose that the ideal Iwh contains an element of the form qa (θid , σ, h ) −
+
+b(θid , σ, h ) with a, b ∈ R[θid , σ, h ] and a̸ ∈ I wh ∩ R[θid , σ, h ]. It follows that the dehomogenized polynomial qa (θid , σ, h )deh − b(θid , σ, h )deh is an element of I and a(θid , σ, h )deh ̸ ∈ I ∩ R[θid , σ ]. We conclude by Lemma 2.7 that q is rationally identifiable. 20 Proof of Theorem 4.4. Since F is a reduced Gröbner basis of an homogeneous ideal, it consists of w-homogeneous polynomials. Let ≺gr be a w-graded lex-elimination order for θrem . Consider the induced non-graded lex-elimination order ≺ for θrem . Then F is also a reduced Gröbner basis with respect to this order since the leading terms and hence the S-polynomials coincide. By the elimination theorem, it follows that H = F ∩ R[θid , σ, h ] is a reduced Gröbner basis of Iwh ∩
+
+R[θid , σ, h ].Now, assume that q is rationally identifiable, which implies by Lemma 4.2 that Iwh contains a polynomial f (q, θ id , σ, h ) = qa (θid , σ, h )−b(θid , σ, h ) with a, b ∈ R[θid , σ, h ] and a̸ ∈ I wh ∩R[θid , σ, h ].We reduce a by H to get a remainder ea. Since a̸ ∈ I wh ∩ R[θid , σ, h ], the remainder ea is nonzero, which also implies that ea̸ ∈ I wh ∩R[θid , σ, h ]. Now, consider the modified polynomial ef (q, θ id , σ, h ) = 
+
+qea(θid , σ, h ) − b(θid , σ, h ). Since F is a Gröbner basis of Iwh , the leading term of ef is divisible by some leading term of some polynomial in F . But since ea is already reduced by H, the leading term of ef is not divisible by any leading monomial of any element of H. Hence, it must be divisible by some element g ∈ F \ H whose leading term has a nonzero degree in at least one of the variables in θrem . But in order to divide the leading term of ef , the leading term g must have degree one in q
+
+and degree zero in all variables in θrem \ { q}. Thus, we can conclude that g ∈ F is of the required form. Conversely, suppose that F contains a polynomial with leading term qa (θid , σ, h ) for some a ∈
+
+R[θid , σ, h ]. Since F is a reduced Gröbner basis with respect to a lex-elimination order, this poly-nomial must be of the form qa (θid , σ, h ) − b(θ, σ, h ) where b only contains θ-variables smaller that θ
+
+with respect to the lexicographic order on R[θrem ]. Moreover, a does not reduce to zero by reduction of H, that is, a̸ ∈ I wh ∩ R[σ, θ id , h ]. By Lemma 4.2, it follows that q is rationally identifiable if all smaller variables in θrem are rationally identifiable. Since we assume that F contains such a polynomial for all q ∈ θrem , it follows that all q ∈ θ are rationally identifiable. 
+
+Proof of Corollary 4.5. By Definition 2.8, the ideal I contains a polynomial of the form qa (θid , σ ) −
+
+b(θid , σ ) with a, b ∈ R[θid , σ ] and a̸ ∈ I ∩ R[θid , σ ], which is of degree at most ID G. By w-homogenizing, it follows as in the proof of Lemma 4.2 that Iwh contains a polynomial f (q, θ id , σ, h ) = 
+
+qa f (θid , σ, h ) − bf (θid , σ, h ) with af , b f ∈ R[θid , σ, h ] and af̸ ∈ I wh ∩ R[θid , σ, h ]. Moreover, note that 
+
+deg w(f ) ≤ ID G · wtrek by the definition of the trek-weighting and the way w-homogenization is defined. By Theorem 4.4 and since q is the smallest among the θ-variables, we conclude that the Groebner basis F contains a polynomial gq := qa (θid , σ, h ) − b(θid , σ, h ). Since this polynomial has leading term that divides the leading term of f , and the Groebner basis F is given with respect to a w-graded order, we conclude that it must also be the case that deg w(gq) ≤ ID G · wtrek .
+
+# B Proof of Theorem 5.1 
+
+The proof of Theorem 5.1 is based on three lemmas. The first is Lemma 5.2 which is given in the main text. It relates the product of all trek weights to the superfactorial. 
+
+Proof of Lemma 5.2. Consider a trek π of length wtrek in G. It is either of the form 
+
+v1 ← · · · ← vk ↔ vk+1 → · · · → vwtrek +1 ,
+
+or of the form 
+
+v1 ← · · · ← vk = vk+1 → · · · → vwtrek +1 .
+
+By the definition of a trek, the nodes v1, . . . , v k are pairwise distinct and the nodes vk+1 , . . . , v wtrek +1 
+
+are pairwise distinct, but the sets {v1, . . . , v k} and {vk+1 , . . . , v wtrek +1 } are allowed to intersect. 21 However, any node v ∈ V may at most appear twice on the trek π.Now, consider any integer i ∈ { 1, . . . , w trek }. Note that there is a trek in G from vs to vs+wtrek −i+1 
+
+for all s = 1 , . . . , i . Hence, it holds that w(σvsvs+wtrek −i+1 ) ≥ wtrek − i + 1 for all s = 1 , . . . , i .Moreover, for any two possibly equal nodes u, v ∈ V , it holds that there are at most four pairs of integers {l, t } ⊆ { 1, . . . , w trek + 1 } such that σuv = σvlvt . We conclude that 
+
+Y
+
+> u≤v
+
+w(σuv )
+
+
+
+> 4
+
+≥
+
+> wtrek
+
+Y
+
+> i=1
+
+(wtrek − i + 1) i
+
+= w1 
+
+> trek
+
+· (wtrek − 1) 2 · · · 1wtrek 
+
+= wtrek ! · (wtrek − 1)! · · · 1! = sf (wtrek ).
+
+The next lemma is about the asymptotic equivalence of the superfactorial. 
+
+Lemma B.1. Let n ∈ N and consider the n-th superfactorial sf (n) = Qni=1 i!. Then, for any non-decreasing function f : N → N with lim n→∞ f (n) = ∞, we have 
+
+lim  
+
+> n→∞
+> 12
+
+f (n)2 log( f (n)) log( sf (f (n))) = 1 .
+
+Proof. Since f is non-decreasing and lim n→∞ f (n) = ∞, it is enough to consider the identity function, i.e., f (n) = n for all n ∈ N. For n → ∞ , we obtain from the Stirling expansion of the Barnes G-function that 
+
+log( sf (n)) = 12 n2 log( n) − 34 n2 + 12 n log(2 π) − 112 log( n) + 112 − log( A) + O
+
+ 1
+
+n
+
+
+
+(7) see, for example, Voros (1987, Appendix). Here, the constant A is the Glaisher–Kinkelin constant (Finch, 2019, Section 2.15). The statement of the lemma now follows directly from Equation (7). The last lemma is needed for proving the case wtrek ≥ 2d log(3 d|V |) in Theorem 5.1. 
+
+Lemma B.2. Let n ∈ N and consider the n-th superfactorial sf (n) = Qni=1 i!. Let d ≥ 1 and let 
+
+f : N → N be a non-decreasing function such that f (n) ≥ log(3 dn )2 d. Then 
+
+(3 dn )2df (n)
+
+sf (f (n)) 1/4 = O(1) .
+
+Proof. In this proof, we let C ≥ 1 be an absolute constant (not depending on d and n) that might change its value from place to place. By Lemma B.1, we have − log( sf (f (n))) ≤ − 12 Cf (n)2 log( f (n)) .It follows that 
+
+log (3 dn )2df (n)
+
+sf (f (n)) 1/4
+
+!
+
+= 2 df (n) log(3 dn ) − 14 log( sf (f (n))) 
+
+≤ C
+
+
+
+2df (n) log(3 dn ) − 18 f (n)2 log( f (n)) 
+
+
+
+≤ C
+
+
+
+2df (n) log(3 dn ) − 18 f (n) log( f (n)) log(3 dn )2 d
+
+
+
+= C
+
+
+
+2df (n) log(3 dn )(1 − 18 log( f (n)) 
+
+
+
+.
+
+22 For large n, the term 1 − 18 log( f (n)) becomes negative due to the assumption that f (n) ≥
+
+log(3 dn )2 d, that is, lim n→∞ f (n) = ∞. Therefore, taking the exponential on both sides in the above inequality concludes the proof. 
+
+Proof of Theorem 5.1. If G is rationally identifiable and d ≥ ID G, it follows directly from Corol-lary 4.5 that Algorithm 1 returns “yes”. Moreover, it returns “no” if G is not rationally identifiable due to Theorem 4.4. Hence, it is left to show the statement about the complexity. Note that the number of directed and bidirected edges in a graph is each smaller than  |V |
+
+> 2
+
+ ≤ | V |2, and that the maximum length wtrek of a trek in an acyclic graph G is bounded above by 2|V | − 1 ≤ 2|V |. It follows that, in Algorithm 1, we compute a degree-bounded Groebner basis at most 
+
+d w trek |θ|2 = d w trek (|D| + |B| + |V |)2 = O(d |V |5)
+
+times. Therefore, we have by Proposition 3.5 that the worst case-complexity is given by 
+
+O d|V |5 1(Q 
+
+> u≤v
+
+w(σuv )) α
+
+2|V |2 + dw trek − 1
+
+dw trek 
+
+α!
+
+,
+
+where we used that the numbers of variables in the ring R[λ, ω, σ, h ] is given by 
+
+|D| + |B| + |V | +
+
+|V | + 1 2
+
+
+
++ 1 ≤
+
+|V |
+
+2
+
+
+
++
+
+|V |
+
+2
+
+
+
++ |V | +
+
+|V | + 1 2
+
+
+
++ 1 = |V |2 +
+
+|V | + 1 2
+
+
+
++ 1 
+
+≤ 2|V |2.
+
+Now, observe first that 
+
+2|V |2 + dw trek − 1
+
+dw trek 
+
+
+
+= O({2|V |2 + dw trek − 1}dw trek )= O({2|V |2 + d(2 |V | + 1) − 1}dw trek )= O({3d|V |2}dw trek ) = O({3d|V |} 2dw trek ),
+
+where we have used that d ≥ 2 in the input to Algorithm 1. If wtrek ≤ 2d log(3 d|V |), then the worst case complexity of Algorithm 1 is clearly given by 
+
+O
+
+
+
+d|V |5{3d|V |} 4αd 2 log(3 d|V |)
+
+.
+
+Similarly, If wtrek ≤ C for an absolute constant C, then the worst case complexity of Algorithm 1 is given by O  d|V |5{3d|V |} 2αdC  . The remaining case is where wtrek ≥ 2d log(3 d|V |). But in this case, Lemma 5.2 and Lemma B.2 imply that the complexity of Algorithm 1 is bounded by 
+
+O(d|V |5). We conclude the proof by noting that both d|V |5{3d|V |} 2αdC and d|V |5 are of the order of d|V |5{3d|V |} 4αd 2 log(3 d|V |).
+
+# C Proofs of Section 7 
+
+Proof of Proposition 7.2. If a graph is HTC-identifiable, then the identifying polynomials for the parameters λ are given as follows. Let pa (v) = {p1, . . . , p k} be the set of parents of a node v ∈ V .23 Moreover, let Y 1 
+
+> v
+
+, Y 2 
+
+> v
+
+⊆ V be two disjoint sets such that |Y 1 
+
+> v
+
+|+|Y 2 
+
+> v
+
+| = k and let Y 1 
+
+> v
+
+⊔Y 2 
+
+> v
+
+= {y1, . . . , y k}
+
+be their union. Define a matrix A and a vector b as 
+
+Aij =
+
+(
+
+[( I − Λ) ⊤Σ] yipj if yi ∈ Y 1 
+
+> v
+
+,
+
+Σyipj if yi ∈ Y 2 
+
+> v
+
+, and bi =
+
+(
+
+[( I − Λ) ⊤Σ] yiv if yi ∈ Y 1 
+
+> v
+
+,
+
+Σyiv if yi ∈ Y 2 
+
+> v
+
+.
+
+For each j ∈ [k], we consider the polynomials λpj v det( A)−det( Aj ), where Aj is formed by replacing the j-th column of A by b. HTC-identifiability implies that there exist sets Y 1 
+
+> v
+
+, Y 2 
+
+> v
+
+⊆ V of the above form for each node v ∈ V such that the polynomials λpj v det( A)−det( Aj ) are identifying polynomials for all λpj v with respect to an identifying order ≺. In particular, the order ensures that the set Y 1
+
+> v
+
+only contains nodes such that the matrix A and the vector b only contain variables λwy that precede 
+
+λpv with respect to ≺. Now, observe that, for each v ∈ V , the entries of A and b are polynomials of degree at most 2, which implies by Assumption 7.1 that det( A) and det( Aj ) are polynomials of degree at most 2pa (v) ≤ 2s.To conclude the proof, we place all parameters ωuv after the parameters λ in the identifying order. By Remark 2.5, this yields identifying polynomials for all parameters ωuv of degree at most 3 ≤
+
+2s + 1 .
+
+Proof of Proposition 7.3. IC-identifiability implies that there is an identifying order ≺ on the pa-rameters λ. Consider a variable λxy ∈ λ and let θid = {λij ∈ λ : λij ≺ λxy } be the preceding variables that are already certified to be rationally identifiable by the IC criterion. Let Λid be the matrix with entries Λid  
+
+> ij
+
+= λij if λij ∈ θid and Λid  
+
+> ij
+
+= 0 else. Then, the identifying polynomial for λxy 
+
+is of the following form. Let T ⊆ pa (y) \ { x} be a subset of the parents of y, and denote T ⊔ { x} = {t1, . . . , t k}. Moreover, let S1, S 2 ⊆ V be two disjoint sets of nodes such that |S1| + |S2| = k, and let S1 ⊔ S2 = {s1, . . . , s k}
+
+be their union. Define a matrix A and a vector b as 
+
+Aij =
+
+(
+
+[( I − Λid )⊤Σ] sitj if si ∈ S1,
+
+Σsitj if si ∈ S2, and bi =
+
+(
+
+[( I − Λid )⊤Σ( I − Λid )] siy if si ∈ S1,
+
+[Σ( I − Λid )] siy if si ∈ S2.
+
+Recall that x = tj for some j ∈ [k]. We consider the polynomial λxy det( A) − det( Aj ), where Aj is formed by replacing the j-th column of A by b. IC-identifiability implies that there exist sets S1, S 2
+
+and T of the above form such that the polynomial λxy det( A) − det( Aj ) is an identifying polynomial for λxy with respect to ≺.It remains to observe that the entries of A are polynomials of degree at most 2, and that the entries of b are polynomials of degree at most 3. By Assumption 7.1 we conclude that det( A) is a polynomial of degree at most 2pa (y) ≤ 2s and that det( Aj ) is a polynomial of degree at most 
+
+2pa (y) + 1 ≤ 2s + 1 . Hence, the degree of the identifying polynomial λxy det( A) − det( Aj ) is at most 2s + 1 .To conclude the proof, we place all parameters ωuv after the parameters λ in the identifying order. By Remark 2.5, this yields identifying polynomials for all parameters ωuv of degree at most 3 ≤
+
+2s + 1 .
+
+Proof of Proposition 7.4. AC-identifiability implies that there is an identifying order ≺ on the vari-ables λ. Consider a variable λxy ∈ λ and let θid = {λij ∈ λ : λij ≺ λxy } be the preceding variables that are already certified to be rationally identifiable by the AC criterion. Let Λid be the matrix with entries Λid  
+
+> ij
+
+= λij if λij ∈ θid and Λid  
+
+> ij
+
+= 0 else. Now, we will construct the identifying polynomial for λxy . Let T ⊆ pa (y) \ { x} be a subset of the parents of y, and let S = {s1, . . . , s k} ⊆ V be another set of nodes such that |S| = |T | + 1 = k.24 Define the k × k matrix 
+
+[( I − Λid − D)⊤Σ] S,T ∪{ x}.
+
+Here, for two sets C, Z ⊆ V such that |C| = |Z|, the |V | × | V | matrix D is defined as 
+
+Dvw =
+
+  
+
+> det(Σ ∗
+> Z, (C\{ v})∪{ w})det(Σ Z,C )
+
+if v ∈ C, 
+
+0 else ,
+
+where Σ∗
+
+> Z, (C\{ v})∪{ w}
+
+) is the matrix ΣZ,C with the column indexed by v replaced by [Σ( I − Λid )] Z,w .We consider the polynomial 
+
+λxy det([( I − Λid − D)⊤Σ] S,T ∪{ x}) − det([( I − Λid − D)⊤Σ] ∗ 
+
+> S,T ∪{ y}
+
+), (8) where [( I − Λid − D)⊤Σ] ∗  
+
+> S,T ∪{ y}
+
+is the matrix [( I − Λid − D)⊤Σ] S,T ∪{ x} with the column indexed by 
+
+x replaced by [( I − Λid − D)⊤Σ( I − Λid )] S,y .AC-identifiability implies that there exist sets S, T, C and Z of the above form with |C| = |Z| ≤ s
+
+such that, after clearing denominators in (8) by multiplying with det(Σ Z,C )s, the resulting polyno-mial gxy is an identifying polynomial for λxy with respect to ≺. It remains to bound the degree of gxy . The polynomial det(Σ Z,C )s has at most degree s2 and the polynomial det(Σ −v, +wZ,C ) has at most degree s + 1 . It follows that the degree of gxy is at most s2(s(s + 2) + 1) = s4 + 2 s3 + s2.To conclude the proof, we place all parameters ωuv after the parameters λ in the identifying order. By Remark 2.5, this yields identifying polynomials for all parameters ωuv of degree at most 3 ≤
+
+s4 + 2 s3 + s2.25

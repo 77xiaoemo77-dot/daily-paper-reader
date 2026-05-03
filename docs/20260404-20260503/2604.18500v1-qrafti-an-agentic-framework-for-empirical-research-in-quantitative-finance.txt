@@ -1,0 +1,268 @@
+Title: QRAFTI: An Agentic Framework for Empirical Research in Quantitative Finance
+
+URL Source: https://arxiv.org/pdf/2604.18500v1
+
+Published Time: Tue, 21 Apr 2026 02:50:04 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# QRAFTI: An Agentic Framework for Empirical Research in Quantitative Finance 
+
+Terence Lim 1, 2 , Kumar Muthuraman 2, Michael Sury 2
+
+> 1
+
+Graphen Inc., 2The University of Texas at Austin 
+
+Abstract 
+
+Quantitative financial research is a multi-stage process that typically involves generating ideas grounded in economic intuition, acquiring and cleaning data, constructing signals and factors, backtesting portfolios, adjusting for risk, evalu-ating robustness to model uncertainty and data-mining bias, and producing research reports that enable peer verification. Recent advances in agentic AI—that is, LLM-centered systems that can plan, invoke external tools, and revise actions in response to observed outputs—create an opportunity to assist parts of this workflow while potentially improving reproducibility and explainability. We introduce QRAFTI, a multi-agent framework intended to emulate parts of a quantitative research team and support equity factor research on large financial panel datasets. It integrates an empirical research toolkit for panel data with MCP servers that expose data access, factor construction, and custom coding operations as callable tools. Through this archi-tecture, QRAFTI can help replicate established factors, formulate and test new signals, and generate standardized research reports accom-panied by narrative analysis and computational traces. Our initial evaluations suggest that, on multi-step empirical research tasks, the system offers better performance and explainability us-ing chained tool calls and reflection-based plan-ning than dynamic code generation alone. 
+
+1 Introduction 
+
+Systematic equity investing involves discovering and validating predictors of the cross-section of stock returns—commonly referred to as charac-teristics , signals , or factors . A contemporary em-pirical finance workflow commonly includes: (1) generating signals and factor portfolios grounded in economic intuition, (2) evaluating them on large 
+
+panel datasets spanning broad cross-sectional uni-verses over multiple decades, and (3) conducting robustness and implementability checks. This re-search process is data-intensive and often sensi-tive to implementation choices: seemingly minor decisions, such as universe screens, lag conven-tions, breakpoint definitions, and weighting rules, can materially affect empirical results. The result-ing “factor zoo” (Cochrane, 2011) reflects both a large hypothesis space and a substantial body of published predictors, together with uneven stan-dards for replication and implementability (Chen and Zimmermann, 2022; Jensen et al., 2023; Novy-Marx and Velikov, 2023). At the same time, large language models have evolved from static text generators into tool-using, agentic systems capable of decomposing tasks, in-voking external programs, and refining plans based on observed outputs (Yao et al., 2022; Schick et al., 2023; Yang et al., 2023). In finance, this devel-opment has motivated growing interest in domain-specific models and agent benchmarks (Li et al., 2024a; Lee et al., 2024; Wu et al., 2023b; Robinson, 2025). This project brings these developments together by evaluating a multi-agent system intended to sup-port core components of empirical asset-pricing research workflows, with an emphasis on repro-ducibility and explainability beyond factor discov-ery alone. Our design is motivated by the observation that empirical asset-pricing research is a multi-step pro-cess in which LLMs can lose track of prior re-sults or evaluation goals during long, interdepen-dent workflows (Liu et al., 2024b; Laban et al., 2025). In response, we adopt a multi-agent archi-tecture with specialized roles, a constrained tool in-terface over panel-data operations that standardizes recurring financial computations, reflection-based planning, and structured logging and reporting that make intermediate decisions easier to inspect and reproduce. We then examine whether these design choices improve the execution of representative factor-research workflows relative to less structured 1
+
+> arXiv:2604.18500v1 [cs.MA] 20 Apr 2026
+
+configurations, while also supporting reproducibil-ity and evaluation through computational traces and diagnostics. We introduce QRAFTI (“Quantitative Research Assistants with Financial Tools and Intelligence”), a tool-augmented, agent-based framework 1 de-signed to reproduce core elements of an empiri-cal research pipeline. QRAFTI translates open-ended natural-language research requests into ex-plicit multi-step computations by coordinating spe-cialized agents that invoke factor-research tools and write and execute custom code when the available tools are insufficient. It produces structured logs of relationships between intermediate and final ar-tifacts, which can be visualized as a computation graph, and standardized research diagnostics, in-cluding controls for known factors and stratified robustness checks: these features are intended to make multi-step research pipelines easier to inspect, reproduce, and audit. 
+
+2 Related Work 
+
+2.1 Financial asset pricing 
+
+Asset-pricing research typically begins with eco-nomic intuition—for example, risk-based expla-nations, behavioral biases, or market frictions— and proposes return predictors to be tested in the cross-section (Ang, 2014). The Capital Asset Pric-ing Model (CAPM) links expected returns to mar-ket beta, but its empirical limitations motivated the development of multi-factor models, includ-ing the canonical market, size, and value factors (Fama and French, 1993). The Fama–French five-factor model extends this framework by incorpo-rating profitability and investment factors, improv-ing explanatory power in many settings (Fama and French, 2015). In practice, such models serve as benchmarks for risk adjustment and alpha estima-tion, factor-spanning tests, and baselines for port-folio evaluation. Two foundational empirical methodologies are: (1) portfolio sorts (Fama and French, 1993), and (2) cross-sectional regressions (Fama and MacBeth, 1973). Both approaches begin by analyzing the data cross-sectionally one period at a time and then studying the resulting time series of statis-tics, thereby mitigating the effect of cross-sectional dependence on statistical inference.  
+
+> 1Code, documentation and an Internet Appendix support-ing this work in progress are available in https://github. com/terence-lim/quant-agents
+
+2.2 Replication and the factor zoo 
+
+The resulting empirical literature contains hundreds of proposed predictors, many of which may be fragile under replication, multiple-testing adjust-ments, or transaction-cost-aware evaluation (Har-vey et al., 2016; Hou et al., 2020; DeMiguel et al., 2024; Detzel et al., 2023). A central challenge in modern finance is distinguishing genuine risk fac-tors from statistical artifacts generated by extensive data mining (Mishra et al., 2024). This difficulty is often compounded by “ p-hacking,” whereby pres-sure to publish significant results encourages ex-post theoretical rationalizations for random pat-terns (Novy-Marx and Velikov, 2025), rather than ex-ante, theory-driven hypotheses. To address this problem, researchers have argued that the conven-tional threshold of |t| ≈ 2 is too permissive in large-scale exploratory settings. For example, Har-vey et al. (2016) propose substantially higher hur-dles for validating new discoveries. Replication-oriented datasets and open-source implementations have therefore become increas-ingly important in empirical asset pricing. Chen and Zimmermann (2022) provide code and data for reproducing a large set of published predictors, while Hou et al. (2020) shows that many anomalies weaken under more careful implementation stan-dards. Novy-Marx and Velikov (2023) propose a standardized diagnostic framework for assessing whether a newly proposed signal is truly distinct or merely a repackaging of an existing anomaly, and whether it remains economically meaningful once practical constraints are considered. Their framework includes signal diagnostics for distribu-tional properties and turnover, predictability checks for both raw and risk-adjusted returns, and global controls that evaluate marginal predictive power relative to a broad factor universe. 
+
+2.3 LLMs and agentic systems 
+
+Agentic AI frameworks increasingly emphasize tool integration, role specialization, and task del-egation (Sapkota et al., 2026). Tool-augmented LLMs replace “best-effort” natural-language rea-soning with grounded computation, where models can learn when and how to invoke tools in a self-supervised manner (Schick et al., 2023). Multi-agent orchestration frameworks such as AutoGen and MetaGPT provide reusable interaction patterns and role definitions for complex workflows (Wu et al., 2023a; Hong et al., 2024). Other frame-2works, including Reflexion and Self-Refine, rely on self-critique to help agents detect errors and im-prove their strategies during task execution (Shinn et al., 2023; Madaan et al., 2023). Agentic systems are also being applied to scientific discovery. For example, Gao et al. (2024) survey AI agents in biomedical discovery, and Swanson et al. (2025) demonstrate Virtual Lab in which an LLM “princi-pal investigator” coordinates specialist agents and human collaborators to design and validate SARS-CoV-2 nanobodies. 
+
+2.4 Finance-focused LLM agents 
+
+Recent work on finance-focused LLM agents has begun to formalize how agentic systems can sup-port investment research and trading beyond single-turn idea generation. Yuan et al. (2024) describe a multi-agent architecture spanning alpha mining, modeling, and analysis, while Cheng and Chin (2025) combine memory-augmented LLM anal-ysis of financial news with traditional quantita-tive factors. In factor discovery, Li et al. (2024b) emphasize diversity-aware prompting and expe-rience reuse, Duan et al. (2025) study iterative multi-agent critique for factor refinement, and Han et al. (2026) propose trajectory-level evolutionary search with consistency constraints. Deng and Wang (2025) studies a tool-orchestrated agent that actively gathers heterogeneous financial informa-tion and is optimized with reinforcement learn-ing, while Lopez-Lira (2025) develops a market simulation in which prompt-defined LLM traders interact through a realistic trading environment and exhibit strategy-consistent behavior. Huang and Fan (2026) demonstrate a closed-loop agentic framework to iteratively discover economically in-terpretable factors. Benchmarking efforts such as InvestorBench formalize financial decision prob-lems in interactive environments and evaluate mul-tiple backbone models (Li et al., 2024a). While multi-agent frameworks can materially improve performance on portfolio-management analytics (Kundu et al., 2025), they may best be viewed as supervised research assistants rather than fully au-tonomous financial decision-makers (Batra et al., 2025). 
+
+3 Methodology 
+
+3.1 A multi-agent research team 
+
+QRAFTI uses a multi-agent architecture in which specialized agents, shown in Figure 1, work to-gether to emulate the workflow of a quantitative research team (with approximate human-equivalent roles shown in parentheses): • Factor Research Agent (“Research Ana-lyst”): interprets the user’s request, decom-poses the task, selects tools, and maintains the factor-construction pathway. • Standardized Reporting Agent (“Risk Man-ager”): generates standardized diagnostics and the narrative research report. • Code Writing Agent (“Quant Developer”): dynamically produces and executes Python code when a task exceeds the available toolset or requires custom analysis or visualization. This role specialization is motivated by multi-agent systems research and by evidence that spe-cialized components can reduce error rates in com-plex tasks (Sapkota et al., 2026). 
+
+3.2 Data collection and pre-processing 3.2.1 Data sources 
+
+High-quality factor research commonly relies on CRSP (“Center for Research in Security Prices”) for stock returns and market equity, and on S&P Compustat for accounting fundamentals, which are the same databases typically used in the studies we aim to replicate. Many academic and corporate institutions already subscribe to these databases, allowing researchers to access them, often through WRDS 2. Linking across data vendors requires sta-ble identifiers (e.g., PERMNO), together with care-ful calendar alignment for other identifiers (e.g., GVKEY and CUSIP). QRAFTI’s preprocessing pipeline applies these transformations so that down-stream research tools operate on consistent panels of raw data. 
+
+3.2.2 Data pre-processing 
+
+The raw CRSP Stocks Monthly and Compustat Annual files are preprocessed into persisted Panel 
+
+datasets, enabling QRAFTI to use the Panel API and MCP tools for downstream factor-research op-erations. Several issues specific to financial data commonly arise in this setting, such as survivor-ship bias, identifier changes, and corporate actions such as distributions and delistings. CRSP and  
+
+> 2Wharton Research Data Services (WRDS) was used in preparing this report. This service and the data available thereon constitute valuable intellectual property and trade secrets of WRDS and/or its third-party suppliers.
+
+3Figure 1: Agentic framework for empirical research in quantitative finance 
+
+Compustat already address many of these con-cerns. During preprocessing into panel datasets, all data items were aligned in time, and anoma-lous values—for example, negative quantities in contexts where only non-negative values are eco-nomically meaningful—were removed. Prepro-cessing also incorporated several conventions from the literature, including adjustments for delisting returns, share-class aggregation, and investment-universe screens (Shumway, 1997; Bessembinder, 2026; Fama and French, 1993). A catalog lookup tool, using Retrieval-Augmented Generation (RAG), maps natural-language references to stock characteristics already collected and preprocessed as panel datasets, allow-ing users or agents to select the most relevant panel data items by identifier or description. 
+
+3.3 Panel data class and API 
+
+Many empirical asset-pricing computations can be expressed as operations on a T × N panel of ob-servations indexed by time and asset. QRAFTI encapsulates this structure in a Panel class, allow-ing operations to be specified and analyzed at a higher level—for example, “apply a cross-sectional transform each month” or “estimate a rolling trend statistic for every asset.” By automating common panel-data operations such as winsorization, quan-tile binning, rolling transformations, and portfolio aggregation, the framework aims to reduce imple-mentation variance across studies and simplify tool design. 
+
+3.4 Tool calling 
+
+Tools expose empirical-finance operators as doc-umented callable functions that LLM agents can select and invoke while carrying out research tasks. 
+
+3.4.1 Tool design 
+
+A central design principle in QRAFTI is that a large share of factor research can be expressed through a relatively small set of reliable operators: • Primitive operations: binary and unary math-ematical operators. • Cross-sectional transforms: winsorization, standardization, quantile binning, and mask-ing or universe restriction. • Time-series transforms: rolling aggrega-tions, lagging, and resampling at different fre-quencies. • Portfolio construction: mapping characteris-tics to portfolio weights and portfolio weights to realized returns. • Reporting: standardized evaluation templates aligned with replication protocols. QRAFTI exposes these capabilities as callable tools through the Model Context Protocol (MCP), a standardized client-server architecture that helps reduce the overhead of linking heterogeneous sys-tems. This design is particularly useful in empirical finance, where research workflows often rely on 4multiple external data sources and a consistent set of recurring empirical operations. 
+
+3.4.2 Dynamic code generation and execution 
+
+When built-in tools are insufficient, the Coding Agent writes and executes custom Python code drawing on concise documentation for the Panel 
+
+API. In quantitative-finance agent frameworks, dy-namic code generation expands the range of solv-able tasks, but also introduces failure modes such as subtle bugs and incomplete workflows (Kundu et al., 2025). To mitigate these risks, QRAFTI prefers tool calls whenever possible, while record-ing executed code and outputs for auditability. 
+
+3.5 Planning and reflection 
+
+Reflection-style planning employs a pattern in which a model does not simply generate a plan and execute it immediately. Instead, it first drafts a plan, critiques that plan, and then revises it before acting (Liu et al., 2024a; Madaan et al., 2023). In QRAFTI, a self-reflection prompt operationalizes these ideas by requiring the Research Agent to pass through three distinct stages: • Phase 1 (Drafting): The agent proposes a sequential set of steps to answer the user’s query—for example, a natural-language re-quest describing how to construct a financial factor—using only the validated toolset and panel-data structures. • Phase 2 (Critique): The agent audits the pro-posed plan to determine whether each step is technically implementable and whether the overall logic satisfies the research objective without introducing missing steps, invalid as-sumptions, or unnecessary inefficiencies. • Phase 3 (Refinement): The agent produces a revised and corrected plan based on the pre-ceding critique. The key idea is to make self-critique an explicit intermediate step rather than concealing it within a single reasoning pass, reducing the risk that the Research Agent will prematurely commit to flawed logic. 
+
+3.6 Context compaction 
+
+Empirical research workflows often involve ex-tended multi-step turns. LLMs may fail to recover relevant information embedded in long inputs (Liu et al., 2024b) or become “lost” during multi-turn conversations (Laban et al., 2025). When the con-versation history becomes too dense, a context-compaction step can be triggered to distill the most important information into a structured summary. This process uses a specialized LLM call to trans-form raw chat logs into a condensed representation that tracks each computed panel identifier, includ-ing its data inputs, transformations, and dependen-cies. 
+
+3.7 Implementation 
+
+The system uses the Pydantic-AI framework (Py-dantic, 2026), which provides a type-safe environ-ment ensuring that model outputs and tool param-eters conform to strict schemas. Its integration with OpenTelemetry and Pydantic Logfire addition-ally enables detailed performance monitoring, cost tracking, and real-time tracing of agent trajecto-ries. QRAFTI provides a user interface (UI) with interactive dashboards implemented in Streamlit. Computation graphs provide a visual representation of task dependencies and information flow across tool calls, where each constructed factor is repre-sented as a directed acyclic graph from raw inputs to final outputs. It also includes a command-line interface (CLI) that allows users to interact with agents directly, without going through the UI. This allows the system to be integrated into scripts and automated workflows, enabling researchers to pro-grammatically manage repeated experiments and collect results in a more systematic way. We used Python 3.13 for development and set the temperature of Gemini 2.5-Pro to 0. The appendix provides visual examples of the Streamlit-based UI in operation. 
+
+4 Evaluation 
+
+4.1 Agentic evaluation 
+
+When evaluating an agentic research system, the relevant object of study is an end-to-end work-flow that includes planning, tool use, and reporting. Autonomous-agent frameworks have often been shown to fail because errors compound across mul-tiple steps, underscoring the importance of evaluat-ing such systems at the workflow level rather than solely in terms of single-turn accuracy (Yang et al., 2023). Inspection of QRAFTI’s trace records and com-putation graphs helps assess whether the system correctly translates a natural-language query into 5a complete empirical specification, including data selection, lag structure, and factor operations. Con-sistency in the counts of rows and months with non-null values in intermediate and final data artifacts, relative to the reference, provides an additional au-dit indicator that the workflow is producing the intended shape, coverage, and temporal footprint. Quantitatively, we assess QRAFTI by how closely the intermediate and final artifacts it generates—such as derived characteristics, quantile ranks, portfolio weights, and factor returns—match reference implementations. Cosine similarity treats series values as vectors and measures the size of the angle between them. Scores range from -1 to 1, with higher values indicating greater similarity. 
+
+4.2 Experiments 
+
+Our experiments employed QRAFTI agents to replicate empirical research designs from textual descriptions using tool calls and to write and exe-cute custom code when built-in tools were insuffi-cient. 
+
+4.2.1 Replication from textual descriptions 
+
+A canonical application is the replication of spread factors such as value (high book-to-market minus low book-to-market) or price momentum (past win-ners minus past losers). Given a natural-language description of the research specification includ-ing lag structure, breakpoints, quantile or stan-dardization procedures, and weighting conventions, QRAFTI’s Factor Research Agent generates an explicit tool-execution plan. Through reflection prompting, these plans may also be verified and corrected before execution. • HML-style workflow with multiple turns: 
+
+replicates the HML value factor following the workflow described in Fama and French (1993) and Hasler (2021) with multi-turn queries shown in Figure 2. • JKP-style price momentum workflow with reflection-based planning: replicates the price-momentum factor using the JKP-style workflow described in Jensen et al. (2023) with a single reflection-style query in Figure 3. 
+
+4.2.2 Dynamic code generation and execution 
+
+Not all workflows can be expressed through a fixed toolset. When the agent encounters a miss-ing capability—for example, computing an expo-                                                                                                                                                                         
+
+> Construct book equity as stockholder equity ( seq ) minus the book value of preferred stock , where preferred stock is defined as the redemption (pstkrv ) , liquidation ( pstkl ) , or par value (pstk ) , if available , in that order . Each December , divide book equity of afirm 'sfiscal year - end at or before December by the company market capitalization ( CAPCO ) at the end of the year . Then construct book -to - market equity in June as the lagged values from the previous December . Sort stocks independently on market equity ( CAP ) into small and big stocks using the median market capitalization of all stocks traded on the NYSE as breakpoints , and on book -to - market equity into growth , neutral , and value stocks using the 30 th and 70 th percentiles of book -to -market equity of all stocks traded on the NYSE as breakpoints . Form portfolios as the intersection of these sorts . The portfolios are weighted by market equity (CAP ). The HML factor portfolio is the average of asmall and abig value portfolio minus the average of asmall and abig growth portfolio in each month . Finally , create ascatter plot of the factor returns against its benchmark returns ( with panel ID '
+> HML ') .
+
+Figure 2: Fama-French HML-workflow user queries 
+
+nentially weighted stock-volatility characteristic— QRAFTI delegates the task to a code-writing and execution agent. This agent writes Python code against the Panel API, executes it, and returns both the code and the resulting artifact (that is, the iden-tifier of a newly created Panel dataset), which can subsequently be used in later tool calls. Review-ers may also inspect the generated code and test it deterministically. 
+
+5 Results and Discussion 
+
+5.1 Results of experiments 
+
+The final output artifacts from the two replication experiments were compared with benchmark factor-return series (named HML and ret_12_1_vw_cap 
+
+respectively) obtained from the websites of Ken French 3 and Jensen et al. (2023) 4. The scatter plots in Figure 4 indicate strong agreement between the constructed panels and the reference benchmark returns, with observations lying close to the 45-degree line. In the dynamic coding experiment, the system generated the custom code shown in Figure 5, with 
+
+> 3
+
+https://mba.tuck.dartmouth.edu/pages/faculty/ ken.french/data_library.html 
+
+> 4
+
+https://jkpfactors.com/ 
+
+6Please use these three phases of the self - reflection prompt technique to perform the query below . Phase 1: Consider the entire query , and suggest asequential order of steps to perform the query . Phase 2: To reflect and self - critique , check that each step is implementable with available tools and that the steps can efficiently satisfy the objective of the query ; you may query the user to provide any needed definitions . Phase 3: Provide the corrected plan , but do not execute the steps yet . Query : Define price momentum characteristic as stocks ' past 12 months returns skipping one month . Sort stocks into characteristic terciles ( top / middle / bottom third ) with breakpoints based on non -micro stocks , where micro stocks are all stocks whose market capitalization is below the NYSE 20 th percentile . For each tercile , compute its " capped value " weighted portfolio , meaning that we weight stocks by their market equity winsorized at the NYSE 80 th percentile . The factor returns are then defined as the top -tercile portfolio return minus the bottom -tercile portfolio return . Create a scatter plot of the factor returns against its benchmark returns ( Panel ID ' 
+
+> ret_12_1_ret_vw_cap ') .
+
+Figure 3: Price momentum JKP-workflow user query 
+
+Figure 4: Scatter plots of constructed panels against reference benchmark factor returns 
+
+output that also matched the reference implementa-tion. 5
+
+5.2 Performance by task complexity and configuration 
+
+We also conduct ablation studies to examine perfor-mance under two restrictions: using only dynamic code generation (i.e., without access to the broader toolset), and removing reflection-based planning prompts for multi-step tasks. We define 1-step tasks as the first instruction in each multi-step workflow query, 2-step tasks as the first two instructions, and multi-step tasks as the full workflow instructions from the two replication examples. In these experiments, each agent is asked to an-
+
+> 5
+
+Full conversation histories and outputs of the experiments are available in the Internet Appendix.                                                                
+
+> from qrafti import Panel , DATES import pandas as pd import json def ewma_helper ( df : pd . DataFrame ) -> pd . Series : """ Computes the exponentially - weighted moving average for aseries .""" #Persistence factor =1-alpha #alpha =1-0.94 =0.06 return df . iloc [: , 0]. ewm ( alpha =0.06 , min_periods =12 , adjust = False ). mean () #Load the input panel input_panel =Panel () . load (" _164 " , ** DATES ) #Apply the EWMA calculation for each stock using the trend method result_panel =input_panel . trend ( ewma_helper ). save () #Print the resulting panel 'spayload as aJSON string print ( json . dumps ( result_panel . as_payload () ))
+
+Figure 5: Listing of custom code generated 
+
+swer every query five times, which allows us to evaluate both accuracy and consistency across re-peated trials. For each task, we report Sim@k for 
+
+k ∈ { 1, 2, 5}, defined as the expected maximum cosine similarity between the reference panel and a set of k generated outputs sampled from the n
+
+attempts. This metric is similar in spirit to Pass@k 
+
+(Kulal et al., 2019), but replaces exact correctness with cosine similarity to a benchmark reference panel. Here, we relax the requirement of an ex-act match because outputs may differ slightly from benchmark reference panels even when they are substantively correct, owing to minor implementa-tion choices and the large underlying and output datasets. Specifically, for task i with output yi,j on the j-th of n attempts: 
+
+sim@ ki = 1
+
+ nk
+
+ X
+
+S∈S n,k 
+
+max 
+
+j∈S cos 
+
+
+
+yi,j , y ref 
+
+i
+
+
+
+,
+
+where Sn,k denotes the set of all size-k subsets of {1, . . . , n }, and cos( ·, ·) denotes the cosine sim-ilarity. The final metric is the average across N
+
+tasks: 
+
+Sim@k = 1
+
+N
+
+NX
+
+i=1 
+
+sim@k i
+
+Hence, analogous to Pass@k, Sim@k measures the expected quality of the best result from k ran-domly selected attempts, where quality is defined by cosine similarity with the reference panel rather than exact correctness. Table 1 shows that access to the full toolset im-proves performance as task complexity increases, 7Task Complexity Configuration Sim@1 Sim@2 Sim@5                      
+
+> 1-step All tools 0.9675 0.9881 1.0000 Coding-tool only 0.7213 0.9330 1.0000 2-step All tools 1.0000 1.0000 1.0000 Coding-tool only 0.5910 0.8281 0.9826 Multi-step All tools 0.7435 0.9263 0.9760 All tools + reflection-planning 0.9858 0.9908 0.9927
+> Table 1: Average performance by task complexity and configuration
+
+while reflection-based planning is important on multi-step workflows. For 1-step and 2-step tasks, the all-tools configuration achieves near-perfect performance from the first attempt, whereas the coding-tool-only configuration performs worse, es-pecially on 2-step tasks, where Sim@1 and Sim@2 are only 0.59 and 0.83. In the full multi-step set-ting, using all tools without reflection-planning yields only moderate one-shot performance, though repeated attempts improve results substantially, while adding reflection-based planning raises per-formance from the first attempt. 
+
+5.3 Autonomous generation and testing of new factors 
+
+Beyond replication, QRAFTI can also serve as an “idea-to-evidence” engine. It can generate candi-date factor ideas from a high-level prompt, imple-ment them rapidly, and evaluate them using the same standardized diagnostic framework applied to established factors. Given a broad hypothesis, the agent proposes one or more candidate implementa-tions expressed as explicit formulas using available variables. It then translates these formulas into tool calls or code and produces a complete empir-ical evaluation by delegating to the standardized research-report agent. As an example, we provide QRAFTI with an open-ended query instructing it to suggest and test a factor reflecting “the invest-ment philosophy of the renowned investor Warren Buffett.” The system responded by constructing a standardized combination of quality and value. The quality side blends four signals: profitability via return on equity, gross profitability (gross profits relative to assets), low stock-return volatility over a 36-month window, and low leverage measured by debt-to-assets; lower volatility and leverage are inverted so that higher scores always indicate bet-ter quality. All accounting variables are lagged six months, then aggregated first into a Quality Score and a Value Score, and finally into a single “Buffett-style” quality-at-a-reasonable-price factor. These factor construction steps are represented as a com-putation graph through the UI. The Appendix also shows that a tercile spread implementation strategy had a negative Sharpe ratio, but a positive alpha after controlling for its inverse sensitivity to the market. Evaluating proposed factors as genuinely in-vestable signals remains an open challenge in em-pirical asset pricing (Feng et al., 2020). Pure out-of-sample validation is difficult in real time. Atruly clean out-of-sample test often requires wait-ing years for new data (French, 2022; Baz, 2024), while post-publication performance may also decay because of both data-snooping and market adapta-tion (Lo and MacKinlay, 1990; McLean and Pon-tiff, 2016). Furthermore, results are often sensitive to implementation details and assumptions about transaction costs. These concerns motivated Novy-Marx and Velikov (2023) to propose a diagnostic protocol that reduces researcher degrees of freedom and makes the evaluation of new signals more trans-parent, replicable, and economically interpretable. We adapt their framework to design a report that provides a more structured assessment of whether a candidate signal is likely to reflect a real and usable source of return, rather than a fragile in-sample artifact. 
+
+5.3.1 Standardized research reporting 
+
+QRAFTI’s Report Agent produces these standard-ized diagnostics along with a narrative summary, as shown in the Appendix. These outputs should be read together. A signal is more convincing when it performs well across multiple diagnostics, while strong results in one table should be viewed cau-tiously if other sections show weak coverage, mi-crocap concentration, high turnover costs, or sensi-tivity to small implementation choices. • Coverage by Period. This section summa-rizes subperiod coverage using metrics such as the fraction of securities represented and the share of total market capitalization cov-ered. A signal that works only in narrow win-dows or on a small subset of stocks is less 8credible as a general return predictor. • Spread Portfolio Summary Statistics. This section reports descriptive statistics for the long-short return spread formed on the can-didate characteristic. These statistics give an initial sense of economic magnitude and re-turn distribution, but a high average return or Sharpe ratio is not enough if it vanishes after risk adjustment or depends mainly on small stocks. • Alpha, Coefficients, and t-Statistics by Model. This section reports intercepts and factor loadings from time-series regressions under alternative benchmark models. These results help assess whether the spread portfo-lio appears to earn abnormal returns after con-trolling for common risks. Given the multiple-testing concerns emphasized by Harvey et al. (2016), a new signal is more convincing when its risk-adjusted alpha remains comfortably above a t-statistic of about 3.0, not just 1.96. • Alpha and t-Statistics by Model and Size Quantile. This section breaks the evidence down by firm size. These diagnostics help show whether performance, measured by aver-age returns and alphas under alternative bench-mark models, is concentrated in smaller, less liquid stocks. Many anomalies are strongest where arbitrage is limited and trading costs are highest (Lam and Wei, 2011; Lam et al., 2020). A signal is more credible as an in-vestable strategy when its performance is not limited to the smallest firms. 
+
+6 Conclusion 
+
+The integration of agentic AI could alter how quan-titative research workflows are executed. The re-searcher’s role may shift away from manual data manipulation and coding toward the design and management of agentic research assistants. In this setting, AI could take on repetitive tasks in factor construction, portfolio implementation and prelimi-nary analysis, allowing human researchers to focus more on research design, validation, and economic interpretation. QRAFTI provides a practical foundation for moving from chat-style LLMs toward tool-grounded, multi-agent systems for empirical fi-nance. By combining a panel-data abstraction, MCP-exposed research tools, computation-graph traceability, standardized reporting, and dashboard-based monitoring, it demonstrates how LLM-based agents can support quantitative research workflows while emphasizing reproducibility and explainabil-ity. More extensive evaluation across a wider range of tasks, datasets, and configurations would provide a better assessment of robustness and generalizabil-ity. 
+
+Disclaimer 
+
+The views expressed here are those of the authors alone and not of Graphen, Inc. 
+
+References                    
+
+> Andrew Ang. 2014. Asset Management: A Systematic Approach to Factor Investing .Oxford University Press, New York. Devesh Batra, Conor Hamill, John Hartley, Ramin Okhrati, Dale Seddon, Harvey Miller, Raad Khraishi, and Greig Cowan. 2025. A review of LLM agent applications in finance and banking.
+> SSRN Electronic Journal .Available at SSRN: https://ssrn.com/abstract=5381584. Jamil Baz. 2024. The alpha equation: Myths and reali-ties. https://www.pimco.com/us/en/insights/ the-alpha-equation-myths-and-realities .PIMCO, accessed 2026-03-20. Hendrik Bessembinder. 2026. One hundred years in the u.s. stock markets. SSRN Working Paper. Available at SSRN: https://ssrn.com/abstract=6438198 ;
+> https://doi.org/10.2139/ssrn.6438198 .Andrew Y. Chen and Tom Zimmermann. 2022. Open source cross-sectional asset pricing. Critical Finance Review , 11(02):207–264. Junyan Cheng and Peter Chin. 2025. Empirical asset pricing with large language model agents. Preprint ,arXiv:2409.17266. John H. Cochrane. 2011. Presidential address: Discount rates. The Journal of Finance , 66(4):1047–1108. Victor DeMiguel, Alberto Martín-Utrera, and Raman Uppal. 2024. A multifactor perspective on volatility-managed portfolios. Journal of Finance , 79(6):3859– 3891. Zheye Deng and Jiashu Wang. 2025. Alphaquanter: An end-to-end tool-orchestrated agentic reinforce-ment learning framework for stock trading. Preprint ,arXiv:2510.14264. Andrew Detzel, Robert Novy-Marx, and Mihail Ve-likov. 2023. Model comparison with transaction costs. Journal of Finance , 78(3):1743–1775.
+
+9Yitong Duan, Chuheng Zhang, and Jian Li. 2025. Fac-tormad: A multi-agent debate framework based on large language models for interpretable stock alpha factor mining. In Proceedings of the 6th ACM Inter-national Conference on AI in Finance , ICAIF ’25, page 605–613, New York, NY, USA. Association for Computing Machinery. Eugene F. Fama and Kenneth R. French. 1993. Com-mon risk factors in the returns on stocks and bonds. 
+
+Journal of Financial Economics , 33(1):3–56. Eugene F. Fama and Kenneth R. French. 2015. A five-factor asset pricing model. Journal of Financial Eco-nomics , 116(1):1–22. Eugene F. Fama and James D. MacBeth. 1973. Risk, return, and equilibrium: Empirical tests. Journal of Political Economy , 81(3):607–636. Guanhao Feng, Stefano Giglio, and Dacheng Xiu. 2020. Taming the factor zoo: A test of new factors. The Journal of Finance , 75(3):1327–1370. Kenneth R. French. 2022. Five things i know about investing. https:// www.dimensional.com/us-en/insights/ five-things-i-know-about-investing . Di-mensional, accessed 2026-03-20. Shanghua Gao, Ada Fang, Yepeng Huang, Valentina Giunchiglia, Ayush Noori, Jonathan Richard Schwarz, Yasha Ektefaie, Jovana Kondic, and Marinka Zitnik. 2024. Empowering biomedical dis-covery with ai agents. Cell , 187(22):6125–6151. Jun Han, Shuo Zhang, Wei Li, Zhi Yang, Yifan Dong, Tu Hu, Jialuo Yuan, Xiaomin Yu, Yumo Zhu, Fangqi Lou, Xin Guo, Zhaowei Liu, Tianyi Jiang, Ruichuan An, Jingping Liu, Biao Wu, Rongze Chen, Kunyi Wang, Yifan Wang, and 5 others. 2026. Quantaal-pha: An evolutionary framework for llm-driven alpha mining. Preprint , arXiv:2602.07085. Campbell R. Harvey, Yan Liu, and Heqing Zhu. 2016. ... and the cross-section of expected returns. The Review of Financial Studies , 29(1):5–68. Mathias Hasler. 2021. Is the value premium smaller than we thought? SSRN Working Paper 3886984, Social Science Research Network (SSRN). Ac-cessed: February 25, 2026. Sirui Hong, Mingchen Zhuge, Jiaqi Chen, Xiawu Zheng, Yuheng Cheng, Ceyao Zhang, Jinlin Wang, Zili Wang, Steven Ka Shing Yau, Zijuan Lin, Liyang Zhou, Chenyu Ran, Lingfeng Xiao, Chenglin Wu, and Jürgen Schmidhuber. 2024. Metagpt: Meta pro-gramming for a multi-agent collaborative framework. 
+
+Preprint , arXiv:2308.00352. Kewei Hou, Chen Xue, and Lu Zhang. 2020. Repli-cating anomalies. The Review of Financial Studies ,33(5):2019–2133. Allen Yikuan Huang and Zheqi Fan. 2026. Beyond prompting: An autonomous framework for system-atic factor investing via agentic ai. arXiv preprint arXiv:2603.14288 .Theis Ingerslev Jensen, Bryan Kelly, and Lasse Heje Pedersen. 2023. Is there a replication crisis in fi-nance? The Journal of Finance , 78(5):2465–2518. Sumith Kulal, Panupong Pasupat, Kartik Chandra, Mina Lee, Oded Padon, Alex Aiken, and Percy Liang. 2019. Spoc: Search-based pseudocode to code. Preprint ,arXiv:1906.04908. Sayani Kundu, Dushyant Sahoo, Victor Li, Jennifer Rabowsky, and Amit Varshney. 2025. A multi-agent framework for quantitative finance: An application to portfolio management analytics. In Proceedings of EMNLP 2025 Industry Track .Philippe Laban, Hiroaki Hayashi, Yingbo Zhou, and Jennifer Neville. 2025. Llms get lost in multi-turn conversation. Preprint , arXiv:2505.06120. F. Y. Eric C. Lam, Ya Li, Wikrom Prombutr, and K. C. John Wei. 2020. Limits-to-arbitrage, invest-ment frictions, and the investment effect: New evi-dence. European Financial Management , 26(1):3– 43. F.Y. Eric C. Lam and K.C. John Wei. 2011. Limits-to-arbitrage, investment frictions, and the asset growth anomaly. Journal of Financial Economics ,102(1):127–149. Jean Lee, Nicholas Stevens, Soyeon Caren Han, and Minseok Song. 2024. A survey of large lan-guage models in finance (finllms). arXiv preprint arXiv:2402.02315 .Haohang Li, Yupeng Cao, Yangyang Yu, Shashid-har Reddy Javaji, Zhiyang Deng, Yueru He, Yuechen Jiang, Zining Zhu, Koduvayur Subbalakshmi, Guojun Xiong, Jimin Huang, Lingfei Qian, Xueqing Peng, Qianqian Xie, and Jordan W. Suchow. 2024a. In-vestorbench: A benchmark for financial decision-making tasks with llm-based agent. arXiv preprint arXiv:2412.18174 .Zhiwei Li, Ran Song, Caihong Sun, Wei Xu, Zhengtao Yu, and Ji-Rong Wen. 2024b. Can large language models mine interpretable financial factors more ef-fectively? a neural-symbolic factor mining agent model. In Findings of the Association for Compu-tational Linguistics: ACL 2024 , pages 3891–3902, Bangkok, Thailand. Association for Computational Linguistics. Fengyuan Liu, Nouar AlDahoul, Gregory Eady, Yasir Zaki, and Talal Rahwan. 2024a. Self-reflection makes large language models safer, less biased, and ideologically neutral. arXiv preprint arXiv:2406.10400 .
+
+10 Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paran-jape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024b. Lost in the middle: How language models use long contexts. Transactions of the Asso-ciation for Computational Linguistics .Andrew W. Lo and A. Craig MacKinlay. 1990. Data-snooping biases in tests of financial asset pricing models. The Review of Financial Studies , 3(3):431– 467. Alejandro Lopez-Lira. 2025. Can large language mod-els trade? testing financial theories with llm agents in market simulations. Preprint , arXiv:2504.10789. Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Kumar Shridhar, Shun Wang, and 1 others. 2023. Self-refine: Iterative refinement with self-feedback. Preprint , arXiv:2303.17651. R. David McLean and Jeffrey Pontiff. 2016. Does aca-demic research destroy stock return predictability? 
+
+The Journal of Finance , 71(1):5–32. Shibi Mishra, Shveta Singh, and Alok Misra Misra. 2024. (re)emergence of the factor zoo debate: a bib-liometric review. International Journal of Emerging Markets , 19(11):3154–3181. Accessed: February 25, 2026. Robert Novy-Marx and Mihail Velikov. 2023. Assaying anomalies. SSRN Electronic Journal .Robert Novy-Marx and Mihail Velikov. 2025. Ai-powered (finance) scholarship. Working Paper 33363, National Bureau of Economic Research. Pydantic. 2026. Pydanticai: Genai agent framework, the pydantic way. https://ai.pydantic.dev/ . Ac-cessed 2026-02-25. Matt Robinson. 2025. Man group builds inter-nal alphagpt. https://www.ai-street.co/p/ man-group-s-alphagpt . AI Street, accessed 2026-04-05. Ranjan Sapkota, Konstantinos I. Roumeliotis, and Manoj Karkee. 2026. Ai agents vs. agentic ai: A conceptual taxonomy, applications and challenges. 
+
+Information Fusion , 126:103599. Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: Language models can teach themselves to use tools. 
+
+arXiv preprint arXiv:2302.04761 .Noah Shinn, Federico Cassano, Edward Berman, Ash-win Gopinath, Karthik Narasimhan, and Shunyu Yao. 2023. Reflexion: Language agents with verbal rein-forcement learning. Preprint , arXiv:2303.11366. Tyler Shumway. 1997. The delisting bias in crsp data. 
+
+The Journal of Finance , 52(1):327–340. K. Swanson, W. Wu, N. L. Bulaong, and 1 others. 2025. The virtual lab of ai agents designs new sars-cov-2 nanobodies. Nature . Published online 2025. Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Beibin Li, Erkang Zhu, Li Jiang, Xiaoyun Zhang, Shaokun Zhang, Jiale Liu, Ahmed Hassan Awadal-lah, Ryen W White, Doug Burger, and Chi Wang. 2023a. Autogen: Enabling next-gen llm appli-cations via multi-agent conversation. Preprint ,arXiv:2308.08155. Shijie Wu, Ozan Irsoy, Steven Lu, Vadim Dabravolski, Mark Dredze, Sebastian Gehrmann, Prabhanjan Kam-badur, David Rosenberg, and Gideon Mann. 2023b. Bloomberggpt: A large language model for finance. 
+
+arXiv preprint arXiv:2303.17564 .Hui Yang, Sifu Yue, and Yunzhong He. 2023. Auto-gpt for online decision making: Benchmarks and addi-tional opinions. arXiv preprint arXiv:2306.02224 .Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. 2022. React: Synergizing reasoning and acting in language models. arXiv preprint arXiv:2210.03629 .Hang Yuan, Saizhuo Wang, and Jian Guo. 2024. Alpha-gpt 2.0: Human-in-the-loop ai for quantitative invest-ment. Preprint , arXiv:2402.09746. 
+
+A Appendix 
+
+A.1 User interface demonstration 
+
+Figures 6 and 7 display user interaction with QRAFTI, showing the conversation histories and outputs generated, including a computation graph and standardized diagnostics report. In this session, the user began with an open-ended prompt asking the system to suggest and test a factor that reflects the “investment philosophy of the renowned investor Warren Buffett.” The system responded with a description of a composite factor it had hypothesized, the data items it would retrieve, and the steps required to compute the intermedi-ate and final panels. Upon the user’s request, the system presented a standardized diagnostic report together with narrative analysis, as well as a compu-tation graph that visually represents dependencies and information flow across tool calls. Each con-structed factor is shown as a directed acyclic graph, tracing the process from raw inputs to final outputs. 11 Figure 6: UI Demo: Conversation history 
+
+12 Figure 7: UI Demo: Computation graph and standardized research report with narrative analysis 
+
+13

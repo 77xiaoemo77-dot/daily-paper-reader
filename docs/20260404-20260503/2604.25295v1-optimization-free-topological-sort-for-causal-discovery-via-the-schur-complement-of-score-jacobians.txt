@@ -1,0 +1,1552 @@
+Optimization-Free Topological Sort for Causal
+Discovery via the Schur Complement of Score
+Jacobians
+Rui Wu
+School of Computer Science and Engineering
+University of Science and Technology of China
+wurui22@mail.ustc.edu.cn
+Hong Xie∗
+School of Computer Science and Engineering
+University of Science and Technology of China
+hongx87@ustc.edu.cn
+Abstract
+Continuous causal discovery typically couples representation learning with struc-
+tural optimization via non-convex acyclicity penalties, which subjects solvers to
+local optima and restricts scalability in high-dimensional regimes. We propose a
+decoupled paradigm that shifts the causal discovery bottleneck from non-convex
+optimization to statistical score estimation. We introduce the Score-Schur Topo-
+logical Sort (SSTS), an algorithm that extracts topological order directly from
+unconstrained generative models, bypassing constrained structure optimization.
+We establish that the causal hierarchy leaves a geometric signature within the score
+function: iterative graph marginalization is mathematically equivalent to com-
+puting the Schur complement of the Score-Jacobian Information Matrix (SJIM)
+under linear conditions. This translates the acyclicity constraint into an algebraic
+procedure with a dominant cost of O(d3) operations. For non-linear systems, we
+formulate the expectation gap of Schur marginalization and introduce Block-SSTS
+to compress extraction depth, bounding structural error. Empirically, SSTS allows
+causal structural analysis on non-linear graphs up to d = 1000. At this scale, our
+framework indicates that once the non-convex optimization bottleneck is mathemat-
+ically bypassed, the structural fidelity of continuous causal discovery is bounded
+by the finite-sample estimation variance of the global score geometry. By reducing
+graph extraction to matrix operations, this work reframes scalable causal discovery
+from a constrained optimization problem to a statistical estimation challenge.
+1
+Introduction
+Discovering the underlying directed acyclic graph (DAG) from observational data is a core problem
+in statistical machine learning [13, 20]. Combinatorial search methods are constrained by expo-
+nential scaling. Zheng et al. [24] introduced NOTEARS, which established a continuous algebraic
+characterization of acyclicity (tr(eW ◦W ) = d), enabling gradient-based optimization algorithms [1].
+While offering computational advantages over search algorithms, continuous constrained optimization
+faces a persistent bottleneck: acyclicity penalties are non-convex. When applied to high-dimensional
+∗Corresponding author.
+Preprint.
+arXiv:2604.25295v1  [cs.LG]  28 Apr 2026
+
+
+Stage 1: Generative Modeling
+Stage 2: Algebraic Structure Discovery
+1. Input Data
+X ∈RN×d
+ANM Manifold
+2. Pre-trained Score
+minθ E∥sθ −∇log p∥2
+2
+∇xsθ Extraction
+3. Sparse Hessian
+ˆI ≈
+1
+N
+P −∇xsθ
+w/ Group Lasso ℓ1,2
+4. Score-Schur Sort
+Block Marginalization
+arg min(ˆIii) ⇒Leaf
+DAG G
+Representation
+Learning
+Algebraic
+Extraction
+Lasso
+Pruning
+Geometric Signature
+O(d) Iters
+Figure 1: Decoupled Architecture of SSTS. Stage 1 optimizes an unconstrained density estimator
+to capture the data manifold. Stage 2 executes a structure-optimization-free algebraic extraction.
+Mapping iterative leaf-node marginalization as the Schur complement of the estimated Score-Jacobian
+Information Matrix replaces constrained acyclicity optimization with deterministic algebraic elimina-
+tion (exact under linear Gaussian conditions, approximate otherwise).
+or non-linear data, optimizers converge to local minima, producing structural false discoveries.
+Mitigating this necessitates hyperparameter tuning alongside heuristic post-hoc thresholding.
+Score-based generative models [6, 19, 4] have been investigated for causal discovery [15]. The
+Jacobian of the score function (i.e., the Hessian of the log-density) contains sufficient information to
+identify topological leaf nodes. Identifying subsequent nodes requires retraining the score model on
+marginalized subsets or designing masked architectures, restricting scalability.
+We present the Score-Schur Topological Sort (SSTS), which extracts causal topological order
+directly from the score function of an unconstrained generative model. By decoupling representation
+learning from topological extraction, we demonstrate that causal hierarchy leaves an extractable
+algebraic signature in the geometry of the score function ∇x log p(x). Our contributions are:
+1. Algebraic Mapping of Acyclicity (Linear Exactness): In linear Gaussian ANMs, we establish
+an exact equivalence between iterative leaf-node marginalization and the Schur complement
+of the Score-Jacobian Information Matrix (SJIM). For non-linear ANMs, we characterize the
+non-commutativity between expectation and Schur marginalization via an explicit expectation
+gap.
+2. Decoupled Extraction: By bypassing the non-convex optimization bottleneck, SSTS reframes
+high-dimensional causal discovery from combinatorial search to pure statistical estimation.
+3. Characterization of Non-linear Boundaries: We formulate the algebraic expectation gap of
+Schur marginalization in non-linear Additive Noise Models (ANMs). To bound this structural
+error accumulation, we introduce Block-SSTS, which compresses the extraction depth and scales
+causal recovery up to d = 1000 variables in experiments.
+2
+Related Work
+Continuous Causal Discovery. The transition from combinatorial search to continuous optimization
+advanced causal discovery. Following NOTEARS [24], efforts expanded continuous acyclicity
+constraints to non-linear neural networks [8], graph neural networks [21], and exact likelihood
+frameworks [12]. Recent advancements integrated differentiable penalties into Bayesian structure
+learning [10] and log-determinant characterizations [1]. Because these paradigms inherently couple
+2
+
+
+graph discovery with parameter estimation, they suffer from non-convex penalty landscapes. Gradient-
+based optimizers are thus trapped in local optima when scaling to high-dimensional datasets.
+Order-Based Search and Generative Models. Topological order search reduces the DAG identifica-
+tion space to permutations, enabling algorithms to evaluate edges systematically under continuous
+Additive Noise Models (ANMs) [5, 14]. Generative models, including normalizing flows [7] and
+diffusion models [4, 19], have been applied to structure learning. Specifically, score matching tech-
+niques isolate leaf nodes from the data log-density [15]. Extensions of this framework [11, 17],
+nevertheless, continue to rely on recursive network retraining or diffusion-guided structural search to
+sequence the remaining nodes, creating severe computational bottlenecks.
+Our Distinction. Existing score-based paradigms rely on iterative model retraining or heuristic
+search to sequentially isolate nodes. In contrast, SSTS offers a deterministic algebraic extraction
+procedure. By mapping continuous graph marginalization to the Schur complement of a single
+pre-trained Score-Jacobian Information Matrix[9, 3], SSTS decouples generative representation
+learning from the topological sort. Non-convex acyclicity optimization is bypassed, and the hierarchy
+is obtained via deterministic matrix operations (exact in linear Gaussian regimes and approximate
+otherwise).
+3
+Theoretical Foundation: Score-Jacobian Geometry and Topology
+In linear Gaussian ANMs, the topological ordering is recoverable from the SJIM via Schur-
+complement-based elimination. For non-linear ANMs, the same elimination on the expected SJIM
+introduces an expectation gap, which we characterize below.
+We consider observational data generated by a continuous Additive Noise Model (ANM) [18, 5]. Let
+G = (V, E) be a DAG over d variables. The structural equations are:
+xi = fi(xpa(i)) + ϵi,
+i = 1, . . . , d.
+(1)
+where pa(i) denotes the parents of node i, fi are smooth, twice-differentiable functions, and ϵi are
+mutually independent noise variables.
+Assumption 3.1 (Homoscedastic Gaussian Noise). Noise components ϵi ∼N(0, σ2) are Gaussian
+with variance σ2 > 0. The conditional log-likelihood is log pϵi(ϵi) = −ϵ2
+i
+2σ2 −1
+2 log(2πσ2).
+Assumption 3.2 (Causal Faithfulness and Non-degeneracy). For any directed edge j →i ∈E, the
+structural equation fi is non-degenerate with respect to xj, satisfying: Ep(x)
+
+∂fi
+∂xj
+2
+> 0.
+Let s(x) = ∇x log p(x) be the true score function. We define I ∈Rd×d as the Expected Score-
+Jacobian Information Matrix (SJIM), formulated as the expected negative Hessian of the log-density:
+I = Ep(x)
+
+−∇2
+x log p(x)
+
+.
+(2)
+Under the strictly additive noise formulation (Assumption 3.1), each conditional distribution p(xi |
+xpa(i)) forms a location family parameterized by xpa(i). In this regime, the SJIM corresponds to the
+Fisher Information Matrix with respect to these location parameters. Hereafter, we refer to I as the
+structural information matrix.
+3.1
+Exact Leaf Identifiability via Diagonal Energy
+Building upon the leaf identifiability principles of score-based causal discovery [15], we show that
+the diagonal elements of I explicitly encode the DAG’s topological hierarchy.
+Theorem 3.1 (Leaf Node Identifiability). Under the ANM defined in Eq. 1 satisfying Assumption 3.1,
+the diagonal entries of the Score-Jacobian Information Matrix are given by:
+Iii = 1
+σ2 + 1
+σ2
+X
+j∈ch(i)
+Ep(x)
+"∂fj
+∂xi
+2#
+.
+(3)
+Consequently, if and only if node l is a topological sink (leaf node), ch(l) = ∅, and it attains the
+minimum diagonal value: Ill = mini Iii = 1/σ2. (Formal proof is deferred to Appendix A.1).
+3
+
+
+Remark 3.1 (Robustness to Heteroscedasticity). While Theorem 3.1 assumes homoscedasticity,
+absolute diagonal energy Iii exhibits scale sensitivity under heteroscedastic noise. In Appendix D.1,
+we extend this formulation by deriving a scale-invariant Relative Diagonal Variance (CV 2) metric,
+which maintains exact algebraic identifiability across varying noise regimes.
+3.2
+Exact Marginalization via Schur Complement in Linear ANMs
+Once a leaf node l is identified, sorting necessitates the algebraic elimination of l from the graph.
+Conventional recursive paradigms involve retraining a score model on the marginal distribution
+p(x\l). In Gaussian Graphical Models (GGMs) [9, 3], marginalizing a variable corresponds to taking
+the Schur complement of the precision matrix. We formalize this property for linear ANMs and
+score-based SJIMs, showing that recursive model retraining is unnecessary.
+Theorem 3.2 (Exact Marginalization in Linear ANMs). Following the marginalization properties of
+GGMs [9], let I ∈Rd×d be the SJIM of the joint distribution p(x) under a linear ANM. If xl is a
+leaf node, the SJIM of the marginal distribution p(x\l) is the Schur complement of I with respect to
+index l:
+Imarginal = I\l −I\l,l (Ill)−1 Il,\l
+(4)
+where I\l is the submatrix excluding the l-th row and column. (Formal proof is deferred to Ap-
+pendix A.2).
+3.3
+The Expectation Gap in Non-Linear ANMs
+For non-linear ANMs, the sample-wise Hessian H(x) = −∇2
+x log p(x) is not constant. Because the
+expectation operator does not commute with matrix inversion, Schur(E[H(x)]) ̸= E[Schur(H(x))].
+We formalize this discrepancy below.
+Lemma 3.3 (Marginal SJIM Equivalence in Non-linear ANMs). Let H(x) = −∇2
+x log p(x) be
+the sample-wise Hessian under a non-linear ANM. For a topological leaf node l, the expected
+Schur complement of the joint Hessian is equivalent to the Score-Jacobian Information Matrix of
+the marginalized distribution p(x\l): E[Schur(H(x))] = Imarginal. (Formal proof is deferred to
+Appendix A.3).
+Proposition 3.4 (Non-linear Marginalization Expectation Gap). Let H(x) be the sample-wise Hessian
+of the log-density under a general non-linear ANM, and let l be a topological leaf node. The difference
+∆between the expectation of the sample-wise Schur complement and the Schur complement of the
+expected Hessian is exactly the negative scaled covariance matrix of the leaf node’s gradient:
+∆= E[Schur(H(x))] −Schur(E[H(x)]) = −1
+σ2 Covp(x)
+ ∇x\lfl(xpa(l))
+
+.
+(5)
+(Formal proof is deferred to Appendix A.4).
+Remark 3.2 (Localization of the Expectation Gap). Because the non-linear mechanism fl depends
+strictly on its Markovian parents pa(l), the gradient vector ∇x\lfl contains non-zero entries exclu-
+sively at indices corresponding to pa(l). Consequently, the covariance matrix Cov(∇fl) is non-zero
+solely within the pa(l) × pa(l) submatrix block. This indicates that the approximation error in-
+duced by the non-linear expectation gap is localized to the immediate parent neighborhood of the
+marginalized leaf node.
+Remark 3.3 (Algebraic Closure of the Expectation Gap). While Block-SSTS compresses the ex-
+pectation gap cascade, the structural covariance error ∆can theoretically be resolved analytically.
+Appendix D.2 formulates a closed-form Covariance Patching mechanism, utilizing the sample covari-
+ance (i.e., second-order central moments) of the off-diagonal blocks to algebraically restore structural
+covariance. However, evaluating sample-wise Hessian covariances incurs an O(Nd2) memory foot-
+print and an O(N) computational overhead per marginalization step. To preserve the O(1) matrix
+inversion and O(d2) memory efficiency, Block-SSTS omits this patch in practice, trading theoretical
+fidelity for extreme computational scalability.
+4
+Algorithm: Score-Schur Topological Sort (SSTS)
+SSTS maps continuous marginalization to an empirical algebraic extraction using finite-sample score
+networks. Combining Theorem 3.1 and Theorem 3.2 yields a deterministic sorting algorithm. For
+4
+
+
+an approximate score network sθ(x) trained on observational data, we construct the empirical SJIM
+using the network’s Jacobian to capture structural curvature.
+4.1
+High-Dimensional Extension: Sparse Jacobian Prior
+We parameterize sθ(x) using a Multi-Layer Perceptron (MLP). In high-dimensional regimes (d ≥
+100), standard score matching often yields an ill-conditioned empirical SJIM. As formalized in
+Proposition 3.4, uncompensated structural covariance propagates through sequential marginalization.
+Additionally, finite-sample neural networks introduce estimation variance into the empirical Jacobian
+∇xsθ(x), generating spurious gradient connections.
+To control this variance, we introduce a structured sparsity prior. Following the group-wise variable
+selection principles [22], we apply a Group Lasso (ℓ1,2) penalty to the input layer weights W1 ∈Rh×d
+(where h is the hidden dimensionality) of the MLP:
+Lsparse = λsparse
+d
+X
+j=1
+∥[W1]:,j∥2
+(6)
+Penalizing column norms truncates weak input connections prior to non-linear activations. This
+induces structural sparsity on the global Jacobian estimator, restricting estimation variance in deep
+DAGs and yielding a well-conditioned, symmetric empirical SJIM: ˆI = 1
+2( ˆJ + ˆJ⊤), where ˆJ =
+1
+|D|
+P
+x∈D −∇xsθ(x).
+4.2
+Block-Schur Marginalization via Statistical Tolerance
+In sparse DAGs, multiple variables often occupy the same topological stratum. By Theorem 3.1,
+parallel leaf nodes yield identical SJIM diagonal energies. In practice, however, finite-sample
+estimation variance disrupts this exact equivalence in the empirical SJIM.
+Applying a strict sequential arg min extraction over ˆIii forces an arbitrary ordering among these
+parallel nodes based on numerical noise. This spurious sequentialization is structurally unnecessary
+and artificially triggers the non-linear expectation gap (∆) formalized in Proposition 3.4, accumulating
+approximation errors across conditionally independent variables.
+To address this, Block-SSTS groups parallel nodes using a relative tolerance parameter γ ∈(0, 1):
+B = {k ∈S | ˆIkk ≤mini∈S(ˆIii) + γ| mini∈S(ˆIii)|}. Since the variables in B are topologically
+parallel, their theoretical cross-derivatives vanish. This conditional independence allows for a
+simultaneous block Schur complement inversion.
+This block-wise marginalization natively absorbs empirical estimation noise and reduces the total
+depth of sequential matrix inversions. Consequently, it truncates the accumulation of ∆, preserving
+structural fidelity without incurring the O(Nd3) computational cost of exact covariance patching
+(Appendix 3.3). For numerical stability during the empirical block inversion, we apply a Tikhonov
+regularization term, λridgeI.
+5
+
+
+Algorithm 1 Structure-Optimization-Free Block-Score-Schur Topological Sort (Block-SSTS)
+Require: Pre-trained unconstrained score model sθ(x), Observational data D, Ridge penalty
+λridge > 0, Block tolerance γ ∈(0, 1).
+1: Initialize empirical Jacobian ˆJ ←
+1
+|D|
+P
+x∈D −∇xsθ(x).
+2: Symmetrize to construct a symmetric empirical SJIM ˆI ←1
+2( ˆJ + ˆJ⊤).
+3: Initialize active set S ←{1, 2, . . . , d}, topological order π ←[ ].
+4: while |S| > 0 do
+5:
+Isolate leaf block B using energy tolerance.
+6:
+Sort nodes within B by diagonal energy and prepend to the ordering list π.
+7:
+if |S \ B| > 0 then
+8:
+Let S′ = S \ B. Compute Tikhonov-regularized Block Schur complement:
+9:
+ˆIS′,S′ ←ˆIS′,S′ −ˆIS′,B(ˆIB,B + λridgeI)−1ˆIB,S′
+10:
+end if
+11:
+Update the active set: S ←S \ B.
+12: end while
+13: return Topological order π.
+Once the topological order π is extracted, resolving the global DAG reduces to an independent
+feature selection problem for each node over its structurally permitted predecessors. Following
+standard order-based pruning paradigms [2], this decomposes the acyclicity constraint into d localized
+penalized regression tasks:
+min
+fi E
+
+(xi −fi(xpreπ(i)))2
++ Ω(fi)
+where preπ(i) denotes candidate ancestors preceding node i, and Ω(fi) imposes structural sparsity.
+Computational Complexity. The primary computational cost lies in the empirical estimation of
+the SJIM. Constructing ˆI requires evaluating the Jacobian of the neural score network. Unlike
+continuous constrained optimization methods that evaluate O(d3) acyclicity penalties repeatedly per
+gradient step, SSTS isolates structural extraction to a single pass of Jacobian extraction. Once ˆI is
+materialized, the global DAG is resolved via standard matrix operations.
+5
+Experiments
+We evaluate SSTS to verify its algebraic equivalence under linear conditions, analyze its performance
+on non-linear manifolds, and establish its statistical boundaries. Computations are executed on a
+single NVIDIA RTX 5090 GPU.
+Implementation Details. SSTS avoids the O(d3) acyclicity penalty h(W) during training; the score
+network functions as an unconstrained density estimator parameterized by a multi-layer perceptron.
+SSTS (Vanilla) denotes extraction without Jacobian sparsity priors (λsparse = 0) for low-dimensional
+tasks (d ≤20). For d ≥50, SSTS (Sparse) applies a Group Lasso prior scaled by λsparse ∝
+√
+d, with
+a constant ridge penalty λridge = 10−4 for matrix inversion stability. To construct the empirical SJIM
+ˆI, we compute the full d × d sample-wise Jacobians of the score network via vectorized automatic
+differentiation (‘vmap‘). Instead of storing N matrices, we accumulate the expected Hessian via
+streaming mini-batches, bounding the memory footprint strictly to O(d2) (e.g., ∼4 MB for d = 1000
+in 32-bit float). We use 32-bit floating point for SJIM construction and extraction. Execution time
+is decoupled into generative representation learning (Trep), algebraic structural extraction (Tdisc),
+and downstream post-hoc edge pruning (Tprune). To ensure algorithmic decoupling is evaluated
+without confounding software optimization variables, structural baselines are executed within a
+strictly controlled capacity environment (detailed in Appendix E).
+Evaluation Metrics and Topological Ambiguity. Structural accuracy is evaluated via Structural
+Hamming Distance (SHD), True Positive Rate (TPR), and Edge Violations (EV). Here, EV is
+rigorously defined as the number of true causal edges j →i ∈E that contradict the extracted
+topological order (i.e., where π(j) > π(i)). Sequence correlation metrics (e.g., Kendall’s τ) are
+strictly omitted. As we formally prove in Appendix B, evaluating a highly parallel DAG against a
+6
+
+
+single ground-truth array via 1D rank correlation is mathematically ill-posed; the expected correlation
+degrades quadratically with the width of parallel strata, even for perfectly extracted causal geometries.
+Consequently, rigorous evaluation necessitates a metric strictly invariant to topological ambiguity,
+rendering EV the exact objective measure.
+5.1
+Verification of Exact Recovery (Linear ANMs)
+Evaluations on linear ANMs confirm zero causal edge violations across all dimensions up to d =
+1000 for both population and empirical precision matrices, empirically validating Theorem 3.2
+independently of neural network estimation variance (numerical details in Appendix C).
+5.2
+Baseline Comparisons: Algorithmic Decoupling on Non-Linear Manifolds
+101
+102
+103
+Total Execution Time (s) [Log Scale]
+0
+20
+40
+60
+80
+100
+Structural Hamming Distance (SHD)
+Ideal Region
+(Fast & Accurate)
+(a) Performance-Efficiency Trade-off (d = 50)
+d = 20
+d = 50
+d = 100
+Graph Dimensionality (d)
+101
+102
+103
+Total Execution Time (s) [Log Scale]
+(b) Computational Scalability
+NOTEARS (Continuous)
+DAGMA (Continuous)
+Recursive SCORE
+Scalable SCORE (DAS)
+SSTS (Ours)
+Figure 2: Algorithmic Decoupling on Non-Linear Manifolds (N = 5000). (a) The performance-
+efficiency trade-off evaluated at d = 50. SSTS recovers graph structure efficiently compared to
+continuous optimization techniques. (b) Computational scalability across dimensions. The gradient-
+free algebraic extraction of SSTS requires less than 15 seconds of total execution time at d = 100.
+To evaluate the algorithm on non-linear manifolds, we formulate structural equations using tanh
+mechanisms (N = 5000). Table 4 reports the empirical performance against continuous constrained
+optimizers (DAGMA, NOTEARS) and score-based paradigms (Recursive SCORE, Scalable SCORE).
+For a rigorous comparison, the total algorithmic time (Talgo) encapsulates both representation learning
+(Trep) and structural extraction (Tdisc). Since continuous optimizers learn structure jointly, their
+execution time maps directly to Talgo.
+Computational Bottleneck of Continuous Optimization. Continuous constrained methods struggle
+to scale on non-linear manifolds. At d = 50, DAGMA requires over 2700 seconds to evaluate the
+non-convex augmented Lagrangian, yielding an SHD of 93.0 ± 12.6. By eliminating the iterative
+acyclicity penalty, SSTS achieves SHD = 2.6 ± 2.4 directly from the pre-trained SJIM, reducing
+Talgo to 3.66 seconds.
+The Computation-Estimation Trade-off. At d = 100, SSTS performs marginalization in a single
+algebraic pass (Tdisc = 0.04s), but exhibits higher structural error compared to dynamic masked
+evaluations (SHD = 64.6±17.3 vs. 10.4±5.5 for Scalable SCORE). This performance divergence is
+directly attributable to the uncompensated non-linear expectation gap (∆) derived in Proposition 3.4.
+Table 1 shows that computing the exact sample-wise Schur complement prior to the expectation
+operator analytically eliminates ∆, strictly reducing Edge Violations. However, evaluating sample-
+wise Hessian covariances imposes an O(Nd3) computational overhead. At d = 1000, this exact
+formulation increases extraction time by a factor of ∼7000×. Furthermore, the residual error
+(300 violations) under exact algebraic marginalization confirms that structural fidelity is ultimately
+bounded not by the algebraic approximation, but by the estimation variance of the score Jacobian
+under finite-sample statistical starvation (N = 5000). Block-SSTS omits the covariance patch to
+7
+
+
+Table 1: Evaluation of the Non-linear Expectation Gap (∆). Exact sample-wise Schur marginal-
+ization analytically eliminates ∆, isolating algorithmic extraction error from statistical estimation
+limits. Evaluated at N = 5000.
+Standard Block-SSTS (Fast, ∆Uncompensated)
+Exact Sample-wise SSTS (Slow, No ∆)
+Dimension (d)
+Edge Violations ↓
+Extraction Time (Tdisc) ↓
+Edge Violations ↓
+Extraction Time (Tdisc) ↓
+50
+2
+0.23s
+1
+0.27s
+100
+38
+0.04s
+36
+4.47s
+500
+221
+0.26s
+176
+574.61s
+1000
+444
+0.63s
+300
+4493.19s
+preserve O(1) block inversions, transferring the causal discovery bottleneck directly to this statistical
+estimation limit.
+5.3
+Application to Real-World Biological Data
+To evaluate robustness against practical distribution shifts and latent confounding, we benchmark
+SSTS on the continuous Sachs protein-signaling network [16] (d = 12, N = 5000). Structural
+extraction on this dataset is challenged by violations of strict additive noise assumptions, typically
+resulting in elevated Structural Hamming Distances (SHD) across continuous methods. Despite these
+deviations, SSTS achieves structural recovery yielding an SHD of 13.8 ± 1.2 and a True Positive
+Rate (TPR) of 0.40 ± 0.04 (compared to DAGMA’s SHD of 15.0 ± 1.7 and Scalable SCORE’s SHD
+of 16.2 ± 1.5). By decoupling the topological sort from generative modeling, SSTS completes the
+extraction in 6.62 seconds, circumventing the computational overhead of non-convex optimization
+(DAGMA at 182.36s) and masked Jacobian queries (Scalable SCORE at 56.32s). Comprehensive
+tabular results are deferred to Appendix G.
+5.4
+Ablation Studies: Mechanisms under Extreme Regimes
+0
+1
+5
+10
+11
+12
+Sparsity Penalty ¸ (£10¡5)
+40
+50
+60
+70
+80
+90
+100
+110
+120
+Structural Hamming Distance (SHD)
+Optimal Prior
+(Min Variance)
+Phase Transition
+(Variance Explodes)
+(a) Jacobian Prior in Data-Starved Regime
+0.00
+0.01
+0.05
+0.15
+Block Energy Tolerance °
+140
+160
+180
+200
+220
+240
+260
+280
+SHD #
+Error Cascade
+Truncated
+(b) Error Cascade Truncation via Block-SSTS
+SHD (Structure Error)
+Block Iters (Depth)
+200
+250
+300
+350
+400
+450
+500
+Schur Block Iterations #
+Figure 3: Dual-Regime Ablation Studies. (a) In the data-starved regime (d = 100, N = 500),
+the Group Lasso penalty (λ) suppresses estimation variance. Exceeding the optimal prior triggers a
+transition where structural variance spikes. (b) In the extreme scaling regime (d = 500, N = 5000),
+increasing the block tolerance (γ) compresses the matrix inversion depth (blue dashed line). This
+physical compression truncates the non-linear error cascade, tracking SHD trajectories (orange solid
+line).
+We design two boundary-condition experiments: a data-starved regime to evaluate the sparse Jacobian
+prior, and an extreme scaling regime to evaluate block marginalization.
+Jacobian Sparsity in Data-Starved Regimes. When the sample-to-feature ratio is limited (N =
+500, d = 100), unconstrained neural networks exhibit estimation variance. As shown in Figure 3a,
+the baseline model (λ = 0.0) yields high cross-seed structural variance. Introducing the Group
+Lasso prior (λ = 10 × 10−5) mitigates finite-sample overfitting, achieving the minimum SHD and
+8
+
+
+narrowing the error band. Increasing the penalty marginally (λ = 11×10−5) triggers a sharp variance
+spike. This indicates the boundary where the structural penalty suppresses true causal gradients.
+Block-SSTS Tolerance in Extreme Scaling. To quantify the structural error accumulation formulated
+in Proposition 3.4, we scale the topology to d = 500. Figure 3b illustrates the effect of the block
+tolerance γ. Sequential marginalization (γ = 0.00) forces 500 Schur inversions, accumulating the
+non-linear expectation gap. Applying a moderate tolerance (γ = 0.05) compresses the extraction
+depth to 346 iterations. This truncation of the error cascade reduces the SHD to its minimum. An
+aggressive tolerance (γ = 0.15) forces topologically distinct nodes into parallel blocks, violating the
+causal hierarchy and increasing structural error. Tabular data is provided in Appendix H.
+5.5
+Sensitivity to the Additive Noise Assumption
+The theoretical identifiability established in Theorem 3.1 relies on the Additive Noise Model (ANM),
+where independent noise isolates the topological signature on the SJIM diagonal. We conduct a
+failure mode analysis (d = 50, N = 5000) by violating this assumption.
+Against an ANM control group (SHD 3.6 ± 2.9, TPR 0.95 ± 0.04), we evaluate Multiplicative
+Noise Models (MNM), formulated as xi = fi(xpa(i)) + gi(xpa(i))ϵi. SSTS remains robust to
+this conditional heteroscedasticity (SHD 0.4 ± 0.8, TPR 0.99 ± 0.02). Parental dependency in the
+noise scale introduces a distributional asymmetry that enhances causal identifiability within the
+unconstrained score geometry.
+Under Post-Nonlinear (PNL) mechanisms [23], defined as xi = (fi(xpa(i)) + ϵi)3, the algebraic
+extraction fails (SHD 94.4 ± 8.4, TPR 0.03 ± 0.02). The outer non-linear mapping couples the noise
+components with the structural parents in the gradient space, violating the statistical independence
+required for vanishing cross-derivatives. Extending exact Schur marginalization to arbitrary PNL
+transformations thus remains an open problem. Tabular results are deferred to Appendix I.
+6
+Discussion and Limitations
+SSTS yields an exact equivalence in linear Gaussian ANMs. In non-linear ANMs, the algebraic
+extraction introduces an expectation gap and exposes finite-sample estimation limits of the score
+Jacobian.
+Topological Ambiguity vs. Algebraic Truth. Traditional metrics like Kendall’s τ evaluate the
+distance between a predicted sequence and a single ground-truth generative order. However, discon-
+nected or parallel structures in sparse DAGs permit multiple valid topological sorts. As formalized by
+the degradation limit in Theorem B.1 (Appendix B), rank correlation collapses mathematically under
+parallel graph structures, penalizing geometrically identical permutations. Evaluating causal Edge
+Violations provides the only direct and unambiguous measure, ensuring that algorithmic extraction is
+evaluated independently of inherent topological ambiguity.
+The Non-linear Expectation Gap. As quantified in Proposition 3.4, the Schur complement of the
+expected Hessian incurs an approximation gap proportional to Cov(∇fl). In linear systems, ∇fl
+is constant, the covariance vanishes, and extraction is exact. In non-linear systems, this gap is non-
+zero. Over O(d) sequential marginalization steps, uncompensated structural covariance accumulates,
+degrading the SJIM’s topological signature.
+The Computation-Estimation Trade-off. Standard continuous causal discovery minimizes a data-
+fidelity loss alongside a non-convex DAG penalty h(W) = 0, decomposing the extraction error
+into optimization and statistical gaps (Etotal ≈Eopt + Estat). Gradient-based solvers stall in local
+minima within high-dimensional spaces, causing Eopt to dominate the error profile alongside an O(d3)
+computational requirement. By mapping graph marginalization to the Schur complement, SSTS
+algebraically reduces the topological optimization gap for structural extraction to zero (Eopt = 0).
+The complexity of causal discovery is conserved and transferred to the statistical domain (Estat).
+Consequently, the structural fidelity of SSTS is bounded by two factors: (1) SJIM estimation variance,
+as finite-sample neural networks struggle to yield unbiased precision geometry in extreme high-
+dimensional regimes (see Appendix J); and (2) non-linear error accumulation, governed by the
+structural covariance gap (∆) formalized in Proposition 3.4. While SSTS circumvents the non-
+9
+
+
+convex optimization bottleneck, operational limits are dictated by the fidelity of the generative score
+estimation.
+7
+Conclusion
+We introduced the Score-Schur Topological Sort (SSTS), which relates leaf-node marginalization
+to Schur-complement-based elimination on the Score-Jacobian Information Matrix (SJIM). The
+mapping is exact in linear Gaussian ANMs and approximate in non-linear ANMs with a quantified
+expectation gap.
+Decoupling representation learning from structural extraction shifts the fundamental bottleneck of
+causal discovery from combinatorial optimization to high-dimensional statistical estimation. The
+structural fidelity of causal discovery is no longer constrained by the local optima of acyclicity
+penalties, but by the capacity of generative models to estimate exact score functions.
+References
+[1] Kevin Bello, Bryon Aragam, and Pradeep Ravikumar. Dagma: Learning dags via m-matrices
+and a log-determinant acyclicity characterization. In Advances in Neural Information Processing
+Systems, volume 35, pages 8226–8239, 2022.
+[2] Peter Bühlmann, Jonas Peters, and Jan Ernest. Cam: Causal additive models, high-dimensional
+order search and penalized regression. The Annals of Statistics, 42(6):2526–2556, 2014.
+[3] Jerome Friedman, Trevor Hastie, and Robert Tibshirani. Sparse inverse covariance estimation
+with the graphical lasso. Biostatistics, 9(3):432–441, 2008.
+[4] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. In
+Advances in Neural Information Processing Systems, volume 33, pages 6840–6851, 2020.
+[5] Patrik O Hoyer, Dominik Janzing, Joris M Mooij, Jonas Peters, and Bernhard Schölkopf.
+Nonlinear causal discovery with additive noise models. In Advances in Neural Information
+Processing Systems, volume 21, pages 689–696, 2008.
+[6] Aapo Hyvärinen. Estimation of non-normalized statistical models by score matching. Journal
+of Machine Learning Research, 6:695–709, 2005.
+[7] Ilyes Khemakhem, Ricardo Monti, Robert Leech, and Aapo Hyvarinen. Causal autoregressive
+flows. In International Conference on Artificial Intelligence and Statistics, pages 3520–3528.
+PMLR, 2021.
+[8] Sébastien Lachapelle, Philippe Brouillard, Tristan Deleu, and Simon Lacoste-Julien. Gradient-
+based neural DAG learning. In International Conference on Learning Representations (ICLR),
+2020.
+[9] Steffen L Lauritzen. Graphical Models, volume 17. Clarendon Press, 1996.
+[10] Lars Lorch, Jonas Rothfuss, Bernhard Schölkopf, and Andreas Krause. Dibs: Differentiable
+bayesian structure learning. In Advances in Neural Information Processing Systems, volume 34,
+pages 24111–24123, 2021.
+[11] Francesco Montagna, Nicoletta Noceti, Lorenzo Rosasco, Kun Zhang, and Francesco Locatello.
+Scalable causal discovery with score matching. In Proceedings of the Second Conference on
+Causal Learning and Reasoning, pages 752–771. PMLR, 2023.
+[12] Ignavier Ng, AmirEmad Ghassami, and Kun Zhang. On the role of sparsity and dag constraints
+for learning linear dags. In Advances in Neural Information Processing Systems, volume 33,
+pages 17943–17954, 2020.
+[13] Judea Pearl. Causality: Models, Reasoning, and Inference. Cambridge University Press, 2009.
+10
+
+
+[14] Jonas Peters, Joris M Mooij, Dominik Janzing, and Bernhard Schölkopf. Causal discovery
+with continuous additive noise models. The Journal of Machine Learning Research, 15(1):
+2009–2053, 2014.
+[15] Paul Rolland, Volkan Cevher, Matthäus Kleindessner, Chris Russell, Dominik Janzing, Bernhard
+Schölkopf, and Francesco Locatello. Score matching enables causal discovery of nonlinear
+additive noise models. In International Conference on Machine Learning, pages 18741–18753.
+PMLR, 2022.
+[16] Karen Sachs, Omar Perez, Dana Pe’er, Douglas A Lauffenburger, and Garry P Nolan. Causal
+protein-signaling networks derived from multiparameter single-cell data. Science, 308(5721):
+523–529, 2005.
+[17] Pedro Sanchez, Xiao Liu, Alison Q O’Neil, and Sotirios A Tsaftaris. Diffusion models for causal
+discovery via topological ordering. In International Conference on Learning Representations
+(ICLR), 2023.
+[18] Shohei Shimizu, Patrik O Hoyer, Aapo Hyvärinen, and Antti Kerminen. A linear non-gaussian
+acyclic model for causal discovery. Journal of Machine Learning Research, 7(10), 2006.
+[19] Yang Song and Stefano Ermon. Generative modeling by estimating gradients of the data
+distribution. In Advances in Neural Information Processing Systems, volume 32, 2019.
+[20] Peter Spirtes, Clark N Glymour, and Richard Scheines. Causation, Prediction, and Search. MIT
+press, 2000.
+[21] Yue Yu, Jie Chen, Tian Gao, and Mo Yu. Dag-gnn: Dag structure learning with graph neural
+networks. In International Conference on Machine Learning, pages 7155–7163. PMLR, 2019.
+[22] Ming Yuan and Yi Lin. Model selection and estimation in regression with grouped variables.
+Journal of the Royal Statistical Society: Series B (Statistical Methodology), 68(1):49–67, 2006.
+[23] Kun Zhang and Aapo Hyvärinen. On the identifiability of the post-nonlinear causal model. In
+Proceedings of the Twenty-Fifth Conference on Uncertainty in Artificial Intelligence, pages
+647–655, 2009.
+[24] Xun Zheng, Bryon Aragam, Pradeep K Ravikumar, and Eric P Xing. Dags with no tears:
+Continuous optimization for structure learning. In Advances in Neural Information Processing
+Systems, volume 31, pages 9472–9483, 2018.
+A
+Deferred Proofs and Derivations
+A.1
+Proof of Theorem 3.1
+Proof. By the Markov property of the ANM, the joint distribution factorizes as p(x)
+=
+Qd
+k=1 pϵk(xk −fk(xpa(k))). The joint log-likelihood is:
+log p(x) =
+d
+X
+k=1
+log pϵk(xk −fk(xpa(k))).
+(7)
+Applying the chain rule, the first partial derivative with respect to xi is:
+∂log p(x)
+∂xi
+= ∂log pϵi(ϵi)
+∂ϵi
+∂ϵi
+∂xi
++
+X
+j∈ch(i)
+∂log pϵj(ϵj)
+∂ϵj
+∂ϵj
+∂xi
+.
+(8)
+Since ϵk = xk −fk(xpa(k)), we have
+∂ϵi
+∂xi = 1 and
+∂ϵj
+∂xi = −∂fj
+∂xi .
+Given Gaussian noise,
+∂log pϵk (ϵk)
+∂ϵk
+= −ϵk
+σ2 . Substituting these yields the score component:
+∂log p(x)
+∂xi
+= −ϵi
+σ2 +
+X
+j∈ch(i)
+ϵj
+σ2
+∂fj
+∂xi
+.
+(9)
+11
+
+
+Differentiating again with respect to xi to obtain the diagonal of the Hessian:
+∂2 log p(x)
+∂x2
+i
+= −1
+σ2 +
+X
+j∈ch(i)
+ 1
+σ2
+∂ϵj
+∂xi
+∂fj
+∂xi
++ ϵj
+σ2
+∂2fj
+∂x2
+i
+
+.
+(10)
+Substituting ∂ϵj
+∂xi = −∂fj
+∂xi into Eq. 10 yields:
+∂2 log p(x)
+∂x2
+i
+= −1
+σ2 −1
+σ2
+X
+j∈ch(i)
+∂fj
+∂xi
+2
++
+X
+j∈ch(i)
+ϵj
+σ2
+∂2fj
+∂x2
+i
+.
+(11)
+To compute the Score-Jacobian Information Matrix diagonal Iii = E[−∂2 log p(x)
+∂x2
+i
+], we take the nega-
+tive expectation over p(x). By the definition of ANM, the noise term ϵj is statistically independent of
+its causal ancestors xpa(j). Since ∂2fj
+∂x2
+i depends on xpa(j), we have:
+Ep(x)
+
+ϵj
+∂2fj
+∂x2
+i
+
+= E[ϵj]E
+∂2fj
+∂x2
+i
+
+= 0 · E
+∂2fj
+∂x2
+i
+
+= 0.
+(12)
+The expectation of the last term vanishes, leaving:
+Iii = 1
+σ2 + 1
+σ2
+X
+j∈ch(i)
+Ep(x)
+"∂fj
+∂xi
+2#
+.
+(13)
+Because E[(∂fj/∂xi)2] > 0 for any true topological parent-child relationship, it follows that Iii >
+1/σ2 for any node with children. For a leaf node l, ch(l) = ∅, resulting exactly in Ill = 1/σ2.
+A.2
+Proof of Theorem 3.2
+Proof. Assume the variables are permuted such that the leaf node l corresponds to the last row and
+column of the matrix. For a linear ANM, Eq. 1 takes the matrix form x = Bx + ϵ, where B is a
+strictly upper-triangular weighted adjacency matrix. The explicit solution is x = (I −B)−1ϵ. The
+covariance matrix is Σ = (I −B)−1(σ2I)(I −B)−⊤, and the precision matrix (which equals the
+SJIM for Gaussian distributions) is:
+I = Σ−1 = 1
+σ2 (I −B)⊤(I −B).
+(14)
+Let S = V \ {l}. Since l is a leaf node, it has no children, implying the l-th column of B is entirely
+zero: BS,l = 0. We partition (I −B) into block form:
+I −B =
+
+IS −BSS
+0
+−Bl,S
+1
+
+.
+(15)
+Multiplying this block matrix by its transpose, we obtain the partitioned SJIM:
+I = 1
+σ2
+
+(IS −BSS)⊤(IS −BSS) + B⊤
+l,SBl,S
+−B⊤
+l,S
+−Bl,S
+1
+
+.
+(16)
+From Eq. 16, we explicitly extract the blocks: Ill =
+1
+σ2 , Il,S = −1
+σ2 Bl,S, IS,l = −1
+σ2 B⊤
+l,S, and
+ISS =
+1
+σ2 (IS −BSS)⊤(IS −BSS) +
+1
+σ2 B⊤
+l,SBl,S.
+Computing the Schur complement of I with respect to Ill yields:
+Schur(I) = ISS −IS,lI−1
+ll Il,S
+(17)
+= ISS −
+
+−1
+σ2 B⊤
+l,S
+
+(σ2)
+
+−1
+σ2 Bl,S
+
+(18)
+= ISS −1
+σ2 B⊤
+l,SBl,S.
+(19)
+Substituting the expression for ISS, the cross-terms cancel out:
+Schur(I) = 1
+σ2 (IS −BSS)⊤(IS −BSS).
+(20)
+This evaluates to the precision matrix of the marginal distribution p(x\l). The Schur complement
+marginalizes the leaf node while preserving the causal structural matrix BSS of the remaining
+subgraph.
+12
+
+
+A.3
+Proof of Lemma 3.3
+Proof. By the definition of conditional probability, the joint log-likelihood decomposes as log p(x) =
+log p(x\l) + log pϵl(xl −fl(xpa(l))). Differentiating twice with respect to the remaining variables
+x\l yields:
+∇2
+x\l log p(x) = ∇2
+x\l log p(x\l) −1
+σ2 ∇fl∇f ⊤
+l + xl −fl
+σ2
+∇2fl.
+(21)
+Taking the negative expectation over p(x) produces the upper-left block of the joint SJIM, I\l,\l.
+Since the noise ϵl = xl −fl is zero-mean and independent of the ancestors x\l, the expectation of
+the cross-term vanishes (E[ϵl∇2fl] = 0). Thus:
+I\l,\l = Imarginal + 1
+σ2 E[∇fl∇f ⊤
+l ].
+(22)
+Rearranging this equation and evaluating E[Schur(H(x))] = I\l,\l −
+1
+σ2 E[∇fl∇f ⊤
+l ], we recover
+Imarginal = E[Schur(H(x))].
+A.4
+Proof of Proposition 3.4
+Proof. For a leaf node l, the second derivative ∂2 log p
+∂x2
+l
+= −1
+σ2 everywhere. The sample-wise block
+Hll(x) =
+1
+σ2 is a constant scalar. The cross-derivative for i ∈pa(l) is:
+∂2 log p(x)
+∂xi∂xl
+= 1
+σ2
+∂fl
+∂xi
+.
+(23)
+The off-diagonal block evaluates to Hl,\l(x) = −1
+σ2 ∇x\lfl(x)⊤. Evaluating the expectation of the
+sample-wise Schur complement:
+E[Schur(H(x))] = E
+
+H\l,\l(x) −H\l,l(x)Hll(x)−1Hl,\l(x)
+
+(24)
+= I\l,\l −1
+σ2 E
+
+∇fl∇f ⊤
+l
+
+.
+(25)
+Conversely, the Schur complement of the global expectation I = E[H(x)] yields:
+Schur(E[H(x)]) = I\l,\l −I\l,lI−1
+ll Il,\l
+(26)
+= I\l,\l −1
+σ2 E[∇fl]E[∇fl]⊤.
+(27)
+Taking the difference between the two quantities, I\l,\l cancels out:
+∆=
+
+I\l,\l −1
+σ2 E[∇fl∇f ⊤
+l ]
+
+−
+
+I\l,\l −1
+σ2 E[∇fl]E[∇fl]⊤
+
+(28)
+= −1
+σ2
+ E[∇fl∇f ⊤
+l ] −E[∇fl]E[∇fl]⊤
+(29)
+= −1
+σ2 Covp(x) (∇fl(x)) .
+(30)
+B
+Theoretical Analysis of Evaluation Metrics: The Degradation of Kendall’s
+τ
+In continuous causal discovery, the structural fidelity of an extracted sequence ˆπ is frequently
+evaluated against a ground-truth topological order π∗using 1D rank correlation metrics, such as
+Kendall’s τ. We demonstrate that for sparse DAGs characterized by parallel branches and wide leaf
+strata, rank correlation is mathematically ill-posed.
+Let G = (V, E) be a DAG with d variables. A topological sort maps G to a 1D sequence such that for
+every directed edge j →i ∈E, node j precedes node i. Let Π(G) denote the topological equivalence
+class containing all valid permutations that satisfy E.
+13
+
+
+Definition B.1 (Topological Ambiguity). Two nodes u, v ∈V are topologically parallel (i.e., condi-
+tionally independent given their ancestors without any directed path between them) if both permuta-
+tions . . . , u, . . . , v, . . . and . . . , v, . . . , u, . . . result in valid topological sorts within Π(G).
+Consequently, forcing a highly parallel DAG into a single ground-truth array π∗imposes an arbitrary
+strict ordering on variables that share no causal dependency. Evaluating a predicted sequence ˆπ
+against π∗via rank correlation penalizes the algorithm for structural ambiguity rather than causal
+falsity. We formalize this geometric degradation below.
+Theorem B.1 (Degradation Limit of Kendall’s τ). Let G be a DAG consisting of a causal ancestral
+structure and a stratum of W parallel leaf nodes. Let π∗, ˆπ ∈Π(G) be two perfectly valid topological
+sorts uniformly sampled from the equivalence class. Although both sequences capture the exact
+causal graph geometry (zero edge violations), the expected Kendall rank correlation between them
+degrades quadratically with the width W:
+E[τ(π∗, ˆπ)] = 1 −W(W −1)
+d(d −1)
+(31)
+Consequently, as the DAG broadens and the proportion of parallel nodes increases (W →d), the
+expected rank correlation collapses to zero: limW →d E[τ] = 0.
+Proof. Kendall’s τ computes τ = 1 −
+2K
+d(d−1)/2, where K is the number of discordant pairs (inver-
+sions) between π∗and ˆπ. Because both π∗and ˆπ are valid sorts within Π(G), no true causal edges in
+E are inverted. Inversions strictly occur among the W parallel nodes. Since ˆπ and π∗independently
+permute these W nodes, the probability of any pair being discordant is 1/2. The expected number
+of discordant pairs is E[K] = 1
+2
+ W
+2
+
+= W (W −1)
+4
+. Substituting E[K] into the definition of τ yields
+1 −W (W −1)
+d(d−1) .
+Remark B.1 (The Necessity of Edge Violations). Theorem B.1 establishes that 1D rank correlation
+does not measure causal geometric fidelity; rather, it measures the arbitrary distance to a 1D projection
+of unidentifiable parallel strata. Evaluating causal extraction necessitates a metric strictly invariant
+to this topological ambiguity. Therefore, we utilize Edge Violations (EV), strictly defined as the
+explicit contradiction of the invariant causal geometry:
+EV(ˆπ, G) =
+{(j, i) ∈E | ˆπ(j) > ˆπ(i)}
+
+(32)
+While EV accurately quantifies the directional integrity of the extracted topological order ˆπ, evaluating
+the exact sparsity of the equivalence class Π(G) is deferred to the subsequent structural pruning phase
+(evaluated via SHD).
+C
+Detailed Results for Linear Exact Recovery
+Table 2 provides the exact recovery evaluations on linear ANMs (N = 10000). We evaluate the
+topological extraction using the empirical precision matrix inverted from observational data, and the
+true population precision matrix analytically derived from structural equations.
+Table 2: Exact Recovery on Linear ANMs. Edge violations recorded over O(d3) Schur marginal-
+ization steps. The population matrix serves as analytical validation of Theorem 3.2.
+Dimension (d)
+Empirical Matrix Violations
+Population Matrix Violations
+10
+0
+0 (Exact)
+20
+0
+0 (Exact)
+50
+0
+0 (Exact)
+100
+0
+0 (Exact)
+500
+0
+0 (Exact)
+1000
+0
+0 (Exact)
+The experiments yield zero causal edge violations across dimensions (d ∈[10, 1000]). Zero violations
+on the population matrix empirically verify Theorem 3.2. Performance on the empirical matrix
+demonstrates that linear estimation remains structurally faithful at high dimensions.
+14
+
+
+D
+Theoretical Frontiers: Boundaries of Exact Marginalization
+D.1
+Scale-Invariant Extraction via Relative Diagonal Variance
+Under heteroscedastic Additive Noise Models (ANMs), varying noise scales σ2
+i modify the ex-
+pected diagonal energy Iii, affecting the global arg mini Iii criterion. A non-linear topological leaf
+node l maintains a constant second derivative Hll(x) = 1/σ2
+l , yielding zero sample-wise variance
+(Varx(Hll(x)) = 0). Directly minimizing absolute variance is sensitive to scale. A leaf node with
+low noise variance produces a larger absolute Hessian, amplifying neural estimation variance.
+To separate structural non-linear variance from magnitude-induced estimation noise, we define the
+Relative Diagonal Variance Criterion by minimizing the squared Coefficient of Variation (CV 2) of
+the sample-wise Hessian diagonal:
+l = arg min
+i
+Varx(Hii(x))
+(Ex[Hii(x)])2 = arg min
+i
+CV 2(Hii(x)).
+(33)
+We evaluate this metric on a 5-node non-linear causal chain. Table 3 compares extraction under
+homoscedastic (σi ≡1.0) and heteroscedastic (σroot = 5.0, σleaf = 0.2) regimes.
+Table 3: Comparative Ablation of Topological Identifiers. Evaluated on non-linear chains (X0 →
+· · · →X4). The relative variance metric provides identification across regimes.
+Homoscedastic Regime (Control)
+Heteroscedastic Regime (Extreme)
+Node
+Topology
+E[Hii] (Classic)
+Rel Var (Ours)
+E[Hii] (Classic)
+Var[Hii] (Naive)
+Rel Var (Ours)
+X0
+Root
+3.4629
+1.7605
+1.3369 (Fail)
+16.0972 (Fail)
+9.0064
+X1
+Mid
+2.9928
+1.0626
+10.5315
+122.9990
+1.1090
+X2
+Mid
+3.0887
+1.1539
+11.2526
+144.2889
+1.1395
+X3
+Mid
+2.8529
+1.0561
+51.7125
+4371.3657
+1.6347
+X4
+Leaf
+1.6575 (Correct)
+0.0767 (Correct)
+102.9850
+565.3597
+0.0533 (Correct)
+The expectation baseline fails under heteroscedasticity by selecting the root node. The absolute
+variance misidentifies the node due to scale-dependent estimation noise. The proposed CV 2 criterion
+identifies the true leaf across both regimes.
+D.2
+Exact Non-linear Marginalization via Covariance Patching
+Marginalized Schur expected information matrices accumulate a structural covariance gap ∆(Propo-
+sition 3.4). This gap can be algebraically compensated by extracting the non-linear gradient directly
+from the off-diagonal Hessian blocks H\l,l(x), formulating the missing covariance via first-order
+central moments:
+∆= −(ˆIll)−1Covx∼D(H\l,l(x)).
+(34)
+Equivalently, exact non-linear marginalization is achieved by performing the Schur complement
+independently on each sample’s Hessian H(x) before taking the empirical expectation. As empiri-
+cally demonstrated in Section 5.2 (Table 1), while this exact sample-wise formulation analytically
+eliminates ∆, it imposes a strict O(Nd3) computational complexity bottleneck. This constraint
+justifies the adoption of the uncompensated O(1) block-wise algebraic approximation employed by
+Block-SSTS in high-dimensional regimes.
+E
+Baseline Implementation and Controlled Environments
+To ensure rigorous evaluation and isolate algorithmic complexity from disparate software optimiza-
+tions, the Scalable SCORE mechanism [11] was evaluated within a controlled environment. Utilizing
+external official codebases introduces confounding engineering variables, such as mismatched net-
+work capacities, distinct deep learning framework overheads, and proprietary hyperparameter tuning.
+To eliminate these discrepancies, we natively implemented the Masked Score Network mechanism
+within our unified evaluation pipeline. The Scalable SCORE baseline was strictly constrained to
+utilize the exact same generative representation capacity as our proposed SSTS: identical multi-layer
+perceptron (MLP) architecture, hidden dimensionality scaling, batch size, learning rate schedulers,
+15
+
+
+and training epochs. Furthermore, both methods utilized the identical downstream Lasso regular-
+izer for structural pruning. Consequently, any observed divergence in extraction time (Talgo) and
+structural accuracy across our benchmarks is exclusively attributable to the fundamental algorithmic
+properties—specifically, the latency gap between requiring O(d) masked Jacobian queries versus a
+deterministic O(1) Schur complement block inversion.
+F
+Detailed Numerical Results for Baseline Comparisons
+Table 4 provides the decoupled numerical evaluations for the non-linear benchmark graphical results
+presented in Section 5.2. To isolate the algorithmic efficacy of Score-Schur marginalization from
+post-hoc sparse regression, the evaluation is strictly partitioned into Order-Level extraction and
+Graph-Level recovery.
+Table 4: Detailed Decoupled Benchmark on Non-Linear ANMs (N = 5000). Evaluated over 5
+random seeds (Mean ± Std). Execution time is strictly decomposed to highlight the optimization-free
+extraction phase.
+(a) Order-Level Evaluation (Topological Extraction Phase).
+Dim
+Method
+Edge Violations (EV) ↓
+Trep (s)
+Tdisc (s) ↓
+d = 20
+NOTEARS (Continuous)
+-
+-
+-
+DAGMA (Continuous)
+-
+-
+-
+Scalable SCORE (DAS)
+1.0 ± 0.6
+3.59 ± 0.12
+34.02 ± 0.65
+SSTS (Vanilla, Ours)
+0.0 ± 0.0
+4.09 ± 0.82
+0.02 ± 0.01
+d = 50
+NOTEARS (Continuous)
+-
+-
+-
+DAGMA (Continuous)
+-
+-
+-
+Scalable SCORE (DAS)
+4.0 ± 1.7
+3.62 ± 0.05
+33.72 ± 0.41
+SSTS (Sparse, Ours)
+1.6 ± 1.0
+3.62 ± 0.13
+0.04 ± 0.01
+d = 100
+Scalable SCORE (DAS)
+4.0 ± 2.6
+3.65 ± 0.08
+34.38 ± 0.45
+SSTS (Sparse, Ours)
+20.6 ± 3.0
+3.64 ± 0.03
+0.04 ± 0.01
+(b) Graph-Level Evaluation (Final DAG Recovery Phase).
+Dim
+Method
+SHD ↓
+TPR ↑
+Ttotal (s) ↓
+d = 20
+NOTEARS (Continuous)
+28.2 ± 6.8
+0.40 ± 0.07
+103.89 ± 101.77
+DAGMA (Continuous)
+30.0 ± 9.0
+0.35 ± 0.11
+1984.96 ± 140.50
+Scalable SCORE (DAS)
+3.2 ± 3.0
+0.95 ± 0.04
+38.76 ± 0.79
+SSTS (Vanilla, Ours)
+0.6 ± 0.8
+1.00 ± 0.00
+5.21 ± 0.91
+d = 50
+NOTEARS (Continuous)
+94.8 ± 11.1
+0.40 ± 0.05
+269.96 ± 166.96
+DAGMA (Continuous)
+93.0 ± 12.6
+0.38 ± 0.08
+2727.55 ± 101.38
+Scalable SCORE (DAS)
+17.8 ± 10.8
+0.93 ± 0.03
+40.10 ± 0.43
+SSTS (Sparse, Ours)
+2.6 ± 2.4
+0.97 ± 0.02
+6.49 ± 0.16
+d = 100
+Scalable SCORE (DAS)
+10.4 ± 5.5
+0.96 ± 0.03
+44.48 ± 0.39
+SSTS (Sparse, Ours)
+64.6 ± 17.3
+0.80 ± 0.04
+10.26 ± 0.22
+G
+Detailed Numerical Results for the Sachs Dataset
+Table 5 provides numerical evaluations for the biological dataset benchmark discussed in Section 5.3.
+H
+Detailed Numerical Results for Ablation Studies
+Table 6 provides numerical evaluations for the graphical results presented in Section 5.4.
+16
+
+
+Table 5: Benchmark on the Real-World Sachs Dataset (d = 12, N = 5000). Evaluated over 5
+random seeds (Mean ± Std). SSTS achieves structural recovery relative to baselines.
+Dataset
+Method
+EV ↓
+SHD ↓
+TPR ↑
+Talgo (s)
+Tprune (s)
+Ttotal (s)
+Sachs (d = 12)
+NOTEARS (Continuous)
+-
+14.0 ± 0.0
+0.29 ± 0.00
+14.47 ± 1.17
+-
+14.47 ± 1.17
+DAGMA (Continuous)
+-
+15.0 ± 1.7
+0.21 ± 0.08
+182.36 ± 10.38
+-
+182.36 ± 10.38
+Recursive SCORE
+8.8 ± 0.4
+15.2 ± 0.4
+0.36 ± 0.02
+53.35 ± 1.25
+0.58 ± 0.01
+53.93 ± 1.25
+Scalable SCORE
+9.0 ± 0.6
+16.2 ± 1.5
+0.32 ± 0.06
+55.74 ± 0.56
+0.58 ± 0.02
+56.32 ± 0.58
+SSTS (Ours)
+8.8 ± 0.7
+13.8 ± 1.2
+0.40 ± 0.04
+6.05 ± 0.97
+0.58 ± 0.02
+6.62 ± 0.96
+Table 6: Dual-Regime Ablation Studies. Evaluated over 5 random seeds (Mean ± Std).
+(a) Exp A: Group Lasso Penalty (λsparse) under Data Starvation (d = 100, N = 500, γ = 0.05).
+λsparse
+Edge Violations ↓
+SHD ↓
+TPR ↑
+Ext. Time (s) ↓
+0.0 (Baseline)
+22.6 ± 4.0
+75.6 ± 15.6
+0.78 ± 0.04
+0.07 ± 0.04
+1.0 × 10−5
+23.8 ± 3.5
+73.0 ± 11.1
+0.77 ± 0.04
+0.05 ± 0.00
+5.0 × 10−5
+24.0 ± 5.9
+76.2 ± 15.9
+0.77 ± 0.07
+0.05 ± 0.00
+1.0 × 10−4 (Optimal)
+21.6 ± 2.2
+72.4 ± 12.8
+0.79 ± 0.03
+0.05 ± 0.00
+1.1 × 10−4 (Phase Edge)
+21.8 ± 5.9
+75.8 ± 28.0
+0.79 ± 0.05
+0.05 ± 0.00
+(b) Exp B: Block Tolerance (γ) under Extreme Scaling (d = 500, N = 5000, λsparse = 0.0).
+γ
+Edge Violations ↓
+SHD ↓
+TPR ↑
+Block Iters ↓
+Ext. Time (s) ↓
+0.00 (Sequential)
+86.0 ± 6.4
+226.0 ± 24.6
+0.83 ± 0.01
+500.0 ± 0.0
+0.42 ± 0.00
+0.01
+82.0 ± 10.2
+214.4 ± 52.1
+0.84 ± 0.01
+442.0 ± 6.2
+0.39 ± 0.01
+0.05 (Optimal)
+77.4 ± 4.8
+196.8 ± 22.6
+0.84 ± 0.01
+346.0 ± 12.9
+0.33 ± 0.01
+0.15 (Aggressive)
+86.4 ± 3.3
+216.6 ± 11.5
+0.83 ± 0.01
+247.4 ± 7.5
+0.27 ± 0.01
+I
+Detailed Numerical Results for Mechanism Shifts
+Table 7 provides numerical evaluations corresponding to the failure mode analysis in Section 5.5.
+Table 7: Failure Mode Analysis: Sensitivity to Mechanism Shifts (d = 50, N = 5000). Evaluated
+over 5 random seeds (Mean ± Std).
+Data-Generating Mechanism
+Edge Violations ↓
+SHD ↓
+TPR ↑
+ANM (Additive Noise, Control)
+1.6 ± 1.0
+3.6 ± 2.9
+0.95 ± 0.04
+MNM (Multiplicative Noise)
+0.0 ± 0.0
+0.4 ± 0.8
+0.99 ± 0.02
+PNL (Post-Nonlinear Model)
+47.0 ± 2.4
+94.4 ± 8.4
+0.03 ± 0.02
+J
+Extreme Scaling and Finite-Sample Estimation Limits
+We evaluate Block-SSTS on high-dimensional DAGs up to d = 1000 (N = 5000). Benchmarking
+continuous acyclicity optimization on a single GPU is restrictive due to O(d3) complexity per gradient
+step.
+Empirical Verification of Block-SSTS. On non-linear manifolds with d = 1000, the algorithm com-
+presses extraction into 828.8 ± 18.7 block inversions. Block-wise parallelization reduces sequential
+Schur marginalization depth, truncating the cascade of the non-linear expectation gap (∆) derived in
+Proposition 3.4. This limits numerical drift (Tdisc ≈0.56s).
+Topological Ambiguity and Evaluation. We report Edge Violations (EV), which is invariant to
+permutations within topological equivalence classes (Appendix B).
+Finite-Sample Estimation Limits. Topological accuracy degrades in the high-dimensional regime.
+For the d = 1000 topology, a random topological sort yields an expected violation count of 500. The
+observed 488.6 ± 8.5 violations reflect a reduction toward random extraction. As outlined in Proposi-
+tion 3.4: at d = 1000 with N = 5000, the score network operates in an under-parameterized regime.
+The Jacobian is influenced by estimation variance, obscuring SJIM diagonal energy signatures. The
+17
+
+
+Table 8: Scaling Limits of Block-SSTS (N = 5000). Evaluated over 5 random seeds. Tdisc up to
+d = 1000 reflects block-wise algebraic extraction time.
+Dimension (d)
+Edge Violations ↓
+Block Iters ↓
+Trep (s)
+Tdisc (s)
+VRAM (GB)
+d = 50
+4.2 ± 1.0
+34.4 ± 3.3
+4.01 ± 0.74
+0.036 ± 0.039
+0.36
+d = 100
+18.2 ± 3.8
+78.4 ± 2.4
+3.57 ± 0.09
+0.038 ± 0.001
+0.73
+d = 500
+247.2 ± 13.4
+394.8 ± 8.0
+3.43 ± 0.08
+0.228 ± 0.004
+8.09
+d = 1000
+488.6 ± 8.5
+828.8 ± 18.7
+3.58 ± 0.10
+0.562 ± 0.011
+8.10
+algebraic formulation shifts the causal discovery bottleneck from optimization to high-dimensional
+statistical score estimation.
+K
+Algorithmic Scalability under Hardware Constraints
+We evaluate the operational limits of our algebraic framework up to d = 5000 under explicit capacity
+constraints. To bound the memory footprint, we apply modifications: (1) Micro-batch Jacobian
+Extraction: Vectorized Jacobian computation is partitioned into micro-chunks bounded to a 256 MB
+buffer. (2) Rank-1 Outer-Product Updates: Block-matrix inversion in Block-SSTS is executed as
+sequential rank-1 updates. (3) Capacity Capping: The hidden dimensionality of the score network is
+bounded.
+Table 9: Hardware-Bounded Extraction at Extreme Dimensions (N = 5000). Evaluated over 5
+random seeds.
+Dimension (d)
+Edge Violations ↓
+Trep (s)
+Tdisc (s)
+Peak VRAM (GB)
+d = 500
+210.6 ± 71.3
+3.72 ± 0.69
+0.145 ± 0.013
+0.95
+d = 1000
+301.0 ± 16.9
+3.46 ± 0.07
+0.378 ± 0.002
+0.97
+d = 5000
+1994.6 ± 669.2
+3.65 ± 0.04
+6.570 ± 0.015
+0.93
+The memory-throttled variant processes 5000-node graphs while maintaining a peak VRAM utiliza-
+tion of 0.933 GB. Topological extraction evaluates the empirical SJIM in 6.57 ± 0.01 seconds.
+L
+Robustness to Distributional and Topological Shifts
+We evaluate SSTS on graphs of dimension d = 50 (N = 5000) across architectural shifts:
+1. Topological Shifts: We contrast Erd˝os-Rényi (ER) graphs with Scale-Free (SF) networks. SF
+networks exhibit a power-law degree distribution, testing precision under topological imbalance.
+2. Distributional Shifts: We replace Gaussian noise with Exponential and Gumbel distributions.
+These asymmetric distributions violate zero-mean Gaussian assumptions.
+Table 10: Robustness Benchmark across Topology and Noise Distributions (d = 50, N = 5000).
+Evaluated over 5 random seeds (Mean ± Std).
+Graph Topology
+Noise Distribution
+Edge Violations ↓
+SHD ↓
+TPR ↑
+Erd˝os-Rényi (ER)
+Gaussian
+1.6 ± 1.0
+3.6 ± 2.9
+0.95 ± 0.04
+Exponential
+1.6 ± 1.4
+5.4 ± 6.0
+0.97 ± 0.02
+Gumbel
+0.2 ± 0.4
+0.8 ± 1.0
+1.00 ± 0.01
+Scale-Free (SF)
+Gaussian
+2.2 ± 1.9
+21.4 ± 14.4
+0.97 ± 0.01
+Exponential
+1.4 ± 1.7
+26.6 ± 24.1
+0.96 ± 0.04
+Gumbel
+0.2 ± 0.4
+16.8 ± 21.4
+0.98 ± 0.04
+SSTS maintains topological extraction across distributional and structural shifts. Under Exponential
+and Gumbel noise, structural fidelity is preserved. On Scale-Free topologies, edge violations remain
+low (≤2.2) with high true positive rates (≥0.96) across noise variants. While absolute Structural
+Hamming Distance increases in densely connected hub neighborhoods, the underlying topological
+sorting mechanism evaluates hierarchy independently of degree imbalance.
+18
