@@ -41,7 +41,15 @@ LLM_CLIENT = None
 if BLT_API_KEY:
     LLM_CLIENT = BltClient(api_key=BLT_API_KEY, model=BLT_MODEL)
 
-DEFAULT_DOCS_CONCURRENCY = 4
+DEFAULT_DOCS_CONCURRENCY = int(os.getenv("DPR_DOCS_CONCURRENCY", "2"))
+
+SUMMARY_MAX_PAPER_TEXT_CHARS = int(os.getenv("DPR_SUMMARY_MAX_PAPER_TEXT_CHARS", "4500"))
+SUMMARY_MAX_MD_META_CHARS = int(os.getenv("DPR_SUMMARY_MAX_MD_META_CHARS", "2500"))
+SUMMARY_DEEP_MAX_TOKENS = int(os.getenv("DPR_SUMMARY_DEEP_MAX_TOKENS", "1536"))
+SUMMARY_DEEP_CONT_MAX_TOKENS = int(os.getenv("DPR_SUMMARY_DEEP_CONT_MAX_TOKENS", "768"))
+SUMMARY_GLANCE_MAX_TOKENS = int(os.getenv("DPR_SUMMARY_GLANCE_MAX_TOKENS", "768"))
+SUMMARY_TRANSLATE_MAX_TOKENS = int(os.getenv("DPR_SUMMARY_TRANSLATE_MAX_TOKENS", "768"))
+SUMMARY_BRIEF_MAX_TOKENS = int(os.getenv("DPR_SUMMARY_BRIEF_MAX_TOKENS", "384"))
 
 
 def call_blt_text(
@@ -319,7 +327,7 @@ def translate_title_and_abstract_to_zh(title: str, abstract: str) -> Tuple[str, 
             schema_name="translate_zh",
             schema=schema,
             temperature=0.2,
-            max_tokens=4000,
+            max_tokens=SUMMARY_TRANSLATE_MAX_TOKENS,
         )
     except Exception:
         return "", ""
@@ -366,6 +374,133 @@ def strip_auto_sections(md_text: str) -> str:
         return md_text
     cut = min(cut_points)
     return md_text[:cut].rstrip()
+
+def compact_paper_text(text: str, max_chars: int = SUMMARY_MAX_PAPER_TEXT_CHARS) -> str:
+    """
+    Compress JINA/PDF extracted full text before sending it to the LLM.
+
+    Goal:
+    - keep high-value sections: title/abstract/introduction/method/experiments/conclusion
+    - drop references/appendix/acknowledgements
+    - enforce a hard character budget
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+
+    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+
+    stop_heading_re = re.compile(
+        r"^\s{0,3}(#{1,6}\s*)?"
+        r"(references|bibliography|acknowledg(e)?ments?|appendix|supplementary material)"
+        r"\b",
+        re.IGNORECASE,
+    )
+
+    keep_heading_re = re.compile(
+        r"^\s{0,3}(#{1,6}\s*)?"
+        r"(title|abstract|introduction|background|related work|method|methods|approach|model|"
+        r"experiments?|evaluation|results?|discussion|conclusion|limitations?)"
+        r"\b",
+        re.IGNORECASE,
+    )
+
+    lines = []
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if stop_heading_re.match(s):
+            break
+
+        # Remove common noisy markdown artifacts.
+        if re.fullmatch(r"[-=*_]{3,}", s):
+            continue
+        if s.lower().startswith(("http://", "https://")):
+            continue
+
+        lines.append(s)
+
+    cleaned = "\n".join(lines).strip()
+    if not cleaned:
+        cleaned = raw
+
+    # If the paper is still long, prefer the front matter plus important-section snippets.
+    if len(cleaned) > max_chars:
+        selected = []
+        current_block = []
+        keep_current = True
+        used = 0
+
+        for line in cleaned.splitlines():
+            is_heading = bool(re.match(r"^\s{0,3}#{1,6}\s+", line))
+            if is_heading:
+                # Flush previous block if it was marked useful.
+                if current_block and keep_current:
+                    block = "\n".join(current_block).strip()
+                    if block:
+                        selected.append(block)
+                        used += len(block)
+                current_block = [line]
+                keep_current = bool(keep_heading_re.match(line))
+            else:
+                if len(current_block) < 80:
+                    current_block.append(line)
+
+            if used >= max_chars:
+                break
+
+        if current_block and keep_current and used < max_chars:
+            block = "\n".join(current_block).strip()
+            if block:
+                selected.append(block)
+
+        compact = "\n\n".join(selected).strip()
+        if compact:
+            cleaned = compact
+
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars].rstrip()
+
+    return cleaned
+
+
+def compact_markdown_meta(md_text: str, max_chars: int = SUMMARY_MAX_MD_META_CHARS) -> str:
+    """
+    Keep only concise Markdown metadata before sending it to the LLM.
+    """
+    text = strip_auto_sections(str(md_text or "")).strip()
+    if not text:
+        return ""
+
+    # Prefer front matter + abstract region.
+    if len(text) <= max_chars:
+        return text
+
+    parts = []
+    front_matter = ""
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            front_matter = text[: end + 4].strip()
+            parts.append(front_matter)
+
+    abstract_match = re.search(r"##\s+Abstract\s*\n([\s\S]*?)(?=\n##\s+|\Z)", text, flags=re.IGNORECASE)
+    if abstract_match:
+        parts.append("## Abstract\n" + abstract_match.group(1).strip())
+
+    zh_abs_match = re.search(r"##\s+摘要\s*\n([\s\S]*?)(?=\n##\s+|\Z)", text, flags=re.IGNORECASE)
+    if zh_abs_match:
+        parts.append("## 摘要\n" + zh_abs_match.group(1).strip())
+
+    compact = "\n\n".join(p for p in parts if p).strip()
+    if not compact:
+        compact = text[:max_chars].rstrip()
+
+    if len(compact) > max_chars:
+        compact = compact[:max_chars].rstrip()
+
+    return compact
 
 
 def normalize_meta_tldr_line(md_text: str) -> Tuple[str, bool]:
@@ -524,12 +659,12 @@ def generate_deep_summary(md_file_path: str, txt_file_path: str, max_retries: in
         return None
 
     with open(md_file_path, "r", encoding="utf-8") as f:
-        paper_md_content = strip_auto_sections(f.read())
-
+        paper_md_content = compact_markdown_meta(f.read())
+        
     paper_txt_content = ""
     if os.path.exists(txt_file_path):
         with open(txt_file_path, "r", encoding="utf-8") as f:
-            paper_txt_content = f.read()
+            paper_txt_content = compact_paper_text(f.read())
 
     system_prompt = (
         "你是一名资深学术论文分析助手，请使用中文、以 Markdown 形式，"
@@ -558,7 +693,12 @@ def generate_deep_summary(md_file_path: str, txt_file_path: str, max_retries: in
     last = ""
     for attempt in range(1, max_retries + 1):
         try:
-            summary = call_blt_text(LLM_CLIENT, messages, temperature=0.3, max_tokens=4096)
+            summary = call_blt_text(
+                LLM_CLIENT,
+                messages,
+                temperature=0.3,
+                max_tokens=SUMMARY_DEEP_MAX_TOKENS,
+            )
             summary = (summary or "").strip()
             if not summary:
                 continue
@@ -573,7 +713,12 @@ def generate_deep_summary(md_file_path: str, txt_file_path: str, max_retries: in
                 {"role": "user", "content": "你上一次的总结可能被截断了，请从中断处继续补全，不要重复已输出内容。"},
                 {"role": "user", "content": f"上一次输出如下：\n\n{summary}\n\n请继续补全，最后以一行“（完）”结束。"},
             ]
-            cont = call_blt_text(LLM_CLIENT, cont_messages, temperature=0.3, max_tokens=2048)
+            cont = call_blt_text(
+                LLM_CLIENT,
+                cont_messages,
+                temperature=0.3,
+                max_tokens=SUMMARY_DEEP_CONT_MAX_TOKENS,
+            )
             cont = (cont or "").strip()
             merged = f"{summary}\n\n{cont}".strip()
             if os.getenv("DPR_DEBUG_STEP6") == "1":
@@ -634,7 +779,7 @@ def generate_glance_overview(title: str, abstract: str, max_retries: int = 3) ->
                 schema_name="glance_overview",
                 schema=schema,
                 temperature=0.2,
-                max_tokens=2048,
+                max_tokens=SUMMARY_GLANCE_MAX_TOKENS,
             )
             if not isinstance(parsed, dict):
                 continue
@@ -959,7 +1104,7 @@ def build_daily_brief_summary(
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.45,
-            max_tokens=768,
+            max_tokens=SUMMARY_BRIEF_MAX_TOKENS,
         )
         content = (content or "").strip()
         if content:
