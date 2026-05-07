@@ -640,8 +640,8 @@ def upsert_glance_block_in_text(md_text: str, glance: str) -> str:
     key = "## 速览"
     if key in txt:
         # 替换现有速览块
-        pattern = re.compile(r"(^## 速览\\s*\\n)(.*?)(?=\\n---\\n|\\n##\\s|\\Z)", re.S | re.M)
-        return pattern.sub(rf"\\1{glance}\n", txt, count=1)
+        pattern = re.compile(r"(^## 速览\s*\n)(.*?)(?=\n---\n|\n##\s|\Z)", re.S | re.M)
+        return pattern.sub(rf"\1{glance}\n", txt, count=1)
 
     abstract_idx = txt.find("## Abstract")
     if abstract_idx != -1:
@@ -832,7 +832,7 @@ def build_glance_fallback(paper: Dict[str, Any]) -> str:
         s = (text or "").strip()
         if not s:
             return ""
-        parts = re.split(r"(?<=[。！？.!?])\\s+", s)
+        parts = re.split(r"(?<=[。！？.!?])\s+", s)
         return (parts[0] if parts else s).strip()
 
     if not tldr:
@@ -847,14 +847,14 @@ def build_glance_fallback(paper: Dict[str, Any]) -> str:
 
     method_hint = ""
     if abstract:
-        m = re.search(r"(we (?:propose|present|introduce|develop)[^\\.]{0,200})\\.", abstract, re.I)
+        m = re.search(r"(we (?:propose|present|introduce|develop)[^\.]{0,200})\.", abstract, re.I)
         if m:
             method_hint = m.group(1).strip()
     method = ensure_single_sentence_end(method_hint or "方法与实现细节请参考摘要与正文。")
 
     result_hint = ""
     if abstract:
-        m = re.search(r"(experiments? (?:show|demonstrate)[^\\.]{0,200})\\.", abstract, re.I)
+        m = re.search(r"(experiments? (?:show|demonstrate)[^\.]{0,200})\.", abstract, re.I)
         if m:
             result_hint = m.group(1).strip()
     result = ensure_single_sentence_end(result_hint or "结果与对比结论请参考摘要与正文。")
@@ -1549,6 +1549,7 @@ def process_paper(
     pdf_url = str(paper.get("link") or paper.get("pdf_url") or "").strip()
 
     glance = ""
+    existing = ""
 
     if os.path.exists(md_path):
         # glance-only should stay metadata-only by default: no PDF/JINA fetch.
@@ -2320,7 +2321,7 @@ def _parse_generated_md_to_meta(
         text = ""
 
     lines = (text or "").splitlines()
-    fm_meta: Dict[str, Any] = _parse_front_matter(text)
+    fm_meta = _parse_front_matter(text)
 
     legacy_meta: Dict[str, str] = {}
     for line in lines:
@@ -2891,19 +2892,22 @@ def main() -> None:
         quick_entries = _process_section("quick", quick_list, sidebar_evidence_by_id)
         log_substep("6.3", "生成速读区文章", "END")
 
-     # Merge with papers already generated earlier on the same day.
-     # Without this, a second run on the same date replaces the sidebar/day report
-     # with only the latest recommend output.
-     old_deep_entries, old_quick_entries, old_evidence_by_id = collect_existing_day_entries(
-         docs_dir,
-         date_str,
-     )
+    # Merge with papers already generated earlier on the same day.
+    # Without this, a second run on the same date replaces the sidebar/day report
+    # with only the latest recommend output.
+    old_deep_entries, old_quick_entries, old_evidence_by_id = collect_existing_day_entries(
+        docs_dir,
+        date_str,
+    )
+
     if old_deep_entries or old_quick_entries:
         deep_entries = _merge_entry_lists(old_deep_entries, deep_entries)
         quick_entries = _merge_entry_lists(old_quick_entries, quick_entries)
+
         merged_evidence = dict(old_evidence_by_id)
         merged_evidence.update(sidebar_evidence_by_id)
         sidebar_evidence_by_id = merged_evidence
+
         log(
             "[INFO] same-day merge: "
             f"deep={len(deep_entries)} quick={len(quick_entries)} "
