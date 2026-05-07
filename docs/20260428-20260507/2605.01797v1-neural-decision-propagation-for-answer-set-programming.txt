@@ -1,0 +1,932 @@
+Title: Neural Decision-Propagation for Answer Set Programming
+
+URL Source: https://arxiv.org/pdf/2605.01797v1
+
+Published Time: Tue, 05 May 2026 01:05:42 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Neural Decision–Propagation for Answer Set Programming 
+
+# Thomas Eiter 1 , Katsumi Inoue 2 , Sota Moriyama 3,21Vienna University of Technology, Austria 
+
+> 2
+
+# National Institute of Informatics, Japan 
+
+> 3
+
+# The Graduate University for Advanced Studies, SOKENDAI, Japan thomas.eiter@tuwien.ac.at, {inoue, sotam }@nii.ac.jp 
+
+# Abstract 
+
+Integration of Answer Set Programming (ASP) with neural networks has emerged as a promis-ing tool in Neuro-symbolic AI. While existing ap-proaches extend the capabilities of ASP to real world domains, their reasoning pipelines depend on classical solvers, which is a bottleneck for scala-bility. To tackle this problem, we propose a new method to compute stable models, called decision– propagation (DProp), which alternates falsity de-cisions and truth propagations. Successful DProp computations are shown to capture the stable model semantics. We then develop Neural DProp (ND-Prop), a differentiable extension of DProp with neural computation for decisions and fuzzy evalua-tion for propagations. We evaluate the capabilities of NDProp for learning decision heuristics as well as neuro-symbolic integration, and compare it with existing neuro-symbolic approaches. The results show that NDProp can learn to efficiently compute stable models, and it improves accuracy and scala-bility on neuro-symbolic benchmarks. 
+
+# 1 Introduction 
+
+Neuro-symbolic AI aims to develop systems that bring to-gether robust learning in neural networks with reasoning via symbolic representations [d’Avila Garcez and Lamb, 2023; Wang et al. , 2025]. There has been a growing interest in using logic programming as a general framework for inte-grating symbolic reasoning with neural learning in such sys-tems [Yang et al. , 2020; Manhaeve et al. , 2021; Evans and Grefenstette, 2018]. Answer Set Programming (ASP), a declarative programming paradigm widely used for knowl-edge representation and reasoning tasks [Lifschitz, 2008; Brewka et al. , 2011], is one such example. Neuro-symbolic integration of ASP has been attempted in various domains, ranging from Visual Question Answering [Eiter et al. , 2022], concept learning [Mao et al. , 2019], compliance check-ing [Barbara et al. , 2023], and so on [Borroto et al. , 2025]. One prominent approach is to train neural networks with symbolic knowledge expressed with ASP. NeurASP [Yang et al. , 2020] integrates neural atoms into ASP programs, allow-ing neural network outputs to be directly incorporated into symbolic reasoning and learning. Scalability has been a point of emphasis in SLASH [Skryagin et al. , 2023], which dynam-ically prunes unlikely symbolic solutions using probabilistic feedback from neural components, thereby reducing the cost of ASP reasoning. However, existing works typically require the use of symbolic solvers, which often becomes a bottle-neck for scalability. To address these challenges, we propose a novel method for computing stable models called decision–propagation 
+
+(DProp). A DProp run iteratively alternates between the fol-lowing two phases: (i) decision, which selects undecided atoms to commit to false non-deterministically, and (ii) prop-agation, which updates the current partial assignment by de-riving consequences of the program under the current as-sumptions. We then prove that successful DProp computa-tions (runs that end without contradictions) capture the stable model semantics. Subsequently, we propose Neural DProp (NDProp), a dif-ferentiable extension of DProp. NDProp uses neural net-works for falsity decisions and fuzzy logic operators for prop-agations. As NDProp is identical to DProp in the crisp case, it is able to prove stability when the outputs are binary un-der a certain condition, making it easy to train in an un-supervised manner. These make the integration of NDProp into neuro-symbolic systems seamless, while still preserving a clear connection to classical stable model semantics. Fur-thermore, the learned decision steps and parallel capabilities via GPUs make this approach significantly more scalable. To demonstrate the effectiveness of NDProp, we conduct three kinds of experiments: (1) random ASP solving to de-termine whether NDProp can learn the solving dynamics for given ASP problems, (2) neuro-symbolic integration to de-termine whether using NDProp has merits over existing ap-proaches that use classical solvers, and (3) fuzzy reasoning to determine whether NDProp can reason and find stable mod-els given fuzzy values as input. The results show that ND-Prop performs better than the respective baselines; it is supe-rior with respect to accuracy, and has much higher inference speed than existing ASP-based neuro-symbolic approaches. In summary, our contributions are: • We introduce a novel method for computing stable mod-els called decision–propagation (DProp), and prove that a successful DProp computation captures stable model semantics. 
+
+> arXiv:2605.01797v1 [cs.AI] 3 May 2026
+
+• We develop NDProp, a differentiable extension of DProp that uses neural decisions and fuzzy propaga-tions, and show that it coincides with DProp at the crisp case. • We analyze the capabilities of NDProp in learning the solving dynamics of random ASP problems, and attempt to integrate NDProp into neuro-symbolic frameworks. • We demonstrate that NDProp performs better than re-spective baselines, specifically with accuracy and infer-ence speed. Consequently, we propose a fully-differentiable answer set solver based on novel fixpoint semantics, yielding improved scalability compared to previous neural approaches to ASP. 
+
+# 2 Preliminaries 
+
+2.1 Answer Set Programming 
+
+Answer Set Programming (ASP) is a declarative paradigm based on non-monotonic logic and is widely used for knowl-edge representation and reasoning [Lifschitz, 2008; Brewka 
+
+et al. , 2011]. A rule r in a (normal logic) program P has the form 
+
+a ← b1, . . . , b m, not c 1, . . . , not c l, (1) where a, bi, and cj are atoms and not denotes default nega-tion. For a rule r of the form (1), the atom a is the head of the rule denoted as H(r), and b1, . . . , b m, not c 1, . . . , not c l
+
+is the body of the rule denoted as B(r). The sets B+(r) = 
+
+{b1, . . . , b m} and B−(r) = {c1, . . . , c l} represents the posi-tive and negative literals of r, respectively. An interpretation 
+
+I, i.e., a subset of the set A of all atoms, is a model of P if it satisfies each rule r of P , i.e., either (i) I ∩(H(r)∪B−(r)) ̸ =
+
+∅ or (ii) I̸ ⊇ { b1, . . . , b m} holds. Furthermore, I is a sta-ble model (answer set ) of P if it is the least model of the 
+
+Gelfond–Lifschitz reduct P I obtained from P by deleting ev-ery rule whose negative body intersects I, and removing all negative literals from the remaining rules. Given two interpretations I, J and a normal logic program 
+
+P , an immediate consequence operator with respect to J [Van Gelder, 1993] is defined as 
+
+CP,J (I) = H(r) ∈ A | B+(r) ⊆ I, B −(r) ∩ J = ∅ .
+
+We define C0 
+
+> P,J
+
+(I) = I and Ck+1  
+
+> P,J
+
+(I) = CP,J (CkP,J (I)) for integer k (≥ 0) . When P + is a definite program , i.e., a pro-gram whose rule contains no default negation (l = 0) , for fixed J there is a least fixpoint of CP +,J starting from ∅,which is the least model of P +, denoted as C∞  
+
+> P+,J
+
+(∅) [van Emden and Kowalski, 1976]. Then, the next lemma holds. 
+
+Lemma 1. S is a stable model of P iff S = C∞ 
+
+> P,S
+
+(∅).
+
+2.2 Fuzzy Interpretations 
+
+In many real-world settings it is necessary to reason with vague or incomplete information. Fuzzy Answer Set Pro-gramming (FASP) extends ASP by interpreting atoms with a truth degree in the interval [0 , 1] and evaluating rule bodies, while adopting stable-model-based semantics for fuzzy inter-pretations [Nieuwenborgh et al. , 2006; Alviano and Pe˜ naloza, 2013]. (2) Propagation 
+
+𝑈 : {c, … }
+
+𝑇 : {a, … }
+
+𝑈 : {d, … }
+
+Decisions on which 
+
+atom(s) to falsify 
+
+(1) Decision 
+
+Derive and 
+
+Update 𝑇      
+
+> a:-not b .
+> b : -not a.
+> c:-a, not b .
+> ⋮
+> ASP Program
+
+F: {b, … }
+
+> Figure 1: Decision–Propagation (DProp) iteration pipeline.
+
+Let A be a set of propositional atoms. A fuzzy interpre-tation is a mapping I : A → [0 , 1] assigning each atom a degree of truth. To evaluate rule bodies, FASP fixes a t-norm 
+
+⊗ : [0 , 1] 2 → [0 , 1] (fuzzy conjunction), i.e., a commuta-tive, associative and monotone operator with unit 1. Typical t-norms include G¨ odel, Product, and Łukasiewicz. Similarly, 
+
+t-conorm ⊕ : [0 , 1] 2 → [0 , 1] represents fuzzy disjunction. For a rule r of the form (1), the degree to which the body is satisfied under I is 
+
+I(B(r)) := 
+
+ mO
+
+> i=1
+
+I(bi)
+
+
+
+⊗
+
+ nO
+
+> j=1
+
+ 1 − I(cj )
+
+,
+
+where default negation is interpreted using strong negation 
+
+I(not c ) = 1 − I(c).
+
+# 3 Decision–Propagation for ASP 
+
+In this section, we describe DProp computations, and show that successful DProp computations capture stable model se-mantics. DProp uses a forward chaining approach similar to [Lef` evre et al. , 2017; Dal Pal` u et al. , 2009], with the biggest difference being that the decisions are made at an atom and not at a rule level, making the differentiable ex-tension much simpler. Formally, DProp operates on an atom set A of P , with each state splitting A into disjoint true, false, and undecided sets T ,
+
+F , and U = A \ (T ∪ F ), respectively. With initial sets T 0 =
+
+C∞
+
+> P, A
+
+(∅), F 0 = ∅, and U 0 = A \ (T 0 ∪ F 0), a run in DProp performs the following iterations (k ≥ 0) until termination: 1. Decision. Select an undecided atom a ∈ U k−1 (via some policy), then update F k = F k−1 ∪ { a}.2. Propagation. With F k fixed, compute T k =
+
+C∞  
+
+> P, A\ Fk
+
+(T k−1)1 and set U k = U k−1 \ (T k ∪ F k).3. Termination. If U k = ∅, stop and return T k; otherwise continue to the next decision. 
+
+> 1This can be defined via Lemma 4.
+
+When a run terminates, we write k = ∞, obtaining T ∞, F ∞,and U ∞. Here, both T and F increase monotonically because Propagation and Decision never remove atoms from them. 
+
+Lemma 2. A DProp run always terminates for a finite atom set A.Proof. Decisions always remove an atom a from U k at every iteration. Thus, the number of DProp iterations is finite, if the atom set A is finite. 
+
+Definition 1 (Successful DProp computation) . A success-ful DProp computation is a DProp run that terminates with 
+
+U ∞ = ∅ and T ∞ ∩ F ∞ = ∅.
+
+The following properties of the operator CP,I (J) are not hard to see (for the proof, see Appendix A). 
+
+Lemma 3. If F ⊆ F ′, then C∞ 
+
+> P, A\ F
+
+(∅) ⊆ C∞  
+
+> P, A\ F′
+
+(∅).
+
+Lemma 4. If T k−1 ⊆ C∞  
+
+> P, A\ Fk
+
+(∅), then C∞  
+
+> P, A\ Fk
+
+(T k−1) = 
+
+C∞  
+
+> P, A\ Fk
+
+(∅).
+
+Theorem 1. Let P be a finite program and S ⊆ A P , where 
+
+AP is the set of atoms occurring in P . Then S is a stable model of P if and only if S is the final true set of a successful DProp computation. Proof. (⇒) Let S be a stable model of P , and F k−1, T k−1
+
+and U k−1 be the sets of atoms that are true, false and unde-fined at the beginning of the k-th iteration, where k = ∞
+
+is the final iteration. Consider a run of DProp that at each step decides the falsity of an atom a ∈ (A \ S) ∩ U k−1.The propagation step then yields T k = C∞   
+
+> P, AP\Fk
+
+(T k−1),which by Lemma 4 equals C∞   
+
+> P, AP\Fk
+
+(∅). Because F k ⊆AP \ S, we have S ⊆ A P \ F k and hence, by Lemma 3, 
+
+C∞   
+
+> P, AP\Fk
+
+(∅) ⊆ C∞ 
+
+> P,S
+
+(∅). By Lemma 1, C∞ 
+
+> P,S
+
+(∅) = S, so 
+
+T k ⊆ S and T k ∩ F k = ∅ for all k. At termination, U ∞ = ∅,so T ∞ = C∞   
+
+> P, AP\F∞
+
+(∅) = C∞  
+
+> P,T ∞
+
+(∅) hence T ∞ = S from Lemma 1. From Lemma 2, the computation will terminate as the given program P is finite. 
+
+(⇐) Let S be the final true set of a successful DProp computation, and T ∞− 1 and F ∞ be the true and false sets before the final propagation step. As the propagation step does not modify F ∞, from Definition 1, S = A \ F ∞ so 
+
+S = C∞  
+
+> P, A\ F∞
+
+(T ∞− 1) = C∞ 
+
+> P,S
+
+(T ∞− 1). From Lemma 4, 
+
+C∞ 
+
+> P,S
+
+(T ∞− 1) = C∞ 
+
+> P,S
+
+(∅), and Lemma 1 implies that S is a stable model of P .
+
+Remark 1 (Batch decisions) . The proof only relies on the fact that F grows monotonically and is held fixed during propaga-tion. Hence any variant that, in a single decision step, adds a set E ⊆ U to F (i.e., F ← F ∪ E) satisfies the same invari-ants and therefore admits the same characterization: every DProp computation of such a variant yields a stable model. 
+
+# 4 Neural Decision–Propagation 
+
+We now instantiate DProp with differentiable operators, yielding a neural solver NDProp that is an extension of DProp. Corresponding to the true and false sets T and F ,we consider true and false degrees (τ, ϕ ) ∈ [0 , 1] n × [0 , 1] n.Furthermore, decisions are implemented via neural decision modules that gradually increase falsity. 
+
+4.1 Neural Extensions of DProp 
+
+Each atom ai carries a true and false degree τi and ϕi. Literal evaluations are done with the val operator, which outputs for positive and negative literals 
+
+val( ai) = τi and val( not a i) = ϕi,
+
+respectively. Regarding (τi, ϕ i), values near (0 , 0) indicate undecided atoms, (1 , 0) denotes derived truth, (0 , 1) denotes explicit falsity, and (1 , 1) encodes contradiction. For ND-Prop, we combine these into a single membership score 
+
+pi = 12 (τi + 1 − ϕi) ∈ [0 , 1] ,
+
+which serves as the atom’s soft truth value indicating whether the atom should be included in the answer set or not. This becomes binary iff (τi, ϕ i) is (1 , 0) or (0 , 1) . We denote by 
+
+(τ t, ϕ t) the degrees at iteration t.
+
+Decision Phase 
+
+Decisions update only ϕ while holding τ fixed, as in DProp. Given a t-norm ⊗ and t-conorm ⊕, the undecided degree μi
+
+for atom ai is defined as 
+
+μti := 1 − (τ ti ⊕ ϕti) = (1 − τ ti ) ⊗ (1 − ϕti) ∈ [0 , 1] .
+
+We then produce decisions via a neural decision module, which in this case is a Recurrent Neural Network (RNN) which takes the current input and hidden state st−1 and yields the decision logits dt and updated hidden state st as follows: 
+
+(dt, s t) = RNN dec 
+
+ [τ t ∥ ϕt ∥ μt], s t−1 ,
+
+where ∥ denotes the concatenation operation. RNNs retain historical information with the hidden states st, making it suitable for our approach that requires producing decisions over multiple steps. We then apply a sigmoid on the decision logits to yield the decision scores: 
+
+δt = σ dt .
+
+The falsity degrees move toward these selections via 
+
+ϕt+1 = ϕt + ( μt ⊙ δt), (2) with ⊙ denoting elementwise multiplication. Note that ϕt+1 
+
+remains in [0 , 1] since μ ≤ 1 − ϕt and δ ∈ [0 , 1] . Because 
+
+μt becomes zero for already decided atoms, this additive rule directly mirrors the discrete falsity decision ( F t = F t−1 ∪ E
+
+cf. Remark 1) when (τ t, ϕ t) and δt are binary. 
+
+Propagation Phase 
+
+Propagation updates only τ while holding ϕ fixed, as in DProp. Given a t-norm ⊗ and t-conorm ⊕, for each rule rj ,its rule body contributes support 
+
+ρj (τ, ϕ ) := O 
+
+> ℓ∈B(rj)
+
+val( ℓ).
+
+Each head atom ai aggregates these supports via the soft im-mediate consequence operator 
+
+(CP,ϕ (τ )) i := M 
+
+> j:H(rj)= ai
+
+ρj (τ, ϕ ).NDProp 
+
+# + [0.0, 0.2, … , 0.6, … ]
+
+ASP Program               
+
+> sum (0) :-digit_1(0), digit_ 2(0).
+> sum(1) :-digit_1(0), digit_2(1) .
+> sum(1) : -digit_ 1(1), digit_ 2(0).
+> ⋮
+> digit_1(0) : -0.0
+> digit_2(0) : –0.1
+> ⋮
+> [0.1,0.0,…,0.8,…]
+
+Neural 
+
+Networks 
+
+Neuro -symbolic Integration 
+
+Neural Decisions  
+
+> RNN
+> Update atom
+> falsity 𝜙
+> Memory
+
+Fuzzy Propagation s           
+
+> 𝜏 !"=𝜏 "⊗𝜏 ""
+> 𝜏 !!=𝜏 "⊗𝜏 ""
+> ⊕𝜏 !⊗𝜏 ""
+> ⋮
+
+Output 
+
+𝑠𝑢𝑚 0 = 0.1
+
+𝑠𝑢𝑚 1 = 0.2
+
+⋮
+
+Binary (=Stability) 
+
+Loss Function Figure 2: NDProp pipeline. The neuro-symbolic integration is added for specific instantiations, and the arrow leading from the neuro-symbolic block to the ASP program is added only when the backbone neural networks are being trained. 
+
+Given ϕt+1 , we update τ from the current state τ t by iterating 
+
+CP,ϕ t until convergence: 
+
+τ t+1 = C∞ 
+
+> P,ϕ t
+
+(τ t).
+
+In practice, we stop the iteration early when the maximum change between successive applications of CP,ϕ t falls below a fixed convergence threshold, or the iteration reaches a given pre-defined value. 
+
+Crisp Case Recovers DProp 
+
+We give the proof that DProp can be emulated with a specific constraint on NDProp, showing that NDProp is a differen-tiable extension of DProp. 
+
+Definition 2 (Set induced by ψ). Let ψ ∈ [0 , 1] n be a real valued vector with the i-th value ψi corresponding to atom 
+
+ai. The set induced by ψ is defined as 
+
+[ψ] := { ai | ψi = 1 , 1 ≤ i ≤ n }.
+
+In the crisp case, the operator CP,ϕ makes the same atoms true as CP, A\ F , that is: 
+
+Lemma 5. Let (τ, ϕ ) ∈ { 0, 1}n × { 0, 1}n, T = [ τ ] and 
+
+F = [ ϕ]. Then, [CP,ϕ (τ )] = CP, A\ F (T ).
+
+Then we obtain the following property: 
+
+Proposition 1 (Crisp Case) . Let (τ, ϕ ) ∈ { 0, 1}n × { 0, 1}n,
+
+δ ∈ { 0, 1}n, and propagation compute the fixpoint of CP,ϕ .Then, one update of NDProp coincides with one iteration of DProp. Proof. With binary (τ, ϕ ), the set induced by undecided de-gree μ = (1 − τ ) ⊗ (1 − ϕ) corresponds to U = A \ (T ∪ F )
+
+when T = [ τ ] and F = [ ϕ]. Thus, the update ϕ′ = ϕ+( μ⊙δ)
+
+coincides with F ′ = F ∪ (U ∩ [δ]) . From Remark 1, decid-ing falsity of a set of atoms is fine, thus this exactly coincides with the decision step of DProp when the falsity of a set of atoms U ∩ [δ] is decided. Since (τ, ϕ ′) ∈ {0, 1}n × { 0, 1}n, from Lemma 5
+
+[CP,ϕ ′ (τ )] = CP, A\ F ′ (T ). When CP,ϕ ′ (τ ) is applied until a fixpoint, this exactly coincides with the propagation step of DProp. Furthermore, when μ, δ is binary, τ and ϕ are guar-anteed to be binary as well. 
+
+4.2 Loss Alignment 
+
+We prove that enforcing NDProp to output binary values is equivalent to enforcing stability. Here, ψ′ ≤ ψ is equivalent to ∀i (ψ′ 
+
+> i
+
+≤ ψi) and 0 and 1 are n-dimensional vectors of all 
+
+0s and all 1s, respectively. 
+
+Lemma 6. Let ϕ ≤ ϕ′. Then, CP,ϕ (τ ) ≤ C P,ϕ ′ (τ ), and consequently C∞
+
+> P,ϕ
+
+(0) ≤ C∞ 
+
+> P,ϕ ′
+
+(0).
+
+Lemma 7. Let τ t−1 ≤ C∞ 
+
+> P,ϕ t
+
+(0). Then, C∞ 
+
+> P,ϕ t
+
+(τ t−1) = 
+
+C∞ 
+
+> P,ϕ t
+
+(0).
+
+Theorem 2 (Binary terminal state yields stability) . Let P be a finite program and S ⊆ A P , where AP is the set of atoms occurring in P . Then S is a stable model of P if and only if propagation is applied until convergence with the resulting membership score pi ∈ { 0, 1} and S = [ p].Proof. (⇒) Let p ∈ { 0, 1}n be the membership score ob-tained from (τ ∞, ϕ ∞), and let T = [ τ ] and F = [ ϕ]. Since 
+
+pi = 12 (τi + 1 − ϕi) and τ ∞ 
+
+> i
+
+, ϕ ∞ 
+
+> i
+
+∈ [0 , 1] , pi ∈ { 0, 1}
+
+implies (τ ∞ 
+
+> i
+
+, ϕ ∞ 
+
+> i
+
+) ∈ { (1 , 0) , (0 , 1) }, and thus T ∩ F = ∅,
+
+T ∪ F = A and T = [ p]. ϕ increases monotonically as there are no negatives in Equation (2). As propagation is applied until convergence τ ∞ = C∞ 
+
+> P,ϕ ∞
+
+(τ ∞− 1), and from Lemmas 6 and 7, τ ∞ = C∞ 
+
+> P,ϕ ∞
+
+(0). Since [0] = ∅, from Lemma 5, [τ ∞] = [ C∞ 
+
+> P,ϕ ∞
+
+(0)] = C∞ 
+
+> P, A\ F
+
+(∅) = C∞ 
+
+> P,T
+
+(∅).From Lemma 1, [p] = [ τ ∞] is thus a stable model of P .(⇐) Let τ ∞ and ϕ∞ be the true and false degrees after the final iteration. From Proposition 1, if we set the decision scores to be binary and make the propagation phase compute until a fixpoint of CP,ϕ , the iteration coincides with a DProp iteration. From Theorem 1, there exists a successful DProp computation that ends with the stable model S, and since τ, ϕ 
+
+is binary, T ∩ F = [ τ ∞] ∩ [ϕ∞] = ∅ and U = ∅, (τ ∞, ϕ ∞) ∈{(1, 0), (0, 1)} and thus p is binary and [p] = S.From Theorem 2, we can conclude that when the output p
+
+of NDProp is trained with a loss function that enforces binary outputs, it inherently forces the NDProp to learn to output stable models, given that the final propagation is done until convergence. This holds even with a single iteration, since the decision step can falsify a set of atoms at once, c.f. Remark 1. 
+
+# 5 Experiments 
+
+In this section, we perform experiments to answer the follow-ing three questions: (Q1 ) Can NDProp learn to solve ASP problems? (Q2 ) Can NDProp compete with existing ASP-based neuro-symbolic frameworks? (Q3 ) What are novel settings in explicit need of NDProp? The specific details and setup for each experiment are shown in Appendix B. 
+
+5.1 Random Logic Programs 
+
+To assess NDProp’s behavior on unbiased instances, we fol-low the linear model L(N 2, c 1, c 2) for random negative two-literal (N2L) programs [Wang et al. , 2015]. For n atoms, each pure rule a ← not b (with a̸ = b) appears independently with probability c1/n and each contradiction rule a ← not a 
+
+appears with probability c2/n . Random N2L programs are attractive for an experimental setting as they are easy to pro-duce, while being considerably difficult, as it includes NP-complete instances. The same setting has been used in other work that attempted to apply GNNs to Answer Set Computa-tion [Ielo and Ricca, 2021]. As supported models of N2L programs are known to be stable models as well, we look at problems that are not in this regard. Specifically, we look at the k-LP (N, L ) generator that has been studied for phase transitions in ASP [Zhao and Lin, 2003]. We use the 3-LP generator, which has been shown to be hard around L/N = 5 , where L and N correspond to the number of rules and atoms respectively. 
+
+Setup 
+
+We focus on having three datasets per generator (N2L, and 3-LP) with different number n of atoms. Specifically, we use easy (5–10), medium (11–50), and hard (51-100). We specifically use the hard set to determine whether the model is able to generalize to bigger problems. Each dataset con-sists of 1000 training and 100 validating instances and 100 testing instances. As the baseline, we implement RDProp, which is DProp with random decisions. We test RDProp with 1, 10, and 100 restarts, denoted as RDProp-1, RDProp-10, and RDProp-100 respectively. We compare NDProp with RDProp to see whether NDProp is able to learn the decision making process to outperform random decisions. For NDProp, we train for 1000 epochs, with the setup of an iteration of 10 (50 at test time), a hidden dimension of 32, a logical dimension of 32, a learning rate of 1 × 10 −3, and the G¨ odel t-norm. The logical dimension means the model maintains multiple logical states at once, and we select the state whose output is closest to binary at the end. For the loss function, we use the smallest Binary Cross Entropy (BCE) loss over all stable models as the objective function. Full set-tings are listed in Appendix B.                                                     
+
+> Method Split N2L 3-LP EMHEMHNDProp E100 80 17 100 61 12 M100 96 42 100 86 37
+> Random –77 1056 00RDProp-1 –40 90700RDProp-10 –96 37 460 30RDProp-100 –100 68 15 99 14 0Table 1: Percentage of instances for which a stable model was found, when trained on the easy and medium sets of each corresponding dataset. RDProp-Kcorresponds to DProp with random decisions, with a total of Krestarts. Best accuracy is in bold, and second best accuracy is underlined.
+
+Results 
+
+Table 1 provides the percentage of problems in each test set solved. The results show that NDProp is effectively learning the decision dynamics for solving random problems. Specifi-cally, NDProp is shown to completely outperform RDProp in the 1-shot setting, with performance with medium and easy training datasets exceeding that of 100-shot RDProp. This empirically supports our claim that NDProp is an extension of DProp, and that it can learn the decision heuristics for finding stable models for logic programs. 
+
+5.2 Neuro-Symbolic Tasks 
+
+As NDProp can approximate answer sets differentiably, it is natural to combine with existing neural networks based architectures to perform neuro-symbolic inference. In all settings, the input consists of one or more MNIST images, and supervision is provided only through arithmetic relations between the underlying concepts, rather than through per-image labels [Manhaeve et al. , 2021; Gaunt et al. , 2017; Tsamoura et al. , 2021]. The goal is therefore to jointly learn perception using symbolic reasoning from weak, relational supervision. 
+
+ASP Encodings. In contrast to prior neuro-symbolic ASP systems that use neural predicates to interface with perception modules [Yang et al. , 2020], we adopt a different strategy. We embed the output of neural models as fuzzy facts into a fixed ASP program that encodes the arithmetic constraints. While this may seem to force NDProp to perform as a FASP solver, the objective is to produce binary outputs, explicitly forcing the backbone perception model to predict binary values as well. 
+
+Setup 
+
+In this experiment, we perform evaluations on three vari-ants of the MNIST-based arithmetic reasoning tasks that are commonly used as neuro-symbolic benchmarks [Yang et al. ,2020; Manhaeve et al. , 2021]: 1 and 2 digit addition, Add2x2, Apply2x2 (with handwritten operator images) and 3 and 5 digit membership. For NDProp, we use the setup with iter-ation of 1, hidden dimension of 8, logical dimension of 2, learning rate of 1 × 10 −3, and product t-norm. The specific setup for each experiment is summarized in Appendix B. Addition Addition2 Add2x2 Apply2x2 Member3 Member5                                                                                          
+
+> NDProp NASP SLASH NDProp NASP SLASH NDProp NASP SLASH NDProp NASP SLASH NDProp NASP SLASH NDProp NASP SLASH
+> Train 160 150 *383 235 947* 2187 692 2190* TO 346 34 *154 110 256* TO 969 TO TO Test 0.37 21.08 9.49 1.28 56.05 5.62 1.15 60.03 5.50 1.52 4.16 4.85 0.79 6.14 4.22 4.40 496.4 6.38 R.Acc 99.02 97.64 98.69 98.92 97.87 98.86 99.04 98.59 98.47 100.0 100.0 100.0 97.25 94.71 88.74 96.97 11.56 8.92 I.Acc 98.20 95.35 97.39 96.10 92.17 95.53 95.73 93.70 92.57 100.0 100.0 100.0 98.97 97.10 92.70 97.53 59.67 60.30 Table 2: Neuro-symbolic MNIST results for NDProp, NeurASP (NASP) and SLASH. NeurASP is trained for 1 epoch (*), while NDProp and SLASH was for 10. Metrics are Train: Train time, Test: Test time, R.Acc: Recognition Accuracy (%), and I.Acc: Inference accuracy (%).
+
+We compare the performance of NDProp with ASP-based neuro-symbolic systems: NeurASP [Yang et al. , 2020] and SLASH [Skryagin et al. , 2023]. Experiments are conducted with 1 epoch for NeurASP (as in the original paper), and with a maximum of 10 epochs for SLASH and NDProp, setting timeout to 3000 seconds; the training is cut off when the bud-get is reached, and accuracy is checked at that point. 
+
+Results 
+
+Table 2 reports recognition accuracy, inference accuracy (ac-curacy of final output), and runtime (seconds) for both train-ing and testing splits, averaged over 3 runs. Across all six neuro-symbolic tasks, NDProp achieves higher digit and in-ference accuracy than NeurASP and SLASH, with especially large gains on inference accuracy for Add2x2. Empirically, this shows the benefits of using end-to-end trainable systems: jointly optimizing perception and reasoning leads to more co-hesive and consistent outputs. Furthermore, considering that the training time for NeurASP is with 1 epoch of training, we can see that NDProp trains much faster than other systems. This is more promi-nent in the testing speed, which is an average of 46 times faster than NeurASP, and 7.5 times faster than SLASH. This is mainly due to the GPU capabilities of NDProp; GPUs al-low for higher parallelization, allowing our model to process multiple instances with one forward pass. 
+
+5.3 Reasoning with Incomplete Data 
+
+In this experiment, we look at settings where data is incom-plete. Given the predicted outputs of models with incomplete training, NDProp can add a layer of reasoning on top, yield-ing a solution that is both correct in terms of the given re-quirements and is able to account for the information given by the outputs. 
+
+Setup 
+
+Visual sudoku is a task where each cell has an image cor-responding to a number, and the goal is to find the correct solution for the given grid, with MNIST being the most com-mon image used. In this experiment, we hypothesize a setting where the neural network is fixed; we pretrain the model on MNIST images, and reason on its predictions to find the so-lution to the task. By having models that are trained on less data, we can simulate a situation in which the given predic-tions are not correct 100% of the time. We specifically focus on the 4x4 setting with each cell con-taining an image with a number between 0-4 (0 for empty                           
+
+> 100% 50% 10% 5% 1% NDProp 95.33 93.80 92.43 88.07 74.30
+> ASP 92.77 92.40 90.03 85.60 70.47 Neural 84.07 84.17 83.23 80.87 73.30 Digit Acc. 99.25 99.24 99.12 98.58 96.89 Table 3: Visual sudoku accuracy (%) with different digit classifier training sizes. Best score is bolded, and the second best is under-lined. The row of Digit Acc. shows the prediction accuracy on MNIST (digits 0-4) of the backbone neural model.
+
+cell). We vary the amount of labeled training data for the MNIST predictor (100%, 50%, 10%, 5% and 1%) with 500 steps of training, to test whether the framework can perform under imperfect settings. We compare against two baselines that use the same predictions: • ASP: Give the current predictions other than 0 as a fact, and solve the ASP program. • Neural: Train a neural classifier that takes as input the predicted values of each cell (0 for empty cells), and pre-dict the digit in each cell. This is trained until conver-gence. In this setting, our framework is used in a separate way to the neuro-symbolic tasks. As the input facts are not trained to become binary, we use the facts only as a heuristic to guide NDProp to a solution. This is provided through the RNN’s initial hidden states s0 for each atom, which is computed by a single-layer MLP. We train for 100 epochs using NDProp with iterations of 3, hidden dimension of 8, logical dimension of 2, learning rate of 1 × 10 −3, and G¨ odel t-norm. 
+
+Results 
+
+Table 3 shows the percentage of problems where all digits for each cell were given correctly over 3 runs. In every setup, we can see that NDProp performs the best, with constant gains against the second best method. An interesting trend that can be observed is that when the amount of data goes up, the ASP baseline performs much better. This is because when the pre-dictions are correct, a complete reasoning mechanism will al-ways get the correct solution. On the other hand, while increasing the performance of the digit classifier does not have too dramatic of an impact for the neural method, we can see that the deterioration in per-formance is much smaller. This shows that neural models in general are very strong with imperfect inputs, showing merits over classical methods that completely plummet at 1%. ND-Prop is able to achieve the best of both worlds: when the pre-dictions are accurate, NDProp can properly reason on them to get the correct solution, and when the predictions are less accurate, it uses the information to find a solution that is most compatible with the predictions. 
+
+# 6 Related Work 
+
+6.1 ASP Solvers 
+
+State-of-the-art ASP systems such as clingo [Gebser et al. ,2016], DLV [Leone et al. , 2006], and WASP [Alviano et al. ,2013] adopt CDCL-inspired architectures that combine deter-ministic propagation with branching decisions. Because sat-isfying all rules is insufficient for stability, they supplement the computation with loop formulas, unfounded-set propa-gation, and nogood learning to enforce stability [Lifschitz, 2008]. DProp conceptually differs from this design by treat-ing stability as a result of computation: when the solution is contradiction-free, stability is guaranteed (Theorem 1). Fuzzy answer set programming is an extension of ASP to handle degrees of truth using fuzzy logic [Nieuwenborgh et al. , 2006; Alviano and Pe˜ naloza, 2013]. These approaches adapt the stable model semantics to allow the use of fuzzy truth values, often employing t-norms to define rule satisfac-tion and model construction. 
+
+6.2 Fixpoint Semantics 
+
+A wide range of fixpoint semantics for ASP have been pro-posed in the literature. Earlier works formalized nondeter-ministic fixpoint computation in various ways. For example, Sacc` a and Zaniolo [1990] incorporate a backtracking mech-anism into bottom-up search, and Inoue and Sakama [1996] characterize a parallel procedure to compute stable models [Inoue et al. , 1992; Shirai and Hasegawa, 2004] by a fix-point operator with case splitting and constraints. Efficient search strategies to limit the number of case splitting during fixpoint computation could be learned by machine learning techniques, but there has been no such attempt yet. Fages [1991] shows a non-contradictory strategy for justification-based derivation like truth maintenance system yields a stable model at a fixpoint. Similarly, the notion of persistent computation by Liu et al. [2010] selects applicable rules to compute stable models, and the idea leads to ASP solvers GASP [Dal Pal` u et al. , 2009] and ASPeRiX [Lef` evre 
+
+et al. , 2017]. Such a selection strategy is similar to DProp, which captures stable models as computations of iterations using propagation and choice. The main difference is that in GASP and ASPeRix, the choice is performed on all negative body literals of a chosen rule, while DProp performs deci-sions on any undecided atom; the latter eases extension into the continuous domain. Several works characterize stable models via alternating fixpoints and approximation operators [Fitting, 2002]. The alternating fixpoint theory [Przymusinski, 1991] defines sta-ble models as fixpoints of an operator that alternates be-tween deriving positive and negative information. Denecker 
+
+et al. [2000] develop an approximation theory that captures various non-monotonic semantics including stable models, through the use of approximating operators and their fix-points. These frameworks yield stable models in different ways than DProp, which directly produces stable models through propagation–decision steps. 
+
+6.3 Neural Answer Set Solving 
+
+Multiple works have explored the use of differentiable ap-proaches to solve ASP problems. One approach to accom-plish this is by using deep learning with discrete solvers such as clingo. Differentiable ASP/SAT [Nickles, 2018] compute stable models with ASP solvers utilizing derivatives of a cost function, and Dodaro et al. [2022] explore the use of deep learning to generate domain-specific solvers for WASP. An-other approach is to use differentiable approaches to compute solutions directly. Sato et al. [2023] use matrix representa-tions of logic programs to derive the cost function differen-tiably, while Ielo and Ricca [2021] use GNNs to solve neg-ative two literal programs. Our approach is classified in the latter, with the main differences being how the stability is be-ing enforced: prior works require the use of loop formulas or do not consider it at all. NDProp on the other hand enforces stability through the binarization of outputs, without the need of explicit loss functions. Neuro-symbolic integration of ASP is another field being explored. NeurASP [Yang et al. , 2020] finds stable models of programs that contain neural atoms using symbolic solvers, and uses the results to train the neural perception model. SLASH [Skryagin et al. , 2023] extends this system to sup-port joint distributions, richer queries, and scalable inference. However, both systems use symbolic solvers, and we are not aware of any work that uses differentiable solvers in a neuro-symbolic regime. 
+
+# 7 Conclusion 
+
+We have presented decision–propagation (DProp), a novel method for computing stable models. DProp alternates be-tween falsity decisions and truth propagations, and a success-ful DProp computation is shown to capture the stable model semantics. We then proposed NDProp, a differentiable exten-sion of DProp that uses neural decisions and fuzzy propaga-tions, and show that it coincides with DProp at the binary limit. Experiments on random logic programs and neuro-symbolic benchmarks show that NDProp is able to learn to solve ASP problems, and can be combined with neural mod-els to train end-to-end. Compared to existing approaches that use symbolic reasoning, our approach incorporates learning in the reasoning step as well, resulting in a higher accuracy. The results display the power of a differentiable and learnable solver in pipelines where reasoning is required. Throughout the experiments, we have noticed that some t-norms work better than others in each setting. An extensive study of t-norms in particular settings is left out for future work. Another direction to explore is whether the seman-tics of NDProp aligns with FASP. At the moment, NDProp is aimed at normal logic programs, but with modifications, it could be used to solve fuzzy variants. Finally, extending the framework to support often used constructs such as con-straints, choices and aggregates is left for future work as well. Acknowledgements 
+
+This work has been supported by JSPS KAKENHI Grant Number JP25K03190, JST CREST Grant Number JP-MJCR22D3 and Grant-in-Aid for JSPS Fellows Grant Num-ber JP26KJ1236, Japan. This research was funded in whole or in part by the Austrian Science Fund (FWF) 10.55776/COE12. I thank colleagues in the KBS Group at TU Wien for helpful discussions. 
+
+# References 
+
+[Alviano and Pe˜ naloza, 2013] Mario Alviano and Rafael Pe˜ naloza. Fuzzy answer sets approximations. Theory Pract. Log. Program. , 13(4-5):753–767, 2013. [Alviano et al. , 2013] Mario Alviano, Carmine Dodaro, Wolfgang Faber, Nicola Leone, and Francesco Ricca. WASP: A native ASP solver based on constraint learn-ing. In Pedro Cabalar and Tran Cao Son, editors, Logic Programming and Nonmonotonic Reasoning, 12th In-ternational Conference, LPNMR 2013, Corunna, Spain, September 15-19, 2013. Proceedings , volume 8148 of Lec-ture Notes in Computer Science , pages 54–66. Springer, 2013. [Barbara et al. , 2023] Vito Barbara, Massimo Guarascio, Nicola Leone, Giuseppe Manco, Alessandro Quarta, Francesco Ricca, and Ettore Ritacco. Neuro-symbolic AI for compliance checking of electrical control panels. The-ory Pract. Log. Program. , 23(4):748–764, 2023. [Borroto et al. , 2025] Manuel Borroto, Antonio Ielo, Giuseppe Mazzotta, and Francesco Ricca. Answer set programming and neurosymbolic ai: Applications and future perspectives (invited talk). In Pierangela Bruno, Francesco Calimeri, Francesco Cauteruccio, and Giorgio Terracina, editors, Hybrid Models for Coupling Deductive and Inductive Reasoning , pages 1–21, Cham, 2025. Springer Nature Switzerland. [Brewka et al. , 2011] Gerhard Brewka, Thomas Eiter, and Miroslaw Truszczynski. Answer set programming at a glance. Commun. ACM , 54(12):92–103, 2011. [Dal Pal` u et al. , 2009] Alessandro Dal Pal` u, Agostino Dovier, Enrico Pontelli, and Gianfranco Rossi. GASP: answer set programming with lazy grounding. Fundam. Informaticae , 96(3):297–322, 2009. [d’Avila Garcez and Lamb, 2023] Artur d’Avila Garcez and Lu´ ıs C. Lamb. Neurosymbolic AI: the 3rd wave. Artif. Intell. Rev. , 56(11):12387–12406, 2023. [Denecker et al. , 2000] Marc Denecker, Victor Marek, and Mirosław Truszczy´ nski. Approximations, Stable Oper-ators, Well-Founded Fixpoints and Applications in Non-monotonic Reasoning , pages 127–144. Springer US, Boston, MA, 2000. [Dodaro et al. , 2022] Carmine Dodaro, Davide Ilardi, Luca Oneto, and Francesco Ricca. Deep learning for the genera-tion of heuristics in answer set programming: A case study of graph coloring. In Georg Gottlob, Daniela Inclezan, and Marco Maratea, editors, Logic Programming and Non-monotonic Reasoning - 16th International Conference, LPNMR 2022, Genova, Italy, September 5-9, 2022, Pro-ceedings , volume 13416 of Lecture Notes in Computer Sci-ence , pages 145–158. Springer, 2022. [Eiter et al. , 2022] Thomas Eiter, Nelson Higuera, Johannes Oetsch, and Michael Pritz. A neuro-symbolic ASP pipeline for visual question answering. Theory Pract. Log. Program. , 22(5):739–754, 2022. [Evans and Grefenstette, 2018] Richard Evans and Edward Grefenstette. Learning explanatory rules from noisy data. 
+
+J. Artif. Intell. Res. , 61:1–64, 2018. [Fages, 1991] Franc ¸ois Fages. A new fixpoint semantics for general logic programs compared with the well-founded and the stable model semantics. New Gener. Comput. ,9(3/4):425–444, 1991. [Fitting, 2002] Melvin Fitting. Fixpoint semantics for logic programming a survey. Theor. Comput. Sci. , 278(1-2):25– 51, 2002. [Gaunt et al. , 2017] Alexander L. Gaunt, Marc Brockschmidt, Nate Kushman, and Daniel Tarlow. Differentiable programs with neural libraries. In Doina Precup and Yee Whye Teh, editors, Proceedings of the 34th International Conference on Machine Learning, ICML 2017, Sydney, NSW, Australia, 6-11 August 2017 ,volume 70 of Proceedings of Machine Learning Research ,pages 1213–1222. PMLR, 2017. [Gebser et al. , 2016] Martin Gebser, Roland Kaminski, Ben-jamin Kaufmann, Max Ostrowski, Torsten Schaub, and Philipp Wanko. Theory solving made easy with clingo 5. In Manuel Carro, Andy King, Neda Saeedloei, and Marina De Vos, editors, Technical Communications of the 32nd International Conference on Logic Program-ming, ICLP 2016 TCs, New York City, USA, October 16-21, 2016 , volume 52 of OASIcs , pages 2:1–2:15. Schloss Dagstuhl - Leibniz-Zentrum f¨ ur Informatik, 2016. [Ielo and Ricca, 2021] Antonio Ielo and Francesco Ricca. Answer set computation of negative two-literal programs based on graph neural networks: Preliminary results. In Stefania Monica and Federico Bergenti, editors, Proceed-ings of the 36th Italian Conference on Computational Logic, Parma, Italy, September 7-9, 2021 , volume 3002 of CEUR Workshop Proceedings , pages 188–195. CEUR-WS.org, 2021. [Inoue and Sakama, 1996] Katsumi Inoue and Chiaki Sakama. A fixpoint characterization of abductive logic programs. J. Log. Program. , 27(2):107–136, 1996. [Inoue et al. , 1992] Katsumi Inoue, Miyuki Koshimura, and Ryuzo Hasegawa. Embedding negation as failure into a model generation theorem prover. In Deepak Kapur, edi-tor, Automated Deduction - CADE-11, 11th International Conference on Automated Deduction, Saratoga Springs, NY, USA, June 15-18, 1992, Proceedings , volume 607 of Lecture Notes in Computer Science , pages 400–415. Springer, 1992. [Lef` evre et al. , 2017] Claire Lef` evre, Christopher B´ eatrix, Igor St´ ephan, and Laurent Garcia. Asperix, a first-order forward chaining approach for answer set computing. The-ory Pract. Log. Program. , 17(3):266–310, 2017. [Leone et al. , 2006] Nicola Leone, Gerald Pfeifer, Wolfgang Faber, Thomas Eiter, Georg Gottlob, Simona Perri, and Francesco Scarcello. The DLV system for knowledge rep-resentation and reasoning. ACM Trans. Comput. Log. ,7(3):499–562, 2006. [Lifschitz, 2008] Vladimir Lifschitz. What is answer set pro-gramming? In Dieter Fox and Carla P. Gomes, editors, 
+
+Proceedings of the Twenty-Third AAAI Conference on Ar-tificial Intelligence, AAAI 2008, Chicago, Illinois, USA, July 13-17, 2008 , pages 1594–1597. AAAI Press, 2008. [Liu et al. , 2010] Lengning Liu, Enrico Pontelli, Tran Cao Son, and Miroslaw Truszczynski. Logic programs with abstract constraint atoms: The role of computations. Artif. Intell. , 174(3-4):295–315, 2010. [Manhaeve et al. , 2021] Robin Manhaeve, Sebastijan Du-mancic, Angelika Kimmig, Thomas Demeester, and Luc De Raedt. Neural probabilistic logic programming in DeepProbLog. Artif. Intell. , 298:103504, 2021. [Mao et al. , 2019] Jiayuan Mao, Chuang Gan, Pushmeet Kohli, Joshua B. Tenenbaum, and Jiajun Wu. The neuro-symbolic concept learner: Interpreting scenes, words, and sentences from natural supervision. In 7th Inter-national Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 . OpenRe-view.net, 2019. [Nickles, 2018] Matthias Nickles. Differentiable SAT/ASP. In Elena Bellodi and Tom Schrijvers, editors, Proceedings of the 5th International Workshop on Probabilistic Logic Programming, PLP 2018, co-located with the 28th In-ternational Conference on Inductive Logic Programming (ILP 2018), Ferrara, Italy, September 1, 2018 , CEUR Workshop Proceedings, pages 62–74. CEUR-WS.org, 2018. [Nieuwenborgh et al. , 2006] Davy Van Nieuwenborgh, Mar-tine De Cock, and Dirk Vermeir. Fuzzy answer set pro-gramming. In Michael Fisher, Wiebe van der Hoek, Boris Konev, and Alexei Lisitsa, editors, Logics in Artificial In-telligence, 10th European Conference, JELIA 2006, Liv-erpool, UK, September 13-15, 2006, Proceedings , volume 4160 of Lecture Notes in Computer Science , pages 359– 372. Springer, 2006. [Przymusinski, 1991] Teodor C. Przymusinski. Three-valued nonmonotonic formalisms and semantics of logic programs. Artif. Intell. , 49(1-3):309–343, 1991. [Sacc` a and Zaniolo, 1990] Domenico Sacc` a and Carlo Zan-iolo. Stable models and non-determinism in logic pro-grams with negation. In Daniel J. Rosenkrantz and Yehoshua Sagiv, editors, Proceedings of the Ninth ACM SIGACT-SIGMOD-SIGART Symposium on Principles of Database Systems, April 2-4, 1990, Nashville, Tennessee, USA , pages 205–217. ACM Press, 1990. [Sato et al. , 2023] Taisuke Sato, Akihiro Takemura, and Kat-sumi Inoue. Towards end-to-end ASP computation. CoRR ,abs/2306.06821, 2023. Neurosymbolic Artificial Intelli-gence, to appear. [Shirai and Hasegawa, 2004] Yasuyuki Shirai and Ryuzo Hasegawa. Answer set computation based on a mini-mal model generation theorem prover. In PRICAI 2004: Trends in Artificial Intelligence, 8th Pacific Rim Inter-national Conference on Artificial Intelligence, Auckland, New Zealand, August 9-13, 2004, Proceedings , volume 3157 of Lecture Notes in Computer Science , pages 43–52. Springer, 2004. [Skryagin et al. , 2023] Arseny Skryagin, Daniel Ochs, De-vendra Singh Dhami, and Kristian Kersting. Scalable neural-probabilistic answer set programming. J. Artif. In-tell. Res. , 78:579–617, 2023. [Tsamoura et al. , 2021] Efthymia Tsamoura, Timothy M. Hospedales, and Loizos Michael. Neural-symbolic in-tegration: A compositional perspective. In Thirty-Fifth AAAI Conference on Artificial Intelligence, AAAI 2021, Thirty-Third Conference on Innovative Applications of Ar-tificial Intelligence, IAAI 2021, The Eleventh Symposium on Educational Advances in Artificial Intelligence, EAAI 2021, Virtual Event, February 2-9, 2021 , pages 5051– 5060. AAAI Press, 2021. [van Emden and Kowalski, 1976] Maarten H. van Emden and Robert A. Kowalski. The semantics of predicate logic as a programming language. J. ACM , 23(4):733–742, 1976. [Van Gelder, 1993] Allen Van Gelder. The alternating fix-point of logic programs with negation. J. Comput. Syst. Sci. , 47(1):185–221, 1993. [Wang et al. , 2015] Kewen Wang, Lian Wen, and Kedian Mu. Random logic programs: Linear model. Theory Pract. Log. Program. , 15(6):818–853, 2015. [Wang et al. , 2025] Wenguan Wang, Yi Yang, and Fei Wu. Towards data-and knowledge-driven AI: A survey on neuro-symbolic computing. IEEE Trans. Pattern Anal. Mach. Intell. , 47(2):878–899, 2025. [Yang et al. , 2020] Zhun Yang, Adam Ishay, and Joohyung Lee. Neurasp: Embracing neural networks into answer set programming. In Christian Bessiere, editor, Proceed-ings of the Twenty-Ninth International Joint Conference on Artificial Intelligence, IJCAI 2020 , pages 1755–1762. ijcai.org, 2020. [Zhao and Lin, 2003] Yuting Zhao and Fangzhen Lin. An-swer set programming phase transition: A study on ran-domly generated programs. In Catuscia Palamidessi, ed-itor, Logic Programming, 19th International Conference, ICLP 2003, Mumbai, India, December 9-13, 2003, Pro-ceedings , volume 2916 of Lecture Notes in Computer Sci-ence , pages 239–253. Springer, 2003. A Proofs 
+
+Full proofs of all lemmas, propositions and theorems stated in the main paper are given below. 
+
+A.1 Example Iteration of DProp 
+
+Consider the program P with two rules: 
+
+a ← not b b ← not a. 
+
+There are two stable models, {a} and {b}. A DProp run starts at 
+
+(T 0, F 0, U 0) = ( ∅, ∅, {a, b }).
+
+If the decision step falsifies b, then 
+
+F 1 = {b}, T 1 = C∞  
+
+> P, A\ F1
+
+(T 0) = {a}, U 1 = A \ (T 1 ∪ F 1) = ∅,
+
+so the state is (T 1, F 1, U 1) = ( {a}, {b}, ∅), which is a stable model. If instead we falsify a, then 
+
+F 1 = {a}, T 1 = C∞  
+
+> P, A\ F1
+
+(T 0) = {b}, U 1 = ∅.
+
+This illustrates how decisions grow F while propagation computes C∞ 
+
+> P, A\ F
+
+. In the binary regime, NDProp follows the same trajectory: a binary decision selects one atom to falsify, and exact propagation converges to the corresponding stable model. 
+
+A.2 Decision–Propagation for ASP 
+
+Lemma 1. S is a stable model of P iff S = C∞ 
+
+> P,S
+
+(∅).Proof. Let TP be the immediate consequence operator of a definite program P , and write T ∞ 
+
+> P
+
+(∅) for the result of iterating 
+
+TP from ∅ to its least fixpoint. By definition, S is a stable model of P iff S = T ∞  
+
+> PS
+
+(∅), where P S is the Gelfond–Lifschitz reduct. For normal programs, iterating CP,S from ∅ coincides with iterating TP S , so C∞ 
+
+> P,S
+
+(∅) = T ∞  
+
+> PS
+
+(∅). Hence S is stable iff 
+
+S = C∞ 
+
+> P,S
+
+(∅).
+
+Lemma 2. A DProp run always terminates for a finite atom set A.Proof. Decisions always remove an atom from U at every iteration. Thus, the number of DProp iterations is finite when A is finite. 
+
+Definition 1 (Successful DProp computation) . A successful DProp computation is a DProp run that terminates with U ∞ = ∅
+
+and T ∞ ∩ F ∞ = ∅.
+
+Lemma 3. If F ⊆ F ′, then C∞ 
+
+> P, A\ F
+
+(∅) ⊆ C∞  
+
+> P, A\ F′
+
+(∅).Proof. Let J = A \ F and J′ = A \ F ′. A rule is applicable when B−(r) ∩ J = ∅. Since J′ ⊆ J, fewer atoms can violate negative bodies and more rules become applicable for J′. By standard properties of definite programs, their least models are monotone in the program, yielding the inclusion. 
+
+Lemma 4. If T k−1 ⊆ C∞  
+
+> P, A\ Fk
+
+(∅), then C∞  
+
+> P, A\ Fk
+
+(T k−1) = C∞  
+
+> P, A\ Fk
+
+(∅).Proof. Propagation with F k fixed iterates CP, A\ F k starting from T k−1. By assumption, T k−1 ⊆ C∞  
+
+> P, A\ Fk
+
+(∅) and the operator is monotone, so the sequence is increasing and bounded above by C∞  
+
+> P, A\ Fk
+
+(∅). Since A is finite, the sequence stabilizes at a fixpoint, which by minimality must be C∞  
+
+> P, A\ Fk
+
+(∅).
+
+Theorem 1. Let P be a finite program and S ⊆ A P , where AP is the set of atoms occurring in P . Then S is a stable model of 
+
+P if and only if S is the final true set of a successful DProp computation. Proof. (⇒) Let S be a stable model of P , and F k−1, T k−1 and U k−1 be the sets of atoms that are true, false and undefined at the beginning of the k-th iteration, where k = ∞ is the final iteration. Consider a run of DProp that at each step decides the falsity of an atom a ∈ (A \ S) ∩ U k−1. The propagation step then yields T k = C∞   
+
+> P, AP\Fk
+
+(T k−1), which by Lemma 4 equals 
+
+C∞   
+
+> P, AP\Fk
+
+(∅). Because F k ⊆ A P \S, we have S ⊆ A P \F k and hence, by Lemma 3, C∞   
+
+> P, AP\Fk
+
+(∅) ⊆ C∞ 
+
+> P,S
+
+(∅). By Lemma 1, 
+
+C∞ 
+
+> P,S
+
+(∅) = S, so T k ⊆ S and T k ∩ F k = ∅ for all k. At termination, U ∞ = ∅, so T ∞ = C∞   
+
+> P, AP\F∞
+
+(∅) = C∞  
+
+> P,T ∞
+
+(∅) hence 
+
+T ∞ = S from Lemma 1. From Lemma 2, the computation will terminate as the given program P is finite. 
+
+(⇐) Let S be the final true set of a successful DProp computation, and T ∞− 1 and F ∞ be the true and false sets before the final propagation step. As the propagation step does not modify F ∞, from Definition 1, S = A \ F ∞ so S = C∞  
+
+> P, A\ F∞
+
+(T ∞− 1) = 
+
+C∞ 
+
+> P,S
+
+(T ∞− 1). From Lemma 4, C∞ 
+
+> P,S
+
+(T ∞− 1) = C∞ 
+
+> P,S
+
+(∅), and Lemma 1 implies that S is a stable model of P .A.3 Neural Decision–Propagation 
+
+Definition 2 (Set induced by ψ). Let ψ ∈ [0 , 1] n be a real valued vector with the i-th value ψi corresponding to atom ai. The set induced by ψ is defined as 
+
+[ψ] := { ai | ψi = 1 , 1 ≤ i ≤ n }.
+
+Lemma 5. Let (τ, ϕ ) ∈ { 0, 1}n × { 0, 1}n, T = [ τ ] and F = [ ϕ]. Then, [CP,ϕ (τ )] = CP, A\ F (T ).Proof. With binary (τ, ϕ ), a positive literal evaluates to τi ∈ { 0, 1} and a default-negated literal evaluates to ϕi ∈ { 0, 1}
+
+for atom ai. Thus each rule support is 1 exactly when its positive body is true in T and its negative body is contained in F
+
+(equivalently, B−(r) ⊆ F ). Aggregating supports via ⊕ yields exactly the heads derived by CP, A\ F (T ), so the induced true set coincides. 
+
+Proposition 1 (Crisp Case) . Let (τ, ϕ ) ∈ { 0, 1}n × { 0, 1}n, δ ∈ { 0, 1}n, and propagation compute the fixpoint of CP,ϕ . Then, one update of NDProp coincides with one iteration of DProp. Proof. With binary (τ, ϕ ), the set induced by undecided degree μ = (1 − τ ) ⊗ (1 − ϕ) corresponds to U = A \ (T ∪ F ) when 
+
+T = [ τ ] and F = [ ϕ]. Thus, the update ϕ′ = ϕ + ( μ ⊙ δ) coincides with F ′ = F ∪ (U ∩ [δ]) . From Remark 1, deciding falsity of a set of atoms is fine, thus this exactly coincides with the decision step of DProp when the falsity of a set of atoms U ∩ [δ] is decided. Since (τ, ϕ ′) ∈ { 0, 1}n × { 0, 1}n, from Lemma 5 [CP,ϕ ′ (τ )] = CP, A\ F ′ (T ). When CP,ϕ ′ (τ ) is applied until a fixpoint, this exactly coincides with the propagation step of DProp. Furthermore, when μ, δ is binary, τ and ϕ are guaranteed to be binary as well. 
+
+Lemma 6. Let ϕ ≤ ϕ′. Then, CP,ϕ (τ ) ≤ C P,ϕ ′ (τ ), and consequently C∞
+
+> P,ϕ
+
+(0) ≤ C∞ 
+
+> P,ϕ ′
+
+(0).Proof. For fixed τ , negative literals evaluate as val(not ai) = ϕi. Since the t-norm ⊗ and t-conorm ⊕ are monotone in each argument, ϕ ≤ ϕ′ implies each rule support ρ(τ, ϕ ) ≤ ρ(τ, ϕ ′), hence CP,ϕ (τ ) ≤ C P,ϕ ′ (τ ). Because CP,ϕ ≤ C P,ϕ ′ pointwise, iterating from 0 yields CkP,ϕ (0) ≤ C kP,ϕ ′ (0) for all k, and taking the limit gives C∞
+
+> P,ϕ
+
+(0) ≤ C∞ 
+
+> P,ϕ ′
+
+(0).
+
+Lemma 7. Let τ t−1 ≤ C∞ 
+
+> P,ϕ t
+
+(0). Then, C∞ 
+
+> P,ϕ t
+
+(τ t−1) = C∞ 
+
+> P,ϕ t
+
+(0).Proof. The operator CP,ϕ t is monotone in τ by monotonicity of ⊗ and ⊕. Starting from any τ t−1 ≤ C∞ 
+
+> P,ϕ t
+
+(0), iterating CP,ϕ t
+
+yields an increasing sequence bounded above by the least fixpoint, so the limit equals C∞ 
+
+> P,ϕ t
+
+(0).
+
+Theorem 2 (Binary terminal state yields stability) . Let P be a finite program and S ⊆ A P , where AP is the set of atoms occurring in P . Then S is a stable model of P if and only if propagation is applied until convergence with the resulting membership score pi ∈ { 0, 1} and S = [ p].Proof. (⇒) Let p ∈ { 0, 1}n be the membership score obtained from (τ ∞, ϕ ∞), and let T = [ τ ] and F = [ ϕ]. Since pi = 
+
+> 12
+
+(τi + 1 − ϕi) and τ ∞ 
+
+> i
+
+, ϕ ∞ 
+
+> i
+
+∈ [0 , 1] , pi ∈ { 0, 1} implies (τ ∞ 
+
+> i
+
+, ϕ ∞ 
+
+> i
+
+) ∈ { (1 , 0) , (0 , 1) }, and thus T ∩ F = ∅, T ∪ F = A
+
+and T = [ p]. ϕ increases monotonically as there are no negatives in Equation (2). As propagation is applied until convergence 
+
+τ ∞ = C∞ 
+
+> P,ϕ ∞
+
+(τ ∞− 1), and from Lemmas 6 and 7, τ ∞ = C∞ 
+
+> P,ϕ ∞
+
+(0). Since [0] = ∅, from Lemma 5, [τ ∞] = [ C∞ 
+
+> P,ϕ ∞
+
+(0)] = 
+
+C∞ 
+
+> P, A\ F
+
+(∅) = C∞ 
+
+> P,T
+
+(∅). From Lemma 1, [p] = [ τ ∞] is thus a stable model of P .(⇐) Let τ ∞ and ϕ∞ be the true and false degrees after the final iteration. From Proposition 1, if we set the decision scores to be binary and make the propagation phase compute until a fixpoint of CP,ϕ , the iteration coincides with a DProp iteration. From Theorem 1, there exists a successful DProp computation that ends with the stable model S, and since τ, ϕ is binary, 
+
+T ∩ F = [ τ ∞] ∩ [ϕ∞] = ∅ and U = ∅, (τ ∞, ϕ ∞) ∈ { (1, 0), (0, 1)} and thus p is binary and [p] = S.B Experiment Specifics 
+
+All code is provided in the anonymized repository: https://anonymous.4open.science/r/NDProp-81C2. 
+
+B.1 Hardware Specifics 
+
+• CPU: AMD Ryzen Threadripper PRO 5995WX (64 cores, 128 threads). • GPUs: 2 × NVIDIA RTX 6000 Ada (49 GB), 2 × NVIDIA RTX A6000 (49 GB). All experiments use only a single GPU. • Driver/CUDA: 560.35.05 / 12.6. 
+
+B.2 NDProp Settings 
+
+Table 4 summarizes the NDProp hyperparameters used in each experiment.                             
+
+> Experiment Epochs Iterations Hidden Dim. Logical Dim. Learning Rate Batch Size T-norm
+> Random Logic Programs 1000 10 32 32 0.001 64 G¨ odel Neuro-Symbolic MNIST 10 1820.001 64 Product Visual Sudoku 100 3820.001 64 G¨ odel Table 4: NDProp settings used for each experiment.
+
+B.3 Datasets 
+
+Table 5 reports the train/test split sizes for the MNIST arithmetic and membership tasks.                   
+
+> Split Addition Addition2 Add2x2 Apply2x2 Member3 Member5 Train 30000 15000 50000 10000 10000 10000
+> Test 5000 1000 1000 1000 1000 1000 Table 5: Train/test split sizes for MNIST arithmetic and membership tasks.
+
+Addition 
+
+This task takes two MNIST digit images and asks for their sum. Supervision is only the total, so the model must infer both digits consistently; the feasible sum range is 0 . . . 18 .
+
+Addition2 
+
+This task forms two two-digit numbers from four images and supervises only their total. The structure couples all four digits through place value, with sums restricted to 0 . . . 198 .
+
+Add2x2 
+
+This variant places four digits in a 2 × 2 grid and provides the sums of each row and column. These overlapping constraints force global consistency across all four digits, not just a single aggregate total. 
+
+Apply2x2 
+
+This task pairs three digits with a grid of operators and constrains the row and column results of the resulting expressions. The supervision ties together arithmetic structure and operator selection rather than a single sum. 
+
+Member3 
+
+This task presents three digit images and a query digit, and the label indicates whether the query appears at least once. The supervision is a single membership bit, so the model must reason over all positions jointly. 
+
+Member5 
+
+This task is the same as Member3 but with five images, increasing the search space and the number of possible matches. The label still provides only a single membership bit. 
+
+Visual Sudoku 
+
+For the Visual Sudoku 4x4 task, we generated instances that have clues ranging from 4-12, and each board is checked to have only a single solution. 3 examples of sudoku boards that are generated are shown in Figure 3. (a) 4 Clues (b) 8 Clues (c) 12 Clues Figure 3: Example instances of 4x4 visual sudoku with different numbers of clues. 
+
+B.4 ASP Encodings 
+
+This appendix lists the ASP programs used in the experiments for NDProp. NeurASP uses the original ASP programs provided by their authors, and SLASH uses the original for those provided, and NeurASP’s for others. 
+
+Addition 
+
+csum(S) :- digit(0, A), digit(1, B), S = A+B, S = 0..18. 
+
+Addition2 
+
+sum(S) :- digit(0, A), digit(1, B), digit(2, C), digit(3, D), S = (A + C) * 10 + B + D, S = 0..198. 
+
+Addition 
+
+row(0,S) :- digit(0,A), digit(1,B), S = A + B, S = 0..18. row(1,S) :- digit(2,A), digit(3,B), S = A + B, S = 0..18. col(0,S) :- digit(0,A), digit(2,B), S = A + B, S = 0..18. col(1,S) :- digit(1,A), digit(3,B), S = A + B, S = 0..18. 
+
+Apply2x2 
+
+apply(D1,0,D2,0,D3,R) :- digits(D1,D2,D3), R = (D1 + D2) + D3, R = -100..1000. apply(D1,0,D2,1,D3,R) :- digits(D1,D2,D3), R = (D1 + D2) - D3, R = -100..1000. apply(D1,0,D2,2,D3,R) :- digits(D1,D2,D3), R = (D1 + D2) * D3, R = -100..1000. apply(D1,1,D2,0,D3,R) :- digits(D1,D2,D3), R = (D1 - D2) + D3, R = -100..1000. apply(D1,1,D2,1,D3,R) :- digits(D1,D2,D3), R = (D1 - D2) - D3, R = -100..1000. apply(D1,1,D2,2,D3,R) :- digits(D1,D2,D3), R = (D1 - D2) * D3, R = -100..1000. apply(D1,2,D2,0,D3,R) :- digits(D1,D2,D3), R = (D1 * D2) + D3, R = -100..1000. apply(D1,2,D2,1,D3,R) :- digits(D1,D2,D3), R = (D1 * D2) - D3, R = -100..1000. apply(D1,2,D2,2,D3,R) :- digits(D1,D2,D3), R = (D1 * D2) * D3, R = -100..1000. row(0,R) :- digits(D1,D2,D3), op(0,O1), op(1,O2), apply(D1,O1,D2,O2,D3,R). row(1,R) :- digits(D1,D2,D3), op(2,O3), op(3,O4), apply(D1,O3,D2,O4,D3,R). col(0,R) :- digits(D1,D2,D3), op(0,O1), op(2,O3), apply(D1,O1,D2,O3,D3,R). col(1,R) :- digits(D1,D2,D3), op(1,O2), op(3,O4), apply(D1,O2,D2,O4,D3,R). Member3 
+
+member(D, 0) :- digit(0, N1), digit(1, N2), digit(2, N3), check(D), D != N1, D != N2, D != N3. member(D, 1) :- check(D), not member(D, 0). 
+
+Member5 
+
+member(D, 0) :- digit(0, N1), digit(1, N2), digit(2, N3), digit(3, N4), digit(4, N5), check(D), D != N1, D != N2, D != N3, D != N4, D != N5. member(D, 1) :- check(D), not member(D, 0). 
+
+Visual Sudoku (4x4) 
+
+We use the standard 4x4 Sudoku ASP encoding with normal rules only. The program includes per-cell exclusivity rules that ensure each cell picks exactly one value, row/column exclusivity rules enforcing each digit appears once per row and column, and 2x2 subgrid exclusivity rules. We also use integrity-style rules (shown as ‘bad‘ atoms) to rule out duplicate digits within a row, column, or block. 
+
+% Per-cell exclusivity (example cell) digit(1,1,1) :- not digit(1,1,2), not digit(1,1,3), not digit(1,1,4). digit(1,1,2) :- not digit(1,1,1), not digit(1,1,3), not digit(1,1,4). ... % Row/column exclusivity (examples) digit(1,1,1) :- not digit(1,2,1), not digit(1,3,1), not digit(1,4,1). digit(1,1,1) :- not digit(2,1,1), not digit(3,1,1), not digit(4,1,1). ... % 2x2 subgrid exclusivity (example block) digit(1,1,1) :- not digit(1,2,1), not digit(2,1,1), not digit(2,2,1). digit(1,2,1) :- not digit(1,1,1), not digit(2,1,1), not digit(2,2,1). ... % Constraints to rule out multiple digits in the same row/column/block bad :- digit(1,1,1), digit(1,2,1), not bad. bad :- digit(1,1,1), digit(1,3,1), not bad. ...

@@ -1,0 +1,577 @@
+Title: ARMATA: Auto-Regressive Multi-Agent Task Assignment
+
+URL Source: https://arxiv.org/pdf/2605.04225v1
+
+Published Time: Thu, 07 May 2026 00:12:56 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+> 1
+
+# ARMATA: Auto-Regressive Multi-Agent Task Assignment 
+
+Yazan Youssef, Member, IEEE , Aboelmagd Noureldin, Senior Member, IEEE , and Sidney Givigi, Senior Member, IEEE 
+
+Abstract —Coordinating multi-agent systems over spatially dis-tributed areas requires solving a complex hierarchical problem: first distributing areas among agents (allocation) and subse-quently determining the optimal visitation order (routing). Exist-ing methods typically decouple these stages ignoring inter-stage dependencies or rely on decentralized heuristics that lack global context. In this work, we propose a centralized, fully end-to-end auto-regressive framework that jointly generates allocation decisions and routing sequences. The core contribution of our approach is a multi-stage decoding mechanism that unifies high-level allocation and low-level routing in a single autoregressive pass while maintaining a centralized global state. This enables the model to implicitly balance workload distribution with routing efficiency, avoiding local optima common in decentralized methods. Extensive experiments demonstrate that our method significantly outperforms diverse baselines, achieving up to a 20% improvement in solution quality over industrial solvers such as Google OR-Tools, IBM CPLEX, and LKH-3, while reducing computation time from hours to seconds. 
+
+Index Terms —Task assignment, multi-agent, reinforcement learning, optimization, graph neural networks, transformers. 
+
+I. I NTRODUCTION 
+
+The deployment of Multi-Agent Systems (MAS) has be-come a cornerstone of modern automation, driving efficiency in domains ranging from large-scale logistics and warehouse automation to surveillance and disaster response [1]. Central to these applications is the Multi-Agent Task Assignment and Routing problem, where a fleet of agents must service a set of spatially distributed areas [2]. This problem presents a hierarchical challenge, as it involves two stages: (i) task assignment, and (ii) path planning or routing. In other words, each agent needs first to get assigned some areas, and then it needs to determine the optimal visitation order. As the scale of the environment and the size of the fleet increase, the interdependence between the high-level assignment decisions and the low-level routing creates a combinatorial explosion, rendering the problem NP-hard [3]. Traditionally, this problem has been addressed using exact mathematical programming solvers, such as those based on Branch-and-Cut algorithms (e.g., IBM CPLEX [4]), or meta-heuristic libraries (e.g., Google OR-Tools [5]) [6]. While exact                 
+
+> Y. Youssef is with the Department of Electrical and Computer Engineering, Queen’s University, Kingston, ON, Canada (e-mail: yazan.youssef@queensu.ca). A. Noureldin is with the Department of Electrical and Computer Engineer-ing at the Royal Military College of Canada, and the Department of Electrical and Computer Engineering at Queen’s University, both in Kingston, Canada (e-mail: aboelmagd.noureldin@rmc.ca). S. Givigi is with the School of Computing, Queen’s University, Kingston, ON, Canada (e-mail: {sidney.givigi, paulo.araujo }@queensu.ca).
+
+solvers guarantee optimality, they suffer from exponential time complexity, often requiring hours or days to converge on large-scale instances, making them impractical for real-time applications [7]. Conversely, heuristic approaches offer faster solutions but are prone to getting trapped in local optima [8]. This is largely because they tend to decouple the problem (i.e., solving allocation and routing sequentially) thereby ignoring the coupled nature of the objective function [9]. Recent advancements in Deep Reinforcement Learning (DRL) and Neural Combinatorial Optimization (NCO) have offered promising alternatives, demonstrating the ability to learn heuristic policies directly from data [10]. Existing learning-based frameworks exhibit various limitations when applied to the multi-stage map coverage problem. The majority of current literature focuses either on decentralized architec-tures, where agents act with limited local observations, or on “flat” encoding schemes that fail to capture the hierarchical dependencies between task assignment and path planning [11]. Decentralized methods, while scalable, often lack the global context necessary to optimize the collective objective, leading to redundant coverage or inefficient workload distribution [12]. Furthermore, few existing frameworks address the specific complexity of multi-stage decision-making, where an action involves both assignment and sequencing, within a unified end-to-end differentiable pipeline. To address these challenges, we propose a novel centralized, fully end-to-end autoregressive framework. In contrast to prior approaches that rely on decentralized policies or decoupled stages, our approach leverages a global view of the environ-ment to jointly optimize allocation and routing. The proposed architecture autoregressively generates a solution by decoding the hierarchical structure of the problem in a single pass. By maintaining a centralized state representation, the model effectively propagates gradients across both decision stages, ensuring that assignment and routing are optimized jointly. This work bridges the gap between high-fidelity com-binatorial optimization and real-time decision-making. The contributions of this paper can be summarized as:  
+
+> •
+
+Centralized Multi-Stage Autoregressive Framework :We propose the first fully end-to-end centralized autore-gressive framework for jointly solving the coupled area-assignment and routing problem. By eliminating interme-diate heuristics and explicit problem decomposition, this approach paves the way for a new research direction for unified learning-based solutions.  
+
+> •
+
+Multi-Stage Decoding Mechanism : We introduce anovel decoding architecture tailored to the hierarchical structure of the problem, allowing the simultaneous gen-
+
+> arXiv:2605.04225v1 [cs.MA] 5 May 2026 2
+
+eration of optimal agent-task distributions and visitation sequences.  
+
+> •
+
+High Solution Quality : Extensive benchmarking shows that the proposed framework outperforms well-established industrial solvers, like Google OR-Tools and IBM CPLEX, achieving up to a 20% improvement in solution quality.  
+
+> •
+
+Real-Time Efficiency : The proposed method achieves a speedup of four orders of magnitude over traditional exact solvers. While such solvers may require up to 44 hours to converge on complex instances, our framework generates high-quality solutions within seconds, enabling dynamic replanning and real-time applicability. The paper is organized as follows. Section II reviews recent advances in multi-agent task assignment and path planning. Section III presents the proposed ARMATA architecture in detail. The simulation setup is described in Section IV, and the obtained results are presented and discussed in Section V. Finally, Section VI concludes the paper by summarizing the main findings and outlining directions for future work. II. R ELATED WORK 
+
+Multi-agent task assignment and routing problems arise in numerous real-world applications, including logistics, ware-house automation, and multi-robot coordination [13]. This sec-tion reviews solution approaches ranging from classical exact and heuristic methods to modern learning-based techniques. 
+
+A. Heuristics and Exact Methods 
+
+Classical approaches to vehicle routing and task assignment problems can be broadly categorized into exact methods and heuristic algorithms. Exact methods, including mixed-integer linear programming (MILP), branch-and-bound, branch-and-cut, and branch-and-price algorithms, guarantee optimal so-lutions but suffer from exponential computational complex-ity [14]. Besides, exact methods face fundamental scalability limitations. The NP-hard nature of assignment and routing problems means that computation time grows exponentially with problem size, making exact approaches impractical for real-time applications or large-scale instances [15]. To address these challenges, researchers developed heuris-tic and metaheuristic algorithms which sacrifice optimality guarantees for computational efficiency [16]. Construction heuristics, such as the savings algorithm and nearest neighbor insertion, provide fast initial solutions by iteratively building routes [17]. Local search methods, including 2-opt, 3-opt, and Or-opt, improve solutions through neighborhood explo-ration [18]. Metaheuristics, like greedy descent, simulated anealing, and tabu search, have demonstrated strong perfor-mance on benchmark instances [19]. However, heuristic methods exhibit some critical weak-nesses as they cannot derive insights from historical problem instances, treating each new instance independently without leveraging patterns from past experience [20]. Furthermore, metaheuristics often require substantial computation time to converge to high-quality solutions, limiting their applicability in time-sensitive scenarios such as real-time routing [21]. Fi-nally, extending these methods to handle additional constraints or problem variants typically requires substantial algorithmic redesign [15]. These limitations motivate the development of learning-based approaches capable of generalizing across problem instances while providing rapid inference. 
+
+B. Neural Combinatorial Optimization 
+
+Neural Combinatorial Optimization (NCO) has emerged as a robust alternative to classical operations research methods, offering the ability to learn transferable heuristics that support rapid, real-time inference [22]. The structural foundation of NCO lies in sequence-to-sequence learning, pioneered by Vinyals et al. [23] via Pointer Networks and later refined by Kool et al. [24] using Transformer-based Attention Models. These architectures leverage multi-head self-attention to en-code global graph structures and autoregressively decode so-lutions, achieving competitive performance with significantly reduced computational overhead. To eliminate the dependency on labeled optimal solutions, Bello et al. [25] introduced reinforcement learning (RL) frame-works that directly optimize objectives via policy gradients. Subsequent research has addressed stability and generaliza-tion; notably, Kwon et al. [26] exploited solution symmetries to reduce variance. Concurrently, efforts to improve cross-distribution and cross-scale generalization have led to in-novations in heavy decoder architectures [27], bisimulation quotienting [28], and prompt learning for zero-shot adapta-tion [29]. These advancements make NCO uniquely positioned to address the complexities of multi-agent task assignment and routing in heterogeneous, dynamic environments. 
+
+C. Multi-Agent Task Assignment and Routing 
+
+Multi-agent task assignment and routing extend single-vehicle formulations to complex scenarios requiring the co-ordination of heterogeneous agents to complete spatially dis-tributed tasks [30]. A fundamental challenge in this domain is the inherent interdependence of assignment and routing: optimal task allocation is contingent upon the resulting routes, while optimal path planning depends heavily on the assign-ment strategy [8]. In [8], the joint optimization of these deci-sions has been shown to yield significantly superior solutions compared to sequential, decoupled approaches. To address this coupling, recent literature has largely co-alesced around the Centralized Training with Decentralized Execution (CTDE) paradigm [31]. CTDE balances global coordination with operational autonomy by leveraging global state information during training while restricting agents to local observations during execution. Using this framework, Liu et al. [32] demonstrated that jointly optimizing assignment and path planning minimizes total travel distance and makespan, while ensuring collision-free schedules. Dai et al. [33] ex-tended these capabilities to heterogeneous fleets, introducing a constrained flash-forward mechanism to balance short-term cooperation with long-term scheduling dependencies. While CTDE addresses coordination, scalability and robust-ness to communication failures are often managed through 3
+
+Graph Neural Networks (GNNs) and decentralized proto-cols [34]. GNNs have proven effective for encoding relational structures in multi-agent systems, facilitating decentralized tar-get localization [35] and tracking [36] via limited-hop message passing. Advanced frameworks integrate GNNs with CTDE to enable dynamic and asynchronous task allocation without reliance on central coordination [37]. Similarly, Gabler et al. [38] utilized best-response policies to enable asynchronous decision-making suitable for real-world deployments. Finally, attention-based NCO architectures have also been tailored to handle the combinatorial complexity of multi-agent routing. Berto et al. [39] proposed Parallel AutoRegressive Combinatorial Optimization, which employs parallel decoding with priority-based conflict handling to achieve performance competitive with heuristics. In heterogeneous fleet settings, Xiang et al. [40] applied centralized DRL to dynamic pickup-and-delivery problems, effectively managing the coordination of diverse vehicle types. Despite recent advances, existing methodologies face in-trinsic limitations that this work seeks to address. Decen-tralized methods offer scalability but operate under partial observability, often converging to local optima that sacrifice global solution quality [41]. Conversely, centralized learning approaches frequently decouple task assignment and routing into sequential subproblems or rely on parallel decoding schemes [42]. Such designs often lead to assignment conflicts, requiring computationally costly post-processing or heuristics resolution. The framework proposed in [42] represents an early attempt to jointly address task assignment and path planning. However, despite adopting an end-to-end learning approach, the formulation did not constitute a strict end-to-end framework. Moreover, it exhibited a high degeneration rate (i.e., agents not getting assigned any tasks) and could not generalize to new unseen problem instances of different sizes. To bridge this gap, we propose a unified, centralized, autoregressive, fully end-to-end framework that constructs solutions via sequential decision-making under full observ-ability. This architecture offers three distinct advantages. First, by generating decisions sequentially, the model inherently coordinates agent actions, naturally preventing assignment conflicts without requiring explicit masking or post-resolution mechanisms. Second, the centralized formulation enables true joint optimization of assignment and routing, eliminating the suboptimality of decomposed approaches. Finally, the attention-based multi-stage decoder captures complex agent-task compatibilities and allows for the seamless integration of dynamic task arrivals by extending the decision sequence as new demands appear, allowing anticipatory planning under uncertainty within a single, cohesive policy. III. F RAMEWORK 
+
+In this section, we present a multi-agent task assignment framework for scenarios in which agents are assigned to geographic locations, such as search-and-rescue operations. As a representative example, we consider a mission wherein M
+
+agents are tasked with scanning N distinct areas. Although the discussion focuses on search and rescue, the proposed framework readily extends to other applications, including warehouse management and drone delivery. In all cases, the objective is to compute an assignment strategy that best satisfies mission goals. In the search-and-rescue case, the best assignment specifies both (i) which areas each agent should cover and (ii) the scanning order or route, with the goal of minimizing total travel distance while ensuring full coverage. Within the proposed framework, task allocation and way-point planning are formulated as a sequencing problem. At each time step t, the task-allocation policy is represented by a matrix πT A ∈ RM ×N , where each element ta mn denotes the probability of assigning agent m to area n. Rather than solving this policy in a single step, decisions are generated sequentially in a fully autoregressive manner: agents are processed in a fixed order, and a task is assigned to each agent before pro-ceeding to the next. This contrasts with alternative approaches that rely on an initial clustering stage [42], in which agents are first assigned subsets of areas, followed by a separate routing optimization. By eliminating clustering and performing task assignment end-to-end, the proposed framework offers a new perspective on multi-agent allocation. In particular, it is well-suited for dynamic or online settings, where decisions must be adapted to newly available information. Moreover, the autoregressive approach can reduce the likelihood of settling into sub-optimal solutions, as agents are not constrained by pre-defined clusterS and can maintain broader exploration horizons throughout the assignment process. 
+
+A. Input 
+
+The framework takes as input a map encoding agent lo-cations and geometric representations of the areas be visited and scanned. This map is represented by four matrices: the agents’ locations matrix Z ∈ Rm×2, the area adjacency matrix 
+
+A ∈ Rn×n, the area feature matrix X ∈ Rn×f , and the area position matrix P ∈ Rn×2, where m, n and f are the number of agents, areas, and features, respectively. Matrix Z contains the ( x, y ) coordinates of agent locations, while A encodes connectivity among areas. The feature matrix 
+
+X encodes task-relevant area attributes; in our setting, it consists of the ( x, y ) coordinates of the areas’ corners. Lastly, 
+
+P provides the ( x, y ) coordinates of the areas’ centers. 
+
+B. Encoder 
+
+The encoder in ARMATA consists of two components: Nodes’ encoder and agents’ encoder. 
+
+1) Nodes encoder: The nodes encoder maps the f -dimensional feature matrix X to a d-dimensional latent rep-resentation X1 ∈ Rn×d, as illustrated in Fig. 1, capturing an embedding of the input graph, providing a better characteri-zation of the areas’ formation. To obtain this graph representation, the nodes encoder uses a Gated Graph Convolutional Network [43]. This GNN, comprising L layers, uses anisotropic aggregation and gating mechanisms to refine node and edge features through recursive 4
+
+Fig. 1: ARMATA nodes encoder. message passing, improving graph representation. Hence, the node feature hℓi and edge feature eℓij at layer ℓ are 
+
+hℓ+1  
+
+> i
+
+= hℓi +ReLU BN U ℓnhℓi + AG j∈N i σ  eℓij 
+
+ ⊙ V ℓn hℓj
+
+!!! 
+
+, (1) 
+
+eℓ+1  
+
+> ij
+
+=eℓij +ReLU BN Aℓneℓij + Bℓnhℓi + Cℓnhℓj
+
+!! 
+
+, (2) where U ℓn, V ℓn , A ℓn, B ℓn, C ℓn ∈ Rd×d denote the learnable pa-rameters of the nodes encoder, ReLU is the Rectified Linear Unit function, BN denotes batch normalization layer, AG 
+
+is the neighborhood aggregation operator, σ is the sigmoid function, and ⊙ is the Hadamard product. For the first layer (ℓ = 0), the inputs h0 
+
+> i
+
+and e0 
+
+> ij
+
+are d-dimensional linear projections of the feature matrix X and the Euclidean distance between the centers of the areas ∥pi − pj ∥, respectively. 
+
+2) Agents encoder: The agents encoder is responsible for mapping the 2-dimensional position matrix Z to a d-dimensional latent representation Z1 ∈ Rm×d, as illustrated in Fig. 2, capturing an embedding of the agents’ locations, providing a better characterization of the agents’ relative formation. The agents encoder has the same structure of the nodes encoder. It uses a GNN, comprising L layers, to refine the agents’ positions through recursive message passing, improv-ing agents’ relative representation. Hence, the agent embed-ding hℓα and agent edge feature eℓαβ at layer ℓ are 
+
+hℓ+1  
+
+> α
+
+= hℓα+ReLU BN U ℓmhℓi + AG β∈M α σ  eℓαβ 
+
+ ⊙ V ℓmhℓβ
+
+!!! 
+
+, (3) 
+
+eℓ+1  
+
+> αβ
+
+=eℓαβ +ReLU BN Aℓmeℓαβ + Bℓmhℓα + Cℓmhℓβ
+
+!! 
+
+, (4) where U ℓm, V ℓm, A ℓm, B ℓm, C ℓm ∈ Rd×d denote the learnable parameters of the agents encoder. 
+
+C. Decoder 
+
+As discussed earlier, task assignment is performed se-quentially: agents are fed to the decoder one at a time in a fixed order, and each agent gets a new assignment. An assignment specifies the area to be scanned, the starting point, and the scanning pattern, as illustrated in Fig. 3. Analogous to large language models (LLMs), the decoder learns an optimal assignment sequence conditioned on previously gen-erated decisions, as illustrated in Fig. 4. Using novel context representations, the model simultaneously learns which areas each agent should visit and the order in which they should be serviced. Thereby, the decoder consists of three sequential Trans-former networks: 1) Network I assigns an area to the input agent. 2) Network II determines the starting point in the area. 3) Network III decides the movement pattern for the area. Each network follows the same processing pipeline: input embedding, multi-head attention (MHA), embedding, atten-tion, and softmax. Network [I] uses the output of both components of the encoder, hLi and hLα , to build an initial context representation 
+
+ˆhC 
+
+> (α,i )
+
+for the current area i where agent α is located at assignment time step t. This context, given by 
+
+ˆhC 
+
+> (α,i )
+
+= WF
+
+h
+
+hG, h Lπ′ 
+
+> 1
+
+, h Lπ′ 
+
+> t−1
+
+, h Lα , h i,L α , h Li
+
+i
+
+,hG = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+hLi , (5) 5
+
+Fig. 2: ARMATA agents encoder. 
+
+Fig. 3: ARMATA decoder. Task_1  Task_2  Task_3  Task_4  Task_5  Task_6  Task_7  Task_8  Task_9 
+
+Fig. 4: ARMATA working principle. includes learnable weights WF ∈ Rd×d and averages the features from the encoder. Here, hLπ′
+
+> 1
+
+and hLπ′
+
+> t−1
+
+denote the features of the first and last areas in the partial tour ( π′ 
+
+> π
+
+), which contains the sequence of areas assigned up to time t−1.
+
+hLα is the encoding of the starting location of agent α, hi,L α
+
+is the encoding of agent’s α current location, and hLi is the encoded feature vector of area i which represents the current area of agent α. The resulting context vector ˆhC 
+
+> (α,i )
+
+highlights the correlation among the current area of agent α, the starting location of agent α, the current location of agent α, previously assigned areas, and the overall graph structure. The initial context (5) is refined using MHA over the node embeddings. We define the parameters of the first MHA (MHA 1) as Q1 = WC1
+
+ˆhC
+
+> (α,i )
+
+, K1 = WA1 [hL 
+
+> 1
+
+, . . . , h Ln ] , and 
+
+V1 = WA2 [hL 
+
+> 1
+
+, . . . , h Ln ] , where WC1 , W A1 , W A2 ∈ Rd×d
+
+are learnable parameters. Here, Q1 is a linear transformation of the input information, while K1 and V1 represent the available options as an output. The refined context is obtained as 
+
+hC 
+
+> (α,i )
+
+= MHA 1(Q1, K 1, V 1). (6) The unnormalized logit for assigning area j (or edge eij ) to agent α is computed using an attention mechanism between 6
+
+the context hC 
+
+> (α,i )
+
+from (6) and the embedding hLj :
+
+ˆp[Aαj |Aαi ] = M · tanh 
+
+
+
+WQ1 hC
+
+> (α,i )
+
+T
+
+·  WK1 hLj
+
+
+
+√d2
+
+ , (7) where j̸ = π′
+
+> t
+
+. If area j has already been assigned or previously visited, ˆp[Aj |Ai] = ∞. WQ1 , W K1 ∈ Rd×d are learnable parameters, and tanh keeps the logits in the range [−M, M ].The logits are then converted to probabilities p[Aαj |Aαi ] via a softmax operation. Using (7), an area j is now assigned to agent α. Next, a starting point within area j is selected by choosing one of its corners. This decision is handled by Network [II], which learns the correlation between the features of area j and the location of agent α to determine an appropriate starting point. The ( x, y ) coordinates of the selected area’s corner features and the current location of agent α are supplied to Network [II], which builds a context representation for the agent’s loca-tion over area’s j features using MHA. This context captures the correlation between the agent’s location and the candidate starting locations within the area. The agent’s current location and the area’s corner coordinates are embedded using linear feedforward layeers, resulting in dΛ-dimensional embeddings: 
+
+hst = WC2 hcurrent , WΛ[h1, h 2, h 3, h 4]
+
+where hcurrent = ( xcurrent , y current ), [h1, h 2, h 3, h 4] are the corner coordinates of area j, and WC2 , W Λ ∈ RdΛ×2 are learnable parameters. MHA 2 parameters are: 
+
+Q2 = hst ,K2 = {WΛ1 [h1, h 2, h 3, h 4]} ,V2 = {WΛ2 [h1, h 2, h 3, h 4]} .
+
+The MHA operation yields the context hCst :
+
+hCst = MHA 2(Q2, K 2, V 2). (8) The unnormalized logit for choosing corner hk, k ∈{1, 2, 3, 4}, as the starting point is calculated using an attention mechanism between hCst and hk:
+
+ˆp[Λ k|Aαj ]] = M · tanh 
+
+ WQ2 hCst 
+
+T · (WK2 hk)
+
+√dΛ
+
+!
+
+. (9) Finally, the logits ˆp[Λ k|Aαj ] are converted to probabilities 
+
+p[Λ k|Aαj ] using a softmax operation. The final decision is to select the scanning pattern that agent α should follow. This step mirrors previous stages. The coordinates of the candidate stopping points for each pattern ( hPz ) along with the selected starting point hk from Network [II], are provided to Network [III], which learns their correlation to select and appropriate pattern. Following the same principles as the previous networks, Network [III] constructs a context representation for the start-ing point hk using MHA over the candidate stopping points associated with the patterns. Assuming p possible patterns, the coordinates of hk and the stopping points of patterns 
+
+P1, P 2, . . . , P p are embedded into a dΨ-dimensional latent space. MHA 3 parameters are: 
+
+Q3 = WC3 [hk],K3 = WΨ1 [hP1 , h P2 , · · · , h Pp ] ,V3 = WΨ2 [hP1 , h P2 , · · · , h Pp ]
+
+where WC3 , W Ψ1 , W Ψ2 ∈ RdΨ×2 are learnable parameters. The resulting context representation is 
+
+hCk = MHA 3(Q3, K 3, V 3). (10) The unnormalized logit for selecting pattern Pz , z ∈{1, . . . , p }, is then computed using an attention operation between the context hCk and the corresponding stopping point 
+
+hPz :
+
+ˆp[Ψ z |Aαj , Λk] = M · tanh 
+
+ WQ3 hCk
+
+T · (WK3 hPz )
+
+√dΨ
+
+!
+
+,
+
+(11) where WQ3 ∈ RdΨ×dΨ and WK3 ∈ RdΨ×2 are learnable parameters. The logits ˆp[Ψ z |Aαj , Λk] are normalized with softmax over all patterns. The probability of assigning area 
+
+Aj , starting point hk, and pattern Pz ) to agent α is thus 
+
+p[j, k, z |α] = p[Aαj ] · p[Λ k|Aαj ] · p[Ψ z |Aαj , Λk]. (12) This procedure is repeated until all n areas are assigned and scanned. This process consists of n/m assignment round, each comprising m sub-steps in which each agent is assigned exactly to one new task. At the end of every sub-step, the new agents’ locations are encoded, through the agents encoder, to be used for the next assignment round. After n total steps, all areas and their corresponding tasks are distributed among all agents. 
+
+D. RL Policy Training 
+
+RL is highly effective for training networks in scenarios where ground truth solutions are unavailable, as in the case of search and rescue multi-agent task assignment. In this paper, we use the REINFORCE policy gradient algorithm due to its simplicity. The objective is to minimize the total distance covered by all the agents in a given scenario, which in turn would minimize the total execution time of the mission. The loss for an instance s, which represents an assign-ment scenario, parameterized by θ is defined as L(θ|s) = 
+
+Epθ (π|s)[L(π)] , where L(π) is the total tour length of all the agents and pθ (π|s) is the assignment probability distribution of the tour and agents π.The gradient for minimizing L using REINFORCE is: 
+
+∇L (θ|s) = Epθ (π|s)[( L(π) − b(s)) ∇ log( pθ (π|s))] , (13) where b(s) is a baseline to reduce gradient variance. Here, 
+
+L(π) is the total tour length per epoch, and pθ (π|s) is the probability of the tour and its assignment, calculated as the product of action probabilities p[j, k, z |α] from (12). While REINFORCE serves as our primary algorithm due to its effectiveness, we also investigate Proximal Policy Op-timization (PPO) as a comparative policy gradient method. 7
+
+PPO is widely utilized in reinforcement learning literature for its ability to constrain policy updates, offering a trade-off between training stability and complexity [44]. Motivated by its proven effectiveness in related domains, we test the performance quality when using PPO for training our policy. In a typical PPO framework, a surrogate objective function is maximized rather than directly minimizing a loss based on a single sample. The surrogate objective function includes a probability ratio and an advantage estimate. The probability function is defined as: 
+
+rθ (π|s) = πθ
+
+πθold 
+
+(14) with πθ being the current policy and πθold being the policy from the previous iteration. This ratio is used to measure the divergence between the new policy and the old one and to prevent large policy divergences. The other part of the surrogate function is the advantage estimate and it is defined as: ˆA = b(s) − L(π) (15) with b(s) being a baseline function and L(π) is the total tour length of all the agents. In typical PPO implementations, the advantage will be defined as ˆA = L(π)−b(s) as the algorithm will try to maximize this advantage. Nonetheless, we look to minimize the tour loss, so the advantage is defined as in (15). Hence, if the advantage is negative, then the policy obtained a better solution than the baseline, and vice versa. The resulting PPO objective will then be: 
+
+Obj PPO (θ) = Epθold (π|s)
+
+h
+
+min 
+
+
+
+r ˆA, clip( r, 1 − ϵ, 1 + ϵ) ˆA
+
+i 
+
+,
+
+(16) where ϵ is a hyperparameter controlling the clipping range. As mentioned earlier, the clipping is used here to prevent large policy deviations. IV. S IMULATION SETUP 
+
+A. Dataset 
+
+For training, n areas, represented by frames, as well as 
+
+m agents were generated within a unit square. Each agent was generated at a random ( x, y ) distinct position. Similarly, each area center was sampled from a uniform distribution 
+
+C = ( cx, c y ) where cx, c y ∈ [0 , 1] . Then a random radius 
+
+r ∈ [0 .01 , 0.03] was added and subtracted from the center coordinates to form the four corners. This process was repeated until all n areas were generated, ensuring they stayed within the unit square and did not overlap neither with each other nor with the agents. The unit square was chosen for easy scalability. In total, the dataset comprises 128 , 000 randomly generated maps per epoch. 
+
+B. Hyper-parameters 
+
+The encoder consists of three layers with a hidden dimen-sion of d = 128 . The decoder comprises the three components discussed in Section III-C. For the area assignment probability 
+
+p[Aαj |Aαi ] in (7), we used a hidden dimension of d = 128 and 
+
+8 attention heads. For the starting-point and pattern-selection probabilities in (9) and (11), we set dΛ = dΨ = 128 and use a single attention head in each respective MHA module. Overall, this configuration resulted in approximately 360 , 000 
+
+trainable parameters. 
+
+C. Training Process 
+
+The model was trained for 100 epochs, with each epoch comprising 128 , 000 randomly generated samples, processed in mini-batches. Each sample represents a distinct multi-agent task assignment scenario, and all samples within a batch share the same number of agents and the same number of areas. The number of agents per sample was uniformly sampled from [5, 10 ], while the number of areas ranged from [ 35 , 100 ]. To simplify evaluation, the number of areas in each instance was constrained to be an integer multiple of the number of agents, ensuring an equal number of tasks per agent. The RL environment was developed using OpenAI Gym [45], chosen for its compatibility with the Robot Operating System (ROS) [46], [47], facilitating future deployment on real robotic platforms. The model was implemented in PyTorch 2.1 and trained on an NVIDIA GeForce RTX-3090 GPI with an Intel i9 11900KF eight-core CPU (3.5GHz base, up to 5.3GHz with Turbo Boost). 
+
+D. Evaluation 
+
+To evaluate the proposed framework, we compared its assignments against solutions obtained from Google OR-Tools [5]. OR-Tools is a widely used open-source combinato-rial optimization suite that supports linear, mixed-integer, and constraint programming, with specialized solvers for routing and scheduling. Its scalability, accessibility, and broad adop-tion in both academic and industrial settings make it a suitable baseline for comparison. For evaluation, we generated four test datasets, each con-taining 1280 samples. Two datasets had samples similar to those encountered during the training and are referred to as 
+
+in-range . One of these datasets included scenarios with 5
+
+agents and 40 areas, while the other had samples with 8 agents and 72 areas. The remaining two were out-of-range and were designed to assess generalization to unseen problem scales, with configurations of 4 agents and 24 areas, and 12 agents and 120 areas, respectively. V. R ESULTS AND DISCUSSION 
+
+This section presents a comprehensive evaluation of the proposed centralized autoregressive framework for solving the joint multi-agent task assignment problem described in Section IV-D. 
+
+A. Fixed vs Varying Starting Locations 
+
+In this test, the starting positions of the agents were fixed across the batch samples for one run, while they were varied for the other run. The hyperparameters are shown in TABLE I under the column “ Varying locations ”. As shown in Fig. 5, both approaches resulted in very sim-ilar performance. Varying the starting locations consistently 80 20 40 60 80 100 
+
+> Epoch
+> −45
+> −40
+> −35
+> −30
+> −25
+> −20
+> −15
+> −10
+> −5
+> 0
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs
+
+(a) Optimality gap for in range dataset with 40 areas and 5 agents. 0 20 40 60 80 100  
+
+> Epoch
+> −45
+> −40
+> −35
+> −30
+> −25
+> −20
+> −15
+> −10
+> −5
+> 0
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs
+
+(b) Optimality gap for in range dataset with 72 areas and 8 agents. 0 20 40 60 80 100 
+
+> Epoch
+> −45
+> −40
+> −35
+> −30
+> −25
+> −20
+> −15
+> −10
+> −5
+> 0
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs
+
+(c) Optimality gap for out range dataset with 24 areas and 4 agents. 0 20 40 60 80 100  
+
+> Epoch
+> −45
+> −40
+> −35
+> −30
+> −25
+> −20
+> −15
+> −10
+> −5
+> 0
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs
+
+(d) Optimality gap for out range dataset with 180 areas and 12 agents. 
+
+Fig. 5: Performance of ARMATA when the agents’ starting locations are varied vs when they are fixed. TABLE I: Training and model hyperparameters. 
+
+Hyperparameter Varying locations No agents encoder 
+
+Batch size 128 128 
+
+Normalization type Batch Batch Number of epochs 100 100 
+
+Number of encoder layers 3 3
+
+Number of attention heads 8 8
+
+Learning rate 10 −4 10 −4
+
+Decaying rate – –
+
+resulted in better results with REINFORCE, while it was case-dependent with PPO. For the smaller datasets, varying the starting locations yielded better performance. On the other hand, fixing the starting locations resulted in better results with the larger datasets. 
+
+B. Disabling the Agents Encoder 
+
+In this test, the agents encoder was disabled and the starting positions of the agents were fixed across the batch samples for one run, while they were varied for the other run. The hyperparameters are shown in TABLE I under the column “No agents encoder ”. As shown in Fig. 6, the framework’s performance degraded significantly when the agents encoder was removed, as the optimality gap increased by approximately 20%. These results are expected since the agents encoder enables the decoder to better comprehend the problem since the agents encoder provides infromation about the agents’ formation relative to each other. 
+
+C. Comparison with LKH3 and CPLEX 
+
+To further assess the proposed framework, we compared its performance with an industrial-grade optimization tool, IBM CPLEX [4], as well as with the state-of-the-art metaheuristic Lin-Kernighan-Helsgaun-3 (LKH-3) [48]. LKH3 is widely regarded as a leading metaheuristic for routing problems, while IBM CPLEX provides high quality solutions for multi-agent task allocation and path planning, as reported in [42]. However, the datasets considered in this work are substantially larger and involve more agents than those studied in [42], re-quiring additional modifications to enable CPLEX to produce feasible solutions. For instances with 24 areas and 4 agents, CPLEX was able to find a solution when provided with the full problem states. Nonetheless, for larger instances, such as those with 40 areas 90 20 40 60 80 100                  
+
+> Epoch
+> −20
+> −15
+> −10
+> −5
+> 0
+> 5
+> 10
+> 15
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs
+> (a) Optimality gap for in range dataset with 40 areas and 5 agents. 020 40 60 80 100
+> Epoch
+> −20
+> −15
+> −10
+> −5
+> 0
+> 5
+> 10
+> 15
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs (b) Optimality gap for in range dataset with 72 areas and 8 agents. 020 40 60 80 100
+> Epoch
+> −20
+> −15
+> −10
+> −5
+> 0
+> 5
+> 10
+> 15
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs
+> (c) Optimality gap for out range dataset with 24 areas and 4 agents. 020 40 60 80 100
+> Epoch
+> −20
+> −15
+> −10
+> −5
+> 0
+> 5
+> 10
+> 15
+> Optimality Gap
+> REINFORCE_Fixed_Locs
+> REINFORCE_Varying_Locs
+> PPO_Fixed_Locs
+> PPO_Varying_Locs (d) Optimality gap for out range dataset with 180 areas and 12 agents.
+
+Fig. 6: Performance of ARMATA when the agents encoder is disabled. and 8 agents, supplying the fully connected graph resulted in memory overload and system failure. To overcome this issue, a pruning strategy was used in which only the k-nearest neighbors were kept for each node of the graph, rather than using a fully connected graph. This allowed CPLEX to obtain feasible solutions for the 40 -area, 8-agent dataset. For even larger instances, specifically those with 72 and 180 areas and 
+
+8 and 12 agents, respectively, the pruning strategy did not help. Hence, an alternative initialization-based approach was used. Random feasible solutions were first generated, and the best among them was chosen as an initial solution for CPLEX. CPLEX was then initialized with this solution and allowed to attempt further optimization. Empirically, however, CPLEX was unable to improve upon the provided initial solutions for these large-scale instances. LKH-3 was able to find the solution for all the test cases when provided with the full problem without any required modifications. The results in TABLE II show that while all three ap-proaches generate feasible tours, ARMATA achieves superior performance both in terms of solution quality and computa-tional efficiency, particularly for large-scale instances. AR-MATA yielded tours that are 14% − 26% better than the solutions obtained from the other solvers while improving the computational time by up to 3 orders of magnitude. A key advantage of ARMATA lies in its generalization capability, which is particularly significant given that recent end-to-end frameworks, such as the approach in [42], often exhibit limited robustness outside their training distributions and struggle to scale to unseen problem instances. An even more pronounced strength of ARMATA is its exe-cution efficiency. As problem size increases, the computational cost of both LKH3 and CPLEX grows substantially. For the largest instance with 180 areas, CPLEX required over 400 s
+
+and LKH3 more than 150 s to converge, whereas ARMATA computed the solution in only 0.0165 s. Across all evaluated scenarios, ARMATA consistently operated in the sub-second range, achieving speedups of several orders of magnitude over the benchmark methods. This substantial reduction in computation time highlights ARMATA’s suitability for real-time dynamic applications, demonstrating that high scalability and rapid re-planning can be achieved without a significant loss in solution quality. VI. C ONCLUSION 
+
+This paper introduced the first centralized, fully end-to-end autoregressive framework for jointly addressing task allocation and routing in multi-agent systems. By means of a novel multi-stage decoding mechanism, the proposed architecture unifies high-level workload distribution and low-level tra-jectory planning within a single decision process. Extensive empirical evaluation demonstrated that the framework con-sistently outperformed heuristic solvers, achieving up to a 
+
+35% improvement in solution quality over well established solvers such as Google OR-Tools, IBM CPLEX and LKH-3, while reducing computation time by several orders of 10 
+
+TABLE II: Average tour lengths abtained from CPLEX, LKH3, and ARMATA. 
+
+Number of Areas Number of Agents LKH3 CPLEX ARMATA 
+
+μ [m] μ time [s] μ [m] μ time [s] μ [m] μ time [s] 24 4 5.9028 1.159 8.3154 123.75 5.0628 0.0029 
+
+40 5 7.4732 2.276 11.0650 101.25 6.5128 0.0061 
+
+72 8 11.5958 46.097 12.7275 123.75 9.1108 0.0166 
+
+180 12 24.3931 152.20 20.3547 405 14.8783 0.0872 
+
+magnitude. Moreover, in contrast to recent end-to-end learning approaches, the proposed model exhibits strong generalization to unseen problem instances without retraining. Overall, by combining high solution quality with sub-second execution times, the framework offers a scalable and effective solution for real-time multi-agent coordination in complex, spatially distributed environments. REFERENCES [1] D. Maldonado, E. Cruz, J. Abad Torres, P. J. Cruz, and S. d. P. Gamboa Benitez, “Multi-agent systems: A survey about its components, framework and workflow,” IEEE Access , vol. 12, pp. 80 950–80 975, 2024. [2] J. Li, Y. Xiong, and J. She, “Uav path planning for target coverage task in dynamic environment,” IEEE Internet of Things Journal , vol. 10, no. 20, pp. 17 734–17 745, 2023. [3] C. Fang, J. Mao, D. Li, N. Wang, and N. Wang, “A coordinated scheduling approach for task assignment and multi-agent path planning,” 
+
+Journal of King Saud University-Computer and Information Sciences ,vol. 36, no. 1, p. 101930, 2024. [4] Nov 2024. [Online]. Available: https://www.ibm.com/products/ ilog-cplex-optimization-studio [5] Google OR-Tools Team, “Google OR-Tools,” https://developers.google. com/optimization/, 2024, accessed: 2024-08-13. [6] X. Ye, Z. Deng, Y. Shi, and W. Shen, “Toward energy-efficient routing of multiple agvs with multi-agent reinforcement learning,” Sensors , vol. 23, no. 12, p. 5615, 2023. [7] R. Shahbazian and F. Guerriero, “Deep reinforcement learning for large-scale efficient routing of electric vehicles,” in 2024 International Con-ference on Automation in Manufacturing, Transportation and Logistics (ICaMaL) , 2024, pp. 1–10. [8] Z. Chen, J. Alonso-Mora, X. Bai, D. D. Harabor, and P. J. Stuckey, “Integrated task assignment and path planning for capacitated multi-agent pickup and delivery,” IEEE Robotics and Automation Letters ,vol. 6, no. 3, pp. 5816–5823, 2021. [9] Z. Li, J. Fan, P. Liu, and H. Zhang, “A collaborative task allocation and path planning method for multi-unmanned vehicles based on dynamic energy consumption optimization,” in 2025 IEEE International Annual Conference on Complex Systems and Intelligent Science (CSIS-IAC) ,2025, pp. 654–658. [10] K. Chung, C. Lee, and Y. Tsang, “Neural combinatorial optimization with reinforcement learning in industrial engineering: a survey,” Artifi-cial Intelligence Review , vol. 58, no. 5, p. 130, 2025. [11] J. Hu, “A survey on reinforcement learning-based multi-agent path planning,” in ITM Web of Conferences , vol. 78. EDP Sciences, 2025, p. 01015. [12] S. Banik, S. C. Banik, and S. S. Mahmud, “Path planning approaches in multi-robot system: A review,” Engineering Reports , vol. 7, no. 1, p. e13035, 2025. [13] S. Choudhury, J. K. Gupta, M. J. Kochenderfer, D. Sadigh, and J. Bohg, “Dynamic multi-robot task allocation under uncertainty and temporal constraints,” Autonomous Robots , vol. 46, no. 1, pp. 231–247, 2022. [14] P. Toth and D. Vigo, “An overview of vehicle routing problems,” The vehicle routing problem , pp. 1–26, 2002. [15] K. Braekers, K. Ramaekers, and I. Van Nieuwenhuyse, “The vehicle routing problem: State of the art classification and review,” Computers & industrial engineering , vol. 99, pp. 300–313, 2016. [16] R. Goel and R. Maini, “Vehicle routing problem and its solution methodologies: a survey,” International Journal of Logistics Systems and Management , vol. 28, no. 4, pp. 419–435, 2017. [17] D. Vigo, “A heuristic algorithm for the asymmetric capacitated vehicle routing problem,” European Journal of Operational Research , vol. 89, no. 1, pp. 108–126, 1996. [18] C. Rego, D. Gamboa, F. Glover, and C. Osterman, “Traveling salesman problem heuristics: Leading methods, implementations and latest advances,” European Journal of Operational Research ,vol. 211, no. 3, pp. 427–441, 2011. [Online]. Available: https: //www.sciencedirect.com/science/article/pii/S0377221710006065 [19] D. Muriyatmoko, A. Djunaidy, and A. Muklason, “Heuristics and meta-heuristics for solving capacitated vehicle routing problem: An algorithm comparison,” Procedia Computer Science , vol. 234, pp. 494–501, 2024. [20] N. Vesselinova, R. Steinert, D. F. Perez-Ramirez, and M. Boman, “Learning combinatorial optimization on graphs: A survey with applica-tions to networking,” IEEE Access , vol. 8, pp. 120 388–120 416, 2020. [21] J. James, W. Yu, and J. Gu, “Online vehicle routing with neural combinatorial optimization and deep reinforcement learning,” IEEE Transactions on Intelligent Transportation Systems , vol. 20, no. 10, pp. 3806–3817, 2019. [22] Y. Bengio, A. Lodi, and A. Prouvost, “Machine learning for combinato-rial optimization: a methodological tour d’horizon,” European Journal of Operational Research , vol. 290, no. 2, pp. 405–421, 2021. [23] O. Vinyals, M. Fortunato, and N. Jaitly, “Pointer networks,” Advances in neural information processing systems , vol. 28, 2015. [24] W. Kool, H. Van Hoof, and M. Welling, “Attention, learn to solve routing problems!” arXiv preprint arXiv:1803.08475 , 2018. [25] I. Bello, H. Pham, Q. V. Le, M. Norouzi, and S. Bengio, “Neural combinatorial optimization with reinforcement learning,” arXiv preprint arXiv:1611.09940 , 2016. [26] Y.-D. Kwon, J. Choo, B. Kim, I. Yoon, Y. Gwon, and S. Min, “Pomo: Policy optimization with multiple optima for reinforcement learning,” Advances in Neural Information Processing Systems , vol. 33, pp. 21 188–21 198, 2020. [27] F. Luo, X. Lin, F. Liu, Q. Zhang, and Z. Wang, “Neural combinatorial optimization with heavy decoder: Toward large scale generalization,” 
+
+Advances in Neural Information Processing Systems , vol. 36, pp. 8845– 8864, 2023. [28] D. Drakulic, S. Michel, F. Mai, A. Sors, and J.-M. Andreoli, “Bq-nco: Bisimulation quotienting for efficient neural combinatorial opti-mization,” Advances in Neural Information Processing Systems , vol. 36, pp. 77 416–77 429, 2023. [29] F. Liu, X. Lin, W. Liao, Z. Wang, Q. Zhang, X. Tong, and M. Yuan, “Prompt learning for generalized vehicle routing,” arXiv preprint arXiv:2405.12262 , 2024. [30] B. Eksioglu, A. V. Vural, and A. Reisman, “The vehicle routing problem: A taxonomic review,” Computers & Industrial Engineering , vol. 57, no. 4, pp. 1472–1483, 2009. [31] R. Lowe, Y. I. Wu, A. Tamar, J. Harb, O. Pieter Abbeel, and I. Mordatch, “Multi-agent actor-critic for mixed cooperative-competitive environ-ments,” Advances in neural information processing systems , vol. 30, 2017. [32] M. Liu, H. Ma, J. Li, and S. Koenig, “Task and path planning for multi-agent pickup and delivery,” in Proceedings of the International Joint Conference on Autonomous Agents and Multiagent Systems (AAMAS) ,2019. [33] W. Dai, U. Rai, J. Chiun, C. Yuhong, and G. Sartoretti, “Heterogeneous multi-robot task allocation and scheduling via reinforcement learning,” 
+
+IEEE Robotics and Automation Letters , 2025. [34] Y. Niu, R. R. Paleja, and M. C. Gombolay, “Multi-agent graph-attention communication and teaming.” in AAMAS , vol. 21, 2021, p. 20th. [35] J. Peng, H. Viswanath, and A. Bera, “Graph-based decentralized task allocation for multi-robot target localization,” IEEE Robotics and Au-tomation Letters , 2024. [36] L. Zhou, V. D. Sharma, Q. Li, A. Prorok, A. Ribeiro, P. Tokekar, and V. Kumar, “Graph neural networks for decentralized multi-robot target 11 
+
+tracking,” in 2022 IEEE International Symposium on Safety, Security, and Rescue Robotics (SSRR) . IEEE, 2022, pp. 195–202. [37] L. Ratnabala, A. Fedoseev, R. Peter, and D. Tsetserukou, “Magnnet: Multi-agent graph neural network-based efficient task allocation for autonomous vehicles with deep reinforcement learning,” arXiv preprint arXiv:2502.02311 , 2025. [38] V. Gabler and D. Wollherr, “Decentralized multi-agent reinforcement learning based on best-response policies,” Frontiers in Robotics and AI ,vol. 11, p. 1229026, 2024. [39] F. Berto, C. Hua, L. Luttmann, J. Son, J. Park, K. Ahn, C. Kwon, L. Xie, and J. Park, “Parallel autoregressive models for multi-agent combinatorial optimization,” arXiv preprint arXiv:2409.03811 , 2024. [40] C. Xiang, Z. Wu, J. Tu, and J. Huang, “Centralized deep reinforcement learning method for dynamic multi-vehicle pickup and delivery problem with crowdshippers,” IEEE Transactions on Intelligent Transportation Systems , vol. 25, no. 8, pp. 9253–9267, 2024. [41] Y. Xiao, W. Tan, J. Hoffman, T. Xia, and C. Amato, “Asynchronous multi-agent deep reinforcement learning under partial observability,” The International Journal of Robotics Research , vol. 44, no. 8, pp. 1257– 1286, 2025. [42] S. Ma, J. Ruan, Y. Du, R. Bucknall, and Y. Liu, “An end-to-end deep reinforcement learning based modular task allocation framework for autonomous mobile systems,” IEEE Transactions on Automation Science and Engineering , vol. 22, pp. 1519–1533, 2025. [43] X. Bresson and T. Laurent, “An experimental study of neural networks for variable graphs,” ICLR Workshop , 2018. [44] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Prox-imal policy optimization algorithms,” arXiv preprint arXiv:1707.06347 ,2017. [45] G. Brockman, V. Cheung, L. Pettersson, J. Schneider, J. Schul-man, J. Tang, and W. Zaremba, “Openai gym,” arXiv preprint arXiv:1606.01540 , 2016. [46] I. Zamora, N. G. Lopez, V. M. Vilches, and A. H. Cordero, “Extending the openai gym for robotics: a toolkit for reinforcement learning using ros and gazebo,” arXiv preprint arXiv:1608.05742 , 2016. [47] N. G. Lopez, Y. L. E. Nuin, E. B. Moral, L. U. S. Juan, A. S. Rueda, V. M. Vilches, and R. Kojcev, “gym-gazebo2, a toolkit for reinforcement learning using ros 2 and gazebo,” arXiv preprint arXiv:1903.06278 ,2019. [48] K. Helsgaun, “An extension of the Lin-Kernighan-Helsgaun TSP solver for constrained traveling salesman and vehicle routing problems,” Roskilde University, Roskilde, Denmark, Technical Report, 2017. [Online]. Available: http://akira.ruc.dk/ ∼keld/research/LKH-3/LKH-3. pdf

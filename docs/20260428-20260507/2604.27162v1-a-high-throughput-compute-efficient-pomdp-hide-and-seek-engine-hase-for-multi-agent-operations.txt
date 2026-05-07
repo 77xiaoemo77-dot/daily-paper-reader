@@ -1,0 +1,317 @@
+Title: A High-Throughput Compute-Efficient POMDP Hide-And-Seek-Engine (HASE) for Multi-Agent Operations
+
+URL Source: https://arxiv.org/pdf/2604.27162v1
+
+Published Time: Fri, 01 May 2026 00:16:09 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# A High-Throughput Compute-Efficient POMDP Hide-And-Seek-Engine (HASE) for Multi-Agent Operations 
+
+# Timothy Flavin, Sandip Sen 4/29/2026 
+
+# Contents 
+
+1 Introduction 22 Related Work 23 Environment Operation and Functional Design 3
+
+3.1 Formal Problem Formulation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 33.2 Configurable World Generation and Traversal . . . . . . . . . . . . . . . . . . . . . . . . . . . 43.3 Communication, Observability, and Vectorization . . . . . . . . . . . . . . . . . . . . . . . . . 4
+
+4 High-Performance C++ Architecture 5
+
+4.1 Cache-Aligned Hierarchical Memory Arena . . . . . . . . . . . . . . . . . . . . . . . . . . . . 54.2 Sub-Microsecond Resets via Pristine Grid Templating . . . . . . . . . . . . . . . . . . . . . . 64.3 Zero-Copy Tensor Architecture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64.4 Empirical Optimization Constraints and Engine Trade-Offs . . . . . . . . . . . . . . . . . . . 7
+
+5 Architectural Ablation Results 86 Hardware Optimization and MARL Tuning 10 
+
+6.1 Phase 1: Pure C++ MARL Environment Benchmarks . . . . . . . . . . . . . . . . . . . . . . 10 6.1.1 Hypotheses and Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10 6.1.2 Pinning Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11 6.2 Phase 2: PyTorch and C++ Integration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11 6.2.1 Hypotheses and Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11 6.2.2 RL Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12 6.3 Deployment Recommendations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12 
+
+7 Reinforcement Learning Methodology 13 
+
+7.1 Mixed Observation Encoder Architecture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 7.2 Reinforcement Learning Algorithms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 7.2.1 Proximal Policy Optimization (PPO) . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 7.2.2 Deep Q-Network (DQN) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 7.2.3 Soft Actor-Critic (SAC) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 7.3 Learning Validation and Convergence . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 
+
+8 Conclusion 14 A Appendix 15 
+
+A.1 Extended Hardware Runtime Comparisons . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 A.2 Hyperparameters Configuration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 A.3 Extensive Environment Performance Scaling . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 1  
+
+> arXiv:2604.27162v1 [cs.MA] 29 Apr 2026 Abstract
+> Reinforcement Learning (RL) algorithms exhibit high sample complexity, particularly when applied to Decentralized Partially Observable Markov Decision Processes (Dec-POMDPs). As a response, projects such as SampleFactory, EnvPool, Brax, and IsaacLab migrate parallel execution of classic environments such as MuJoCo and Atari into C++ thread pools or the GPU to decrease the computational cost of environment steps. We are interested in optimizing the decision-level of human-AI joint operations, so we introduce a compute-efficient Dec-POMDP engine natively architected in C++ called Hide-And-Seek-Engine. By employing Data-Oriented Design (DOD) principles, explicit 64-byte cache-line alignment to remove false sharing, and a zero-copy PyTorch memory bridge using pinned memory and Direct Memory Access (DMA), our engine sustains throughput of up to 33,000,000 steps per second (SPS) in a single-agent, 1024-environment, decentralized observations on an AMD Ryzen 9950X (16 cores). Ten agents reduces FPS to 7M SPS with generating random actions contributing 1/3rd the total runtime for reference. The engine achieves a throughput increase of approximately 3,500 ×over the baseline single threaded vectorized NumPy implementation and successfully trains cooperative multi-agent policies via PPO, DQN, and SAC in minutes, validating both its performance and generality.
+
+# 1 Introduction 
+
+The deployment of autonomous agents in complex, unstructured environments such as Search and Rescue (SAR), ecological surveying, and military interdiction demands robust decision-making paradigms. These scenarios require dynamic handling of spatial partial observability, heterogeneous agent capabilities, and flex-ible mission parameters. In order to learn approximately optimal policies, Deep Multi-Agent Reinforcement Learning (MARL) [22] has emerged as a highly capable framework to resolve these Partially Observable Markov Decision Processes (POMDPs) [33, 3]. However, MARL algorithms such as Multi-Agent Proximal Policy Optimization (MAPPO), require high sample complexity [4, 15] to ensure stable policy updates. On-line RL depends on continuous, high-volume influxes of fresh on-policy data to securely estimate gradients, sometimes accomplished asynchronously as in A3C [19]. To stabilize training and prevent catastrophic for-getting, modern distributed frameworks enforce massive batch gathering across thousands of desynchronized environments and experience reuse [9, 7, 11]. Scaling MARL to fulfill large sample throughput requirements is an active area of research [18, 6, 34, 24]. Python-based environments utilizing vectorized bulk math (e.g., NumPy) incur abstraction latency and are constrained by Python’s Global Interpreter Lock (GIL) or multiprocessing library as in gymnasiums’ Ve-cEnv [32]. We empirically confirm in section 5 the costly overhead incurred by generic Python approaches. Even when ported to native C++ via OpenMP [21], there are a number of pitfalls when operating across many environments. Sparse one-hot agent-observation tensors cause frequent cache misses and small cross-thread arrays (such as “rewards" or “dones") cause thrashing from False Sharing [31], a multi-threading penalty arising when independent CPU cores mutate distinct variables residing on the same physical cache line as one another. As we will show in sections (4,6), False sharing is only one of many performance bot-tlenecks guiding the data-oriented architectural decisions of Hide-And-Seek-Engine [2]. To overcome these bottlenecks, we present a high-performance, compute-efficient POMDP simulator for real-world multi-agent coordination. Through careful memory management, bit packing, and cache-line alignment, the engine sub-stantially reduces cache misses and false sharing (Section 4). A zero-copy PyTorch pinned memory bridge via PyBind11 [14], and Direct Memory Access (DMA), and careful management of OMP thread pools to reduce starvation of PyTorch threads reduces CPU-to-GPU staging and transfer overhead (Section 4). To-gether, these optimizations increase throughput from approximately 4,000 SPS (Gymnasium async baseline; see Section 5) to over 33,000,000 SPS in single-agent configurations on an AMD Ryzen 9950X, with less performance degradation as the number of agents grows. 
+
+# 2 Related Work 
+
+Standard MARL benchmarks such as the StarCraft Multi-Agent Challenge (SMAC) [25, 8], PettingZoo [30], and Unity ML-Agents [16] have driven significant algorithmic progress. However, their underlying sim-ulation engines are often constrained by engine speed, Python’s Global Interpreter Lock (GIL), or mul-tiprocessing overhead [32]. To bypass CPU bounds, hardware-accelerated simulators like NVIDIA Isaac 2Gym [18] and Google Brax [10] natively execute on GPUs. While highly performant for continuous control, GPU simulators experience degraded performance when evaluating the complex, sequential branching logic (e.g., discrete grid collisions, heterogeneous agent capabilities) present in many operational POMDPs due to warp-divergence [27]. As a result, there also exist a number of parallel environments and environment migrations towards C++ for execution on the CPU, including SampleFactory[24], EnvPool [34], Brax[10], PufferLib [28], IsaacGym [18] and OpenSpiel [17]. Functionally, our environment is most similar to Mini-Grid [5] in it’s functionality as more of a grid-based game engine than a single environment. Unlike minigrid, movement is continuous, and the map is made to model multi-agent dynamics with dynamic in visibility, navigation speed, and targets at a much higher experiential throughput. 
+
+# 3 Environment Operation and Functional Design    
+
+> (a) Mountain SAR (b) Warehouse Fire (c) Coast Guard Monitoring (d) Neighborhood Watch
+
+Figure 1: Overview of Emergency Response and Monitoring Scenarios (Single Row) Hide-And-Seek-Engine serves as a general-purpose testing ground for cooperative coverage, hide-and-seek contra-RL, and multi-agent navigation, where hiders either remain stationary (acting as waypoint targets) or can be controlled randomly or adversarially. The state space is exposed as an MDP, POMDP, and Dec-POMDP, supporting purely cooperative control over seekers or zero-sum adversarial control over both hiders and seekers. The engine provides a highly parallelized RL testing ground broadly applicable to any multi-agent search paradigm, such as SAR, illicit drug interdiction, or ecological surveying. The engine simulates up to 20 cooperating or independent searcher agents and an arbitrary number of hidden hider entities (referred to as Persons of Interest, or POIs). Observations consist of both spatial layers for Image processing and vectorized details for MLP processing; seeker locations reside on individual layers to differentiate heterogeneous teammate positions, and POI locations can occupy either unique one-hot-coded spatial layers or a single undifferentiated layer to scale arbitrarily. 
+
+# 3.1 Formal Problem Formulation 
+
+We formalize the scenario as a Dec-POMDP defined by the tuple ⟨I , S, {A i}i∈I , T , R, {Ωi}i∈I , {O i}i∈I , γ ⟩,where I is the finite set of agents. 
+
+• State Space ( S): The true environment state encompasses the global semantic grid, precise co-ordinates of all agents and Persons of Interest (POIs), and agent internal states (e.g., battery life, deployment status). 
+
+• Action Space ( Ai): Each agent operates within a Box2D action space governing directional movement and a discrete radio broadcast space designating targets to share information with. 
+
+• Observation Space ( Ωi): Each agent’s observation comprises a multi-dimensional tensor represent-ing terrain data such dynamic altitudes and interactivity accross multiple semantic channels (e.g., blocking/non-blocking, observed/unknown, dangerous/traversable), coupled with a 1D logical vector containing the agent’s key internal beliefs. 3• Observation Function ( Oi): A deterministic line-of-sight projection from the true state s ∈ S to agent i’s observation oi ∈ Ωi, conditioned on agent altitude. 
+
+• Reward Function ( R): Agents receive positive semi-dense intrinsic rewards for exploring undis-covered tiles and locating POIs, with a sparse terminal reward acquired upon successfully “saving" a POI. 
+
+# 3.2 Configurable World Generation and Traversal 
+
+To maximize generalizability across a wide range of scenario distributions, the engine is entirely data-driven. Map topologies are parsed at initialization from standard image files (e.g., PNG) alongside JSON configura-tion matrices. The engine converts RGB values into concrete semantic tile types via an exact-match lookup table mapping RGB triplets to predefined tile type identifiers. Each tile type governs specific environmental interactions: 
+
+• Traversal Kinetics: Modifiers specifying whether a tile is Walkable, Aquatic, or Flyable, permit-ting heterogeneous agent configurations (e.g., quadcopters, boats, and foot-searchers operating syn-chronously). 
+
+• Collision Models: Tiles strictly define blocking (impassable obstacles like walls) or non-blocking 
+
+behavior, which dictates the vector-based continuous movement mechanics of the agents such as move speed or probability of getting stuck. Stuck agents need to be rescued by a teammate to regain movement capability. 
+
+• Altitude and View Ranges: Dynamic, continuous terrain altitudes combine with inherent agent view ranges to handle dynamic visibility and flight suitability across levels. Grounded agents can see further at higher altitudes and flying agents cannot pass terrain above a certain altitude. 
+
+• Agent-Tile Move-speed: For each agent-tile pairing, a move-speed can be defined via the config files for that agent on that tile. This way individual agents can vary in their ratio of walking to swim speed, for example. 
+
+# 3.3 Communication, Observability, and Vectorization 
+
+The engine supports sophisticated multi-agent systems via tunable built-in radio settings. Agents can pro-duce both movement and radio actions, broadcasting their localized beliefs to other individual agents within the native C++ observation representation. By choosing themselves as the target, agents share nothing over the radio so that communication can be handled externally by a learning algorithm instead. Shared infor-mation includes discovered POI locations, local terrain, and agent states, organically resolving asynchronous knowledge states. When an agent chooses to share information, it reveals all tiles it can currently see, and all information it has on the POI’s to the agent it messages. Furthermore, depending on the specific MARL algorithm being trained, researchers can independently configure the environment’s returned observations (decentralized, centralized, or none) and access to the true game state (included or ignored). This combinatorial design results in six distinct observability modes: 1. Decentralized Observation (No State): The standard Dec-POMDP setting for real-world deploy-ment. Each agent receives a unique observation tensor restricted to its functional line-of-sight and local radio telemetry, and the true game state is withheld. 2. Decentralized Observation with True State: Designed for Centralized Training with Decen-tralized Execution (CTDE). Agents receive localized observations for their actor networks, while the environment concurrently returns the omniscient true state to optimize the centralized critic. 3. Centralized Observation (No State): Fuses all active agent sightlines into a singular, shared partial observation tensor, without exposing the underlying global game state. 4. Centralized Observation with True State: Provides the fused, shared partial observation tensor alongside unrestricted access to the full, hidden game state. 45. True State Only (No Observation): Agents receive no localized or centralized partial observations. The environment solely returns the omniscient game state, typically utilized for baseline debugging or fully centralized algorithmic controllers. 6. Void Output (No Observation, No State): The environment bypasses both observation generation and state returns, yielding an empty output (used for native C++ integrations such as traditional search that may skip the expensive tensor fill and use the game state directly). To ensure robust and stable RL training, environment instances within a vectorized batch are stepped stochastically during initialization. This desynchronized execution horizon prevents episodic correlation spikes (where all environments in a batch terminate and reset simultaneously), thereby producing approx-imately i.i.d. samples within each training batch [20], stabilizing batch gradients and improving online algorithmic convergence. 
+
+# 4 High-Performance C++ Architecture 
+
+By constructing a cache-optimized C++ backend coupled with a zero-copy PyTorch memory bridge, our engine achieves throughputs exceeding 33,000,000 SPS in single-agent configurations on an AMD Ryzen 9950X and over 5,000,000 SPS on a low-mid range quad core laptop (see Appendix A.1). This represents a throughput increase of approximately 3,000 × compared to a NumPy baseline at approximately 2,000 SPS. This section details the architectural decisions that yield this speedup. 
+
+# 4.1 Cache-Aligned Hierarchical Memory Arena 
+
+At the core of the engine’s performance is the EnvironmentArena (Figure 2, table 1, language adopted data oriented design principals [2]), which replaces standard heap-allocated object trees with a localized, contiguous flat-memory slab ( std::vector<uint8_t> memory ). Grid-based MARL environments typically suffer from severe cache fragmentation as agents traverse spatial arrays. We mitigate this through cache-aligned Array-of-Structures (AoS) data packing which is only unpacked a single time into pre-allocated pinned memory. The base terrain map consists of alignas(8) Tile structures, where independent fields such as boolean properties (walkable, flyable), tile types, and agent line-of-sight masks are densely bit-packed into a single 
+
+uint32_t field. This way, the CPU can load a tile’s complete spatial and semantic profile natively into a single 64-byte L1 cache line alongside its neighboring tiles. Table 1: Physical Memory Layout of a Single Environment Stride 
+
+Component Type Offset Calculation Size (Bytes) 
+
+Grid Tile[] 0 W × H × 8
+
+Agents AgentState[] offset_agents Nagents × 24 
+
+POIs POIState[] offset_pois Npois × 16 
+
+Speeds float[] offset_speeds Nagents × Ntypes × 4
+
+Knowledge Belief[] offset_agent_know Variable (Mode Dependent) Counters int[4] offset_counters 16 Padding uint8[] env_stride Aligns to 256-byte boundary Parallel execution of 128+ environments introduces the substantial hazard of false sharing (introduced in Section 1). The EnvironmentArena system sidesteps this by calculating the exact contiguous byte-width of an individual environment state ( raw_stride ) and forcibly padding it to the nearest 256-byte hardware boundary to defeat aggressive L2 prefetchers on architectures like AMD EPYC [1].       
+
+> env_stride =( raw_stride +255) &~255;
+
+Consequently, Thread 0 computing Environment 0 is strictly hardware-isolated from Thread 1 computing Environment 1. We further optimize NUMA node alignment natively by initializing this pinned memory 5Bit Packing Environment Structure         
+
+> Tile Struct (8 Bytes)
+> 04511 12 31
+> Agent Visibility Mask (1 bit/agent) Type ID G B A F W
+> o
+> Flags (uint32) Physical Altitude Value
+> o
+> Altitude (float)
+> AgentState Struct (24 Bytes)
+> 031
+> X Coordinate (float) Y Coordinate (float) View Range (float) Deployment Remaining (float) Last X (uint16) Last Y (uint16) Flags (uint8) Max Alt (fp16) Pad (0x00)
+> POIState Struct (16 Bytes)
+> 019 20 21 22 23 31
+> X Coordinate Y Coordinate
+> )
+> Position (floats) Reserved M S F Savable-by Mask (Agent Bits)
+> o
+> State Flags (uint32) Last X Last Y
+> o
+> History (uint16)
+
+Figure 2: Detailed memory layout and bit-packing for environment entities. Metadata is compressed into 32-bit words to maximize L1 cache residency and minimize memory bandwidth overhead. Tile Flags: G – Global observed status, B – Blocking/Impassable, A – Aquatic, F – Flyable, and W – Walkable. 
+
+AgentState Flags: bit 0 – Stuck, bit 1 – Walk, bit 2 – Fly, bit 3 – Swim. POIState Flags: M – Moves (dynamic entity), S – Saved/Rescued, and F – Found/Discovered. The 20-bit masks allow for O(1) visibility and capability checks via bitwise AND/OR operations across up to 20 agents. as torch.empty() buffers in Python, then writing to memory directly inside an OpenMP parallel loop to exploit OS first-touch memory policies [12] for multi-channel allocation. Finally, all output vectors (such as rewards, termination flags, and truncation signals) buffer intermediate parallel writes onto isolated cache-aligned scratch arrays before sequentially writing to Python-facing contiguous dense memory arrays. This substantially reduces false-sharing invalidation events across CPU interconnect fabrics, enabling near-lock-free vertical scaling across available CPU cores. Furthermore, we accelerate Python standard randomization loops by directly vectorizing inputs onto the exact target dtypes via numpy.random.default_rng() , reducing float-casting overhead from the standard 
+
+numpy.random.uniform(-1,1) call. Even still, random action generation is roughly one-third to half of the total runtime across configurations. 
+
+# 4.2 Sub-Microsecond Resets via Pristine Grid Templating 
+
+In episodic MARL, environments must be reset continuously as horizons are reached. This engine utilizes a templated pristine_grid archetype. When an environment terminates, the engine bypasses logical branch-ing and memory allocation during reset by keeping a dense copy of the static parts of the initial state. Utilizing highly optimized contiguous memcpy operations (or vectorized std::copy ), the engine simply overwrites the corrupted physical memory of the localized environment with the immutable pristine_grid copy bytes to substantially reduce wall-clock reset latency, keeping the deep learning framework’s DataLoader saturated. 
+
+# 4.3 Zero-Copy Tensor Architecture 
+
+The common NumPy observation to CUDA memory transfer is expensive. A standard array must be copied into a staging area of pinned memory in RAM before being transferred to VRAM for use on a GPU. 6Table 2: Observation Tensor Stride Mapping 
+
+Tensor Layer Internal Pointer Dimension / Logic 
+
+Tile Types TYLE_TYPE_START Ntypes × W × H
+
+Altitude ALTITUDE_TYPE_START 1 × W × H
+
+Detected POIs PIO_START 1 × W × H (Binary Mask) Discovery Map OBSERVED_START 1 × W × H (Per-Agent or Global) Self Location MY_LOCATION_START 1 × W × H (One-hot) Other Agents OTHER_LOCATIONS_START (N − 1) × W × H (Layer-per-agent or 1) To prevent the expensive serialization typical in Python environments, we implement a direct, zero-copy tensor bridge leveraging PyBind11 [14] and PyTorch [23] pinned memory. PyTorch is used to allocate empty tensors and pass their logical addresses to C++, where individual threads use memset to lazily assign physical address locations via first-touch OS policies by setting logically disjoint memory segments to zero on separate threads, instead of using torch.zero() which would assign all memory to the same controller from the calling thread. This way, the physical memory locations spread across memory controllers for maximum memory bandwidth. This modification benefits systems with highly parallel access patterns while leaving behavior on single-controller systems unchanged. Once the memory is physically assigned and pinned, the C++ code edits in place before a copy is made to VRAM. When the CPU thread yields back to Python, no arrays are copied, serialized, or instantiated. PyTorch simply interprets its internally mutable buffers and pushes them to the GPU via Direct Memory Access (DMA). This architecture is designed to minimize memory-bus overhead for state transfer to the GPU. Additionally, PyTorch can be limited to one thread, because the GPU does the actual transfer. This way, torch threads and HASE OMP threads do not compete for CPU time. Because a copy occurs to transfer memory to the GPU, the persistent in-place memory is not in danger of being accidentally mutated by operations downstream. If CUDA is not available, the copy to a memory buffer still provides safety from mutation. 
+
+Figure 3: Diagram standard RL pipeline: Env Takes Step(s) (blue), then transfers observation to GPU (blue arrow) to take action(s) (orange) before those actions are transported back to the CPU (orange arrow). By using parallel environments we amortize each step’s overhead cost and by using pinned memory we minimize transfer latency. 
+
+# 4.4 Empirical Optimization Constraints and Engine Trade-Offs 
+
+While standard C++ architectural best practices dictate certain memory and execution paradigms, empir-ical profiling revealed that several conventional optimizations actively degraded the engine’s throughput. Consequently, the following implementation details were deliberately structured to subvert classical advice in favor of measured performance: 7Figure 4: Laptop Speedtest on native single threaded numpy environment 
+
+• Native Array Representation over std::vector<bool> : The C++ standard library specializes 
+
+std::vector<bool> to pack booleans as proxy bits to save memory. The memory allocation and conversion logic required to pass these arrays back to Python as an array of bools turned out to be slower than the packing was worth. The engine explicitly substitutes all internal masking instances with std::vector<uint8_t> , to keep memory copy-free. 
+
+• Scattered Tensor Writes over PyTorch Striding: PyTorch allocates continuous memory blocks linearly based on dimensions [envs, channels, height, width] . Classical Loop Nest Optimization (LNO) dictates that the innermost C++ loop should iterate over the contiguous spatial dimension (width ) to march linearly through CPU cache lines for each channel. However, natively conforming to this layout required looping sequentially through N =n_tiles (channels) externally and checking the spatial map internally for each channel iteratively. The cost of O(N W H ) complexity of re-scanning the map outweighed worse cache locality at O(W H ) complexity. 
+
+• Branch Predictor Reliance over Branchless Execution: To populate the observation tensors, the C++ backend masks unseen tiles. A common algorithmic optimization is branchless execution casting a boolean visibility check to a float (0.0 or 1.0) and multiplying it against the spatial state to avoid conditional if statements. Profiling demonstrated this was measurably slower. Because visibility states are overwhelmingly false early in an episode and strictly monotonic (once seen, always seen), modern CPU branch predictors efficiently handle the conditional block due to the monotonic nature of the visibility states. Forcing branchless assignment resulted in unneeded, redundant floating-point writes to memory, consuming critical memory bandwidth. 
+
+# 5 Architectural Ablation Results 
+
+To quantify the systemic impact of the Data-Oriented Design and zero-copy paradigms on raw environment throughput, we conducted an incremental ablation spanning five critical structural variants. 1. Baseline (Tensor State): A standard OpenMP-threaded C++ backend maintaining internal envi-ronment state as a contiguous float tensor of disjoint single-precision floats manually converted from a 
+
+py::tuple via torch.to() every step. 2. Zero-copy Cache Aligned: Internal state is compactly compressed into a locally dense uint8 Array of Structures. A unified multi-threaded loop transcribes the full state directly into a pinned PyTorch tensor mapped at initialization. 3. Diff Sweep: Bypasses explicit dense transcription by computing logical diffs at execution time. Only procedurally updated tiles (e.g., dynamically traversed fog-of-war barriers) issue writes onto the shared tensor array space. In the worst case (fully revealed map), this degenerates to O(W H ) writes per step. 8(a) Baseline (Tensor State) (b) Zero-copy Cache Aligned 
+
+(c) Diff Sweep (d) Static Shared Arrays 
+
+(e) Gymnasium Async (f) NUMA & False-Sharing Local Figure 5: Performance scaling evaluation of progressive architectural improvements against varying environ-ment counts during the ablation study. 94. Static Shared Arrays: Removes tuple-packing loops for episodic returns. Individual scalars for rewards, and booleans for termination and truncation, are inscribed directly onto shared, statically allocated GPU-visible registers. 5. Gymnasium Async: Benchmarks against the Python community standard by reverting to purely asynchronous execution via native Gymnasium [32] Vector environments. Typical reinforcement algo-rithms constrain purely asynchronous engines via severe out-of-memory errors above M = 32 simulta-neous instances. 6. NUMA & False-Sharing Localization: Addresses performance bottlenecks on high-core-count processors (e.g., AMD EPYC). We incorporated 256-byte cache-alignment padding alongside thread-local intermediate buffer assignments to substantially reduce L1/L2 cache invalidation events when computing output rewards. The integration of np.random.default_rng() directly generated action dtypes without recast overhead, achieving peak single-agent throughput of approximately 5,500,000 SPS on a 4-core mobile laptop and approximately 12,800,000 SPS on a 16-core server (see Table 4). Scaling to 1024 simultaneous environments yielded substantially higher throughput across all hardware configurations. 7. First-Touch Memory Allocation: The impact of parallel first-touch initialization versus serial OS memory mapping is quantified in Phase 1 (Section 6.1); serial initialization exhibited severe memory bandwidth bottlenecks on the EPYC hardware due to NUMA node imbalance. Also made individual scalars for rewards, and booleans for termination and truncation cache local C++ vectors before a final single-threaded copy to the static tensors to reduce false sharing during rewards accumulation. 
+
+# 6 Hardware Optimization and MARL Tuning 
+
+While the DOD architecture reduces intra-environment cache contention, deploying the engine across multi-socket, high-core-count systems introduces additional hardware-level bottlenecks that require empirical tun-ing. Simulators parallelized via OpenMP [21] can experience severe performance degradation when orches-trated by Python-based deep learning frameworks (i.e., PyTorch [23]) on high-core-count microarchitectures (e.g., 2x AMD EPYC 7282 16-Core). Server hardware requires fundamentally different treatment from consumer components due to factors like Non-Uniform Memory Access (NUMA) [12] discrepancies, where cross-socket lookups incur heavy latency, and thread thrashing when CPU oversubscription disrupts the pipeline interconnect fabrics. To systematically resolve these hardware-level bottlenecks, we conducted a comprehensive, two-phase optimization study. 
+
+# 6.1 Phase 1: Pure C++ MARL Environment Benchmarks 
+
+Before analyzing PyTorch overhead, it was critical to establish a baseline for the localized C++ engine’s parallel execution utilizing a centralized state configuration. 
+
+6.1.1 Hypotheses and Experiments 
+
+The primary hypothesis for this phase was that hardware-enforced thread pinning alongside first-touch memory allocation (initializing memory by the thread that subsequently operates on it) would maximize performance by forcing the physical memory pages onto the local memory controller and avoiding cross-socket NUMA lookups. To effectively examine this hypothesis, we evaluated three configurations spanning 1,000,000 algorithmic steps: 1. Control (OS-Managed): Standard OS-managed CPU scheduling allowing the system to fluidly balance OpenMP threads by a thread pool where each environment step is assigned to any currently free thread. 2. Thread Pinning: Strict bindings explicitly mapping OpenMP threads to distinct physical cores utilizing OMP_PLACES=cores OMP_PROC_BIND=true .10 3. Serial Init: Memory initialized on a single thread to strictly avoid any parallel first-touch placements. 
+
+6.1.2 Pinning Results 
+
+The hypothesis was not fully supported. The Control (OS-Managed) completed the benchmarks be-tween 2 × and 4 × faster than the strictly pinned equivalent (Figure 6). This result is consistent with the fact that strictly pinning OpenMP to physical cores ( OMP_PLACES=cores ) limits execution to only the 32 physical cores available on the system. The OS-managed control is free to leverage all 64 logical threads (including Simultaneous Multithreading), naturally leading to higher total CPU throughput without induc-ing unnecessary stalls. Additionally, not all environment steps take the same amount of time; for example, radio communication incurs additional computational cost so that static allocation wastes time when quicker threads must wait for slower ones instead of picking up an available job when functioning as a free thread pool. However, the necessity of first-touch memory allocation was supported by the data. The Serial Init 
+
+strategy exhibited severe performance degradation due to Infinity Fabric congestion. Because it was initial-ized serially, the memory arrays failed to distribute evenly across multiple NUMA nodes. Consequently, when all active threads later requested parallel evaluation, they saturated a single memory controller interconnect, cascading into a severe memory bandwidth bottleneck. 
+
+(a) OS-Managed Control (b) Strict Thread Pinning 
+
+(c) Serial Initialization (No First-Touch) Figure 6: Phase 1 throughput comparison for C++ execution utilizing different core-affinity and initialization strategies on AMD EPYC. Strict thread pinning severely reduced total SPS throughput. 
+
+# 6.2 Phase 2: PyTorch and C++ Integration 
+
+6.2.1 Hypotheses and Experiments 
+
+Combining a highly parallelized C++ pipeline with PyTorch introduces thread thrashing. PyTorch natively spawns inter-op threads for tensor operations that contend with the C++ OpenMP simulator threads for CPU 11 time. We hypothesized that strictly restricting PyTorch threading while preventing OpenMP’s default active spin-waiting would resolve context-switch thrashing and cleanly yield execution back to GPU scheduling threads. By using pinned memory for DMA, the pytorch CPU thread is not responsible for performing any large memory transfers, but rather it just has to assign those transfers to the GPU. For this reason, pytorch does not need many threads. A disciplined methodology was established for phase two benchmarking: 1. Standardized simulations normalized to 1,000,000 algorithmic steps. 2. Identical execution sequences repeated six times across each test configuration. 3. Initial 5-second GPU utilization periods explicitly dropped to filter out memory allocation and initial-ization artifacts. The test matrix incorporated the following configurations: 
+
+• Test A (Thread Limit): Restricting PyTorch inter-op threads ( torch.set_num_threads(1) ). 
+
+• Test B (Yield Cores): Modifying OpenMP passive states ( OMP_WAIT_POLICY=passive ). 
+
+• Test C (Limit + Yield): Imposing both passive OpenMP threading and PyTorch thread limits simultaneously. 
+
+6.2.2 RL Results 
+
+The hypothesis regarding thread yield management was supported by the data. Setting 
+
+OMP_WAIT_POLICY=passive explicitly arrests OpenMP threads from busy-waiting when temporarily idle. Combining this with restricted PyTorch threading (Test C) lowered context-switch thrashing and elevated absolute SPS bounds when utilizing all available cores. Additionally, targeted structural mapping utilizing taskset locking simulation jobs to the localized CPU PCIe-complex of the assigned GPU was tested. While the “BEST” (Aligned + Test C) scenario achieved 18,331 SPS compared to the unpinned Test C peak of 18,904 SPS, this constrained setup only utilized 32 threads (half the logical hardware processors). This demonstrates that while unconstrained execution on all available cores yields the highest total systemic throughput, proper hardware pinning yields substantially higher per-thread throughput.                                                                                                    
+
+> Configuration OMP Wait Threads Affinity SPS ( m±SEM )GPU Util ( m±SEM )
+> Dual NUMA Nodes / Full System (64 Threads)
+> Control (Default settings) Default 0N/A 18 ,379 ±171 .940 .3% ±0.37%
+> Test A (Thread Limit) Default 1N/A 18 ,829 ±50 .238 .5% ±0.29%
+> Test B (Yield Cores) Passive 0N/A 17 ,719 ±70 .637 .3% ±0.45%
+> Test C (Limit + Yield) Passive 1N/A 18 ,904 ±68 .638 .4% ±0.29%
+> Single NUMA Node / Constrained (32 Threads)
+> Aligned (PCIe nodes) Default 1Aligned 18 ,889 ±66 .538 .5% ±0.33%
+> Misaligned (Cross-Fabric) Default 1Misaligned 18 ,133 ±67 .839 .1% ±0.33%
+> BEST (Aligned + Test C) Passive 1Aligned 18 ,331 ±69 .038 .2% ±1.06%
+> WORST (Misaligned + Test B) Passive 0Misaligned 16 ,600 ±8.236 .8% ±0.94%
+
+Table 3: Hardware optimization result matrix comparing CPU contention variables against SPS throughput and GPU utilization. Values represent M ean ± SEM for n = 6 trials. The 32-thread subset demonstrates higher per-core efficiency by avoiding Cross-Fabric interconnect latency. 
+
+# 6.3 Deployment Recommendations 
+
+For maximizing total absolute throughput on a given machine, avoid thread pinning, use only the GPU aligned cores, enforce parallel first-touch memory allocation, and limit PyTorch thread count 12 (torch.set_num_threads(1) ). For multi-NUMA, multi-GPU architectures, we recommend strictly map-ping simulation jobs to the localized CPU PCIe-complex of the assigned GPU via taskset and then turning OMP passive wait on if all machine cores are in use (starvation possibility) and off if there are other logical cores which torch can use. In practice, this constraint barelychanges raw overall maximum SPS per job while keeping a full CPU free. Maximizing per-thread efficiency ensures multiple concurrent jobs optimally saturate independent device throughput across the platform without overloading interconnects. 
+
+# 7 Reinforcement Learning Methodology 
+
+Having established the engine’s raw throughput, we now validate that this throughput translates into prac-tical RL training gains by evaluating three model-free algorithms on the Hide-And-Seek task. To effectively exploit the multi-modal observation spaces inherently generated by POMDP environments, our framework incorporates specialized neural architectures for feature extraction. The core algorithms are Multi-Agent Proximal Policy Optimization (MAPPO) [35], Branching-Dueling Q-Networks (BDQ) [29], and Multi-Agent Soft Actor-Critic (MASAC) [13]. All utilize a Mixed CNN-Logical Encoder for the spatial portion of the observation space. 
+
+# 7.1 Mixed Observation Encoder Architecture 
+
+At each operational step, an agent receives a spatial 3D observation tensor capturing localized line-of-sight terrain semantics alongside a dense 1D vector detailing internal telemetry (e.g., coordinates, status). The mixed encoder explicitly bifurcates these inputs. The spatial tensor is routed through three sequential CNN convolutional layers parameterized with kernel sizes ⟨8, 4, 3⟩ and strides ⟨4, 2, 1⟩ respectively, followed by a flattening fully-connected linear operation to compress spatial invariants. Concurrently, the logical tensor is projected via an independent Multi-Layer Perceptron (MLP). The resultant feature vectors are concatenated before being fed into either the shared critic (for CTDE) or independent actor-critic models. 
+
+# 7.2 Reinforcement Learning Algorithms 
+
+To evaluate the convergence properties and computational throughput of the engine, we trained agents using three distinct model-free reinforcement learning algorithms. Each algorithm handles continuous environment steps by translating observed encoded states into discrete multi-agent actions, though they differ substantially in optimization mechanics (e.g., on-policy vs. off-policy). 
+
+7.2.1 Proximal Policy Optimization (PPO) 
+
+PPO [26] is an on-policy actor-critic algorithm. Our implementation (MAPPO/IPPO[35]) uses an actor that outputs categorical distributions over the discrete navigation and radio action spaces and a shared critic estimating V (s). Rollouts of fixed length (128 steps * num environments) are batched across vectorized environments and consumed to compute Generalized Advantage Estimation (GAE). Policy updates are bounded by a clipping function ( ϵ = 0 .2) to limit KL divergence from the previous policy. 
+
+7.2.2 Deep Q-Network (DQN) 
+
+DQN [20] formulates an off-policy, value-based approach with ε-greedy exploration. Our formulation employs a Branching-Dueling architecture with split advantage heads for movement and radio actions summed against a shared state-value baseline. Transitions ⟨s, a, r, s ′, d ⟩ are stored in a centralized replay buffer of capacity 10 6
+
+transitions. Mini-batches are sampled to minimize temporal difference (TD) error against Bellman targets; a synchronized target network stabilizes value estimation during long search episodes. 
+
+7.2.3 Soft Actor-Critic (SAC) 
+
+SAC [13] bridges off-policy efficiency with entropy regularization. We implement a discrete variant suitable for multi-agent grid navigation, maintaining a replay buffer of capacity 10 6 transitions. The actor outputs 13 an entropy-regularized policy π(a|s) and paired soft Q-networks mitigate positive bias; the temperature α is auto-tuned to balance exploration and exploitation. 
+
+# 7.3 Learning Validation and Convergence 
+
+Figure 7: Episodic return trajectories demonstrating the sample complexity demands of various architectures operating over 1 million steps in highly parallelized zero-copy environments. Figure 7 displays the results of 6 independent training runs across the various RL architectures. Both SAC and DQN demonstrate similar convergence behaviors regardless of whether models operate in decen-tralized or centralized observation modes, though centralized architectures run approximately nagent times slower because each agent’s experience must be processed through the network independently. Conversely, PPO scales more favorably when utilizing independent per-agent models (IPPO) compared to a monolithic centralized model (MAPPO). On the 9950X with 128 parallel environments, the environment steps account for approximately 10 seconds of the total 400 s (PPO), 1200 s (DQN), and 2400 s (SAC) training runtimes for 10 7 frame runs, indicating that environment throughput is no longer a bottleneck for these algorithms. 
+
+# 8 Conclusion 
+
+We presented Hide-And-Seek-Engine, a compute-efficient Dec-POMDP simulator natively architected in C++ for multi-agent search scenarios. Through Data-Oriented Design, 64-byte cache-line alignment, and a zero-copy PyTorch memory bridge via pinned memory and DMA, the engine achieves throughputs exceeding 33,000,000 SPS in single-agent configurations on an AMD Ryzen 9950X, representing a throughput increase of approximately 3,000 × over a NumPy baseline. A two-phase hardware optimization study identified first-touch NUMA memory allocation and OpenMP thread yield policies as critical for high-core-count server deployments. Learning validation confirmed that PPO, DQN, and SAC can all train cooperative MARL policies within the engine, with environment steps consuming less than 3% of total training wall-clock time in the tested configurations. Future work includes GPU-native hider policies, extended map-scale benchmarks, and integration with existing MARL libraries. 14 A Appendix 
+
+# A.1 Extended Hardware Runtime Comparisons 
+
+This appendix details the runtime performance scaling and throughput metrics across varying hardware architectures. The engine was benchmarked across three hardware profiles to capture scaling limits from low-end mobile cpu constraints to high-end enterprise servers: 
+
+• High-End Desktop (AMD Ryzen 9950X): 16 Cores, representing peak consumer single-thread performance and monolithic L3 cache topologies (see Epyc_Tuning/env_configs_9950X ). 
+
+• Server Architecture (AMD EPYC 7282): 16 Cores with an RTX Ada 6000 GPU, representing complex NUMA domains, distributed Infinity Fabric interconnects, and strict PCIe pathways (see 
+
+Epyc_Tuning/env_configs_epyc ). 
+
+• Mobile Platform (4-Core Intel Core i5-8300H): Representing low-end constrained thermal and power footprint hardware (see env_configs_laptop ). Tables and throughput plots associated with these configurations show throughput scaling across agent counts and observability modes (Figures 8–10). 
+
+Hardware 1 Agent (SPS) 5 Agents (SPS) 10 Agents (SPS) 
+
+AMD Ryzen 9950X 33,986,275 7,135,957 2,994,134 AMD EPYC 7282 12,801,442 3,309,042 1,564,790 Intel 4-Core Laptop 5,539,430 2,124,718 1,236,755 Table 4: Peak throughput (SPS) by agent count across hardware configurations (Decentralized, No Observ-able State mode). 
+
+# A.2 Hyperparameters Configuration 
+
+Table 5 specifies the primary tuning configurations for the three reinforcement learning algorithms utilized during evaluation. 
+
+Parameter PPO DQN SAC 
+
+Total Timesteps 10 7 10 7 10 7
+
+Learning Rate 2.5 × 10 −4 2.5 × 10 −4 3 × 10 −4
+
+Discount Factor ( γ) 0.99 0.99 0.99 Parallel Environments 128 128 128 Batch Size 128 × 128 256 256 GAE Lambda ( λ) 0.95 N/A N/A Replay Buffer Size N/A 10 6 10 6
+
+Target Update Frequency N/A 2000 8000 Entropy Coefficient ( α) 0.01 N/A Auto-tuned Table 5: Hyperparameters used for PPO, DQN, and SAC in the multi-agent test environments. 
+
+# A.3 Extensive Environment Performance Scaling 
+
+The following figures exhibit complete grid throughputs across varying observability modes on AMD Ryzen 9950x, AMD EPYC 7282, and the Intel 4-Core Laptop hardware profiles. 15 (a) Centralized Partial Observations (b) Decentralized Partial Observations 
+
+(c) Fully Observable Centralized State (d) Internal Engine Stepping (No Tensor Return) 
+
+(e) No Observable Grid Return (Internal Only) (f) Local Decentralized Logic Data Figure 8: Throughput scaling profiles for the AMD Ryzen 9950x. 16 (a) Centralized Partial Observations (b) Decentralized Partial Observations 
+
+(c) Fully Observable Centralized State (d) Internal Engine Stepping (No Tensor Return) 
+
+(e) No Observable Grid Return (Internal Only) (f) Local Decentralized Logic Data Figure 9: Throughput scaling profiles for the AMD EPYC 7282. 17 (a) Centralized Partial Observations (b) Decentralized Partial Observations 
+
+(c) Fully Observable Centralized State (d) Internal Engine Stepping (No Tensor Return) 
+
+(e) No Observable Grid Return (Internal Only) (f) Local Decentralized Logic Data Figure 10: Throughput scaling profiles for the Intel 4-Core Laptop. 18 References 
+
+[1] Advanced Micro Devices, Inc. High Performance Computing (HPC) Tuning Guide for AMD EPYC 7003 Series Processors . Advanced Micro Devices, Inc., March 2022. Document 70574; Revision 1.0. [2] Gabriel M Arantes, Richard F Pinto, Bruno L Dalmazo, Eduardo N Borges, Giancarlo Lucca, Vi-viane LD de Mattos, Fabian C Cardoso, and Rafael A Berri. Impact of data-oriented and object-oriented design on performance and cache utilization with artificial intelligence algorithms in multi-threaded cpus. 
+
+arXiv preprint arXiv:2512.07841 , 2025. [3] Christopher Berner, Greg Brockman, Brooke Chan, Vicki Cheung, Przemysław Dębiak, Christy Den-nison, David Farhi, Quirin Fischer, Shariq Hashme, Chris Hesse, et al. Dota 2 with large scale deep reinforcement learning. arXiv preprint arXiv:1912.06680 , 2019. [4] Daniel S Bernstein, Robert Givan, Neil Immerman, and Shlomo Zilberstein. The complexity of de-centralized control of markov decision processes. Mathematics of operations research , 27(4):819–840, 2002. [5] Maxime Chevalier-Boisvert, Bolun Dai, Mark Towers, Rodrigo de Lazcano, Lucas Willems, Salem Lahlou, Suman Pal, Pablo Samuel Castro, and Jordan Terry. Minigrid & miniworld: Modular & cus-tomizable reinforcement learning environments for goal-oriented tasks. CoRR , abs/2306.13831, 2023. [6] Marco Cusumano-Towner, David Hafner, Alex Hertzberg, Brody Huval, Aleksei Petrenko, Eugene Vinit-sky, Erik Wijmans, Taylor Killian, Stuart Bowers, Ozan Sener, et al. Robust autonomy emerges from self-play. arXiv preprint arXiv:2502.03349 , 2025. [7] Horgan Dan, J Quan, D Budden, et al. Distributed prioritized experience replay. In Proc. 5th Int. Conf. Learning Representations (ICLR, Vancouver, BC, Canada, 2018) , 2018. [8] Benjamin Ellis, Jonathan Cook, Skander Moalla, Mikayel Samvelyan, Mingfei Sun, Anuj Mahajan, Jakob Foerster, and Shimon Whiteson. Smacv2: An improved benchmark for cooperative multi-agent reinforcement learning. Advances in Neural Information Processing Systems , 36:37567–37593, 2023. [9] Lasse Espeholt, Hubert Soyer, Remi Munos, Karen Simonyan, Vlad Mnih, Tom Ward, Yotam Doron, Vlad Firoiu, Tim Harley, Iain Dunning, et al. Impala: Scalable distributed deep-rl with importance weighted actor-learner architectures. In International conference on machine learning , pages 1407–1416. PMLR, 2018. [10] C. Daniel Freeman, Erik Frey, Anton Raichuk, Sertan Girgin, Igor Mordatch, and Olivier Bachem. Brax - a differentiable physics engine for large scale rigid body simulation, 2021. [11] Matteo Gallici, Mattie Fellows, Benjamin Ellis, Bartomeu Pou, Ivan Masmitja, Jakob Nicolaus Foerster, and Mario Martin. Simplifying deep temporal difference learning. arXiv preprint arXiv:2407.04811 ,2024. [12] David Gureya, Joao Neto, Reza Karimi, Joao Barreto, Pramod Bhatotia, Vivien Quema, Rodrigo Rodrigues, Paolo Romano, and Vladimir Vlassov. Bandwidth-aware page placement in numa. In 2020 IEEE International Parallel and Distributed Processing Symposium (IPDPS) , pages 546–556. IEEE, 2020. [13] Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy max-imum entropy deep reinforcement learning with a stochastic actor. In International conference on machine learning , pages 1861–1870. Pmlr, 2018. [14] Wenzel Jakob, Jason Rhinelander, and Dean Moldovan. pybind11 – seamless operability between c++11 and python, 2017. https://github.com/pybind/pybind11. [15] Chi Jin, Sham Kakade, Akshay Krishnamurthy, and Qinghua Liu. Sample-efficient reinforcement learn-ing of undercomplete POMDPs. In Advances in Neural Information Processing Systems , volume 33, pages 18530–18539, 2020. 19 [16] Arthur Juliani, Vincent-Pierre Berges, Ervin Teng, Andrew Cohen, Jonathan Harper, Chris Elion, Chris Goy, Yuan Gao, Hunter Henry, Marwan Mattar, et al. Unity: A general platform for intelligent agents. 
+
+arXiv preprint arXiv:1809.02627 , 2018. [17] Marc Lanctot, Edward Lockhart, Jean-Baptiste Lespiau, Vinicius Zambaldi, Satyaki Upadhyay, Julien Pérolat, Sriram Srinivasan, Finbarr Timbers, Karl Tuyls, Shayegan Omidshafiei, et al. Openspiel: A framework for reinforcement learning in games. arXiv preprint arXiv:1908.09453 , 2019. [18] Mayank Mittal, Pascal Roth, James Tigue, Antoine Richard, Octi Zhang, Peter Du, Antonio Serrano-Munoz, Xinjie Yao, René Zurbrügg, Nikita Rudin, et al. Isaac lab: A gpu-accelerated simulation framework for multi-modal robot learning. arXiv preprint arXiv:2511.04831 , 2025. [19] Volodymyr Mnih, Adria Puigdomenech Badia, Mehdi Mirza, Alex Graves, Timothy Lillicrap, Tim Harley, David Silver, and Koray Kavukcuoglu. Asynchronous methods for deep reinforcement learning. In International conference on machine learning , pages 1928–1937. PmLR, 2016. [20] Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G Bellemare, Alex Graves, Martin Riedmiller, Andreas K Fidjeland, Georg Ostrovski, et al. Human-level control through deep reinforcement learning. nature , 518(7540):529–533, 2015. [21] OpenMP Architecture Review Board. OpenMP application program interface version 3.0, May 2008. [22] Afshin Oroojlooy and Davood Hajinezhad. A review of cooperative multi-agent deep reinforcement learning. Applied Intelligence , 53(11):13677–13722, 2023. [23] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An imperative style, high-performance deep learning library. Advances in neural information processing systems , 32, 2019. [24] Aleksei Petrenko, Zhehui Huang, Tushar Kumar, Gaurav Sukhatme, and Vladlen Koltun. Sample factory: Egocentric 3d control from pixels at 100,000 fps with a single gpu. In International Conference on Machine Learning , pages 7654–7663. PMLR, 2020. [25] Mikayel Samvelyan, Tabish Rashid, Christian Schroeder De Witt, Gregory Farquhar, Nantas Nardelli, Tim GJ Rudner, Chia-Man Hung, Philip HS Torr, Jakob Foerster, and Shimon Whiteson. The starcraft multi-agent challenge. arXiv preprint arXiv:1902.04043 , 2019. [26] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. [27] Brennan Shacklett, Lucis Zhan, Hao Chen, Mingfei Sun, Dieter Fox, and Kayvon Fatahalian. An extensible, data-oriented architecture for high-performance, many-world simulation. ACM Transactions on Graphics (TOG) , 42(4):1–14, 2023. [28] Joseph Suarez. Pufferlib: Making reinforcement learning libraries and environments play nice. arXiv preprint arXiv:2406.12905 , 2024. [29] Arash Tavakoli, Fabio Pardo, and Petar Kormushev. Action branching architectures for deep reinforce-ment learning. In Proceedings of the aaai conference on artificial intelligence , volume 32, 2018. [30] J Terry, Benjamin Black, Nathaniel Grammel, Mario Jayakumar, Ananth Hari, Ryan Sullivan, Luis S Santos, Clemens Dieffendahl, Caroline Horsch, Rodrigo Perez-Vicente, et al. Pettingzoo: Gym for multi-agent reinforcement learning. Advances in Neural Information Processing Systems , 34:15032– 15043, 2021. [31] Josep Torrellas, Monica S Lam, and John L Hennessy. False sharing and spatial locality in multiprocessor caches. IEEE Transactions on Computers , 43(6):651–663, 1994. 20 [32] Mark Towers, Ariel Kwiatkowski, Jordan Terry, John U Balis, Gianluca De Cola, Tristan Deleu, Manuel Goulão, Andreas Kallinteris, Markus Krimmel, Arjun KG, et al. Gymnasium: A standard interface for reinforcement learning environments. arXiv preprint arXiv:2407.17032 , 2024. [33] Oriol Vinyals, Igor Babuschkin, Wojciech M Czarnecki, Michaël Mathieu, Andrew Dudzik, Junyoung Chung, David H Choi, Richard Powell, Timo Ewalds, Petko Georgiev, et al. Grandmaster level in starcraft ii using multi-agent reinforcement learning. nature , 575(7782):350–354, 2019. [34] Jiayi Weng, Min Lin, Shengyi Huang, Bo Liu, Denys Makoviichuk, Viktor Makoviychuk, Zichen Liu, Yu-fan Song, Ting Luo, Yukun Jiang, et al. Envpool: A highly parallel reinforcement learning environment execution engine. Advances in Neural Information Processing Systems , 35:22409–22421, 2022. [35] Chao Yu, Akash Velu, Eugene Vinitsky, Jiaxuan Gao, Yu Wang, Alexandre Bayen, and Yi Wu. The sur-prising effectiveness of ppo in cooperative multi-agent games. Advances in neural information processing systems , 35:24611–24624, 2022. 21

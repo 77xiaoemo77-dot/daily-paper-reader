@@ -1,0 +1,1227 @@
+Title: Decision-Focused Learning via Tangent-Space Projection of Prediction Error
+
+URL Source: https://arxiv.org/pdf/2605.01361v1
+
+Published Time: Tue, 05 May 2026 00:34:26 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Junhyeong Lee 1 Sangjin Jin 1 Yongjae Lee 1 † 
+
+## Abstract 
+
+Decision-Focused Learning (DFL) trains predic-tors to improve downstream decision quality, but computing regret gradients typically requires dif-ferentiating through solvers or relying on surro-gate losses, which can be computationally expen-sive or deviate from the true objective. We show that, under standard regularity with locally sta-ble active constraints, the regret gradient admits a closed-form geometric characterization, equiv-alent to the prediction error projected onto the tangent space of active constraints, scaled by lo-cal curvature. This reveals that regret gradients can be obtained by filtering decision-irrelevant components from the MSE gradient, providing a simpler and more direct alternative to existing approaches. Based on this, we propose PEAR 
+
+(Projected Error As Regret-gradient), which com-putes regret gradients via a reduced linear system over active constraints, avoiding differentiation through solver iterations or additional optimiza-tion solves. Experiments on LP benchmarks and a real-world QP task show that PEAR achieves the best decision quality among all baselines while be-ing the most computationally efficient, with gains that persist under constraint shifts. 
+
+## 1. Introduction 
+
+Machine learning is increasingly deployed in decision-making, where a predictive model estimates parameters of an optimization problem and a downstream solver computes the final decision. In these predict-then-optimize settings, reducing the prediction error alone does not necessarily yield good decisions. This has motivated Decision-Focused Learning (DFL) (Donti et al., 2017; Elmachtoub & Grigas, 2022), which trains predictors to improve decision quality, typically measured by regret, the suboptimality incurred by     
+
+> †Corresponding author. 1Department of Industrial Engineer-ing, Ulsan National Institute of Science and Technology, Ul-san, South Korea. Correspondence to: Yongjae Lee <yong-jaelee@unist.ac.kr >.
+> Preprint. May 5, 2026.
+
+acting on predicted rather than true parameters. Importantly, prediction accuracy and decision quality are not inherently at odds. In the linear-cost setting, minimizing mean squared error can be consistent with reducing expected regret (Elmachtoub & Grigas, 2022). This raises a natural question about the structural relationship between predic-tion error and regret gradients, and how this relationship can inform training. However, this connection remains underex-plored. Most prior work has instead focused on procedural questions, namely how to obtain regret gradients. While such methods are valuable for enabling end-to-end learning, existing approaches have notable limitations. Among sensitivity-based differentiable optimization layers, general-purpose methods can trade off efficiency and ro-bustness for broad applicability, and certain constructions require symmetrizing the KKT system, which can lead to ill-conditioned linear solves (Magoon et al., 2025; Bambade et al., 2024). A complementary line of work uses surrogate objectives or perturbed estimators to approximate regret gradients. These methods can provide informative learning signals, but they may deviate from the true regret objective, and many are tailored to linear-cost problems, which limits their generality beyond linear objectives (Mandi et al., 2024; Schutte et al., 2024). We propose PEAR (Projected Error As Regret-gradient), a simple projection-based method for computing regret gra-dients. In contrast to prior work that mainly focuses on how to differentiate through an optimizer or design proxy objectives, we study the structure of regret gradients and their connection to prediction error. Under standard regu-larity and locally fixed active constraints, we show that the regret gradient admits an explicit geometric form. It is given by projecting the prediction error onto the tangent space of the active constraints under the local curvature metric. This result shows that the regret gradient can be obtained from the MSE gradient by filtering out decision-irrelevant components of the prediction error. Guided by this characterization, PEAR computes regret gradients without differentiating through solver iterations and without relying on surrogate losses. Instead, it evaluates the required projection by solving a compact reduced linear system induced by the active constraints, e.g., via a Schur-complement computation. This avoids backward overhead 1
+
+> arXiv:2605.01361v1 [cs.LG] 2 May 2026 Decision-Focused Learning via Tangent-Space Projection of Prediction Error
+
+and improves numerical stability compared to differentiable layers, while remaining faithful to the true regret objective rather than a proxy. PEAR applies to optimization problems with linear or quadratic objectives. 
+
+Our contributions are as follows: 
+
+1. PEAR: a simple projection for regret gradients. 
+
+We establish an explicit geometric relationship be-tween prediction error and regret gradients in Decision-Focused Learning. This interpretation reveals which error components influence decisions, and PEAR fil-ters out decision-irrelevant directions to improve DFL performance. 2. Efficient and stable computation. PEAR evaluates the projection by solving a compact reduced linear sys-tem induced by the active constraints, reducing back-ward overhead and improving numerical stability com-pared to differentiable optimization layers. Compared to LP baselines, PEAR provides a deterministic regret gradient without requiring additional solver calls or perturbation-based estimation. 3. Strong empirical performance. On synthetic LP benchmarks and a real-world QP task, PEAR improves regret and training efficiency over other baselines in most settings, and remains strong under noise and con-straint perturbations. 
+
+## 2. Related Work 
+
+Decision-focused learning. Decision-Focused Learning (DFL) trains predictors to improve downstream decision quality, typically measured by regret, in predict-then-optimize pipelines (Donti et al., 2017; Wilder et al., 2019; El-machtoub & Grigas, 2022). DFL has been studied in a range of applications including healthcare, portfolio optimiza-tion, and other optimization-driven decision systems (Verma et al., 2023; Costa & Iyengar, 2023; Lee et al., 2025; Hwang et al., 2025; Ellinas et al., 2024). Recent surveys summarize major methodological themes such as regularization-based approaches, convex surrogate losses, and perturbation-based gradient estimators (Mandi et al., 2024; Sadana et al., 2025). A recurring practical challenge is to obtain learning signals that are well aligned with regret while keeping training ef-ficient, especially when training repeatedly interacts with a downstream optimization (Mandi et al., 2020; Mulamba et al., 2020; Berden et al., 2025). 
+
+Differentiable optimization layers. A common approach to end-to-end learning is to treat the downstream optimiza-tion as a differentiable layer. Early works relied on un-rolling iterative optimization steps to compute gradients via the chain rule (Domke, 2012; Amos et al., 2017), while OptNet (Amos & Kolter, 2017) introduced implicit differ-entiation through KKT conditions for quadratic programs. Subsequent work generalized this idea to broader classes of convex programs (Agrawal et al., 2019a;b; Gould et al., 2021; Blondel et al., 2022). While these methods provide principled gradients, in practice the backward pass depends heavily on the solver implementation. For instance, Opt-Net requires symmetrized linear systems that can become ill-conditioned (Bambade et al., 2024), while CVXPYLay-ers (Agrawal et al., 2019a) routes QPs through cone re-formulations, restricting access to specialized solvers and degrading scalability on large sparse instances (Magoon et al., 2025). These issues make training expensive and limit solver choices (Blondel et al., 2022), motivating recent work on decoupling the forward and backward passes for solver-agnostic sensitivity analysis (Magoon et al., 2025). 
+
+Alternative approaches for regret minimization. Many real-world optimization problems are inherently discrete, leading to piecewise-constant solution maps that yield zero or undefined gradients (Mandi et al., 2022). To address uninformative gradients, DFL has largely focused on sur-rogate objectives and gradient approximations. For linear optimization, SPO+ (Elmachtoub & Grigas, 2022) is a con-vex surrogate that upper bounds regret and can be optimized efficiently. A related strategy smooths the optimization problem itself, for example by adding quadratic regulariza-tion or using continuous relaxations to obtain meaningful gradients (Wilder et al., 2019; Mandi & Guns, 2020). Al-ternatively, perturbation-based methods keep the original solver but add random perturbations and use the resulting changes in the solution to build informative gradient esti-mates (Berthet et al., 2020; Pogan ˇci ´c et al., 2019; Niepert et al., 2021). These approaches can be practical and scalable, but they do not generally yield the true regret gradient and are often restricted to linear objectives, making generaliza-tion to broader problem classes difficult (Mandi et al., 2024; Schutte et al., 2024). 
+
+Sensitivity analysis and active set reduction. Our anal-ysis builds on classical sensitivity theory for constrained optimization, which characterizes how solutions change under small perturbations (Fiacco, 1976; 1983; Robinson, 1980; Bonnans & Shapiro, 2013). Under standard regularity conditions, the active constraints remain locally stable and an inequality-constrained problem reduces to an equality-constrained system over the active set (Kyparisis, 1990; Dontchev & Rockafellar, 2009). This active set reduction yields efficient computations, where solution derivatives can be obtained from reduced linear systems defined by the active constraints (Bemporad et al., 2002). These prin-ciples enable differentiable optimization to exploit active constraint reduction across arbitrary solvers, computing gra-dients from reduced linear systems (Magoon et al., 2025). 2Decision-Focused Learning via Tangent-Space Projection of Prediction Error Input Data                                                        
+
+> Feature 𝑥 ∈ℝ!
+> True Cost 𝑐 ∈ℝ"
+> Predictive
+> Model
+> 𝑓 !
+> MSE Gradient
+> Calculation
+> Active set 𝒜
+> Cost Vector
+> (𝑐 ̂,𝑐 )
+> ∇!̂ℒ#$% =𝑐 ̂−𝑐 =𝑒
+> Active Set
+> Detection
+> Predicted Cost
+> 𝑐 ̂
+> Projected Error As Regret -gradient (PEAR)
+> ∇"̂𝑅 𝑐 ̂;𝑐 =Π$𝐻 %&𝑒 =𝑃 $𝑒
+> Active Constraints
+> 𝐽 𝑐 ̂
+> Solver
+> Optimal 𝑧 ∗,𝜇 ∗
+> MSE Gradient
+> ∇#̂ℒ%&' =𝑒
+> ←Backward Pass
+> 𝑹 𝒄 #;𝒄 :Regret of 𝑧 ∗𝑐 ̂
+> 𝑯 :Hessian of objective function
+> 𝜫 𝑯 :Tangent Space Projector
+> Feasible Region
+> Normal Space !
+> !!̂ℒ#$% =$
+> Tangent Space
+> "=ker '
+> Transformed to !!""
+> Projection onto #
+> $#̂%='%!!""=(%"
+> Active Constraint
+> Boundary at !∗
+> )∗*+
+> Regret Gradient Computation via Projection
+
+Figure 1. The PEAR framework. PEAR provides a direct pipeline for transforming prediction error into a regret gradient via a projection onto the local decision geometry. After identifying the active constraints, PEAR rescales the error by local curvature and projects it onto the feasible tangent space, filtering out decision-irrelevant components. 
+
+## 3. Regret Gradient via Tangent-Space Projection 
+
+This section establishes our main theoretical result. Un-der standard regularity conditions, the regret gradient ad-mits a closed-form geometric characterization as the pre-diction error projected onto the tangent space of active con-straints, scaled by local curvature. This structure reveals not only how to compute regret gradients efficiently by filtering decision-irrelevant components, but also why and what to correct for improving decisions. 
+
+3.1. Problem Setup 
+
+We consider a predict-then-optimize pipeline where con-textual features x ∈ Rd inform predictions about unknown cost parameters. A predictive model fθ : Rd → Rn outputs 
+
+ˆc = fθ (x) as an estimate of the true cost vector c ∈ Rn.Given ˆc, the downstream decision is obtained by solving the convex optimization problem 
+
+z∗(ˆ c) ∈ arg min  
+
+> z∈Rn
+
+ϕ(z) + ˆ c⊤z
+
+subject to Az = b, Gz ≤ h, 
+
+(1) where ϕ : Rn → R is a known convex base objective, 
+
+A ∈ Rp×n defines equality constraints, and G ∈ Rm×n
+
+defines inequality constraints. Decision-Focused Learning minimizes the regret of the de-cision computed from ˆc under the true cost c:
+
+R(ˆ c; c) = ϕ(z∗(ˆ c)) + c⊤z∗(ˆ c)
+
+− ϕ(z∗(c)) + c⊤z∗(c). (2) Gradient-based training requires ∇θ R. By the chain rule, 
+
+dR
+
+dθ = ∂R
+
+∂z ∗ · ∂z ∗
+
+∂ˆc · ∂ˆc∂θ , (3) where the main challenge is the solution sensitivity ∂z ∗/∂ ˆc,since it requires differentiating through an arg min opera-tor (Wilder et al., 2019). Since the ground-truth cost term c⊤z∗(c) in (2) is indepen-dent of ˆc, the regret gradient with respect to ˆc becomes 
+
+∇ˆcR =
+
+ ∂z ∗
+
+∂ˆc
+
+⊤
+
+[∇z∗ ϕ(z∗) + c] . (4) 
+
+3.2. Active Set and Local Regularity 
+
+The difficulty in differentiating z∗(ˆ c) stems from inequality constraints. The mapping ˆc 7 → z∗(ˆ c) can be nonsmooth when the set of binding constraints changes. To recover local differentiability, we restrict attention to neighborhoods where the active set remains invariant. Within such a region, the inequality-constrained problem reduces to an equality-constrained one, in which inactive constraints are automat-ically satisfied and only the active constraints matter. Let 
+
+A(ˆ c) = {i : ( Gz ∗(ˆ c) − h)i = 0 } denote the active set at 
+
+z∗(ˆ c) and define the stacked active constraint matrix 
+
+J(ˆ c) = 
+
+ AGA(ˆ c)
+
+
+
+∈ Rk×n, k = p + |A (ˆ c)|. (5) On any neighborhood where A(ˆ c) remains unchanged, the inequality-constrained problem behaves like an equality-constrained problem with constraint Jacobian J. To ensure the solution map remains smooth within this region, we require the following regularity conditions from classical sensitivity analysis (Fiacco, 1983). 
+
+Assumption 3.1 (Strict Convexity) . The Hessian H =
+
+∇2ϕ(z∗) is positive definite. 
+
+Assumption 3.2 (Linear Independence Constraint Qualifi-cation) . The active constraint Jacobian has full row rank, 
+
+rank( J) = k.
+
+Assumption 3.3 (Strict Complementary Slackness) . For each active inequality i ∈ A , the corresponding dual vari-able satisfies μ∗ 
+
+> i
+
+> 0; for inactive constraints, μ∗ 
+
+> i
+
+= 0 .3Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Under these assumptions, the solution map is locally unique and continuous, and the active set remains invariant under sufficiently small perturbations of ˆc (Robinson, 1980; Fi-acco, 1983; Bonnans & Shapiro, 2013). A formal statement is provided in Appendix A.1. 
+
+3.3. Sensitivity via a Reduced KKT System 
+
+Fix ˆc and consider perturbations dˆc that are small enough so that the active set does not change. At the optimal solution, the KKT conditions are given by 
+
+∇ϕ(z∗) + ˆ c + A⊤λ∗ + G⊤μ∗ = 0 ,Az ∗ = b, Gz ∗ ≤ h, μ∗ ≥ 0,
+
+diag (μ∗)( Gz ∗ − h) = 0 .
+
+(6) Under Assumptions 3.1–3.3, inactive inequalities remain strictly feasible under sufficiently small perturbations that preserve the active set. Thus the problem locally reduces to an equality-constrained system whose KKT conditions become 
+
+∇ϕ(z∗) + ˆ c + J⊤y∗ = 0 , Jz ∗ = ˜b, (7) where J is the stacked active constraint Jacobian, y∗ ∈ Rk
+
+collects dual variables for active constraints and ˜b = [ b; hA].We can view the reduced KKT system (7) as implicitly defining z∗ and y∗ as functions of ˆc. Define the implicit function 
+
+F (z, y, ˆc) = 
+
+∇ϕ(z) + ˆ c + J⊤yJz − ˜b
+
+
+
+= 0 . (8) By the implicit function theorem (Dontchev & Rockafellar, 2009), differentiating F with respect to ˆc yields an explicit linear system for the perturbations dz and dy 
+
+H J⊤
+
+J 0
+
+  dz dy 
+
+
+
+=
+
+−dˆc
+
+0
+
+
+
+. (9) where H = ∇2ϕ(z∗) is the Hessian of the objective. Since the active set is fixed, only the active constraints appear in the system, making this explicit formula much simpler than working with the full KKT conditions where many dual variables would be zero. Under Assumptions 3.1–3.2, the KKT matrix in (9) is invert-ible (Boyd & Vandenberghe, 2004). Eliminating the dual variable dy via the Schur complement gives 
+
+dz = −PH dˆc, equivalently ∂z ∗
+
+∂ˆc = −PH , (10) where the sensitivity operator is 
+
+PH = H−1 − H−1J⊤(JH −1J⊤)−1JH −1. (11) The derivation of (10) –(11) is standard in sensitivity analy-sis. For completeness, we include it in Appendix A.2. The operator PH enforces feasibility at first order. Indeed, substituting dz = −PH dˆc into the linearized constraints yields Jdz = 0 . Therefore, the first-order solution perturba-tions lie in the feasible tangent space T := ker( J). This is made explicit by the projector identity below. 
+
+Proposition 3.4 (Projection Structure) . Under Assump-tions 3.1–3.2, define 
+
+ΠH = I − H−1J⊤(JH −1J⊤)−1J. (12) 
+
+Then ΠH is an H-orthogonal projector onto ker( J) and 
+
+PH = Π H H−1, JP H = 0 , PH J⊤ = 0 . (13) Proposition 3.4 shows that PH can be read as curvature scaling followed by projection onto feasible directions. The proof is given in Appendix B.1. 
+
+3.4. Regret Gradient and the Projected Prediction Error 
+
+We now connect the sensitivity operator to the regret gra-dient. Let e = ˆ c − c denote the prediction error. Under Assumptions 3.1–3.3, the regret is differentiable with re-spect to ˆc on any neighborhood where the active set is fixed. This allows the regret gradient in (4) to be simplified in closed form via the sensitivity operator PH defined in (11). 
+
+Theorem 3.5 (Regret Gradient via Tangent-Space Projec-tion) . Under Assumptions 3.1–3.3, the regret gradient ad-mits the closed form 
+
+∇ˆcR(ˆ c; c) = PH (ˆ c − c) = PH e, 
+
+where PH is defined in (11) .
+
+Theorem 3.5 implies that regret descent replaces the MSE gradient e with a projected error PH e induced by the local active constraints and curvature. The proof combines the chain rule with the sensitivity relation (10) and the projec-tion property in Proposition 3.4. A complete proof appears in Appendix B.2. Since PH projects onto T = ker( J), it removes all normal components, leading to two key properties. First, the learn-ing signal filters out normal directions. Second, it remains invariant to normal perturbations whenever the active set is fixed. These properties are formalized as follows. 
+
+Corollary 3.6 (Normal Filtering and Normal Invariance) .
+
+Let N = range( J⊤) denote the normal space to the tangent space T . For any δN ∈ N ,
+
+PH δN = 0 . (14) 
+
+If the active set remains unchanged, then for all α ∈ R,
+
+∇ˆcR(ˆ c + αδ N ; c) = ∇ˆcR(ˆ c; c). (15) 4Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+A proof is given in Appendix B.3. Corollary 3.6 exposes the structural advantage of DFL. Prediction errors orthogonal to the feasible region do not affect the downstream decision, so DFL naturally suppresses such errors. As shown in Figure 1, H−1 rescales the prediction error 
+
+e according to the local curvature of the objective ϕ. In directions where the objective is flatter, smaller eigenvalues of H amplify the corresponding error components through 
+
+H−1e, while directions with steep curvature are correspond-ingly suppressed (Nocedal & Wright, 2006). This curvature-weighted error reveals which cost perturbations most affect the solution across different geometric directions. The tangent projector then filters this rescaled error by pro-jecting onto the feasible tangent space T = ker( J), remov-ing all components orthogonal to this space. The complete regret gradient is thus 
+
+∇ˆcR(ˆ c; c) =  I − H−1J⊤(JH −1J⊤)−1J| {z }
+
+> tangent projector
+
+ H−1| {z } 
+
+> curvature rescaler
+
+e, 
+
+which first rescales by local curvature, then projects onto the tangent space of feasible directions. This geometric decomposition is also characterized in Gould et al. (2021). 
+
+## 4. Computing the Projected-Error Gradient 
+
+This section describes how to compute the regret gradient 
+
+∇ˆcR = PH e derived in Section 3 without explicitly form-ing the dense projection operator PH . PEAR proceeds in three steps: (i) solve the forward problem to obtain primal and dual solutions, (ii) identify the active constraints and form the reduced Jacobian J, and (iii) compute PH e via a Schur-complement reduction over the active set. 
+
+4.1. Forward Pass: Active-Set Detection 
+
+We identify the active set from the primal–dual solution re-turned by the forward solver using a complementary slack-ness criterion. In our implementation, we solve (1) with OSQP (Stellato et al., 2020) after rewriting the constraints into l ≤ Gz ≤ u. Let r∗ = Gz ∗ denote the constraint resid-uals. We identify binding constraints via a complementary slackness test: 
+
+L = {i | (r∗ 
+
+> i
+
+− li) < −y∗ 
+
+> i
+
+},
+
+U = {i | (ui − r∗ 
+
+> i
+
+) < y ∗ 
+
+> i
+
+}, (16) where L and U are the lower- and upper-active sets, and 
+
+A = L ∪ U . Using A, we construct the Jacobian J as in (5) .
+
+4.2. Backward Pass: Efficient Gradient Computation 
+
+Our goal in the backward pass is to compute the regret gradient g = ∇ˆcR(ˆ c; c) = PH e as derived in Theorem 3.5, 
+
+Algorithm 1 PEAR : Projected Error as Regret-gradient 
+
+Input: Predicted costs ˆc = fθ (x), true costs c, problem data (A, b, G, h )
+
+Input: Hessian H = ∇2ϕ(z∗) (or H = λI for LP), injec-tion strength β ∈ [0 , 1] 
+
+Output: Gradient signal g = ∇ˆcR(ˆ c; c) 
+
+> 1:
+
+// Forward: Active-Set Detection  
+
+> 2:
+
+Solve (1) with cost ˆc to obtain primal-dual pair (z∗, y ∗) 
+
+> 3:
+
+Identify active set A via complementary slackness (16)  
+
+> 4:
+
+Form active constraint Jacobian J ←
+
+ AGA
+
+ 
+
+> 5:
+
+// Backward: Compute PH e via Reduced System  
+
+> 6:
+
+Compute prediction error e ← ˆc − c 
+
+> 7:
+
+Compute x ← H−1e and r ← Jx  
+
+> 8:
+
+Solve reduced system (JH −1J⊤)v = r for v 
+
+> 9:
+
+Compute projected gradient g ← x − H−1J⊤v 
+
+> 10:
+
+// Optional: Normal injection for LP  
+
+> 11:
+
+if β > 0 then  
+
+> 12:
+
+Compute normal component n ← H−1J⊤v 
+
+> 13:
+
+g ← g + β · ∥g∥∥n∥ · n 
+
+> 14:
+
+end if  
+
+> 15:
+
+return g
+
+where e = ˆ c − c. A direct computation of PH e would form the dense n × n projection operator PH explicitly, which becomes prohibitively expensive as dimension grows. We instead compute PH e through a reduced linear system. The key insight is that under fixed active constraints, the primal perturbation dz can be eliminated, leaving a reduced system determined only by the active constraints. This yields the same projected vector without forming PH ex-plicitly. Under the regularity conditions and using the reduced KKT sensitivity system in Eq. (9) , we set the cost perturbation to the prediction error dˆc = −e and obtain 
+
+H J⊤
+
+J 0
+
+  dz dy 
+
+
+
+=
+
+e
+
+0
+
+
+
+, (17) where H = ∇2ϕ(z∗) and J is the stacked Jacobian of the active constraints. To eliminate dz , we use Schur complement reduction. From the first block of Eq. (17), we express 
+
+dz = H−1(e − J⊤dy ). (18) From the second block row of Eq. (17) , we have Jdz = 0 .Substituting (18) into this relation and defining x = H−1e
+
+and r = Jx , we obtain the reduced system 
+
+JH −1J⊤dy = r. (19) This system has dimension k × k only and operates entirely within the reduced space of active multipliers, where k =
+
+5Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Table 1. LP benchmarks. Normalized regret (%, ↓) and training time (s, ↓), over 5 seeds. Best in bold and second best underlined. 
+
+Task Method Deg 2 Deg 4 Deg 6 Deg 8 
+
+Regret(%) Time(s) Regret(%) Time(s) Regret(%) Time(s) Regret(%) Time(s) Shortest Path MSE 0.135 ±0.037 7.5 ±0.8 1.967 ±0.565 7.5 ±2.1 6.561 ±1.514 8.9 ±1.5 15.428 ±3.085 6.1 ±0.1 
+
+SPO+ 0.120 ±0.046 48.7 ±11.6 0.761 ±0.242 41.8 ±10.8 2.281 ±0.935 44.1 ±5.4 4.403 ±1.491 43.2 ±7.5 
+
+PFYL 0.177 ±0.047 59.9 ±3.2 0.946 ±0.274 47.6 ±12.0 2.435 ±0.847 74.8 ±22.9 5.236 ±2.331 49.1 ±12.1 
+
+DBB 0.509 ±0.109 116.4 ±34.1 2.131 ±0.597 139.3 ±39.1 7.003 ±1.936 98.7 ±34.3 14.828 ±3.086 85.2 ±17.2 
+
+LAVA 0.104 ±0.036 44.8 ±8.1 0.851 ±0.385 40.9 ±3.9 2.483 ±0.997 38.1 ±2.4 6.189 ±2.365 44.5 ±6.0 
+
+PEAR (Ours) 0.104 ±0.038 28.4 ±5.4 0.774 ±0.268 23.5 ±0.4 2.138 ±0.762 35.1 ±4.9 4.246 ±1.106 38.4 ±2.5 
+
+Knapsack MSE 0.351 ±0.020 422.8 ±44.5 0.922 ±0.066 180.8 ±6.2 1.717 ±0.226 111.7 ±11.8 2.285 ±0.205 99.1 ±15.8 
+
+SPO+ 0.291 ±0.015 600.0 ±0.0 0.381 ±0.036 600.0 ±0.0 0.608 ±0.066 600.0 ±0.0 0.763 ±0.075 600.0 ±0.0 
+
+PFYL 0.506 ±0.025 600.0 ±0.0 0.442 ±0.042 600.0 ±0.0 0.723 ±0.049 600.0 ±0.0 1.056 ±0.147 600.0 ±0.0 
+
+DBB 1.852 ±0.280 600.0 ±0.0 0.910 ±0.160 600.0 ±0.0 1.040 ±0.307 600.0 ±0.0 1.081 ±0.128 600.0 ±0.0 
+
+LAVA 0.438 ±0.045 600.0 ±0.0 0.478 ±0.021 516.9 ±81.1 0.820 ±0.060 332.5 ±111.0 1.351 ±0.223 182.8 ±42.5 
+
+PEAR (Ours) 0.287 ±0.007 567.9 ±45.1 0.315 ±0.020 305.2 ±40.8 0.388 ±0.032 261.7 ±37.4 0.437 ±0.043 271.7 ±57.0 
+
+p + |A| consists of p equalities and |A| active inequalities. Solving for dy , the projected gradient is then recovered as 
+
+g = PH e = x − H−1J⊤dy, (20) with detailed derivation in Appendix B.4. In practice, we never form H−1 explicitly and instead apply H−1 through linear solves. The computational advantage is substantial. Solving the 
+
+k × k Schur complement system requires only matrix fac-torization and solving within the reduced space, whereas methods that differentiate through optimization solvers must handle full KKT systems. When the active set is sparse, this reduction yields significant efficiency gains without differ-entiating through solver iterations. 
+
+4.3. Linear Programs: Quadratic Smoothing and Normal Injection 
+
+In linear programming problems, the objective function lacks curvature and the solution map becomes piecewise constant. Over regions where the active set remains locally invariant, small cost perturbations do not alter the optimal solution. This creates plateaus where the regret gradient vanishes. To obtain well-defined sensitivities while staying close to the original LP, we add a small quadratic regularization term 
+
+ϕ(z) = λ 
+
+> 2
+
+∥z∥22 to our original problem (1) , following Wilder et al. (2019). This yields H = λI ≻ 0, and the computation in Section 4.2 simplifies to 
+
+JJ ⊤v = Je, PH e = λ−1(e − J⊤v). (21) However, even after smoothing, the pure regret gradient 
+
+g = PH e can remain weak and nearly constant over large regions in LPs (Mandi et al., 2025). To stabilize learning in 
+
+Table 2. LP benchmarks under noise. Normalized regret at degree 8 under varying noise levels. 
+
+Task Method Noise Level ( ϵ)
+
+0.1 0.3 0.5 Shortest Path MSE 15.59 ±2.66 17.08 ±2.47 20.69 ±2.95 
+
+SPO+ 4.74 ±1.74 6.79 ±2.56 10.49 ±2.47 
+
+PFYL 5.44 ±2.20 7.21 ±2.81 10.44 ±2.83 
+
+DBB 15.78 ±3.85 17.95 ±1.27 19.09 ±1.89 
+
+LAVA 6.60 ±3.00 9.30 ±3.78 12.46 ±4.11 
+
+PEAR (Ours) 4.50 ±1.86 5.88 ±2.04 10.38 ±2.54 
+
+Knapsack MSE 2.33 ±0.19 2.69 ±0.19 3.24 ±0.25 
+
+SPO+ 0.81 ±0.07 1.12 ±0.06 1.77 ±0.10 
+
+PFYL 1.09 ±0.15 1.40 ±0.12 2.00 ±0.13 
+
+DBB 1.23 ±0.17 1.52 ±0.26 2.07 ±0.12 
+
+LAVA 1.43 ±0.21 1.85 ±0.27 2.93 ±0.38 
+
+PEAR (Ours) 0.49 ±0.05 0.86 ±0.05 1.58 ±0.08 
+
+these regimes and obtain a more informative update signal, we use normal injection. PEAR provides the same active set quantities used to compute g, and the corresponding normal component can be computed from Equation (21) as 
+
+n = λ−1J⊤v. We then form a controlled combination 
+
+ginj = g + β · ∥g∥∥n∥ n, (22) where β ∈ [0 , 1] controls the injection strength. This update remains primarily driven by the regret signal, while selectively injecting normal space information when the tangent signal is weak. Scaling by ∥g∥ preserves the rel-ative magnitude of the injected term and prevents the normal correction from dominating the update. In flat regimes, this injection can enrich the gradient signal, helping the iterate reach neighborhoods where the active set changes and the regret signal becomes informative again. 6Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Table 3. Real-world QP. Normalized regret (%, ↓), training time (s, ↓), and portfolio performance metrics over 5 seeds. Best in bold and second best underlined. 
+
+Method Regret(%) Time(s) Cum.Ret.(%) Ann.Ret.(%) Sharpe MDD(%) MSE 90.80 ±2.05 33.0 ±9.5 89.22 ±21.67 37.51 ±6.18 0.92 ±0.14 -40.00 ±4.49 
+
+QPTH 87.85 ±7.31 147.6 ±42.4 139.77 ±115.74 47.88 ±26.99 1.15 ±0.63 -34.94 ±14.51 
+
+CvxpyLayers 87.36 ±7.36 321.9 ±100.9 134.88 ±79.13 47.39 ±22.73 1.15 ±0.52 -36.47 ±6.76 
+
+PEAR (Ours) 85.38 ±6.91 122.3 ±38.6 184.19 ±86.24 58.84 ±19.49 1.44 ±0.47 -29.35 ±5.36 
+
+## 5. Experiments 
+
+This section evaluates PEAR on two synthetic LP bench-marks and a real-world QP task, measuring decision quality via normalized regret and training efficiency. Beyond stan-dard benchmarks, we test robustness under cost noise and constraint shifts at test time. All results are reported over 5 random seeds. Details in Appendix C and E. 
+
+5.1. Synthetic LP Benchmarks Setup. Our experimental setup follows Berden et al. (2025) for two standard LP tasks—Shortest Path and Knapsack—while testing on additional degree configura-tions and different problem instances. Shortest Path predicts edge costs on a 5 × 5 grid (40 edges) and solves for the minimum-cost path. Knapsack predicts item values for a 100-item 0–1 knapsack instance and selects an optimal sub-set under a capacity constraint. For Knapsack, methods requiring continuous sensitivity (ours and LAVA) train on the LP relaxation; we report regret on the original problem. The cost vectors for both tasks are generated from feature vectors x ∼ N (0 , I p) via a polynomial mapping (Elmach-toub & Grigas, 2022; Tang & Khalil, 2022): 
+
+cij =
+
+"
+
+13.5deg 
+
+ 1
+
+√p (Bxi)j + 3 
+
+deg 
+
++ 1 
+
+#
+
+· ϵij , (23) where B ∈ { 0, 1}d×p is a random binary matrix and p is the feature dimension. In the main experiments, we set 
+
+ϵij = 1 (no noise). To evaluate robustness under model misspecification, we also test with multiplicative noise ϵij ∼
+
+U (1 − ϵ, 1 + ϵ) for ϵ ∈ { 0.1, 0.3, 0.5}, which perturbs the cost-to-feature relationship and simulates scenarios where the true mapping is not perfectly captured by the polynomial model. Baselines include MSE (two-stage) and representative DFL methods: SPO+ (Elmachtoub & Grigas, 2022), DBB (Pogan ˇci ´c et al., 2019), PFYL (Berthet et al., 2020), and LAVA (Berden et al., 2025). The first three are widely used baselines in the DFL literature, while LAVA is a re-cent solver-free approach that precomputes adjacent ver-tices of the LP polytope. All methods are implemented in PyEPO (Tang & Khalil, 2022) with recommended hyperpa-rameter settings, using a linear predictor, Adam optimizer, and early stopping when validation regret fails to improve by 1% for three consecutive evaluations. Training is capped at 600 seconds. Each task uses 1,000 training, 500 valida-tion, and 500 test instances. We report normalized regret, defined as 
+
+Pntest 
+
+> i=1
+
+ c⊤ 
+
+> i
+
+z∗(ˆ ci) − c⊤ 
+
+> i
+
+z∗(ci)Pntest  
+
+> i=1
+
+|c⊤ 
+
+> i
+
+z∗(ci)| . (24) 
+
+Results. Table 1 reports normalized regret and training time across polynomial degrees. On Shortest Path, our method matches or outperforms all baselines at every de-gree, with larger gains as nonlinearity increases. At degree 4, SPO+ achieves marginally lower regret, but PEAR trains roughly twice as fast. On Knapsack, our method achieves the lowest regret across all configurations, with the margin over the next-best method widening as degree increases. In terms of training time, our approach is consistently among the fastest DFL methods. On Knapsack, several baselines reach the timeout without converging, whereas our method terminates earlier in most cases. At degree 8, LAVA is slightly faster despite being solver-free, but its regret is more than three times higher than ours. Table 2 evaluates robustness under multiplicative noise in the cost generation process, simulating scenarios where the mapping from fea-tures to costs is not perfectly specified. Even under high noise levels ( ϵ = 0 .5), PEAR consistently achieves the low-est regret on both tasks. Overall, these results demonstrate that computing regret gradients via tangent-space projection yields strong decision quality and training efficiency, with robustness to noise in the cost generation process. 
+
+5.2. Real-World QP: Mean–Variance Optimization Setup. We build on the experimental framework of Hwang et al. (2025) for mean–variance optimization on S&P 100 constituents over 2010–2024. The predictor estimates 21-day ahead expected returns from a 63-day lookback window using DLinear (Zeng et al., 2023). The downstream opti-mizer constructs a long-only portfolio with risk aversion 
+
+λ = 2 .0. We rebalance every 21 trading days and include a 0.1% turnover cost. We compare against the two-stage MSE baseline and two differentiable QP layers, QPTH (Amos & Kolter, 2017) and CVXPYLayers (Agrawal et al., 2019a). We evaluate nor-7Decision-Focused Learning via Tangent-Space Projection of Prediction Error        
+
+> (a) Origin-Destination shift (Shortest Path) (b) Capacity shift (Knapsack) (c) Short-selling shift (MVO)
+> Figure 2. Robustness under constraint shifts. We train on an original train set and evaluate under shifted constraints. Our method maintains the lowest regret among DFL methods across all three tasks. Additional results are in Appendix F.
+
+malized regret, cumulative and annualized returns, Sharpe ratio, and maximum drawdown. 
+
+Batched computation. In our implementation, the for-ward pass calls OSQP on each sample to obtain a primal– dual solution and identify the active constraints. We encode each active set as a binary mask indicating which inequal-ity bounds are binding. The backward pass then proceeds entirely on GPU via batched linear algebra. Specifically, we (i) factorize H = λΣ via batched Cholesky decompo-sition, (ii) form the Schur complement using the binary masks, and (iii) solve for the dual variables and reconstruct 
+
+g = H−1(e − J⊤v). This decouples the forward solver from the backward computation, allowing efficient gradient computation without a differentiable optimization layer. 
+
+Results. Table 3 summarizes performance on real-world mean–variance optimization. PEAR attains the lowest nor-malized regret and translates this gain into stronger realized portfolios, achieving the highest cumulative and annual-ized returns, the lowest maximum drawdown, and the best Sharpe ratio. PEAR is also faster than differentiable QP layers. While all approaches are KKT-based, differentiable optimization layers can become unstable near active-set boundaries; PEAR instead computes the regret-aligned pro-jection directly, yielding more stable gradients that likely explain the gap in out-of-sample performance. See Ap-pendix F.4 for additional analysis on model behavior during downturns. 
+
+5.3. Robustness Under Constraint Shifts 
+
+Most DFL evaluations assume a fixed feasible region at train and test time. In practice, however, constraints often change after deployment due to resource limits, policy updates, or risk controls. To evaluate robustness, we train models at degree 8 (the highest-degree setting) and test under modified constraints while keeping the cost-generation process fixed. Figure 2 presents three complementary shifts. Details on the modified problem structures are provided in Appendix D. In Shortest Path (a), we swap the origin and destination nodes symmetrically across the grid. Existing DFL meth-ods degrade dramatically under this shift, suggesting they memorize optimal paths rather than learning transferable cost structure. Our method exhibits the smallest degrada-tion among DFL baselines, while MSE appears most robust because it treats all edges equally during training. In Knapsack (b), we tighten the capacity constraint from 0.5 to 0.3. Our method again achieves the lowest regret among DFL methods. Unlike Shortest Path, MSE degrades more substantially here, likely because knapsack decisions depend on value rankings rather than absolute cost predictions, an inductive bias that DFL methods capture but MSE does not. In MVO (c), we allow short-selling at test time while training on long-only constraints. Unlike the previous two tasks, this shift expands the feasible region rather than restricting it. Among DFL methods, PEAR achieves the lowest regret, while MSE again shows the strongest robustness. However, the performance gap between methods is smaller than in the combinatorial settings, likely because all KKT-based methods compute similar gradients for the QP objective. Overall, PEAR degrades the least among DFL baselines under all three constraint shifts and consistently maintains the lowest regret. See Appendix G for additional discussion. 
+
+## 6. Conclusion 
+
+We introduced PEAR, a framework for Decision-Focused Learning that obtains regret gradients by projecting pre-diction error onto the tangent space of active constraints. This geometric view reveals that the DFL signal is the MSE gradient filtered of decision-irrelevant components. By com-puting gradients via a reduced linear system rather than differentiating through solvers, PEAR achieves computa-tional efficiency and numerical stability. Experiments on LP benchmarks and portfolio optimization demonstrate that PEAR achieves superior decision quality with reduced train-ing time and improved robustness under constraint shifts. 8Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+## Impact Statement 
+
+This work contributes to decision-focused learning by char-acterizing regret gradients geometrically and enabling their efficient computation without differentiating through opti-mization solvers. While such progress may have broad soci-etal effects through downstream decision systems, we do not anticipate specific negative impacts beyond those common to predictive models used in optimization pipelines. 
+
+## References 
+
+Agrawal, A., Amos, B., Barratt, S., Boyd, S., Diamond, S., and Kolter, J. Z. Differentiable convex optimization lay-ers. Advances in neural information processing systems ,32, 2019a. Agrawal, A., Barratt, S., Boyd, S., Busseti, E., and Moursi, W. M. Differentiating through a cone program. arXiv preprint arXiv:1904.09043 , 2019b. Amos, B. and Kolter, J. Z. Optnet: Differentiable opti-mization as a layer in neural networks. In International conference on machine learning , pp. 136–145. PMLR, 2017. Amos, B., Xu, L., and Kolter, J. Z. Input convex neural net-works. In International conference on machine learning ,pp. 146–155. PMLR, 2017. Bambade, A., Schramm, F., Taylor, A., and Carpentier, J. Leveraging augmented-lagrangian techniques for differ-entiating over infeasible quadratic programs in machine learning. In ICLR 2024-The Twelfth International Con-ference on Learning Representations , 2024. Bemporad, A., Morari, M., Dua, V., and Pistikopoulos, E. N. The explicit linear quadratic regulator for constrained systems. Automatica , 38(1):3–20, 2002. Berden, S., Mahmuto ˘gulları, A. ˙I., Tsouros, D., and Guns, T. Solver-free decision-focused learning for linear op-timization problems. arXiv preprint arXiv:2505.22224 ,2025. Berthet, Q., Blondel, M., Teboul, O., Cuturi, M., Vert, J.-P., and Bach, F. Learning with differentiable pertubed optimizers. Advances in neural information processing systems , 33:9508–9519, 2020. Blondel, M., Berthet, Q., Cuturi, M., Frostig, R., Hoyer, S., Llinares-L ´opez, F., Pedregosa, F., and Vert, J.-P. Efficient and modular implicit differentiation. Advances in neural information processing systems , 35:5230–5242, 2022. Bonnans, J. F. and Shapiro, A. Perturbation analysis of optimization problems . Springer Science & Business Media, 2013. Boyd, S. and Vandenberghe, L. Convex optimization . Cam-bridge university press, 2004. Costa, G. and Iyengar, G. N. Distributionally robust end-to-end portfolio construction. Quantitative Finance , 23(10): 1465–1482, 2023. Domke, J. Generic methods for optimization-based model-ing. In Artificial Intelligence and Statistics , pp. 318–326. PMLR, 2012. Dontchev, A. L. and Rockafellar, R. T. Implicit functions and solution mappings , volume 543. Springer, 2009. Donti, P., Amos, B., and Kolter, J. Z. Task-based end-to-end model learning in stochastic optimization. Advances in neural information processing systems , 30, 2017. Ellinas, P., Kekatos, V., and Tsaousoglou, G. Decision-focused learning under decision dependent uncertainty for power systems with price-responsive demand. Electric Power Systems Research , 235:110665, 2024. Elmachtoub, A. N. and Grigas, P. Smart “predict, then optimize”. Management Science , 68(1):9–26, 2022. Fiacco, A. V. Sensitivity analysis for nonlinear program-ming using penalty methods. Mathematical programming ,10(1):287–311, 1976. Fiacco, A. V. Introduction to sensitivity and stability anal-ysis in non linear programming . New York: Academic Press,, 1983. Gould, S., Hartley, R., and Campbell, D. Deep declarative networks. IEEE Transactions on Pattern Analysis and Machine Intelligence , 44(8):3988–4004, 2021. Hwang, Y., Kong, Y., Zohren, S., and Lee, Y. Decision-informed neural networks with large language model integration for portfolio optimization. arXiv preprint arXiv:2502.00828 , 2025. Kim, T., Kim, J., Tae, Y., Park, C., Choi, J.-H., and Choo, J. Reversible instance normalization for accurate time-series forecasting against distribution shift. In International conference on learning representations , 2021. Kyparisis, J. Sensitivity analysis for nonlinear programs and variational inequalities with nonunique multipliers. Math-ematics of operations research , 15(2):286–298, 1990. Lee, J., Jeon, H., Bae, H., and Lee, Y. Return prediction for mean-variance portfolio selection: How decision-focused learning shapes forecasting models. In Proceedings of the 6th ACM International Conference on AI in Finance ,pp. 114–122, 2025. 9Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Magoon, C. W., Yang, F., Aigerman, N., and Kovalsky, S. Z. Differentiation through black-box quadratic pro-gramming solvers. In Advances in Neural Information Processing Systems . Curran Associates, Inc., 2025. To appear. Mandi, J. and Guns, T. Interior point solving for lp-based prediction+ optimisation. Advances in Neural Informa-tion Processing Systems , 33:7272–7282, 2020. Mandi, J., Stuckey, P. J., Guns, T., et al. Smart predict-and-optimize for hard combinatorial optimization problems. In Proceedings of the AAAI conference on artificial intel-ligence , volume 34, pp. 1603–1610, 2020. Mandi, J., Bucarey, V., Tchomba, M. M. K., and Guns, T. Decision-focused learning: Through the lens of learning to rank. In International conference on machine learning ,pp. 14935–14947. PMLR, 2022. Mandi, J., Kotary, J., Berden, S., Mulamba, M., Bucarey, V., Guns, T., and Fioretto, F. Decision-focused learning: Foundations, state of the art, benchmark and future op-portunities. Journal of Artificial Intelligence Research ,80:1623–1701, 2024. Mandi, J., Mahmuto ˘gulları, A. ˙I., Berden, S., and Guns, T. Minimizing surrogate losses for decision-focused learning using differentiable optimization. arXiv preprint arXiv:2508.11365 , 2025. Mulamba, M., Mandi, J., Diligenti, M., Lombardi, M., Bucarey, V., and Guns, T. Contrastive losses and so-lution caching for predict-and-optimize. arXiv preprint arXiv:2011.05354 , 2020. Niepert, M., Minervini, P., and Franceschi, L. Implicit mle: backpropagating through discrete exponential family distributions. Advances in Neural Information Processing Systems , 34:14567–14579, 2021. Nocedal, J. and Wright, S. J. Numerical Optimization .Springer, New York, 2nd edition, 2006. Oberlin, C. and Wright, S. J. Active set identification in nonlinear programming. SIAM Journal on Optimization ,17(2):577–605, 2006. Pogan ˇci ´c, M. V., Paulus, A., Musil, V., Martius, G., and Rolinek, M. Differentiation of blackbox combinatorial solvers. In International Conference on Learning Repre-sentations , 2019. Robinson, S. M. Strongly regular generalized equations. 
+
+Mathematics of Operations Research , 5(1):43–62, 1980. Sadana, U., Chenreddy, A., Delage, E., Forel, A., Frejinger, E., and Vidal, T. A survey of contextual optimization methods for decision-making under uncertainty. Euro-pean Journal of Operational Research , 320(2):271–289, 2025. Schutte, N., Postek, K., and Yorke-Smith, N. Robust losses for decision-focused learning. In 33rd International Joint Conference on Artificial Intelligence , pp. 4868–4875, 2024. Stellato, B., Banjac, G., Goulart, P., Bemporad, A., and Boyd, S. Osqp: An operator splitting solver for quadratic programs. Mathematical Programming Computation , 12 (4):637–672, 2020. Tang, B. and Khalil, E. B. Pyepo: A pytorch-based end-to-end predict-then-optimize library for linear and integer programming. arXiv preprint arXiv:2206.14234 , 2022. Verma, S., Mate, A., Wang, K., Madhiwalla, N., Hegde, A., Taneja, A., and Tambe, M. Restless multi-armed bandits for maternal and child health: Results from decision-focused learning. In Proceedings of the 2023 Interna-tional Conference on Autonomous Agents and Multiagent Systems , pp. 1312–1320, 2023. Wilder, B., Dilkina, B., and Tambe, M. Melding the data-decisions pipeline: Decision-focused learning for combi-natorial optimization. In Proceedings of the AAAI confer-ence on artificial intelligence , volume 33, pp. 1658–1665, 2019. Zeng, A., Chen, M., Zhang, L., and Xu, Q. Are transformers effective for time series forecasting? In Proceedings of the AAAI conference on artificial intelligence , volume 37, pp. 11121–11128, 2023. 10 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+## A. Additional Theory 
+
+A.1. Regularity and Local Differentiability 
+
+This appendix states standard conditions under which the solution mapping ˆc 7 → z∗(ˆ c) is locally single-valued and differentiable and the active set remains locally stable. Under Assumptions 3.1–3.3, classical sensitivity results imply that there exists a neighborhood of ˆc on which the active set A(ˆ c) is constant and the KKT system admits a unique primal–dual solution; see, e.g., Fiacco (1983); Bonnans & Shapiro (2013). Consequently, on such a neighborhood the inequality-constrained problem locally behaves as the reduced equality-constrained problem in Section 3.3, and the implicit-function-based sensitivity analysis is valid. 
+
+A.2. Derivation of the Reduced KKT Sensitivity 
+
+For completeness, we derive Equations (10) and (11) from Equation (9) by block elimination. Let S = JH −1J⊤. Since 
+
+H ≻ 0 and J has full row rank, S is invertible. From the first block row of Equation (9), 
+
+Hdz + J⊤dy = −dˆc ⇒ dz = −H−1dˆc − H−1J⊤dy. 
+
+Substituting into the second block row Jdz = 0 gives 
+
+−JH −1dˆc − JH −1J⊤dy = 0 ⇒ dy = −S−1JH −1dˆc. 
+
+Plugging back, 
+
+dz = −H−1dˆc + H−1J⊤S−1JH −1dˆc = −PH dˆc, 
+
+with PH as in Equation (11). 
+
+## B. Proofs 
+
+B.1. Proof of Proposition 3.4 
+
+Proof. Let S = JH −1J⊤, which is invertible under Assumption 3.1 and Assumption 3.2. 
+
+(i) We show JP H = 0 . By definition of PH ,
+
+JP H = JH −1 − JH −1J⊤S−1JH −1
+
+= JH −1 − SS −1JH −1
+
+= JH −1 − JH −1 = 0 . (25) For PH J⊤ = 0 , note that PH is symmetric: 
+
+P ⊤ 
+
+> H
+
+= H−1 − H−1J⊤(JH −1J⊤)−1JH −1 = PH , (26) since H−1 and S−1 are both symmetric. Thus PH J⊤ = ( JP H )⊤ = 0 .
+
+(ii) For idempotency of ΠH :
+
+Π2 
+
+> H
+
+= ( I − H−1J⊤S−1J)2
+
+= I − 2H−1J⊤S−1J + H−1J⊤S−1JH −1J⊤S−1J
+
+= I − 2H−1J⊤S−1J + H−1J⊤S−1SS −1J
+
+= I − 2H−1J⊤S−1J + H−1J⊤S−1J
+
+= I − H−1J⊤S−1J = Π H . (27) For H-self-adjointness, we show ⟨u, ΠH v⟩H = ⟨ΠH u, v ⟩H where ⟨a, b ⟩H := a⊤Hb :
+
+⟨u, ΠH v⟩H = u⊤HΠH v
+
+= u⊤H(I − H−1J⊤S−1J)v
+
+= u⊤(H − J⊤S−1J)v. (28) 11 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Since H and S−1 are symmetric, the matrix H − J⊤S−1J is symmetric, hence ⟨u, ΠH v⟩H = ⟨ΠH u, v ⟩H .
+
+(iii) Direct expansion: 
+
+ΠH H−1 = ( I − H−1J⊤S−1J)H−1
+
+= H−1 − H−1J⊤S−1JH −1 = PH . (29) 
+
+B.2. Proof of Theorem 3.5 
+
+Proof. Recall the regret function R(ˆ c; c) = f (z∗(ˆ c); c) − f (z∗(c); c), where f (z; c) = ϕ(z) + c⊤z. Since z∗(c) does not depend on ˆc, we have 
+
+∇ˆcR(ˆ c; c) = ∇ˆcf (z∗(ˆ c); c).
+
+Step 1: Chain rule. On any neighborhood where the active set is fixed, the solution map is differentiable (Appendix A.1). As shown in Eq. (4), applying the chain rule yields 
+
+∇ˆcR(ˆ c; c) = 
+
+ ∂z ∗
+
+∂ˆc
+
+⊤
+
+∇z f (z; c) z=z∗(ˆ c)
+
+=
+
+ ∂z ∗
+
+∂ˆc
+
+⊤
+
+(∇ϕ(z∗) + c). (30) 
+
+Step 2: Substitute solution sensitivity. From Equation (10), ∂z ∗ 
+
+> ∂ˆc
+
+= −PH . Since PH is symmetric (Appendix B.1), we obtain 
+
+∇ˆcR(ˆ c; c) = −PH (∇ϕ(z∗) + c).
+
+Step 3: Apply KKT stationarity. From the reduced KKT stationarity Equation (7), 
+
+∇ϕ(z∗) + ˆ c + J⊤y∗ = 0 ⇒ ∇ϕ(z∗) + c = −(ˆ c − c) − J⊤y∗.
+
+Substituting gives 
+
+∇ˆcR(ˆ c; c) = PH (ˆ c − c) + PH J⊤y∗.
+
+Step 4: Remove normal component. By Proposition 3.4, PH J⊤ = 0 , so the second term vanishes and 
+
+∇ˆcR(ˆ c; c) = PH (ˆ c − c) = PH e. 
+
+B.3. Proof of Corollary 3.6 
+
+Proof. We prove the two statements separately. 
+
+Proof of Equation (14). Let δN ∈ N = range( J⊤). Then there exists a vector v such that δN = J⊤v. By the projection properties in Proposition 3.4, we have 
+
+PH J⊤ = 0 ,
+
+and therefore 
+
+PH δN = PH J⊤v = 0 .
+
+Proof of Equation (15). Assume that the active set remains unchanged when replacing ˆc by ˆc + αδ N for any scalar α.Under this assumption, the same Jacobian J and projection operator PH apply. By Theorem 3.5, the regret gradient is given by 
+
+∇ˆcR(ˆ c; c) = PH (ˆ c − c).
+
+12 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Hence, 
+
+∇ˆcR(ˆ c + αδ N ; c) = PH
+
+ (ˆ c + αδ N ) − c = PH (ˆ c − c) + αP H δN .
+
+Using Equation (14), the second term vanishes, which yields 
+
+∇ˆcR(ˆ c + αδ N ; c) = PH (ˆ c − c).
+
+This proves the invariance of the regret gradient under normal perturbations. 
+
+B.4. Proof of Section 4.2 
+
+Proof. We derive the reduced system by explicitly solving the linearized KKT system defined in Equation (17): 
+
+H J⊤
+
+J 0
+
+  dz dy 
+
+
+
+=
+
+e
+
+0
+
+
+
+. (31) Writing out the block equations gives: 
+
+Hdz + J⊤dy = e, (32) 
+
+Jdz = 0 . (33) Since H is positive definite (Assumption 3.1), it is invertible. Solving (32) for the primal perturbation dz yields: 
+
+dz = H−1(e − J⊤dy ) = H−1e − H−1J⊤dy. (34) To eliminate dz , we substitute (34) into the constraint equation (33): 
+
+J  H−1e − H−1J⊤dy  = 0 . (35) Rearranging terms to isolate the dual variable dy leads to the Schur complement system: 
+
+(JH −1J⊤)dy = JH −1e. (36) Letting v = dy denote the dual perturbation, and defining the intermediate variables x = H−1e and r = Jx , this system becomes 
+
+(JH −1J⊤)v = r, (37) which matches the reduced Schur complement system in Equation (19). Finally, substituting v back into (34) yields dz = H−1e − H−1J⊤v. Since the solution of the linearized KKT system satisfies dz = PH e, we identify the projected gradient as g = PH e = dz , and hence 
+
+g = x − H−1J⊤v, (38) which is Equation (20) . Thus, solving the reduced Schur complement system suffices to compute PH e without explicitly forming PH .
+
+## C. Optimization Problem Details 
+
+This appendix provides full specifications and data generation procedures for the benchmark problems and real-world portfolio optimization problem used in our experiments. 
+
+C.1. Shortest Path 
+
+We consider a directed 5 × 5 grid graph G = ( V, E ) where each node (i, j ) ∈ V is connected to its right and downward neighbors, forming a directed acyclic graph. The edge set is defined as: 
+
+E = {(( i, j ), (i + 1 , j )) | i < 4} ∪ { (( i, j ), (i, j + 1)) | j < 4}, (39) 13 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+yielding |E| = 40 edges and |V | = 25 nodes. Let zij = 1 if edge (i, j ) is included in the path, and 0 otherwise. The shortest path problem is formulated as: 
+
+min 
+
+> z
+
+X
+
+> (i,j )∈E
+
+cij zij 
+
+subject to X
+
+> j:(0 ,j )∈E
+
+z0j = 1 
+
+X
+
+> i:( i, 4) ∈E
+
+zi4 = 1 
+
+X
+
+> j:( k,j )∈E
+
+zkj − X
+
+> i:( i,k )∈E
+
+zik = 0 , ∀k ∈ V \ { (0 , 0) , (4 , 4) }
+
+(40) The first constraint ensures one unit of flow leaves the origin (0 , 0) . The second constraint ensures one unit of flow arrives at the destination (4 , 4) . The flow conservation constraints maintain balance at each intermediate node. 
+
+Data Generation. Following Elmachtoub & Grigas (2022), we generate feature vectors x ∈ R5 with entries sampled independently from Uniform (0 , 1) . The true edge costs are generated as c = Bx + ϵ, where B ∈ R40 ×5 is a fixed coefficient matrix with entries sampled from Uniform (0 , 1) , and ϵ ∈ R40 is noise sampled from Uniform (0 , 0.5) .
+
+C.2. Knapsack 
+
+We consider a binary knapsack problem with n = 100 items. Let zi = 1 if item i is selected, and 0 otherwise. The problem is formulated as: 
+
+max 
+
+> zn
+
+X
+
+> i=1
+
+cizi
+
+subject to 
+
+> n
+
+X
+
+> i=1
+
+wizi ≤ Czi ∈ { 0, 1}, ∀i ∈ { 1, . . . , n }
+
+(41) The objective maximizes the total value of selected items. The constraint ensures that the total weight does not exceed capacity C.
+
+Data Generation. Item weights wi are sampled as integers uniformly at random from [1 , 10] . The capacity is set to 
+
+C = 0 .5 Pni=1 wi, i.e., 50% of the total weight. Feature vectors x ∈ R5 are sampled with entries from Uniform (0 , 1) . True item values are generated as c = Bx + ϵ, where B ∈ R100 ×5 has entries from Uniform (0 , 1) , and ϵ ∈ R100 is noise from Uniform (0 , 0.5) .
+
+LP Relaxation. Since the original problem is an integer program, methods requiring continuous relaxation (PEAR and LAVA) solve the LP relaxation during training: 
+
+max  
+
+> z
+
+c⊤z
+
+subject to w⊤z ≤ C
+
+0 ≤ zi ≤ 1, ∀i ∈ { 1, . . . , n }
+
+(42) All methods are evaluated on the original integer problem. 
+
+C.3. Mean-Variance Portfolio Optimization 
+
+We study portfolio optimization using historical daily returns from S&P 100 constituents over 2010–2024. 
+
+Problem Formulation. Let w ∈ Rn represent portfolio weights. The mean-variance optimization problem is: 
+
+min 
+
+> w
+
+λ
+
+2 w⊤Σw − μ⊤w
+
+subject to 1⊤w = 1 , w ≥ 0
+
+(43) 14 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+where μ ∈ Rn is the expected return vector, Σ ∈ Rn×n is the covariance matrix, and λ = 2 .0 is the risk aversion parameter. The constraints enforce a fully-invested long-only portfolio. 
+
+Data Construction. We use daily adjusted close prices to compute returns. The prediction model takes a 63-day lookback window of historical returns as input and forecasts 21-day ahead returns. Expected returns μ are computed as the mean of predicted daily returns. The covariance matrix Σ is estimated from the combined 84-day window (63-day history + 21-day prediction) with spectral shifting to ensure positive definiteness. 
+
+## D. Optimization Problems for Constraint Shift Experiments 
+
+This appendix details the modified optimization problems used in the constraint shift experiments. These experiments evaluate how well DFL methods generalize when the feasible region changes between training and test time, while the cost structure remains the same. 
+
+D.1. Knapsack: Capacity Generalization 
+
+We modify the knapsack problem from Appendix C.2 by varying the capacity constraint. The parameterized problem is: 
+
+max 
+
+> zn
+
+X
+
+> i=1
+
+cizi
+
+subject to 
+
+> n
+
+X
+
+> i=1
+
+wizi ≤ C(ρ)
+
+zi ∈ { 0, 1}, ∀i ∈ { 1, . . . , n }
+
+(44) where the capacity is defined as a fraction of total weight: 
+
+C(ρ) = ρ ·
+
+> n
+
+X
+
+> i=1
+
+wi. (45) 
+
+Experimental Setup. Models are trained with ρtrain = 0 .5 and evaluated on capacities ρtest ∈ { 0.3, 0.5, 0.7, 0.9}. Lower capacity ratios create tighter constraints (fewer items can fit), while higher ratios relax the constraint (more items can fit). This tests whether methods learn cost predictions that generalize across different constraint tightness levels. 
+
+D.2. Shortest Path: Direction Generalization 
+
+We modify the shortest path problem from Appendix C.1 by changing the origin-destination pair, which alters the flow conservation constraints. The general formulation on a 5 × 5 grid is: 
+
+min 
+
+> z
+
+X
+
+> (i,j )∈E
+
+cij zij 
+
+subject to X
+
+> j:( vs,j )∈E
+
+zvs,j − X
+
+> i:( i,v s)∈E
+
+zi,v s = 1 
+
+X
+
+> j:( vt,j )∈E
+
+zvt,j − X
+
+> i:( i,v t)∈E
+
+zi,v t = −1
+
+X
+
+> j:( k,j )∈E
+
+zkj − X
+
+> i:( i,k )∈E
+
+zik = 0 , ∀k ∈ V \ { vs, v t}
+
+(46) where vs is the origin node and vt is the destination node. 
+
+Experimental Setup. We consider two routing directions: • Forward (Training): vs = (0 , 0) (top-left), vt = (4 , 4) (bottom-right) 15 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+• Cross (Test): vs = (0 , 4) (top-right), vt = (4 , 0) (bottom-left) The edge set E and edge costs c remain identical; only the boundary conditions change. This tests whether methods learn edge cost predictions that transfer to different routing requirements on the same graph topology. 
+
+D.3. Portfolio Optimization: Short Selling Generalization 
+
+We modify the mean-variance optimization problem from Appendix C.3 by relaxing the long-only constraint to allow short selling. The parameterized problem is: 
+
+min 
+
+> z
+
+λ
+
+2 z⊤Σz − μ⊤z
+
+subject to 1⊤z = 1 
+
+z ≥ ℓ
+
+(47) where ℓ ∈ R is the lower bound on individual asset weights. 
+
+Experimental Setup. Models are trained with ℓtrain = 0 (long-only portfolio) and evaluated on ℓtest ∈{− 0.1, −0.3, −0.5, −1.0}. Negative lower bounds allow short positions up to the specified limit. For example, ℓ = −0.1
+
+permits shorting up to 10% of portfolio value in any single asset. This tests whether return predictions learned under long-only constraints remain useful when the optimization gains additional flexibility through short selling. 
+
+D.4. Summary of Constraint Shifts 
+
+Table 4 summarizes the constraint modifications across all three problem domains.  
+
+> Table 4. Summary of constraint shift experiments. All experiments use the same cost/return prediction model trained under the training constraint, evaluated across multiple test constraints.
+
+Problem Modified Constraint Training Test 
+
+Knapsack Capacity ratio ρ 0.5 {0.3, 0.5, 0.7, 0.9}
+
+Shortest Path Origin-destination pair (vs, v t) (0 , 0) → (4 , 4) (0 , 4) → (4 , 0) 
+
+Portfolio Weight lower bound ℓ 0 {− 0.1, −0.3, −0.5, −1.0}
+
+## E. Experimental Details 
+
+Our implementation will be made publicly available upon acceptance. All experiments are conducted on a single NVIDIA RTX A5000 GPU with an Intel Xeon Silver 4210R CPU, and repeated over 5 random seeds {0, 1, 2, 3, 4} with mean and standard deviation reported. 
+
+E.1. LP benchmarks Experiments (Shortest Path, Knapsack) 
+
+Following Elmachtoub & Grigas (2022), we generate 1,000 training, 500 validation, and 500 test samples, varying the polynomial degree d ∈ { 2, 4, 6, 8} to control problem difficulty. We use a single-layer linear network mapping 5-dimensional features to edge costs (40 dimensions for Shortest Path) or item values (100 dimensions for Knapsack). The parameter β for normal injection in PEAR was fixed at 0.1 throughout all experiments. 
+
+E.2. Real-world QP Experiments (Portfolio Optimization) 
+
+We use a chronological 70:10:20 split for train, validation, and test sets. The prediction model is DLinear (Zeng et al., 2023) with RevIN (Kim et al., 2021) normalization, using a lookback window of L = 63 days and prediction horizon of 
+
+H = 21 days. All methods are trained with the Adam optimizer using learning rate 10 −3 and batch size 64, with learning rate reduction (factor 0.5, patience 3) and early stopping (patience 10) based on validation regret. For evaluation, portfolios are rebalanced every 21 trading days with a transaction cost of 0.1% applied to turnover. We report cumulative return QTt=1 (1 + rt) − 1, annualized return and volatility (scaled by √252 ), Sharpe ratio assuming zero risk-free rate, maximum drawdown, and average turnover at each rebalancing. 16 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+## F. Additional Results 
+
+We evaluate generalization under constraint shifts, where test-time constraints differ from training. This setting is practically important since real-world deployment often involves changing requirements. 
+
+F.1. Capacity Shifts (Knapsack) 
+
+We train models with capacity ratio 0.5 and evaluate on ratios {0.3, 0.5, 0.7, 0.9}. As shown in Table 5, PEAR consistently achieves the best performance across all polynomial degrees and capacity ratios. Surrogate-based methods (SPO+, PFYL) degrade significantly at higher capacities (0.9), while PEAR maintains robust performance. DBB exhibits particularly poor generalization at low polynomial degrees. 
+
+Table 5. Capacity generalization (Knapsack). Normalized regret (%, ↓) under varying capacity ratios. Best in bold , second best underlined. *Training capacity. 
+
+Method Degree 2 Degree 4 
+
+0.3 0.5* 0.7 0.9 0.3 0.5* 0.7 0.9 MSE 0.449 ±0.011 0.350 ±0.017 0.255 ±0.014 0.141 ±0.014 1.269 ±0.082 0.922 ±0.059 1.037 ±0.123 1.557 ±0.219 
+
+SPO+ 0.373 ±0.006 0.291 ±0.013 0.260 ±0.012 0.444 ±0.056 0.542 ±0.034 0.381 ±0.032 0.834 ±0.087 2.520 ±0.216 
+
+PFYL 0.610 ±0.024 0.506 ±0.022 0.937 ±0.103 5.109 ±0.428 0.628 ±0.060 0.441 ±0.038 0.922 ±0.145 3.792 ±0.620 
+
+DBB 2.514 ±0.264 1.852 ±0.250 2.093 ±0.217 6.155 ±0.629 1.003 ±0.118 0.910 ±0.143 1.907 ±0.213 5.542 ±0.342 
+
+LAVA 0.636 ±0.051 0.439 ±0.039 0.537 ±0.021 2.191 ±0.186 1.346 ±0.074 0.477 ±0.018 0.644 ±0.053 3.337 ±0.770 
+
+PEAR 0.420 ±0.041 0.287 ±0.006 0.222 ±0.010 0.140 ±0.029 0.589 ±0.057 0.315 ±0.017 0.355 ±0.029 0.590 ±0.254 
+
+Degree 6 Degree 8 
+
+0.3 0.5* 0.7 0.9 0.3 0.5* 0.7 0.9 MSE 2.629 ±0.303 1.717 ±0.202 1.946 ±0.164 2.909 ±0.171 4.252 ±0.394 2.285 ±0.183 2.036 ±0.182 2.732 ±0.204 
+
+SPO+ 1.187 ±0.066 0.608 ±0.059 1.225 ±0.109 3.416 ±0.233 1.975 ±0.123 0.763 ±0.067 1.194 ±0.117 3.067 ±0.243 
+
+PFYL 1.528 ±0.082 0.723 ±0.044 1.165 ±0.254 3.783 ±1.056 2.658 ±0.331 1.056 ±0.132 1.255 ±0.113 3.308 ±0.351 
+
+DBB 1.437 ±0.298 1.040 ±0.275 2.026 ±0.330 4.864 ±0.472 2.156 ±0.220 1.081 ±0.114 1.849 ±0.117 4.256 ±0.218 
+
+LAVA 3.742 ±0.259 0.820 ±0.053 0.996 ±0.228 4.721 ±1.124 7.196 ±0.758 1.351 ±0.200 1.541 ±0.498 5.397 ±1.086 
+
+PEAR 0.986 ±0.088 0.388 ±0.029 0.478 ±0.036 1.043 ±0.224 1.628 ±0.233 0.437 ±0.038 0.554 ±0.058 1.232 ±0.197 
+
+F.2. Direction Shifts (Shortest Path) 
+
+We train models on one source-target pair and evaluate on a different direction. Table 6 reveals an interesting pattern: MSE achieves the best performance across all degrees, with PEAR as the second best. This suggests that task-specific DFL objectives can overfit to training constraint structures, whereas prediction-focused training (MSE) and geometry-aware methods (PEAR) generalize better to unseen constraint configurations. 
+
+Table 6. Direction generalization (Shortest Path). Normalized regret (%, ↓) under constraint shift. Best in bold , second best underlined .
+
+Method Degree 2 Degree 4 Degree 6 Degree 8 
+
+MSE 0.14 ±0.03 1.95 ±0.44 6.53 ±1.30 14.00 ±1.47 
+
+SPO+ 9.38 ±4.40 22.14 ±8.43 29.03 ±6.71 43.40 ±9.83 
+
+PFYL 9.38 ±2.37 21.05 ±6.26 23.35 ±6.15 32.33 ±10.89 
+
+DBB 3.59 ±0.72 8.95 ±6.08 22.55 ±8.69 31.06 ±5.78 
+
+LAVA 16.84 ±3.12 45.01 ±8.40 78.73 ±13.33 123.40 ±19.35 
+
+PEAR 0.32 ±0.37 3.63 ±2.08 7.07 ±1.90 21.42 ±9.02 
+
+F.3. Lower Bound Shifts (Portfolio Optimization) 
+
+We train models with long-only constraints ( lb = 0 ) and evaluate under relaxed lower bounds allowing short-selling. Table 7 shows that MSE achieves the best generalization, with PEAR as the closest DFL method. Differentiable optimization methods (QPTH, CVXPYLayers) show degraded performance as constraints deviate further from training conditions. 17 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Table 7. Lower bound generalization (MVO). Normalized regret (%, ↓) under varying lower bound constraints. Best in bold , second best underlined. 
+
+Method lb=-0.1 lb=-0.3 lb=-0.5 lb=-1.0 
+
+MSE 119.9 ±0.2 126.4 ±0.1 130.6 ±0.1 138.3 ±0.1 
+
+QPTH 129.3 ±2.4 145.5 ±4.0 152.4 ±5.7 162.4 ±6.6 
+
+CVXPYLayers 129.8 ±2.5 149.0 ±5.8 156.9 ±6.8 167.6 ±7.1 
+
+PEAR 124.1 ±3.4 136.5 ±2.5 142.6 ±1.7 153.4 ±0.9 
+
+F.4. Portfolio Performance Analysis 
+
+Beyond regret minimization (Table 3), we evaluate whether PEAR’s gradient estimation translates to superior real-world portfolio performance. In mean-variance optimization, balancing returns against risk is crucial—high returns alone are insufficient if the portfolio exhibits excessive volatility during market turbulence. Figure 3 shows cumulative portfolio value over the out-of-sample period, where PEAR achieves the highest terminal value, demonstrating that improved training regret translates to superior realized returns. More importantly, PEAR’s advantage extends beyond raw returns. Figure 4 examines portfolio behavior during the two most severe drawdown periods (days 80–180 and 560–640). In both cases, PEAR exhibits the most stable trajectory, demonstrating superior robustness to market downturns compared to differentiable optimization methods. This suggests that PEAR learns predictions that better capture the risk-return trade-off encoded in the mean-variance objective. 0 100 200 300 400 500 600 700 
+
+> Trading Days
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> 4.5
+> Portfolio Value
+> MSE (2-stage)
+> PEAR (Ours)
+> QPTH
+> CVXPYLayers
+
+Figure 3. Portfolio cumulative returns. Portfolio value over the test period. PEAR achieves the highest value among all methods. 80 100 120 140 160 180 
+
+> Trading Days
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> 1.1
+> 1.2
+> 1.3
+> Portfolio Value
+> MSE (2-stage)
+> PEAR (Ours)
+> QPTH
+> CVXPYLayers
+
+(a) Drawdown Period I (days 80–180) 560 580 600 620 640  
+
+> Trading Days
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> 4.5
+> Portfolio Value
+> MSE (2-stage)
+> PEAR (Ours)
+> QPTH
+> CVXPYLayers
+
+(b) Drawdown Period II (days 560–640) 
+
+Figure 4. Drawdown analysis. Portfolio value during the two most severe market downturns. PEAR demonstrates the most stable behavior, indicating robust risk management. 
+
+18 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+## G. Additional Discussion 
+
+Stability of Active-Set Identification. Our theoretical results rely on correctly identifying the active constraint set at the optimal solution, which in practice is inferred from a numerical solver and can be sensitive near constraint boundaries; thus constraints that are close to active can be misclassified (Oberlin & Wright, 2006). When this happens, the reduced Jacobian 
+
+J used in the projection is perturbed, which can in turn perturb the projected gradient. To quantify this effect, we measure how often the inferred active set changes under small perturbations. Given an optimization problem with m inequality constraints, we encode the activity pattern as a binary mask a ∈ { 0, 1}m. For a reference solution with mask a and a perturbed solution with mask a′, we report the change rate in percent 
+
+ρ (%) = 100 
+
+m
+
+> m
+
+X
+
+> i=1
+
+I[ai̸ = a′
+
+> i
+
+] . (48) We generate multiple perturbed costs around ˆc, recompute the corresponding masks, and average ρ across perturbations. In our LP benchmarks, the average change rates were ρ = 0 .30% for Shortest Path and ρ = 0 .14% for Knapsack. These results validate the stability of active-set identification in our experiments. For problems with many nearly binding constraints, the gradient estimate may be less stable. 
+
+Table 8. Prediction accuracy. MSE ( ↓), over 5 seeds. Best in bold and second best underlined. (a) LP Benchmarks 
+
+Task Method Deg 2 Deg 4 Deg 6 Deg 8 
+
+Shortest Path MSE 0.00 ±0.00 0.09 ±0.01 0.68 ±0.08 4.59 ±1.08 
+
+SPO+ 0.31 ±0.18 0.61 ±0.23 1.55 ±0.17 6.24 ±1.21 
+
+PFYL 1.78 ±0.06 1.53 ±0.07 1.86 ±0.05 5.64 ±1.17 
+
+DBB 0.10 ±0.04 0.20 ±0.09 1.14 ±0.26 5.65 ±1.02 
+
+LAVA 1.16 ±0.04 1.19 ±0.05 2.37 ±0.23 7.89 ±1.21 
+
+PEAR 0.01 ±0.01 0.16 ±0.06 0.78 ±0.09 5.23 ±1.18 
+
+Knapsack MSE 0.18 ±0.01 2.67 ±0.26 22.58 ±3.18 139.42 ±21.60 
+
+SPO+ 4.59 ±0.09 5.82 ±0.35 25.14 ±3.10 141.33 ±24.10 
+
+PFYL 8.97 ±0.11 8.96 ±1.52 36.16 ±5.81 181.77 ±27.89 
+
+DBB 12.07 ±0.24 11.89 ±0.63 29.59 ±4.80 144.13 ±24.16 
+
+LAVA 10.97 ±0.60 16.27 ±1.66 50.65 ±5.63 205.00 ±31.15 
+
+PEAR 2.54 ±2.53 12.95 ±2.01 43.34 ±4.96 187.62 ±29.71 
+
+(b) Real-world QP 
+
+Method Normalized MSE 
+
+MSE 1.105 ± 0.005 
+
+PEAR 1.457 ± 0.016 
+
+QPTH 1.469 ± 0.024 
+
+CvxpyLayers 1.493 ± 0.019 
+
+Prediction Accuracy and Decision Quality. Existing DFL methods focus on minimizing regret, often at the expense of prediction accuracy measured by MSE. Our framework explains this phenomenon by decomposing prediction error into a decision-relevant tangent component and a decision-irrelevant normal component. Conventional DFL methods implicitly discard the normal component, which can degrade prediction accuracy. This relationship between regret minimization and prediction accuracy is highly problem-dependent. Since PEAR prioritizes regret reduction, it adaptively allocates learning capacity based on the problem structure. In Shortest Path, where accurate cost prediction of neighboring nodes is inherently linked to identifying optimal paths, PEAR achieves substantially lower MSE compared to other DFL baselines. In contrast, for Knapsack where relative ranking of item values matters more than precise magnitude estimation, PEAR focuses more on decision quality improvement rather than prediction accuracy. Our constraint shift experiments further support this observation. In Shortest Path and Portfolio Optimization, where the MSE baseline achieved the best regret under constraint shift, PEAR also exhibited superior prediction accuracy compared to other DFL methods. However, in Knapsack where the MSE baseline suffered significant regret degradation under constraint shifts, PEAR showed higher MSE than other DFL baselines. These results suggest that PEAR implicitly learns to maintain prediction fidelity when it is beneficial for decision quality. 
+
+Limitations and Future Directions. While existing DFL methods have achieved strong decision quality, they have operated as black boxes with respect to why regret decreases and how the learning direction is determined. Our work provides a structural characterization that makes these dynamics interpretable through the lens of tangent space projection. 19 Decision-Focused Learning via Tangent-Space Projection of Prediction Error 
+
+Nevertheless, PEAR remains within the DFL paradigm and thus shares its fundamental limitation: an inherent bias toward decision quality at the potential expense of prediction accuracy. Through our theoretical analysis, we established that the regret gradient lies within the MSE gradient as its projection onto the decision-relevant subspace. The Table 8 results demonstrate that learning only the decision-relevant component can still achieve strong prediction accuracy when problem structure tightly couples prediction and decision quality. Leveraging this decomposition into normal and decision-relevant components to overcome the trade-off between decision quality and prediction accuracy, long viewed as a structural limitation of DFL, remains a promising direction for future work. 20

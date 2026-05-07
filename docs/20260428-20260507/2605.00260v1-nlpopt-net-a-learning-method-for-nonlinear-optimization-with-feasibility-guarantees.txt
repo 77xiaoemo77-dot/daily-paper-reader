@@ -1,0 +1,1429 @@
+Title: NLPOpt-Net: A Learning Method for Nonlinear Optimization with Feasibility Guarantees
+
+URL Source: https://arxiv.org/pdf/2605.00260v1
+
+Published Time: Mon, 04 May 2026 00:16:52 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# NLPOpt-Net : A Learning Method for Nonlinear Optimization with Feasibility Guarantees 
+
+Bimol Nath Roy 
+
+Texas A&M University 
+
+bimolnathroy@tamu.edu 
+
+Rahul Golder 
+
+Texas A&M University 
+
+rahulgolder8420@tamu.edu 
+
+M. M. Faruque Hasan ∗
+
+Texas A&M University 
+
+hasan@tamu.edu 
+
+## Abstract 
+
+Nonlinear Parametric Optimization Network ( NLPOpt-Net ) is an unsupervised learning architecture to solve constrained nonlinear programs (NLP). Given the structure of an NLP, it learns the parametric solution maps with guaranteed constraint satisfaction. The architecture consists of a backbone neural network (NN) followed by a multilayer ( k-layered) projection. While the NN drives toward optimality through a loss function consisting of a modified Lagrangian augmented with a consistency loss, the projection ensures feasibility by projecting the NN predictions in the original constraint manifold. Instead of typical distance minimization, our projection exploits local quadratic approximations of the original NLP. Under certain conditions (such as convexity), the projection has a descent property, which improves the NN predictions further. NLPOpt-Net deploys an inversion-free, modified Chambolle-Pock algorithm to solve the constrained quadratic projections during the forward pass and uses the implicit function theorem for efficient backpropagation. The fixed structure of the projection further allows decoupling of the NN and the projection once the training is complete. NLPOpt-Net solves large-scale convex QP, QCQP, NLP, and nonconvex problems with near zero optimality gap and constraint violations reduced to machine precision. Additionally, it provides near accurate prediction of the active sets and corresponding dual variables, thereby enabling a scalable approach for multiparametric programming. Compiling the projection in C provides order of magnitude improvement in inference time compared to JAX. We provide the codes and NLPOpt-Net as a ready to use package that includes GPU support. 
+
+§ https://github.com/souls-tamu/nlpoptnet 3 pip install nlpoptnet 
+
+## 1 Introduction 
+
+We consider the following nonlinear optimization (NLP) problem: 
+
+min f (x, y ), s.t. h (x, y ) = 0 , g(x, y ) ≤ 0, l(x) ≤ y ≤ u(x), (P) where, y are the decision variables and x are the parameters. We aim to find the optimal solutions of P for different realizations of x. Formally, our goal is to train a neural network (NN), ˆy = Φ N N (x; Θ) ,and then project ˆy onto the constraint set such that projected output ˜y always belong to the feasible set S, i.e., ˜y ∈ S, where S = {y | h(x, y ) = 0 , g (x, y ) ≤ 0, l (x) ≤ y ≤ u(x)}. Here, h represents a set of parameterized equality constraints hi(x, y ) = 0 , ∀i ∈ NE ; g represents a set of parameterized inequality constraints gj (x, y ) = 0 , ∀j ∈ NI ; and l and u represent the parameterized lower and upper bounds of the variables y, respectively. Lastly, Θ represents the aggregated tunable parameters of the NN. NLPs are used to optimize systems governed by nonlinear objectives and/or constraints that arise in a broad range of applications such as robotics and control, energy systems optimization, operations 
+
+> ∗Corresponding author Preprint. Submitted on May 4, 2026
+> arXiv:2605.00260v1 [cs.LG] 30 Apr 2026
+
+research, advanced manufacturing, materials science, and many others. There are well-established techniques (see [ 1]) and packages (e.g., IPOPT [ 2], CONOPT [ 3 ], Knitro [ 4 ], SNOPT [ 5 ]) for solving NLPs. However, they are primarily designed to solve a single NLP instance robustly, but are not well-suited for repeatedly solving the same NLP many times in applications such as real-time optimization, model predictive control, and design and optimization under uncertainty. One way to address this challenge is by deriving the solution maps a priori across varying parameters through parametric optimization [ 6 , 7]. While explicit parameter-to-solution mappings exist for certain problem classes, such as linear and quadratic programs [ 8, 9 ], conventional approaches for repeatedly solving constrained NLPs are computationally intensive and lack scalability. Deep NNs can be trained offline over a distribution of parameters or problem instances to “learn” the solution maps of a parametric optimization problem. However, NNs inherently lack mechanisms to ensure explicit constraint satisfaction, a limitation that motivates a large body of existing work. Penalizing constraint violations through the NN loss function is a simple and practical approach often applied in parametric optimization [ 10 ] and physics informed neural networks (PINNs) [ 11 , 12 , 13 ]. Despite being flexible and generalizable, soft-constrained methods suffer from an inherent tradeoff between prediction accuracy and constraint feasibility [ 14 ]. Manual tuning is required to adjust the weights of the penalty terms, which can alter the solution [ 15 ]. Even with high penalties, constraint violation can still persist [ 16 , 17 ]. In parametric optimization, when constraints are treated softly, the prediction may admit solutions that are not physically realizable, especially for problems arising in systems that are well defined by physical laws. Hard-constrained NNs focus on methodological approaches that can ensure constraint feasibility within a tolerance. These can be broadly classified into two categories. The first is predict-and-complete method [ 18 , 19 ] where a subset of the outputs is predicted through the NN and the rest is computed by solving the system of equality constraints. Donti et al. [ 20 ] in their work DC3 , introduced a framework that uses predict-and-complete method for equality constraints and a correction strategy to satisfy the inequality constraints. The second method is projection that incorporates a differentiable projection layer to project the outputs of an NN into the feasible constraint manifold. Early work such as OptNet [ 21 ] introduced quadratic programs as differentiable layers, later extended to broader classes of disciplined convex programs [ 22 ]. Chen et al. [ 23 ] proposed a Karush-Kuhn-Tucker (KKT) condition-based orthogonal projection with explicit analytical form for enforcing linear constraints. Iftakher et al. [ 24 ] developed KKT-HardNet ,a general framework that finds a stationary point for the KKT system of projection problem to satisfy both nonlinear equality and inequality constraints. This approach is later extended to satisfy differential-algebraic (DAE) constraints in DAE-HardNet [ 25 ]. Grontas et al. [ 26 ] introduced Pinet ,an operator splitting based projection method that can incorporate convex constraints. Consante et al. [ 27 ] proposed decision rule-based networks to incorporating linear inequality constraints. Lastrucci et al. [ 28 ] used adaptive neural projection (adaNP) that recursively linearizes nonlinear equality constraints. A common trait of the projection-based method is that the projection is based on Euclidean distance minimization. For learning the solutions of constrained optimization problems, this approach tends to move away from the true optima. To the best of our knowledge, no existing method addresses this. In this work, we introduce Nonlinear Parametric Optimization Network ( NLPOpt-Net ), a general deep learning tool for solving convex NLPs. The architecture consists of a backbone NN followed by a multilayer ( k-layered) projection. While the NN drives toward optimality through a loss function consisting of a modified Lagrangian augmented with a consistency loss, the projection ensures feasibility in the original constraint manifold. Specifically, we linearize the constraints at NN output and instead of traditional distance minimization projection, we quadratically approximate the objective such that the quadratic coefficient remains diagonal. This approximated QP is then solved with an inversion-free method. Instead of moving away the optima, this approximation in the projection guides the NN to find better optima. For affine constraints, a single approximation is sufficient. For general nonlinear constraints, we repeat this process for k times and we provide convergence guarantees after k layers of projection to attain a feasible NLP solution. While, backbone NN improves initialization for faster convergence, the projection has a descent property which allows to find a no-worse objective after projection. This descent property further pushes the framework towards optimality. The k-layered projection can be incorporated with any standard deep learning architectures. Moreover, the projection has a computationally cheap forward pass and the backward propagation is expedited with gradient computation through implicit function theorem. 2Our key methodological contributions include: (1) a general deep learning framework, NLPOpt-Net, for learning the solutions and the active sets of parametric nonlinear optimization problems with a k-layered projection that ensures constraint feasibility; and (2) an first order primal-dual algorithm for solving the projection problems with high efficiency and a descent property when the problem is convex; (3) computational studies show success over other methods for different convex NLP and noncovex cases with superior results in terms of optimality and strict constraint satisfaction; and (4) instead of relying on just-in-time (JIT) compilation for the entire architecture, we decouple the projection from the NN and utilize the ahead-of-time (AOT) compilation for the projection to accelerate the single instance inference for practical deployment. We also provide a ready to use GPU supported package. 
+
+## 2 NLPOpt-Net: Theoretical Developments 
+
+The NLPOpt-Net (Nonlinear Parametric Optimization Network) framework is illustrated in Fig. 1. The architecture of NLPOpt-Net includes (a) a backbone NN, which can be of any kind, (b) a differentiable projection layer which can have multiple sub-layers or single sub-layers (depending on the nonlinearity). We utilize automatic differentiation for backward propagation of the backbone and custom defined backward gradient for the projection layer. In the forward pass the backbone uses standard computation and the projection is solved with a Modification of the Chambolle-Pock (CP) algorithm[ 29 ]. During forward pass of subproblem, the Jacobian is computed with automatic differentiation which is computationally cheap. Furthermore, all the computations can be parallelized in GPU. Our framework is able to train directly from the problem specification, i.e., the framework is fully unsupervised. Furthermore, when the NN prediction becomes close, the loss becomes self-supervised due to the consistency loss. We incorporate a first order primal dual method, the Chambolle-Pock algorithm to run the projection layer. We employ the projection for k-layers to converge to a feasible solution. Moreover, if the constraints are affine the projection become minimal. 
+
+Figure 1: Illustration of the NLPOpt-Net framework. The forward pass includes NN followed by 
+
+k-layered projection. The backward pass uses custom VJP route. The NN is optimized with the original objective along with a regularized soft loss and a consistency loss. 
+
+2.1 Backbone Neural Network 
+
+We consider a standard artificial neural network (ANN) with ReLU activation function. Considering, 
+
+z = [ y⊤, λ ⊤, μ ⊤]⊤, a vector defining all the primal and dual variables, the loss function L, a modified lagrangian augmented with a consistency term, has the following general form: 
+
+L = f (˜ y) + ∥˜λ⊤h(x, ˜y)∥2 + ˜ μ⊤ReLU  g(x, ˜y) + αM ∥ˆz − ˜z∥2, (1) The only user defined tuning parameter here is α which enforces the consistency loss. The consistency loss considers the minor linearization error and keep the unconstrained prediction in the local 3neighborhood of the original solution. The loss function pushes the NN prediction to get close to the optimal solution of (P). However, due to the soft embedding of the constraints through penalties, we do not have either guarantees of feasibility and optimality. For this reason, we next opt for projection which ensures feasibility with a descent property. As we go through training, the backbone NN with the projection layers is expected to get close to the actual solution of (P). 
+
+2.2 Projection 
+
+The projection-based constraint satisfaction can be done by projecting the backbone prediction, ˆy
+
+onto the feasible constraint manifold S [23 , 28 , 24 , 26 ]. While projecting with distance minimization ensures feasibility, it may move ˜y from the optimal solution y∗. Instead of solving a distance minimization problem in the projection layer, we solve a local quadratic approximation of the objective subject to the constraints as shown in PR. We show that the approximation at the optimal point has the same primal-dual solution as the original problem P. 
+
+˜y = arg min  
+
+> y∈S
+
+f (x, ˆy) + J⊤(y − ˆy) + 12 (y − ˆy)⊤Hd(y − ˆy), (PR) where, J = ∇f (x, ˆy), Hd = ρ diag  ∇2f (x, ˆy) and ρ is a parameter (in most cases ρ = 1 , we discuss when ρ differs to preserve descent property). Here, we notice the similarity to a proximal second order approximation of the objective used in augmented Lagrangian methods[30]. However, unlike proximal approximation, we rely on different weight multipliers for different variables which are Hessian dependent. We make the following assumptions: (i) The number of equality constraints, 
+
+|NE | ≤ n, (ii) Each equality constraint, h is affine in y and linearly independent and the constraint g is convex nonlinear in y. h, g are continuously differentiable, (iii) f is twice continuously differentiable and convex and its gradient is Lipschitz continuous with Lipschitz constant L and (iv) All the optimization instances are feasible for any feasible realization of x. The projection problem of 
+
+min y∈S f (x, y ) is min y∈S ˆf (x, y ) where ˆf (x, y ) = f (x, ˆy) + J⊤(y − ˆy) + 12 (y − ˆy)⊤Hd(y − ˆy).As per assumption of L-continuous gradient, 
+
+f (x, y ) ≤ f (x, ˆy) + ∇f (x, ˆy)⊤(y − ˆy) + L
+
+2 ∥y − ˆy∥2.
+
+For Hd ⪰ LI , (L/ 2) ∥y − ˆy∥2 ≤ (1 /2)( y − ˆy)⊤Hd(y − ˆy). Therefore, f (x, y ) ≤ ˆf (x, y ) ∀y. Since 
+
+˜y minimizes ˆf (x, y ) over S, we have ˆf (x, ˜y) ≤ ˆf (x, ˆy) i.e., ˆf (x, ˜y) ≤ f (x, ˆy) (f and ˆf are exact at ˆy). This yields, f (˜ y) ≤ f (ˆ y). This infers that the projection PR yields a descent point ˜y when 
+
+Hd ⪰ LI , i.e., f (˜ y) ≤ f (ˆ y). It is important to note that the condition Hd ⪰ LI is a weak sufficient condition for descent property but not a necessary condition. We consider Hd = ρ diag  ∇2f (x, ˆy).For most of the cases ρ = 1 retains the descent property, especially when the hessian is diagonally dominant. However, a weak bound on ρ can be imposed with ρ ≥ L   
+
+> min i∂2
+> ii f(x, ˆy)
+
+. While automation can be done by detecting non-descent evaluation before and after projection, in our implementation we use a constant ρ provided by user. 
+
+k-Layered Projection: A local solution of the nonlinear problem PR can be obtained by solving the KKT conditions. This is apparently the global solution as the problem remains convex under the previous assumptions. However, finding the KKT solution is not straightforward and involves solving a system of nonlinear equations (more details can be found in [ 1]). To that end, we locally approximate the nonlinear projection problem (PR) using the following (SP): 
+
+min 12 y⊤Qy + c⊤y, s.t. Ay = b, Cy ≤ d, l ≤ y ≤ u. (SP) Here, the objective of SP is second order approximation of the original objective with only diagonal Hessian elements, and the constraints are first order approximation at point (x, y i),where i = 1 , ..., k in a k-layered projection. Mathematically, Q = ρ diag( ∇2f (x, y i)) , c =
+
+∇f (x, y i) − ρ diag( ∇2f (x, y i)) yi, A = Jh(x, y i), b = Jh(x, y i)yi − h(x, y i), C = Jg (x, y i),
+
+d = Jg (x, y i)yk − g(x, y i), l = l(x) and u = u(x), where, ∇2f is the Hessian of the objective, diag (·) represents the matrix formed with diagonal element of a matrix, ∇f is the gradient of the objective, and Jh and Jg are the Jacobian of the equality and inequality constraints, respectively. Note that we start from the backbone prediction, i.e., y0 = ˆ y. We sequentially solve SP i approximated at 
+
+(x, y i) in each projection layer i for i = 1 , ..., k .4The multi-layer projection is used in a sequential manner to get to the feasible solution. We define an operator Ps such that ˜y = Ps(x, ˆy) is the solution to the approximated subproblem SP at the point of approximation being (x, ˆy). Given, the inversion free iterative scheme of the operator Ps provided in section 2.3, we define an overall projection layer represented by Po. It is trivial to show that under assumptions made earlier, SP remains feasible and has a primal-dual solution of SP. It can be said that a single Ps cannot ensure feasibility in the original nonlinear constraint manifold. However, a linear convergence rate under certain assumption can be achieved for running sequential subproblems (proof in Appendix C). When the backbone prediction is close to the original solution, the number of required sequential subproblems becomes minimal. The goal is to train the backbone to predict such neighborhood point so that with minimal change feasibility and optimality can be restored. We define the complete projection Po as a composition of sequential operators Ps implemented in sequential layers, such that, Po = P1 
+
+> s
+
+◦ P2 
+
+> s
+
+◦ · · · Pks , where, Po (k-layered Projection) represents solving PR as QP, and Pis represents solving the subproblem SP in ith layer. Given an arbitrarily small scalar ϵ and 
+
+k ∈ N, ˜y is computed from the backbone prediction ˆy as ˜y = Po(x, ˆy), and converges to an optimal solution of PR with linear convergence rate under constraint smoothness conditions such that ˆy ∈ S
+
+with a maximum absolute violation of ϵ or less. 
+
+2.3 Solving SP in the Projection Layer 
+
+While many methods exist for solving QPs, we utilize the efficiency of the Chambolle-Pock (CP) algorithm [ 29 ] (see Algorithm 1) to solve the QP in each Pis. The CP algorithm is a first-order primal dual algorithm that has resemblance to Douglas Rachford (DR) splitting algorithm and can be understood as a preconditioned version of the alternating direction method of multipliers (ADMM) [ 29 ]. We provide the step by step updates, the termination criteria and convergence of the CP algorithm for the problem defined in Eq. 25 in Appendix D. 
+
+Algorithm 1: CP for QPs                                                                                           
+
+> ChambollePock :Input: Initial values y0, λ 0, μ 0,p
+> Problem: min 12y⊤Qy +c⊤y;s.t. Ay =b;Cy ≤d;l≤y≤u
+> Extract: Q, c, A, b, C, d, l, u ←p
+> Parameter: τ > 0, σ > 0, θ = 1 while  1
+> τ−Lf
+> 1
+> σ<∥K∥2
+> compute P= diag(1 /(1 + τ q i))
+> initialize k←0, y 0←y0, λ 0←λ0, μ 0←μ0,¯y0←y0
+> repeat
+> λk+1 =λk+σ(A¯yk−b); μk+1 = max(0 , μ k+σ(C¯yk−d))
+> νk+1 =P yk−τ(A⊤λk+1 +C⊤μk+1 )−τ c ;yk+1 = Π [l,u ](νk+1 )¯yk+1 =yk+1 +θ(yk+1 −yk)
+> k←k+ 1
+> until termination criteria is satisfied
+> Output: z←yk, λ k, μ k
+
+2.4 Backward Gradient Computation 
+
+We predict both primal and dual variables and use them in the training loss. With z = [ y⊤, λ ⊤, μ ⊤]⊤,the loss function L(x, z ), the projection layer Po(x, z ), and the NN Φ( x; Θ) , the loss function can be generalized into as a composite function of Θ and x such that L(x, ˜z) = L(x, Po(x, Φ( x; Θ))) .To train the backbone NN with backpropagation, the loss L has to be differentiated with respect to backbone parameters Θ. Using chain rule, we get 
+
+dL(x, Po(x, Φ( x; Θ))) dΘ = ∂L(x, z )
+
+∂z z=˜ z
+
+∂Po(x, z )
+
+∂z z=ˆ z
+
+∂Φ( x; ϑ)
+
+∂ϑ ϑ=Θ 
+
+, (2) where, ˆz = Φ( x; Θ) and ˜z = Po(x, ˆz). The projection layer is solved in an iterative scheme. While the first and last terms are standard and efficiently computed with automatic differentiation, computing the backward gradient with automatic differentiation for the second term suffers due to the large number of iterations in the projection layer. We utilize the implicit function theorem to compute the backward gradient of the CP algorithm. The detailed derivation of the backward 5gradient for the projection is given in Appendix J. This gives us the leverage to use this method as a differentiable layer inside a NN framework with efficient training time. The use of the implicit function theorem in backward gradient is not new for iterative processes. For example, Optnet [ 21 ]and Pinet [ 26 ] used implicit backward gradient for iterative schemes such as the Newton’s method and the Douglas-Rachford method. 
+
+2.5 Training NLPOpt-Net 
+
+We train NLPOpt-Net with standard algorithms (i.e., Adam [ 31 ]). The heuristic use of the dual variables in the loss function trains the model to lower the optimality gap. The training/testing and the overall NLPOpt-Net framework are given in Algorithm 2 and 3. 
+
+Algorithm 2: NLPOpt 
+
+Forward :Input: x, Θ, n max 
+
+ˆz ← Φ( x; Θ) , z 0 ← ˆz
+
+for k = 0 to nmax − 1 do 
+
+pk ← M(x, z k)(y0, λ 0, μ 0) ← zk
+
+zk+1 ←
+
+ChambollePock (y0, λ 0, μ 0, p k)˜z ← zk
+
+Output: ˆz, ˜z
+
+Backward :Input: ˜z, ˆz, x, g z = ∂L
+
+∂ ˜zv ← Solve  (I − JF (z∗)⊤)v = gz
+
+
+
+ξ ← v⊤ ∂F ∂p p=M(x, ˆz)
+
+w ← ξ ∂M(x, z )
+
+∂z z=ˆ z
+
+dL
+
+dΘ ← w ∂Φ( x; Θ) 
+
+∂Θ
+
+Output: dL
+
+dΘ
+
+Algorithm 3: Training/Testing 
+
+Input: Chosen/tuned hyperparameters 
+
+Training :initialize Θ1
+
+for t = 1 to nepochs do 
+
+x ← sample from training set 
+
+ˆz, ˜z ← Forward (x, Θt, n max )
+
+compute L(x, z )
+
+∂L
+
+∂Θℓ
+
+← Backward 
+
+
+
+˜z, ˆz, x, ∂L
+
+∂ ˜z
+
+
+
+Θℓ+1 ← Update( adam )
+
+Testing :
+
+x ← sample from test set 
+
+ˆz, ˜z ← Forward (x, Θnepochs , n max )
+
+Output: Θnepochs , ˜z
+
+2.6 Package and Implementation 
+
+We provide a GPU ready user package with pip installation. The projection can be further optimized once the training is complete. In practical setting, single inference is more common than batch inference. With that concern, we provide two options for the projection step during inference. The default ( ‘jax’ ) which is implemented in JAX. After training is finished, a native C compiled projection ( ‘native’ ) can alternatively accelerate single inference. This is achieved by decoupling the NN and projection computations. The NN is executed using JIT compilation while the projection is deployed via AOT compilation. We find that in practical setup a trained model single inference for a QP can be done with the same order of magnitude time as state of the art optimizer (e.g., OSQP ). 2
+
+Note that, this experimentation was carried out on a 13 th Gen Intel ® Core ™ i7–13700 (24-core CPU) with 32 GB RAM running Linux OS for reflecting realistic deployment scenarios. Table 1 provides the average time of inference and average optimality gap over all 2000 instances. We find that the native inference method achieves ≈ 50 × speedup than the JAX method. Note that the time for OSQP is only the solve time which does not include the problem creation overhead where as the time for NLPOpt is the end-to-end inference time after training. 
+
+> 2The result in Table 1 can be found in the notebook( Inference_comparison.ipynb ) in GitHub repository.
+
+6Table 1: Overall summary of the QP used to compare the single instance with the implemented package with state-of-the-art solver OSQP. The metrics are the inference time for a single instance and the optimality gap. Both metrics are provided as an average over the 2000 individual instances including the training and validation. Metric Optimizer ( OSQP ) NLPOpt-Net( ‘native’ ) NLPOpt-Net( ‘jax’ )Avg. inf. time/instance 2.22 ms 2.06 ms 95.14 ms Average optimality gap 0.000% 0.081% 0.081% 
+
+## 3 Computational Studies 
+
+We deploy NLPOpt-Net for learning to solve convex Quadratic Programs (QP), convex Quadratically Constrained Quadratic Programs (QCQPs) and a family of convex nonlinear programs (NLPs). Despite the convergence and theoretical descent being established for convex cases, we also test the framework on non-convex NLPs. 3 All the experiments carried out in this section have 100 variables, and 50 equality and 50 inequality constraints and 50 parameters. After training, we load the models and test on all the instances. We compare the performances on the following metrics: 
+
+Optimality: Optimality refers to how close the final prediction is to the true optimal solution. We measure the average optimality gap (AOG) as the following formula: AOG = Average Objective Value ( Model Objective ) − Best Bound ( Optimizer Objective )
+
+|Average Objective Value | × 100 .
+
+Feasibility: Feasibility is measured by the constraint violation. The constraint violation is computed as the absolute residual for equality constraint, i.e, |h(x, y )| and g+(x, y ) for inequality where 
+
+g+ = max(0 , g ). We evaluate the maximum violation and mean violation across all the instances. 
+
+Speed: Speed refers to the time required for inference after the training is finished. The inference time is given for each batch. For optimizer we consider full parallelization and for a fare comparison we divide the total solve time by total number of instances in a batch (We consider a batch size of 
+
+400 instances for all experiments). We compare NLPOpt-Net against the following methods: 
+
+Optimizer: A traditional optimization solver. We use CVXPY[ 32 ] environment (for convex problem, solver: OSQP [ 33 ] for QPs, SCS [34 ] for QCQPs and NLPs) and SLSQP [ 35 ] (the SciPy implementation using scipy.optimize for nonconvex problems). 
+
+NN: A regular ANN model with soft loss for constraint violation. 
+
+Eq. NN: This supervised learning [19] predicts and completes the full set of variables with equality constraints. The model is trained on minimizing the mean squared error between the optimal solutions of the Optimizer and the model completed solution. 
+
+DC3: The deep constraint completion and correction (DC3) [ 20 ] method is state-of-the-art that uses predict and completion method to satisfy the equality constraints. The inequality correction is then done by mapping infeasible points to feasible points using an internal gradient descent step during training. We use the github codespace for DC3 including default tunable parameters for comparison. All experiments are executed on a computing system featuring 48 CPU cores from dual Intel Xeon 6248R 3.0GHz processors, 1 NVIDIA A100 40 GB GPU node, and 360 GB RAM allocated per run. For cases that are run sequentially in CPU, we divide the total time for each batch by the total number of problem instances in a batch considering full parallelization. We run each experiment 5 times for 2000 epochs with different seeds (with a train/test ratio of 0.8:0.2 among 2000 sample instances) considering the default hyperparameter settings for other methods. For NLPOpt-Net, the parameters are α = 10 and k = 1 if not mentioned otherwise. All the problem generation descriptions are given in Appendix A.  
+
+> 3Codes for all experiments are available at https://github.com/souls-tamu/nlpoptnet .
+
+73.1 Quadratic Programs (QPs) 
+
+We consider solving convex quadratic programs with a quadratic objective and affine constraints: 
+
+min 
+
+> y
+
+12 y⊤Qy + c⊤y , s.t. Ay = b + Bx, Cy ≤ d, l + Lx ≤ y ≤ u + U x, (3) where, Q ∈ Rn×n ⪰ 0, c ∈ Rn, A ∈ Rneq ×n, b ∈ Rneq , B ∈ Rneq ×p, C ∈ Rnineq ×n, d ∈ Rnineq ,
+
+l ∈ Rn, L ∈ Rn×p, u ∈ Rn, and U ∈ Rn×p. The goal is to find optimal y ∈ Rn for different parameter realizations x ∈ Rp. Table 2 compares the performance of NLPOpt-Net with other methods for different cases. We find that both NLPOpt-Net and DC3 preserves feasibility. However, the maximum inequality violation is not zero for DC3 indicating that for a very small portion of instances DC3 is unable to preserve feasibility whereas NLPOpt-Net shows no infeasibility across different runs. Soft constrained NN includes infeasibility and goes below the true objectives. Eq-NN model preserves feasibility in terms of equality constraints, but not for inequality constraints. In terms of computational time, NLPOpt-Net requires same order of magnitude time for this case as DC3. In addition to the feasibility assurance, a major improvement we find is in terms of optimality. While DC3 has the average optimality gap of more than 150 % after training for 2000 epochs, NLPOpt-Net finds exact optimal solutions when rounded up to three decimals. Table 2: Results for parameterized optimization problems in terms of objective, constraint violation and time. The standard deviations across different runs are reported in the parenthesis. After training, both training and validation instances are tested. Values are rounded off to three decimals. Avg. Obj. Max eq. Mean eq. Max ineq. Mean ineq. Time (s/batch) Convex QP, α=10, k=1 OSQP -8.730 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.0039 (0.0000) NN -18.100 (0.055) 0.631 (0.000) 0.161 (0.000) 0.005 (0.000) 0.000 (0.000) 0.0052 (0.0000) Eq. NN 5.132 (0.187) 0.000 (0.000) 0.000 (0.000) 2.356 (0.084) 0.003 (0.000) 0.0058 (0.0000) DC3 -3.213 (1.441) 0.000 (0.000) 0.000 (0.000) 0.607 (0.190) 0.000 (0.000) 0.012 (0.0000) NLPOpt-Net -8.730 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.0357 (0.0000) Convex QCQP, α = 10 , k = 5 
+
+SCS 3.227 (0.055) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.0514 (0.0000) NN 2.583 (0.161) 0.210 (0.110) 0.033 (0.000) 0.000 (0.000) 0.000 (0.000) 0.0070 (0.025) Eq. NN 17.270 (0.929) 0.000 (0.000) 0.000 (0.000) 2.276 (0.699) 0.012 (0.045) 0.0080 (0.032) DC3 7.186 (0.646) 0.000 (0.000) 0.000 (0.000) 0.306 (0.167) 0.000 (0.000) 0.0240 (0.035) NLPOpt-Net 3.227 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.4260 (0.020) Convex NLP, α = 100 , k = 5 
+
+SCS 113.300 (0.000) 0.000 (0.000) 0.000 (0.000) 0.003 (0.000) 0.000 (0.000) 0.2510 (0.0000) NN 113.200 (0.336) 0.017 (0.032) 0.003 (0.000) 0.378 (0.474) 0.000 (0.000) 0.0070 (0.010) Eq. NN 296.600 (5.916) 0.000 (0.000) 0.000 (0.000) 18.250 (1.593) 2.517 (0.684) 0.0070 (0.010) DC3 114.600 (0.677) 0.000 (0.000) 0.000 (0.000) 1.540 (0.639) 0.000 (0.000) 0.0280 (0.014) NLPOpt-Net 113.300 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.4300 (0.036) Nonconvex NLP, α = 10 , k = 1 
+
+SLSQP -3.833 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.0638 (0.0000) NN -4.098 (0.110) 0.853 (0.257) 0.177 (0.000) 0.000 (0.000) 0.000 (0.000) 0.0040 (0.010) Eq. NN -1.306 (1.008) 0.000 (0.000) 0.000 (0.000) 5.436 (1.347) 0.022 (0.122) 0.0050 (0.010) DC3 -2.803 (0.736) 0.000 (0.000) 0.000 (0.000) 0.961 (1.043) 0.000 (0.000) 0.0110 (0.020) NLPOpt-Net -3.832 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.0780 (0.022) 
+
+3.2 Quadratically Constrained Quadratic Programs (QCQPs) 
+
+QCQPs are required to solve in many real life scenario, such as portfolio optimization [ 36 ]. In this example, we test the performance of NLPOpt-Net for the following form of parameterized convex QCQP: 
+
+min 
+
+> y
+
+12 y⊤Qy + c⊤ , s.t. Ay = b + Bx, y ⊤Ciy + d⊤ 
+
+> i
+
+y ≤ βi + Eix, l + Lx ≤ y ≤ u + U x. (4) where, i = 1 , 2, . . . , n ineq . For constants, Q ∈ Rn×n ⪰ 0, c ∈ Rn, A ∈ Rneq ×n, b ∈ Rneq ,
+
+B ∈ Rneq ×p, Ci ∈ Rn×n ⪰ 0, di ∈ Rn, βi ∈ R, Ei ∈ R1×p for i = 1 , 2, . . . , n ineq , l ∈ Rn,8L ∈ Rn×p, u ∈ Rn, and U ∈ Rn×p, we must learn to approximate the optimal solution y ∈ Rn
+
+given a parameter realization x ∈ Rp. As of Table 2 we find the behavior of feasibility for QCQP similar to QP case. While the mean inequality violation is zero for DC3, it struggles for a very few instance. However, for this test case, NLPOpt-Net requires one order of magnitude more time than DC3 and the optimizer. Although the work is done in batch and the optimizer time is taken as a average time for solving instances over a batch to ensure complete parallelization, the time required is around 9 times slower than the optimizer due to the number of layers ( k=5) used in projection layer. Moreover, the best objectives are found for NLPOpt-Net across all the learning methods providing near optimal solution with feasibility. 
+
+3.3 Convex Nonlinear Programs (NLPs) 
+
+In this case we consider a general nonlinear convex constraint and kept the other structure same as QP. we consider exponential terms in inequality constraints making them nonlinear. We use the following form of convex nonlinear problem.                         
+
+> min
+> y
+> 12y⊤Qy +c⊤y , s.t. Ay =b+Bx, a ⊤
+> iexp( y) + y⊤W y ≤βi+Eix, l +Lx ≤y≤u+U x. (5)
+
+where, i = 1 , 2, . . . , n ineq . For constants, Q ∈ Rn×n ⪰ 0, c ∈ Rn, A ∈ Rneq ×n, b ∈ Rneq ,
+
+B ∈ Rneq ×p, ai ∈ Rn, W ∈ Rn×n ⪰ 0, βi ∈ R, Ei ∈ R1×p for i = 1 , 2, . . . , n ineq , l ∈ Rn,
+
+L ∈ Rn×p, u ∈ Rn, and U ∈ Rn×p. As of Table 2, for α = 100 and k = 5 , NLPOpt-Net achieves near optimal solution in compared to all the other learning methods and also retains complete feasibility across all the instances. For this case DC3 also achieves a near optimal solution. 
+
+3.4 Simple Nonconvex Programs 
+
+We now consider the simple non-convex introduced by Donti et al.[ 20 ]. The problem is defined as following: 
+
+min 
+
+> y
+
+12 y⊤Qy + p⊤ sin( y) s.t. Ay = x, Gy ≤ h, (6) where, Q ∈ Rn×n ⪰ 0, p ∈ Rn, A ∈ Rneq ×n, G ∈ Rnineq ×n and h ∈ Rnineq . sin( y) denotes componentwise application of the sine function to the vector y. We generated the problems using the similar steps followed in [ 20 ]. We consider SLSQP as the optimizer for this nonconvex case. Even though the NLPOpt-Net framework is designed for convex cases we test the nonconvex case where NLPOpt-Net achieved best optimality among all the learning methods (see Table 2, optimality gap 
+
+≈ 0.026% ). Due to the constraints being affine, a single layer in the projection is sufficient to satisfy the constraints resulting into efficient inference time. Moreover, the optimality doesn’t varies across the runs where as DC3 has ≈ 19% variation in different runs. 
+
+## 4 Conclusions 
+
+We present NLPOpt-Net, a neural network architecture that learns parameter to solution mapping of parametric optimization problem with feasibility guarantee in the constraint manifold. Our approach includes a k-layered projection step where k can vary to achieve feasibility. We show that the projection layer has a descent property under simple assumptions therefore achieving no worse projection in terms of optimality. In our k-layered projection, we employ a case specific version of Chambolle-Pock algorithm to solve a structured quadratic program with efficiency k times to retain feasibility. While the forward pass is an inversion free method, we leverage on the implicit function theorem to provide implicit backward gradient with a custom vjp (Vector Jacobian Product) route in JAX. We find that NLPOpt-Net yield superor results in terms of optimality with better feasibility than other deep learning method based solvers. In general, NLPOpt-Net is designed for convex problems, we find that in some specific cases, it may yield superior result for nonconvex problems too. Furthermore, we show NLPOpt-Net preserves the correct active set in the constraints leading towards better optimality. Depending on the number of the layers in projection, the computational expense and feasibility may vary. While the framework is broadly applicable, it will be possible to design further improvement with specific constraint structure and problem instances. Additionally, sparsity pattern in the constraints like real life examples, this framework can be utilized with efficient matrix vector multiplication to handle large problems. 9Acknowledgment 
+
+The authors gratefully acknowledge partial financial support from the U.S. National Science Foundation (NSF CAREER award CBET-1943479) and the US EPA Project Grant 84097201. 
+
+## References 
+
+[1] J. Nocedal and S. J. Wright, Numerical optimization . Springer, 2006. [2] A. Wächter and L. T. Biegler, “On the implementation of an interior-point filter line-search algorithm for large-scale nonlinear programming,” Mathematical programming , vol. 106, no. 1, pp. 25–57, 2006. [3] A. Drud, “CONOPT: A grg code for large sparse dynamic nonlinear optimization problems,” 
+
+Mathematical programming , vol. 31, no. 2, pp. 153–191, 1985. [4] R. H. Byrd, J. Nocedal, and R. A. Waltz, “Knitro: An integrated package for nonlinear optimization,” in Large-scale nonlinear optimization , pp. 35–59, Springer, 2006. [5] P. E. Gill, W. Murray, and M. A. Saunders, “SNOPT: An sqp algorithm for large-scale constrained optimization,” SIAM review , vol. 47, no. 1, pp. 99–131, 2005. [6] B. Bank, J. Guddat, D. Klatte, B. Kummer, and K. Tammer, Nonlinear parametric optimization ,vol. 58. Walter de Gruyter GmbH & Co KG, 1982. [7] E. N. Pistikopoulos, N. A. Diangelakis, and R. Oberdieck, Multiparametric optimization and control . John Wiley & Sons, 2020. [8] A. Bemporad, M. Morari, V. Dua, and E. N. Pistikopoulos, “The explicit linear quadratic regulator for constrained systems,” Automatica , vol. 38, no. 1, pp. 3–20, 2002. [9] D. Kenefake, I. Pappas, N. A. Diangelakis, S. Avraamidou, R. Oberdieck, and E. N. Pistikopoulos, “Multiparametric linear and quadratic programming,” in Encyclopedia of Optimization , pp. 1–5, Springer, 2023. [10] J. Drgona, A. Tuor, J. Koch, M. Shapiro, B. Jacob, and D. Vrabie, “NeuroMANCER: Neural modules with adaptive nonlinear constraints and efficient regularizations,” URL https://github. com/pnnl/neuromancer , 2023. [11] M. Raissi, P. Perdikaris, and G. E. Karniadakis, “Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations,” Journal of Computational physics , vol. 378, pp. 686–707, 2019. [12] P. Márquez-Neila, M. Salzmann, and P. Fua, “Imposing hard constraints on deep networks: Promises and limitations,” arXiv preprint arXiv:1706.02025 , 2017. [13] N. B. Erichson, M. Muehlebach, and M. W. Mahoney, “Physics-informed autoencoders for lyapunov-stable fluid flow prediction,” arXiv preprint arXiv:1905.10866 , 2019. [14] S. Cai, Z. Wang, S. Wang, P. Perdikaris, and G. E. Karniadakis, “Physics-informed neural networks for heat transfer problems,” Journal of Heat Transfer , vol. 143, no. 6, p. 060801, 2021. [15] P. D. Grontas, A. Tsiamis, and J. Lygeros, “Operator splitting for convex constrained markov decision processes,” IEEE Transactions on Automatic Control , 2026. [16] S. Wang, X. Yu, and P. Perdikaris, “When and why pinns fail to train: A neural tangent kernel perspective,” Journal of Computational Physics , vol. 449, p. 110768, 2022. [17] K. Ma, N. V. Sahinidis, S. Amaran, R. Bindlish, S. J. Bury, D. Griffith, and S. Rajagopalan, “Data-driven strategies for optimization of integrated chemical plants,” Computers & Chemical Engineering , vol. 166, p. 107961, 2022. [18] T. Beucler, M. Pritchard, S. Rasp, J. Ott, P. Baldi, and P. Gentine, “Enforcing analytic constraints in neural networks emulating physical systems,” Physical review letters , vol. 126, no. 9, p. 098302, 2021. [19] A. S. Zamzam and K. Baker, “Learning optimal solutions for extremely fast ac optimal power flow,” in 2020 IEEE international conference on communications, control, and computing technologies for smart grids (SmartGridComm) , pp. 1–6, IEEE, 2020. 10 [20] P. Donti, D. Rolnick, and J. Z. Kolter, “DC3: A learning method for optimization with hard constraints,” in International Conference on Learning Representations , 2021. [21] B. Amos and J. Z. Kolter, “OptNet: Differentiable optimization as a layer in neural networks,” in International conference on machine learning , pp. 136–145, PMLR, 2017. [22] A. Agrawal, B. Amos, S. Barratt, S. Boyd, S. Diamond, and J. Z. Kolter, “Differentiable convex optimization layers,” Advances in neural information processing systems , vol. 32, 2019. [23] H. Chen, G. E. C. Flores, and C. Li, “Physics-informed neural networks with hard linear equality constraints,” Computers & Chemical Engineering , vol. 189, p. 108764, 2024. [24] A. Iftakher, R. Golder, B. N. Roy, and M. M. F. Hasan, “Physics-informed neural networks with hard nonlinear equality and inequality constraints,” Computers & Chemical Engineering ,p. 109418, 2025. [25] R. Golder, B. N. Roy, and M. M. F. Hasan, “DAE-HardNet: A physics constrained neural network enforcing differential-algebraic hard constraints,” arXiv preprint arXiv:2512.05881 ,2025. [26] P. D. Grontas, A. Terpin, E. C. Balta, R. D’Andrea, and J. Lygeros, “Pinet: Optimizing hard-constrained neural networks with orthogonal projection layers,” arXiv preprint arXiv:2508.10480 , 2025. [27] G. E. Constante-Flores, H. Chen, and C. Li, “Enforcing hard linear constraints in deep learning models with decision rules,” arXiv preprint arXiv:2505.13858 , 2025. [28] G. Lastrucci and A. M. Schweidtmann, “ENFORCE: Nonlinear constrained learning with adaptive-depth neural projection,” arXiv preprint arXiv:2502.06774 , 2025. [29] A. Chambolle and T. Pock, “A first-order primal-dual algorithm for convex problems with applications to imaging,” Journal of mathematical imaging and vision , vol. 40, no. 1, pp. 120–145, 2011. [30] P. Neal, C. Eric, P. Borja, and E. Jonathan, “Distributed optimization and statistical learning via the alternating direction method of multipliers,” Foundations and Trends® in Machine learning ,vol. 3, no. 1, pp. 1–122, 2011. [31] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,” arXiv preprint arXiv:1412.6980 , 2014. [32] S. Diamond and S. Boyd, “CVXPY: A Python-embedded modeling language for convex optimization,” Journal of Machine Learning Research , 2016. To appear. [33] B. Stellato, G. Banjac, P. Goulart, A. Bemporad, and S. Boyd, “OSQP: An operator splitting solver for quadratic programs,” Mathematical Programming Computation , vol. 12, no. 4, pp. 637–672, 2020. [34] B. O’Donoghue, E. Chu, N. Parikh, and S. Boyd, “SCS: Splitting conic solver, version 3.2.11.” 
+
+https://github.com/cvxgrp/scs , Nov. 2023. [35] P. Virtanen, R. Gommers, T. E. Oliphant, M. Haberland, T. Reddy, D. Cournapeau, E. Burovski, P. Peterson, W. Weckesser, J. Bright, S. J. van der Walt, M. Brett, J. Wilson, K. J. Millman, N. Mayorov, A. R. J. Nelson, E. Jones, R. Kern, E. Larson, C. J. Carey, ˙ I. Polat, Y. Feng, E. W. Moore, J. VanderPlas, D. Laxalde, J. Perktold, R. Cimrman, I. Henriksen, E. A. Quintero, C. R. Harris, A. M. Archibald, A. H. Ribeiro, F. Pedregosa, P. van Mulbregt, and SciPy 1.0 Contributors, “SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python,” Nature Methods , vol. 17, pp. 261–272, 2020. [36] S. Boyd and L. Vandenberghe, Convex optimization . Cambridge university press, 2004. [37] A. Chambolle and T. Pock, “On the ergodic convergence rates of a first-order primal–dual algorithm,” Mathematical Programming , vol. 159, no. 1, pp. 253–287, 2016. [38] D. Ruiz, “A scaling algorithm to equilibrate both rows and columns norms in matrices,” tech. rep., CM-P00040415, 2001. [39] J. Bradbury, R. Frostig, P. Hawkins, M. J. Johnson, Y. Katariya, C. Leary, D. Maclaurin, G. Necula, A. Paszke, J. VanderPlas, S. Wanderman-Milne, and Q. Zhang, “JAX: composable transformations of Python+NumPy programs,” 2018. 11 A Problem instance generation 
+
+We provide the details of the problem generation for different computational studies here: 
+
+QP: We consider n = 100 , p = 50 , n eq = 50 , n ineq = 50 , and the parameter bounds are taken as 
+
+x ∈ [−10 , 10] 50 . During training, the parameter entries were drawn from the uniform distribution on 
+
+[−10 , 10] and we consider 2000 problem instances. For the Q matrix, we generate a random Gaussian matrix M and consider Q = ( M ⊤M )/n + diag (δ). We add the diagonal shift δ between [1 .2, 1.8] 
+
+ensuring Q is positive definite, so the objective is always strictly convex. The vector c is created elementwise and all the entries are drawn from the uniform distribution on [0 .5, 1.5] . The matrix A
+
+is generated from a QR factorization of a random Gaussian matrix, where the first neq orthonormal directions are selected and scaled row-wise to ensure full row rank and good numerical conditioning. To ensure feasibility of the equality constraints for all parameter realizations, x ∈ [xL, x U ], we construct an affine mapping of the form yf (x) = yc + T x , where yc ∈ Rn and T ∈ Rn×p that are randomly generated with controlled magnitude. Then other constant vector and matrix for equality constraints are defined as b = Ay c and B = AT . For inequality constraints, each row of matrix C is generated with sparse support and normalized coefficients. Vector d is defined as 
+
+di = Ciyc + max x∈[xL,x U ] CiT x which guarantees feasibility for all admissible x. Finally, the bound constraints are defined with L = U = T , l = yc − rI , and u = yc + rI for some r > 0. This ensures feasibility of the constraints for any realization of x within the bounds. 
+
+QCQP: The objective and equality constraints are generated in same way as the quadratic case. For quadratic inequality constraints, we construct each constraint in a structured manner. Specifically, for each i, we generate a direction vector ri ∈ Rn and define Ci = αirir⊤ 
+
+> i
+
+and di = ri, where αi > 0 is chosen to control the curvature and ensure numerical stability. Thus, each constraint takes the form 
+
+12 αi(r⊤ 
+
+> i
+
+y)2 + r⊤ 
+
+> i
+
+y ≤ βi + Eix. (7) The right-hand side is constructed to guarantee feasibility of the affine mapping yf (x) for all admissible x. In particular, βi is chosen as 
+
+βi = max  
+
+> x∈[xL,x U]
+
+ 12 αi(r⊤ 
+
+> i
+
+yf (x)) 2 + r⊤ 
+
+> i
+
+yf (x) − Eix
+
+
+
+, (8) which ensures that yf (x) satisfies all quadratic inequalities over the parameter domain. The parameter-dependent term Eix is introduced by selecting Ei along representative directions in the parameter space, enabling nontrivial coupling between x and the constraints. Finally, the bound constraints are defined with L = U = T and l = yc − rI and u = yc + rI for some r > 0. This ensures feasibility of the constraints for any realization of x within the bound. 
+
+Convex NLP: For nonlinear inequality constraints, we construct each constraint in a structured manner. Specifically, for each i, we generate a vector ai ∈ Rn and a positive semi-definite matrix 
+
+Wi ∈ Rn×n with sparse diagonal structure. The nonlinear constraint takes the form 
+
+a⊤ 
+
+> i
+
+exp( y) + y⊤Wiy ≤ βi + Eix. (9) The coefficients ai and Wi are constructed by selecting a small subset of variables and assigning nonzero weights to emphasize nonlinear behavior along those directions. The right-hand side βi is defined as 
+
+βi = max  
+
+> x∈[xL,x U]
+
+ a⊤ 
+
+> i
+
+exp( yf (x)) + yf (x)⊤Wiyf (x) − Eix + ϵ, (10) where ϵ > 0 is a margin parameter. This ensures that the affine mapping yf (x) satisfies all nonlinear inequality constraints for every x in the parameter domain. The parameter-dependent term Eix is constructed by selecting directions in the parameter space and scaling them to introduce coupling between x and the nonlinear constraints. Rest of the vectors and matrices are generated as per previous instructions. 
+
+Nonconvex: We used the methods provided by Donti et. al.[20] to generate the problems. 12 B Additional experiments 
+
+In the additional experiments we compare NLPOpt-Net with Optimizer and DC3 for different settings on the QPs. In the additional experiments, we run QP with 100 variables as the number of equality constraint (Table 4), inequality constraints (Table 5), number of parameters (Table 3) and training sample size varies (Table 6). Additionally we provide the active set agreement analysis for different settings. This shows how from the dual variables we can detect the active sets. For inequality constraint set Iineq , we consider a constraint gi ∀i ∈ Iineq is active when the dual variable μi > 0 and we denote the set of active constraints as IA,ineq . We compare across all the runs and instances by one to one mapping, what fraction of the active sets were predicted correctly with the true active sets from the optimizer run. The activity agreements are summarized in Table 7. We take the default model specific hyperparameters for DC3 and the hyperparameter tuning may yield better results in terms of optimality and constraint violation. We train all the models for 2000 epochs. We observe that DC3 objective was still improving. Providing more training epoch may yield better objective with less variation. For NLPOpt-Net the only hyperparameter we consider for all the cases is weight for consistency loss ( α). 
+
+Remarks on Additional Experiments . (see Appendix B) We find that the time requirement for NLPOpt-Net during inference increases with equality constraints and sometimes with inequality constraints. The underlying reason could be the sparsity pattern of the constraint matrices. As the Chambolle-Pock algorithm rely on matrix multiplications in each step and on norm calculation, the denser the matrix the more time it will take. In our problems we generated fully dense matrix. In practical setting constraints are sparse and techniques can be employed to make the matrix multiplications efficient by detecting the sparsity pattern. Grontas et al. [ 26 ] shows such case where by considering sparsity similar first order methods can be used to deal with very large problems. We find from Table 6, NLPOpt-Net deviates from optimal solution very steadily when the training sample is smaller while DC3 struggles to find a good solution when the training samples are limited. To the best of our knowledge, only NLPOpt-Net provides idea on the active sets of the constraints and Table 7 shows a near accurate prediction of active sets. Table 3: Results on QP task for 100 variables, 50 equality and 50 inequality constraints as the number of parameters varies as 10, 25, 50, 75, 100. We compare the performance of NLPOpt-Net with DC3 and the optimizer according to objective value, maximum/mean equality and inequality violation and inference time per batch. Standard deviation across 5 runs are shown in parenthesis. Model Metric 10 25 50 75 100 Optimizer Obj. val. -8.026 (0.089) -8.352 (0.089) -8.730 (0.000) -8.471 (0.000) -8.892 (0.000) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/sample) 0.004 (0.000) 0.004 (0.000) 0.004 (0.000) 0.004 (0.000) 0.003 (0.000) DC3 Obj. val. -1.536 (1.770) 1.082 (3.576) -3.213 (1.441) -3.364 (1.025) -2.652 (1.777) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.988 (0.228) 1.673 (0.837) 0.607 (0.190) 0.696 (0.302) 1.468 (0.219) Mean ineq. 0.001 (0.000) 0.001 (0.001) 0.000 (0.000) 0.000 (0.000) 0.001 (0.000) Time (s/batch) 0.014 (0.000) 0.013 (0.000) 0.012 (0.000) 0.013 (0.000) 0.014 (0.000) NLPOpt-Net Obj. val. -8.024 (0.000) -8.350 (0.000) -8.730 (0.000) -8.468 (0.000) -8.888 (0.000) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/batch) 0.036 (0.000) 0.036 (0.000) 0.036 (0.000) 0.035 (0.000) 0.033 (0.000) 
+
+## C Local convergence rate of the projection layer 
+
+The k-layer projection is an iterative procedure to polish the solution to get back feasibility. This can be seen as a similar technique like sequential quadratic programming (SQP). However, we do not imply the second order information of the Lagrangian. Instead we refine the quadratic objective. The 13 Table 4: Results on QP task for 100 variables, 50 parameters and 50 inequality constraints as the number of equality constraints varies as 10, 30, 50, 70, 90. Model Metric 10 30 50 70 90 Optimizer Obj. val. -8.772 (0.000) -8.730 (0.000) -8.730 (0.000) -8.365 (0.000) 3.814 (0.000) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/sample) 0.003 (0.000) 0.004 (0.000) 0.004 (0.000) 0.004 (0.000) 0.004 (0.000) DC3 Obj. val. -3.757 (1.141) -3.288 (1.361) -3.213 (1.441) -2.177 (1.894) 4.102 (1.928) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.395 (0.141) 0.557 (0.195) 0.607 (0.190) 0.977 (0.319) 1.123 (0.594) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.001 (0.000) 0.001 (0.000) Time (s/batch) 0.013 (0.000) 0.013 (0.000) 0.012 (0.000) 0.013 (0.000) 0.013 (0.000) NLPOpt-Net Obj. val. -8.772 (0.000) -8.730 (0.000) -8.730 (0.000) -8.365 (0.000) 3.819 (0.000) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/batch) 0.018 (0.000) 0.027 (0.000) 0.036 (0.000) 0.040 (0.000) 0.045 (0.000) Table 5: Results on QP task for 100 variables, 50 parameters and 50 equality constraints as the number of inequality constraints varies as 10, 30, 50, 70, 90. Model Metric 10 30 50 70 90 Optimizer Obj. val. -19.310 (0.000) -11.020 (0.000) -8.730 (0.000) -6.551 (0.084) -8.363 (0.063) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/sample) 0.002 (0.000) 0.003 (0.000) 0.004 (0.000) 0.005 (0.000) 0.005 (0.000) DC3 Obj. val. -3.757 (1.141) -3.288 (1.361) -3.213 (1.441) -2.177 (1.894) -2.119 (1.928) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.395 (0.141) 0.557 (0.195) 0.607 (0.190) 0.977 (0.319) 1.123 (0.594) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.001 (0.000) 0.001 (0.000) Time (s/batch) 0.013 (0.000) 0.013 (0.000) 0.012 (0.000) 0.013 (0.000) 0.013 (0.000) NLPOpt-Net Obj. val. -19.310 (0.000) -11.020 (0.000) -8.730 (0.000) -6.548 (0.000) -8.363 (0.000) Max eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/batch) 0.019 (0.000) 0.026 (0.000) 0.036 (0.000) 0.044 (0.000) 0.026 (0.000) convergence rate of the method can be analyzed from SQP theory[ 1]. A similar type of convergence analysis is discussed for nonlinear equality constraints in AdaNP Projection[28]. The k-layer projection at the kth layer ( Pks ) solves the subproblem of the form: 
+
+min  
+
+> y∈B(x)
+
+f (x, ˆy) + J⊤(y − ˆy) + 12 (y − ˆy)⊤Hd(y − ˆy)s.t. Jh(x, y k)( y − yk) + h(x, y k) = 0 
+
+Jg (x, y k)( y − yk) + g(x, y k) ≤ 0
+
+(Papprox )which approximates the original nonlinear problem: 
+
+min  
+
+> y∈B(x)
+
+f (x, ˆy) + J⊤(y − ˆy) + 12 (y − ˆy)⊤Hd(y − ˆy)s.t. h(x, y ) = 0 
+
+g(x, y ) ≤ 0
+
+(Porig )14 Table 6: Results on QP task for 100 variables, 50 parameters, 50 inequality constraints and 50 parameters as the number of samples taken for training is varying. We consider total 2000 instances and for training we vary the training fraction as 0.8, 0.6, 0.4, 0.2. Model Metric 0.8 0.6 0.4 0.2 Optimizer Objective -8.730 (0.000) -8.730 (0.095) -8.730 (0.095) -8.730 (0.095) Max. Eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean Eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max. Ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean Ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/sample) 0.004 (0.000) 0.004 (0.000) 0.004 (0.000) 0.004 (0.000) DC3 Objective -3.213 (0.845) -0.922 (1.348) 3.189 (1.478) 23.650 (2.317) Max. Eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean Eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max. Ineq. 0.607 (0.276) 1.132 (0.656) 1.099 (0.409) 3.201 (0.770) Mean Ineq. 0.000 (0.000) 0.000 (0.000) 0.001 (0.000) 0.006 (0.045) Time (s/batch) 0.012 (0.000) 0.014 (0.032) 0.015 (0.045) 0.015 (0.045) NLPOpt-Net Objective -8.730 (0.000) -8.726 (0.000) -8.662 (0.095) -8.271 (0.130) Max. Eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean Eq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Max. Ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Mean Ineq. 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) 0.000 (0.000) Time (s/batch) 0.035 (0.000) 0.039 (0.000) 0.034 (0.000) 0.027 (0.000) Table 7: Performance across problem classes and parameter settings. The first row provides the active set agreement for the results shown in Section 3. Other rows shows results on QP with 100 variables and the common structure with 50 equality, 50 inequality and 50 parameters with varying one of the property at a time. We cap the dual variables to 1 × 10 −6
+
+Class Problem type QP (3.1) QCQP (3.2) NLP (3.3) Nonconvex (3.4) Active set agreement 0.998 0.997 0.999 0.999 
+
+p (QP) No. of parameters 10 25 50 75 10 Active set agreement 0.998 0.998 0.998 0.999 0.998 
+
+neq (QP) No. of equality 10 30 50 70 90 Active set agreement 0.997 0.997 0.998 0.999 1.000 
+
+nineq (QP) No. of inequality 10 30 50 70 90 Active set agreement 0.997 0.998 0.998 0.998 0.998 
+
+where, B defines the box constraint on the decision variables. While the hessian of the approximated objective includes the hessian of the Lagrangian, we keep original objective as it is quadratic already. As we discussed, the original problem is convex, therefore we assume the existence of y∗, a global solution to the original problem at which the following conditions (C1-C3) hold: C1 The objective function and the constraints are twice differentiable in a neighborhood of y∗
+
+with Lipschitz continuous second order derivatives. C2 Slater’s condition holds at y∗, therefore, the KKT conditions are satisfied at y∗ with a valid set of Lagrangian multipliers λ∗ (equality) and μ∗ (inequality) with strong duality. C3 Second-order sufficient conditions hold at ( y∗, λ ∗, μ ∗). Let Lorig is the Lagrangian of the original problem (Porig ). With slack variables and Fischer-Burmeister reformulation the KKT system can be expressed as (see [ 24 ] for details on the formulation): 
+
+F (z) = 
+
+
+
+∇y Lorig (y, λ, μ )
+
+h(y)
+
+g(y) + sϕ(μ, s )
+
+ , with z =
+
+
+
+yλμs
+
+ , (11) 15 where, ϕ(μj , s j ) = 
+
+hq 
+
+μ2 
+
+> j
+
++ s2 
+
+> j
+
+− μj − sj
+
+i
+
+. We define the Jacobian of the KKT conditions of the original problem in a neighborhood of the local solution as: 
+
+J(k) =
+
+
+
+∇2 
+
+> yy
+
+Lorig J⊤ 
+
+> h
+
+J⊤ 
+
+> g
+
+0
+
+Jh 0 0 0
+
+Jg 0 0 I
+
+0 0 Dμ Ds
+
+ , (12) where, Dμ = diag( μi/pμ2 
+
+> i
+
++ s2 
+
+> i
+
+− 1) and Ds = diag( si/pμ2 
+
+> i
+
++ s2 
+
+> i
+
+− 1) . Due to the assumptions we made earlier, the Jacobian at iteration k, J(k) is non-singular and invertible. Similarly the KKT of the approximated problem ( Papprox ) is: 
+
+¯F (z) = 
+
+
+
+∇y Lapprox (y, λ, μ )
+
+Jh(x, y k)( y − yk) + h(x, y k)
+
+Jg (x, y k)( y − yk) + g(x, y k) + sϕ(μ, s )
+
+ , (13) the Jacobian of the KKT conditions of the approximated problem in a neighborhood of the local solution is: 
+
+J(k) =
+
+
+
+∇2 
+
+> yy
+
+Lapprox J⊤ 
+
+> h
+
+J⊤ 
+
+> g
+
+0
+
+Jh 0 0 0
+
+Jg 0 0 I
+
+0 0 Dμ Ds
+
+ , (14) The deviation of the projection from complete SQP step can be expressed through a matrix E where 
+
+E(k) = J(k) − ¯J(k) =
+
+
+
+∇2 
+
+> yy
+
+Lorig − ∇ 2 
+
+> yy
+
+Lapprox 0 0 00 0 0 00 0 0 00 0 0 0
+
+ , (15) where, ∇2 
+
+> yy
+
+Lorig − ∇ 2 
+
+> yy
+
+Lapprox = P 
+
+> i
+
+λ(k) 
+
+> i
+
+∇2hi(y(k)) + P 
+
+> j
+
+μ(k) 
+
+> j
+
+∇2gj (y(k)), the deviation comes from the second order information of the constraints. At kth layer, we define the residual r(k) =
+
+F (z(k)), the error e(k) = z(k) − z∗ and solve for the Newton’s step ∆z(k):
+
+¯J∆z(k) = −r(k)
+
+z(k+1) = z(k) + ∆ z(k)
+
+e(k+1) = e(k) + ∆ z(k).
+
+(16) Using first order Taylor’s expansion, 
+
+F (z(k)) = J(k)e(k) + r(k), (17) where, r(k) = O(∥e(k)∥). Therefore, 
+
+¯J(k)∆z(k) = −r(k) = −F (z(k)) = −J(k)e(k) − r(k). (18) Since, E(k) = J(k) − ¯J(k),
+
+
+
+J(k) − E(k)
+
+∆z(k) = −J(k)e(k) − r(k),
+
+(J(k))−1 
+
+J(k) − E(k)
+
+∆z(k) = −(J(k))−1 
+
+J(k)e(k) − r(k)
+
+,
+
+(I − M )∆ z(k) = −e(k) − (J(k))−1r(k),
+
+∆z(k) = −(I − M )−1 
+
+e(k) + ( J(k))−1r(k)
+
+,
+
+(19) 16 where, M = (( J(k))−1E(k)). Hence, the error at ( k + 1 )th layer can be expressed as: 
+
+e(k+1) = e(k) + ∆ z(k)
+
+= e(k) − (I − M )−1 
+
+e(k) + ( J(k))−1r(k)
+
+=  I − (I − M )−1 e(k) − (I − M )−1(J(k))−1r(k)
+
+=  (I − M )( I − M )−1 − (I − M )−1 e(k) − (I − M )−1(J(k))−1r(k)
+
+= ( I − M )−1 (( I − M ) − I) e(k) − (I − M )−1(J(k))−1r(k)
+
+= −(I − M )−1M e (k) − (I − M )−1(J(k))−1r(k).
+
+(20) Using Banach’s lemma ( ∥(I −A)−1∥ ≤ 1/(1 −∥ A∥)) i.e., ∥(I −M )−1∥ ≤ C0, and r(k) = O(∥e(k)∥)
+
+i.e., ∥r(k)∥ ≤ C1∥e(k)∥2 the error can be estimated, 
+
+∥e(k+1) ∥ ≤ C0(∥M ∥)∥e(k)∥ + C0∥(J(k))−1∥C1∥e(k)∥2. (21) From Eq. 21, nearby z∗ i.e., y∗, when M = 0 , the projection yields quadratic convergence. It can be easily inferred this is true when the constraints are affine, only one layer is required to satisfy the original constraints. When M̸ = 0 and ∥M ∥ < 1, linear convergence is guaranteed. However, when 
+
+∥M ∥ ≥ 1, second order corrections might require to converge to the solution. 
+
+## D Chambolle-Pock Algorithm 
+
+The Chambolle-Pock (CP) algorithm [ 29 ] for solving the generic saddle-point problem of the following form 
+
+Primal Problem: min  
+
+> y∈Y
+
+F (Ky ) + G(y)
+
+Dual Problem: max  
+
+> λ∈Λ
+
+−(G∗(−K∗λ) + F ∗(λ)) (SPP) where, the map K : Y 7 → Λ is a continuous linear operator, G : Y 7 → [0 , +∞), F ∗ : Λ 7 → [0 , +∞)
+
+are proper, convex, lower semicontinuous functions while F ∗ is the convex conjugate of the convex lower semicontinuous function F . The algorithm assumes the SPP has at least a solution (ˆ y, ˆλ) ∈
+
+Y × Λ, which satisfies 
+
+K ˆy ∈ ∂F ∗(ˆλ)
+
+−(K∗ ˆλ) ∈ ∂G (ˆ y) (22) where ∂F ∗ and ∂G are the subgradient of F ∗ and G. To solve the problem defined in Eq. The update of the CP algorithm for solving the SPP is 
+
+
+
+λn+1 = ( I + σ∂F ∗)−1(λn + σK ¯yn)
+
+yn+1 = ( I + τ ∂G )−1(yn − τ K ∗λn+1 )¯yn+1 = yn+1 + θ(yn+1 − yn)
+
+(23) where, τ, σ > 0 and θ ∈ [0 , 1] . The algorithm converges when θ = 1 and τ σ ∥K∥2 ≤ 1. See [ 29 ] for details. We consider the QP of the following form: 
+
+min 12 y⊤Qy + c⊤y
+
+s.t. Ay = bCy ≤ dl ≤ y ≤ u
+
+(24) 17 where, Q is a diagonal matrix such that Q = diag( q1, q 2, · · · , q n) ∈ Rn×n, A ∈ Rneq ×n, b ∈ Rneq ,
+
+C ∈ Rnineq ×n, d ∈ Rnineq , l ∈ (R ∪{−∞} )n, and u ∈ (R ∪{∞} )n. By introducing the dual variables 
+
+λ ∈ Rneq , μ ∈ Rnineq and α, β ∈ Rn corresponding to the equality, inequality and bound constraints respectively the saddle-point problem becomes 
+
+min    
+
+> l≤y≤u
+
+max 
+
+> λ, μ ≥0
+
+12 y⊤Qy + c⊤y + λ⊤(Ay − b) + μ⊤(Cy − d). (25) For a general quadratic problem defined by Eq. 25 the steps are generated as follows where the combined constraint matrix K, combined coefficient vector h and combined multipliers w are defined as K⊤ = ( A⊤, C ⊤), h⊤ = ( b⊤, d ⊤) and w⊤ = ( λ⊤, μ ⊤). Multipliers for the bound constraints are obtained analytically. 
+
+Step 1: Dual update 
+
+Updating the dual variable involves solving the convex quadratic problem (in w)
+
+wk+1 = arg min 
+
+> w
+
+12 ∥w − (wk + σK ¯yk)∥2 + σh ⊤w. (26) By setting the gradient to zero yields, w − (wk + σK ¯yk) + σh = 0 . The update step becomes, 
+
+wk+1 = wk + σ(K ¯yk − h). (27) To retain the complementary conditions ( μ ≥ 0) in the dual variables, the update in Eq. 27 can be split into 
+
+λk+1 = λk + σ(A¯yk − b)
+
+μk+1 = max(0 , μ k + σ(C ¯yk − d)) (28) 
+
+Step 2: Primal Update 
+
+Updating the primal variable involves solving the convex quadratic problem (in y)
+
+νk+1 = arg min 
+
+> ν
+
+12 ∥ν − (yk − τ K ⊤wk+1 )∥2 + τ
+
+ 12 ν⊤Qν + c⊤ν
+
+
+
+. (29) By setting the gradient to zero yields, ν − (yk − τ K ⊤wk+1 ) + τ Qν + τ c = 0 i.e. (I + τ Q )ν =
+
+yk − τ K ⊤zk+1 − τ c . The update step becomes, 
+
+νk+1 = P  yk − τ (A⊤λk+1 + C⊤μk+1 ) − τ c  (30) where, P = ( I + τ Q )−1. It is worthwhile to mention that this is true for any convex QP. However, if the Q = diag( q1, q 2, · · · , q n) = diag( qi) then (I + τ Q )−1 = diag(1 /(1 + τ q i)) . Hence, computational cost involved in computing P becomes negligible which requires minimal binary operations only. To retain the box constraint we apply the box projection Π[l,u ] on ν.
+
+yk+1 = Π [l,u ](νk+1 ) (31) where, Π[l,u ](v) = min( u, max( l, v )) is the projection to keep the primal feasibility on the box constraints. 
+
+Step 3: Update initialization 
+
+¯yk+1 = yk+1 + θ(yk+1 − yk) (32) 
+
+Termination Criteria: As SP remains convex, the primal and dual feasibility and primal-dual gap fit perfectly as termination criteria to get the optimal solution of the layer Pis. We set the termination 18 criteria when the primal residuals, the dual residuals and the primal-dual gap are smaller than some predefined tolerance levels ϵprim > 0, ϵ dual > 0, and ϵgap > 0 respectively, i.e., 
+
+∥rk
+
+> prim
+
+∥∞ ≤ ϵprim , ∥rk
+
+> dual
+
+∥∞ ≤ ϵdual , ∥rk
+
+> gap
+
+∥∞ ≤ ϵgap , (33) where, 
+
+rk 
+
+> prim
+
+=
+
+ Ay k − b
+
+max( Cy k − d, 0) 
+
+
+
+, rk 
+
+> dual
+
+= Qy k + c + A⊤λk + C⊤μk − αk + βk,rk 
+
+> gap
+
+= ( λk)⊤(Ay k − b) + ( μk)⊤(Cy k − d) + ( αk)⊤(l − yk) + ( βk)⊤(yk − u).
+
+(34) We emphasize that the dual gap ( rk
+
+> dual
+
+) computation may include errors due to an iterative projection on the box. The box projection multiplier values may not represent the actual multipliers until converged. Therefore during implementation, we only enforce primal feasibility and primal-dual gap. As the box projection is always feasible, the last two terms in the primal-dual gap ( (αk)⊤(l − yk) and 
+
+(βk)⊤(yk − u)) are always zero. Taking the primal residual and primal-dual gap provides plausible criteria for termination. 
+
+Convergence: With the criteria on the algorithm parameters that for ( θ = 1 ) and 
+
+ 1
+
+τ − Lf
+
+ 1
+
+σ < ∥K∥2, (35) where, Lf is the Lipschitz constant (in our case the maximum value of the Q matrix), ∥K∥ is the spectral norm of K (K⊤ = ( A⊤, C ⊤)), the CP iterates converge to a primal-dual solution and the ergodic primal-dual gap decreases as O(1 /k ) where k is the number of iteration [ 37 ]. The spectral norm of K is computed with power iteration algorithm (provided in the Appendix F). The Algorithm 1 can be further accelerated for strongly convex problems with less number of iterations by updating the parameters. We provide the accelerated method in the Appendix E. However, due to change in parameters each iteration may require additional computation which limits the accelerated method. Additionally, we discuss the conditioning for the matrices in CP algorithm in Appendix G. In practice, conditioning reduces the number of iterations to converge the CP algorithm. Note that, when Q ⪰ 0,the CP algorithm converges to the optimal solution. 
+
+Handling Non-Affine Constraints : The CP algorithm is stated for more general case rather than only affine constraints. This leads us to have appropriate proximal operator (inequality multiplier update in Step 1) for convex constraint of specific form. For example, convex quadratic inequality constraints can be reformulated as second order conic constraint and can be solved exactly in the CP algorithm with a few change. We provide such a modified version of Algorithm 1 for quadratic inequality constraint which has exploitable convex structure (see Appendix H). If the nonlinear constraints have exploitable structure then similar modification can be made in the proximal operator for dual update. The advantage of this is that it satisfies the nonlinear constraints in single subproblem i.e., k = 1 , so that the computational burden reduces from solving multiple subproblems to one subproblem. 
+
+## E Accelerated Chambolle-Pock algorithm 
+
+When, G is uniformly convex in SPP, the rate of convergence of the Chambolle-Pock algorithm can be improved to O(1 /k 2), by choosing the parameters of the algorithm iteratively instead of a fixed value [ 37 ]. Algorithm 4 is the accelerated version of the CP algorithm. Here, γ is the uniform convexity constant, for QP which is the λmin (Q) = min( Q) as Q is diagonal. 
+
+## F Power iteration for spectral norm computation 
+
+To estimate the operator norm required for step-size selection, we employ a randomized power iteration procedure on the matrix K⊤K, where 
+
+K =
+
+AC
+
+
+
+. (36) The method starts from a randomly initialized normalized vector and repeatedly applies the map 
+
+x 7 → K⊤Kx = A⊤Ax + C⊤Cx . At each iteration, the vector is normalized, and the corresponding 19 Algorithm 4: Accelerated Chambolle-Pock for QPs 
+
+AcceleratedChambollePock :Input: Initial values y0, λ 0, μ 0, p
+
+Problem: min 12 y⊤Qy + c⊤y; s.t. Ay = b; Cy ≤ d; l ≤ y ≤ u
+
+Extract: Q, c, A, b, C, d, l, u ← p
+
+Parameter: τ > 0, σ > 0, θ = 1 while   1 
+
+> τ
+
+− Lf
+
+ 1 
+
+> σ
+
+< ∥K∥2
+
+compute P = diag(1 /(1 + τ q i)) , γ = max   min i qi, 0
+
+initialize k ← 0, y 0 ← y0, λ 0 ← λ0, μ 0 ← μ0, ¯y0 ← y0
+
+repeat 
+
+λk+1 = λk + σ(A¯yk − b)
+
+μk+1 = max(0 , μ k + σ(C ¯yk − d)) 
+
+νk+1 = P  yk − τ (A⊤λk+1 + C⊤μk+1 ) − τ c 
+
+yk+1 = Π [l,u ](νk+1 )¯yk+1 = yk+1 + θ(yk+1 − yk )
+
+if γ > 0 then 
+
+θ ← 1
+
+√1 + γτ τ ← θτ σ ← σθP ← diag 
+
+ 11 + τ q i
+
+
+
+k ← k + 1 
+
+until termination criteria is satisfied 
+
+Output: z ← yk , λ k , μ k
+
+Rayleigh quotient is used to approximate the dominant eigenvalue of K⊤K. The spectral norm is then estimated as ∥K∥ ≈ pλmax (K⊤K). This avoids explicitly forming K⊤K and provides an efficient procedure for estimating the quantity needed in the primal-dual step size condition. Algorithm 5 algorithmic steps to estimate the norm. 
+
+Algorithm 5: Power Iteration for Estimating ∥K∥
+
+EstimateKNorm :Input: A, C , random key, number of iterations N
+
+Parameter: ε > 0
+
+initialize Sample a random vector x0
+
+initialize k ← 0, x0 ← x0
+
+> ∥x0∥+ε
+
+repeat 
+
+ak ← Ax k
+
+ck ← Cx k
+
+yk ← A⊤ak + C⊤ck
+
+λk ← (xk )⊤yk
+
+xk+1 ← yk
+
+∥yk ∥ + εk ← k + 1 
+
+until k = N
+
+Output: ∥K∥ ← pmax( λk−1, 0) + ε
+
+## G Conditioning of the matrices in Chambolle-Pock 
+
+Preconditioning such as Ruiz’s equilibration[ 38 ] is often used as a heuristic for primal-dual algorithms[ 33 ]. Ruiz equilibration is applied as a preprocessing step to improve the numerical conditioning of the quadratic program before running the Chambolle–Pock iterations. The idea is to iteratively rescale the columns and rows of the problem data so that their magnitudes become more 20 balanced. In the present setting, column scaling is applied to the primal variables, while separate row scalings are applied to the equality and inequality constraint matrices. This produces a scaled problem with better-balanced coefficients, which typically reduces the number of iterations in Chambolle-Pock algorithm. After solving the scaled problem, the primal and dual variables are mapped back to the original coordinates using the accumulated scaling factors. Let S ∈ Rn×n denote the diagonal column-scaling matrix for the primal variables, and let 
+
+Req ∈ Rneq ×neq and Rineq ∈ Rnineq ×nineq denote the diagonal row-scaling matrices for the equality and inequality constraints, respectively. The scaled quadratic program is written in terms of the transformed primal variable ys, defined through y = Sy s. Under this transformation, the scaled problem data become: 
+
+Qs = SQS, cs = Sc, As = Req AS, bs = Req b, Cs = Rineq CS, ds = Rineq d, (37) with the bound vectors transformed as 
+
+ls = S−1l, us = S−1u. (38) The Chambolle-Pock iterations are then performed on the scaled problem to obtain a solution 
+
+(y∗ 
+
+> s
+
+, λ ∗ 
+
+> s
+
+, μ ∗ 
+
+> s
+
+). After convergence, the solution is mapped back to the original coordinates by reversing the applied scalings. In particular, the primal variable is recovered as y∗ = Sy ∗ 
+
+> s
+
+, while the dual variables associated with the equality and inequality constraints are recovered as λ∗ = Req λ∗ 
+
+> s
+
+and 
+
+μ∗ = Rineq μ∗ 
+
+> s
+
+. Thus, the optimization is carried out entirely in the equilibrated space, but the final primal and dual solutions are returned in the original problem coordinates. Algorithm 6 provides the step by step procedure we used for equilibration. 
+
+Algorithm 6: Modified Ruiz Equilibration for Box-Constrained QPs 
+
+RuizEquilibrate :Input: Q, c, A, b, C, d, l, u , number of iterations N , tolerance ε > 0
+
+Problem: min 12 y⊤Qy + c⊤y s.t. Ay = b, Cy ≤ d, l ≤ y ≤ u
+
+compute n ← length( Q), n eq ← rows( A), n ineq ← rows( C)
+
+initialize Qs ← Q, c s ← c, A s ← A, b s ← b, C s ← C, d s ← d, l s ← l, u s ← uS ← In, R e ← Ineq , R i ← Inineq 
+
+k ← 0
+
+repeat 
+
+// Column equilibration 
+
+compute (mcol )j = max 
+
+
+
+max i |(As)ij |, max i |(Cs)ij |, |(Qs)j |
+
+
+
+, ∀j
+
+compute δj = 1
+
+pmax(( mcol )j , ε ) , ∀jAs ← As diag( δ), C s ← Cs diag( δ), Q s ← Qs ⊙ δ2, c s ← cs ⊙ δ, l s ← ls ⊘ δ, u s ← us ⊘ δS ← S diag( δ)
+
+// Equality-row equilibration 
+
+if neq ̸ = 0 then compute (meq )i = max j |(As)ij |, ∀i
+
+compute ηi = 1
+
+pmax(( meq )i, ε ) , ∀iAs ← diag( η) As, b s ← η ⊙ bs
+
+Re ← diag( η) Re
+
+// Inequality-row equilibration 
+
+if nineq ̸ = 0 then compute (mineq )i = max j |(Cs)ij |, ∀i
+
+compute ζi = 1
+
+pmax(( mineq )i, ε ) , ∀iCs ← diag( ζ) Cs, d s ← ζ ⊙ ds
+
+Ri ← diag( ζ) Ri
+
+k ← k + 1 
+
+until k = N
+
+Output: Qs, c s, A s, b s, C s, d s, l s, u s, S, R e, R i
+
+21 H Reformulation for Convex Quadratic Constraints 
+
+The projection layer requires solving k subproblems to get feasible solution. However, solving a single subproblem is sufficient for affine constraints as well as specific classes of nonlinear constraints, such as second order conic constraints because of having appropriate proximal operator in the solving step. Quadratic constraints can be reformulated as second order conic constraints. For each quadratic inequality 
+
+y⊤Ciy + d⊤ 
+
+> i
+
+y ≤ ei − Eix, (39) let Ci = R⊤ 
+
+> i
+
+Ri be a factorization of Ci. Assume di ∈ Range( Ci), and define qi := 12 (R† 
+
+> i
+
+)⊤di,where R† 
+
+> i
+
+denotes the Moore-Penrose pseudo-inverse. Then 
+
+y⊤Ciy + d⊤ 
+
+> i
+
+y = ∥Riy + qi∥22 − ∥ qi∥22. (40) Substituting (40) into (39) yields ∥Riy + qi∥22 ≤ ei − Eix + ∥qi∥22. Defining the radius ri(x) := pei − Eix + ∥qi∥22 assuming ri(x)2 ≥ 0. Then the quadratic inequality becomes 
+
+∥Riy + qi∥2 ≤ ri(x), i = 1 , . . . , m. (41) Lets consider the parametric convex QCQP 
+
+min 
+
+> y
+
+12 y⊤Qy + c⊤y
+
+s.t. Ay = b + Bx, y⊤Ciy + d⊤ 
+
+> i
+
+y ≤ ei − Eix, i = 1 , . . . , m, l + Lx ≤ y ≤ u + U x, 
+
+(42) where Q ⪰ 0 and Ci ⪰ 0 for all i = 1 , . . . , m . With the reformulation the problem in Eq. 42 can be rewritten as 
+
+min 
+
+> y
+
+12 y⊤Qy + c⊤y
+
+s.t. Ay = b + Bx, 
+
+∥Riy + qi∥2 ≤ ri(x), i = 1 , . . . , m, l + Lx ≤ y ≤ u + U x. 
+
+(43) 
+
+Primal-Dual Saddle Form 
+
+The indicator of the Euclidean ball B(ri(x)) := {z : ∥z∥2 ≤ ri(x)} has conjugate 
+
+I∗
+
+> B(ri(x))
+
+(μi) = ri(x)∥μi∥2. (44) Using this identity, the reformulated problem (43) admits the saddle-point representation 
+
+min    
+
+> y∈[l+Lx, u +U x ]
+
+max 
+
+> λ,μ i
+
+12 y⊤Qy + c⊤y + λ⊤ Ay − (b + Bx )
+
++
+
+> m
+
+X
+
+> i=1
+
+μ⊤ 
+
+> i
+
+(Riy + qi) −
+
+> m
+
+X
+
+> i=1
+
+ri(x)∥μi∥2.
+
+(45) The corresponding primal proximal map is prox τ G (v) = ( I + τ Q )−1(v − τ c ), where G(y) :=  
+
+> 12
+
+y⊤Qy + c⊤y. If Q is diagonal with diagonal entries qj , then the proximal map reduces to 
+
+P := diag 
+
+ 11 + τ q j
+
+
+
+, prox τ G (v) = P (v − τ c ). (46) 22 For each dual block, the proximal operator of σr i(x)∥ · ∥ 2 is the vector soft-thresholding map 
+
+prox σr i(x)∥·∥ 2 (v) = 
+
+
+
+1 − σr i(x)
+
+∥v∥2
+
+
+
+v, ∥v∥2 > σr i(x),
+
+0, ∥v∥2 ≤ σr i(x).
+
+(47) The Chambolle-Pock algorithm for (43) is given in Algorithm 7. 
+
+Algorithm 7: Chambolle-Pock for Convex QCQPs 
+
+Input: Initial values y0, λ 0, μ 01, . . . , μ 0
+
+> m
+
+Problem: min 12 y⊤Qy + c⊤y; s.t. Ay = b + Bx ; ∥Riy + qi∥2 ≤ ri(x), i = 1 , . . . , m ; l + Lx ≤
+
+y ≤ u + U x 
+
+Parameter: τ > 0, σ > 0, θ ∈ [0 , 1] 
+
+compute P = ( I + τ Q )−1 // or P = diag(1 /(1 + τ q j )) if Q is diagonal 
+
+initialize k ← 0, y 0 ← y0, λ 0 ← λ0, μ 0 
+
+> i
+
+← μ0 
+
+> i
+
+(i = 1 , . . . , m ), ¯y0 ← y0
+
+repeat 
+
+λk+1 = λk + σ A¯yk − (b + Bx )
+
+for i = 1 , . . . , m do 
+
+vki = μki + σ(Ri ¯yk + qi)
+
+μk+1  
+
+> i
+
+=
+
+
+
+1 − σr i(x)
+
+∥vki ∥2
+
+
+
+vki , ∥vki ∥2 > σr i(x),
+
+0, ∥vki ∥2 ≤ σr i(x)
+
+gk+1 = A⊤λk+1 + Pmi=1 R⊤ 
+
+> i
+
+μk+1 
+
+> i
+
+yk+1 = Π [ l+Lx, u +U x ]
+
+ P (yk − τ g k+1 − τ c )
+
+¯yk+1 = yk+1 + θ(yk+1 − yk )
+
+k ← k + 1 
+
+until termination criteria is satisfied 
+
+Output: yk , λ k , μ k 
+
+> 1
+
+, . . . , μ km
+
+Remarks on the Algorithmic Structure: Compared with the Chambolle-Pock scheme for linearly constrained QPs, the equality update preserves the same form, except that the right-hand side becomes parameter dependent through b + Bx . The box projection also preserves the same structure, with shifted bounds l + Lx and u + U x . The only essential modification occurs in the inequality dual step: the linear inequality update based on the componentwise positive-part operator is replaced by a blockwise proximal update (47) , which arises from the conjugate of the Euclidean ball indicator after completing the square in each quadratic constraint. If desired, the projection onto the parameterized box can be written componentwise as 
+
+Π[ l+Lx, u +U x ](v) = min   max( v, l + Lx ), u + U x . (48) Although it is possible to incorporate different constraint directly in the CP algorithm, in our implementation we keep linearized constraints for generalization of the framework. 
+
+## I Primal-Dual solution of approximated problem 
+
+Let, the convex (nonlinear) optimization problem is defined as 
+
+min  
+
+> y∈Rn
+
+f (y)s.t. h(y) = 0 ,g(y) ≤ 0,
+
+(P1) where, f is convex C2, g is convex C1 and h is affine. We assume that Slater’s condition holds and 
+
+y∗ is the global minimizer of this problem. With first order Taylor approximation of the constraints and the second order Taylor approximation of the objective at a arbitrary point yk we form the 23 subproblem: 
+
+min  
+
+> y∈Rn
+
+f (yk) + ∇f (yk)⊤(y − yk) + 12 (y − yk)⊤Hd(yk)( y − yk)s.t. h(y) = 0 ,g(yk) + ∇g(yk)⊤(y − yk) ≤ 0,
+
+(P2) where, instead of the exact Hessian of the objective, we take only the diagonal hessian elements multiplied by a positive constant i.e., Hd(yk) = ρ × diag( ∇2f (yk)) with ρ > 0.
+
+Lemma I.1: Second order Taylor approximation of a convex function is also convex. 
+
+Proof: If f : Rn 7 → R is convex then ∇2f (y) ≽ 0 for all y. Second order Taylor approximation at 
+
+y0 of f is defined as 
+
+T2(y) = f (y0) + ∇f (y0)⊤(y − y0) + 12 (y − y0)⊤∇2f (y0)( y − y0) (49) The hessian of T2(y) is ∇2T2(y) = ∇2f (y0). Since f is convex, ∇2f (y0) ≽ 0. Therefore T2(y) is convex. □
+
+Proposition: The quadratic approximation of the second order Taylor approximation of a convex function with only the diagonal Hessian (The quadratic approximation of the objective in P2) is also convex. 
+
+Proof: As the hessian of the second order Taylor approximation is positive semi-definite (PSD), the diagonal hessian is also PSD, therefore convex. 
+
+Lemma 2: If y∗ is a global solution of the convex problem P1 and λ∗, μ ∗ are the dual solution, the subproblem P2 has the same primal-dual solution when yk = y∗.
+
+Proof: According to lemma 1, the subproblem is also convex. Therefore if a any point satisfies KKT conditions then it would be sufficient for global optimality. At yk = y∗ Lagrangian for the original and the subproblem becomes 
+
+LP 1 =f (y) + λ⊤∇h(y) + μ⊤g(y)
+
+LP 2 =f (y∗) + ∇f (y∗)⊤(y − y∗) + 12 (y − y∗)⊤Hd(y∗)( y − y∗) + λ⊤h(y)+ μ⊤ g(y∗) + ∇g(y∗)⊤(y − y∗)
+
+(50) Assuming x∗ is the global minimizer of P1 and there exists unique dual variables any λ∗ and μ∗ ≥ 0.Then the KKT conditions for P1 becomes 
+
+Stationarity: ∇f (y∗) + 
+
+> neq
+
+X
+
+> i=1
+
+λ∗ 
+
+> i
+
+∇hi(y∗) + 
+
+> nineq
+
+X
+
+> j=1
+
+μ∗ 
+
+> j
+
+∇gj (y∗) = 0 
+
+Primal feasibility: g(y∗) ≤ 0, h(y∗) = 0 
+
+Dual feasibility: μ ≥ 0
+
+Complementary slackness: μ∗ ⊙ g(y∗) = 0 .
+
+(51) Defining g(y∗) + ∇g(y∗)⊤(y − y∗) = ˜ g(y) the KKT conditions for the subproblem becomes 
+
+Stationarity: ∇f (y∗) + Hd(y∗)( y − y∗) + 
+
+> neq
+
+X
+
+> i=1
+
+λi∇hi(y) + 
+
+> nineq
+
+X
+
+> j=1
+
+μ∗ 
+
+> j
+
+∇gj (y∗) = 0 
+
+Primal feasibility: ˜g(y) ≤ 0, h (y) = 0 
+
+Dual feasibility: μ ≥ 0
+
+Complementary slackness: μ ⊙ ˜g(y) = 0 .
+
+(52) 24 At y = y∗, ˜g(y∗) = g(y∗) + ∇g(y∗)⊤(y∗ − y∗) = g(y∗) ≤ 0, h(y∗) = 0 as y∗ is a feasible and optimal solution of original problem. Putting y = y∗ in the KKT system (Eq. 52) satisfies the primal feasibility and yields a linear system for the dual variables. By inspection, λ∗, μ ∗ is the solution for the system. Therefore ( y∗, λ ∗, μ ∗) is a KKT point of the subproblem. As the problem is convex it is sufficient that y∗ is also a global minimizer for P2. Moreover, both the problems P1 and P2 attains the same dual variables λ∗ and μ∗. □
+
+The motivation behind the lemma is to show that when the projection is done at near optimal solution (when the NN predicts close neighborhood), the projection pushes for optimality with obtaining primal-dual variables. 
+
+Graphical interpretation: We illustrate the complex events happening in the NLPOpt-Net 
+
+framework graphically in Fig 2. The illustrations represent the following phenomena: (left) relaxation of the original feasible domain: linearization creates a polytope defining the feasible region; (middle) the neural network is trained to minimize the loss within the polytope. The training pushes towards finding a better solution inside the polytope. Due to local convergence after k-layer, the projected output will be on the facet of the polytope. Moreover, due to the descent property of the projection layer, the solution after projection will remain no worse than raw backbone prediction (in practice better in most cases); (right) an ϵ-optimal solution of the original problem P can be obtained if the approximation is done near optimal point. 
+
+Figure 2: Graphical interpretation of the approximated layer. Left: the linearized model represents a polytope confining the original convex feasible domain. Middle: The neural network is learning to minimize the loss within the polytope, Right: the local exactness of the problem after linearization. 
+
+## J Backward gradient of the projection 
+
+Projection as a Two Stage Mapping: The projection layer involves two tasks in sequence. The first is to create the matrices Q, A, C and the vectors c, b, d, l, u which define the QPs in SP. These matrices and vectors depend on the input x and network prediction ˆz. The second task is to solve the QPs using the CP algorithm. As the QPs in SP are convex, they converge with arbitrary initial points i.e., the solution ˜z does not directly depend on the initialization ˆz but on M(x, z ) where 
+
+M(x, z ) ≡ (Q, c, A, b, C, d, l, u ). The operator M defines the conversion of the subproblem. The differentiability still holds due to the composition of the projection. Since Po(x, z ) = Po(M(x, z )) ,chain rule leads to 
+
+∂Po(x, z )
+
+∂z z=ˆ z
+
+= ∂Po(w)
+
+∂w w=M(x, ˆz)
+
+∂M(x, z )
+
+∂z z=ˆ z
+
+. (53) The second term of Eq. 53 can be obtained through automatic differentiation, which is not computationally expensive. We, therefore, provide the route for custom backward gradient computation of the first term. 
+
+Fixed-Point Formulation: Consider a fixed-point iteration of the form: 
+
+zk+1 = F (zk; w), (54) where, z ∈ Rm denotes the vector of all primal and dual variables, w = M(x, z ) ≡
+
+(Q, c, A, b, C, d, l, u ) denotes the collection of matrices and vectors defining the problem, and F is 25 a continuously differentiable neighborhood of a fixed point. When the iteration converges to z∗, it satisfies z∗ = F (z∗; w). Defining the residual mapping G such that 
+
+G(z; w) := F (z; w) − z, (55) the fixed point satisfies G(z∗; w) = 0 . The projection output can be then extracted as ˜z, i.e., 
+
+˜z = [ y∗⊤ , λ ∗⊤ , μ ∗⊤ ]⊤.
+
+Deploying Implicit Function Theorem: Assuming F is continuously differentiable and the Jacobian is nonsingular, the implicit function theorem gives, 
+
+∂G (z, w )
+
+∂z ∂z ∂w z=z∗
+
++ ∂G (z, w )
+
+∂w z=z∗
+
+=⇒ ∂z ∗
+
+∂w = − ∂G (z, w )
+
+∂z z=z∗
+
+!−1
+
+∂G (z, w )
+
+∂w z=z∗
+
+.
+
+(56) Since ∂G ∂z = ∂F ∂z − I (from Eq. 55), we obtain 
+
+∂z ∗
+
+∂w =  I − JF (z∗)−1 ∂F ∂w , (57) where, JF (z∗) = ∂F ∂z z=z∗ . Now considering the loss function L(x, z ∗) depend on the fixed point we get, 
+
+∂L
+
+∂w = gz
+
+∂z ∗
+
+∂w (58) where, gz = ∂L 
+
+> ∂z z=˜ z
+
+. Hence, the implicit expression gives, 
+
+∂L
+
+∂w = g⊤
+
+> z
+
+ I − JF (z∗)−1 ∂F ∂w (59) 
+
+Adjoint Formulation (VJP): The inversion may not be plausible in Eq. 59. Even if exists, in practice, constructing and computing the inverse may be expensive for high dimensions. Instead of inverting, we solve the following adjoint linear system: 
+
+ I − JF (z∗)⊤ v = gz . (60) The gradient with respect to p is then given by 
+
+∂L
+
+∂w w=M(x, ˆz)
+
+= v⊤ ∂F ∂w . (61) We use the JAX [39] implementation of bi-conjugate gradient stable iteration to get the vector v.26

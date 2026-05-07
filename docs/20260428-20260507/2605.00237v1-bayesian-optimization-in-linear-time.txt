@@ -1,0 +1,1517 @@
+Title: Bayesian Optimization in Linear Time
+
+URL Source: https://arxiv.org/pdf/2605.00237v1
+
+Published Time: Mon, 04 May 2026 00:20:36 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# Bayesian Optimization in Linear Time 
+
+# Jesse Schneider and William J. Welch ∗†
+
+# April 30, 2026 
+
+# Abstract 
+
+Bayesian optimization is a sequential method for minimizing ob-jective functions that are expensive to evaluate and about which few assumptions can be made. By using all gathered data to train a Gaussian process model for the function and adaptively employing a mixture of global exploration and local exploitation, this method has been used for optimization in many fields including machine learning, automotive engineering and reinforcement learning. How-ever, the standard method suffers from two problems: 1) with cubic computational complexity in the training-set size it eventually be-comes computationally infeasible to train the model, and 2) globally modeling the objective function is not necessarily optimal given the local nature of minimization. Using flexible and recursive bi-nary partitioning of the search space, we adapt both the modeling and acquisitive aspects of standard Bayesian optimization to work harmoniously with the partitioning scheme, thereby ameliorating both standard shortcomings. We compare our method against a commonly used Bayesian optimization library on seven challenging test functions, ranging in dimensionality from 6 to 124 , and show that our method achieves superior optimization performance in all tests. In addition our method has linear computational complexity. Keywords: machine learning, global optimization, optimization, stochastic processes, clustering, 
+
+# 1 Introduction 
+
+Many optimization problems concern objective functions that are opaque and difficult to evaluate. Such “black-box” problems arise in machine learning when tuning hyperparameters [26], designing automotive suspension components [25], and optimizing policies in reinforcement learning [30]. To minimize a function f over its 
+
+d-dimensional domain, if little may be assumed beyond the func-tion’s domain then standard optimization techniques that assume, say, convexity or differentiability of the objective function may be inadmissible. Optimization must then proceed based on flexible mod-eling assumptions for the properties of f and evaluations thereof at chosen input configurations. If f is furthermore expensive to compute the budget for evaluations is limited, perhaps in the low to mid hundreds. Bayesian optimization is the standard technique for such chal-lenges [6, Ch. 1]. By modeling f using a Gaussian process and weighing exploration and exploitation when selecting the next point 
+
+x at which to observe f , Bayesian optimization has successfully min-
+
+> ∗Jesse Schneider and William J. Welch are with the Department of Statistics, Uni-versity of British Columbia, Vancouver, BC V6T 1Z4, Canada. Email: jesse@jesse-schneider.com, will@stat.ubc.ca.
+> †Manuscript received Month dd, yyyy; revised Month dd, yyyy.
+
+imized many such functions in a variety of technological and engi-neering applications, such as machine learning models at Google [7]. Despite its success, standard Bayesian optimization has two short-comings. First, as described in Section 2 training the model for f
+
+has cubic complexity in the number of observations gathered, which eventually becomes computationally intractable. Second, optimiza-tion of f is both a global and local task: it is necessary to accurately model the global structure of f , but only to the point that one can locate a neighborhood of the arguments of the minima. In other re-gions accuracy need only be sufficient to rule out further minima. It is highly desirable for the success of Bayesian optimization to prop-erly balance these local and global priorities both when modeling f
+
+and acquiring successive observations thereof. We address these shortcomings in tandem by several methods in Section 3. Using clustering and flexible binary classification, we recursively partition the domain of f . As an illustration, Figure 1 (a) shows the Rastrigin test function for d = 2 (d = 6 will be considered in Section 4), and Figure 1 (b) shows the partition based on gathered data. The recursion creates a binary tree as shown in Figure 2, whose nodes represent subregions of the domain. Each node receives its own model of f created using specially chosen subsets of the overall dataset. Next, we modify both the modeling of f and the acquisition of subsequent observations to work in harmony with the partitioning of the search space. Together, these methods improve the balance between local and global modeling aspects of Bayesian optimiza-tion and address both shortcomings of the standard method. The computational complexity of updating the models of f is reduced from cubic to constant because there is a hard cap on the number of observations used to fit the node models. Furthermore the complex-ity of the optimization overall is reduced from cubic to linear. This leads to significant reductions in run-time for especially demanding optimization problems. In addition to running faster, the improved local-global modeling balance also improves optimization perfor-mance compared to the standard method, sometimes significantly so. We empirically verify these claims in Section 4 by comparing our method, christened TreeBO, with the standard Bayesian optimiza-tion library DiceOptim [20] on a diverse set of seven test functions, including a high-dimensional test derived from an automotive mass-minimization problem. These tests range in dimensionality from 6
+
+to 124 , each repeated many times over controlled initial conditions. The results show that TreeBO achieves superior optimization per-formance on all seven tests, along with much-reduced runtime on the longest, highest-dimensional test. TreeBO is simpler and easier to tune than alternative partitioning methods described in Section 5, having only one additional tunable hyperparameter compared to standard Bayesian optimization. Furthermore this extra hyperparam-eter required no special tuning in order to achieve our results. We summarize our work, and discuss outstanding issues and prospects for future research in Section 6. 1
+
+> arXiv:2605.00237v1 [cs.LG] 30 Apr 2026
+
+−4 −2 0 2 4x1
+
+−4
+
+−20 2 4
+
+> x2
+
+020 40 60 80 
+
+# (a) 
+
+# Rastrigin test function 
+
+−4 −2 0 2 4
+
+x1
+
+−4
+
+−2024
+
+> x2
+
+# (b) 
+
+# Domain partition via binary classifier Figure 1: The binary partitioning in TreeBO proceeds via clustering and non-linear classification, enabling the optimization method to home in on the global minimum of the objective function. (a) Surface plot of the 2-dimensional Rastrigin test function, which is defined in Section 4. The function is highly multimodal but gradually slopes down towards its minimum value, 0, at the origin. Given the goal of minimizing the Rastrigin function, a flexible partitioning method should carve out a subregion focused on the origin. (b) One-hundred initial points are spread over the domain. Clustering on the (x, f (x)) pairs leads to binary labels for the dataset, shown as purple and yellow points. The labels and data are then used to fit a nonlinear binary classifier whose predictions implicitly partition the domain. The inner yellow subregion is focused on a neighborhood of the argument of the minimum, denoted by the red dot. Each subregion (node) is given its own Gaussian process model for f , fit using the points within the subregion along with nearby supplementary points. Each subregion is then given its own acquisition function, which is defined so that the subregion bounds are respected during its optimization. The algorithm takes the next observation of f in the most promising subregion, as determined by the acquisition functions. See Algorithm 1 and Section 3 for details. 
+
+# 2 Background 
+
+Bayesian optimization is a technique to minimize an objective function f : Rd ⊋ X → R, where X is usually a scaled and/or shifted hypercube. Few assumptions about f are made other than knowledge of its domain and the ability to observe f (x) at any 
+
+x ∈ X. After selecting and gathering an initial dataset Dninit := 
+
+{(x1, f (x1)) , . . . , (xninit , f (xninit )) }, the method repeats a triplet of actions: 1) fit a Gaussian process (GP) model for f ; 2) use that model to define and maximize an auxiliary function α : X → R≥0;and 3) observe f at the point of maximization of α. This triplet is repeated until reaching the predetermined budget ntotal > n init of observations of f .To elaborate on the first step, a GP is a stochastic process 
+
+(Yx)x∈X such that for all x1, . . . , xn ∈ X, the joint distribution of 
+
+(Yx1 , . . . , Y xn ) is Gaussian. To model f a mean function μ : X → R
+
+given by x 7 → E[Yx] and covariance function Σ : X × X → R
+
+given by (x, x′) 7 → Cov[ Yx, Y x′ ] are chosen, which completely specify the GP. The covariance function affects properties of the model such as differentiability of its sample paths, and as such receives more attention [6, Ch. 3]. Common choices for Σ in-clude the Matérn and power-exponential covariance functions [6, Ch. 3]. If x = (x1, . . . , x d) and x′ = (x′
+
+> 1
+
+, . . . , x ′
+
+> d
+
+) are two points in X, the power-exponential covariance function is given by Σ( x, x′) = σ2 exp( − Pdj=1 |xj − x′ 
+
+> j
+
+|pj /θ j ). Let Σn be the 
+
+n × n covariance matrix obtained by evaluating Σ over the observed data Dn := {(x1, f (x1)) , . . . , (xn, f (xn)) }, for some choice of pa-rameters θ1, . . . , θ d, p 1, . . . , p d, σ 2, so that the (i, j )-entry of Σn is 
+
+Σ( xi, xj ). Furthermore let fn := ( f (x1), . . . , f (xn)) be the vector of observations. Fitting the GP model involves minimizing twice the negative Gaussian log-likelihood ℓ(θ1, . . . , θ d, p 1, . . . , p d, σ 2) = log det Σ n + f ⊺ 
+
+> n
+
+Σ−1 
+
+> n
+
+fn (up to an additive constant) given the ob-served data. Evaluating ℓ requires computing det Σ n and Σ−1 
+
+> n
+
+, or equivalent matrix decompositions, both of which are O(n3) in com-putational complexity. This implies that for large enough n, training with 2n observations may take 8 times as long as with the first n
+
+observations, and hence standard Bayesian optimization eventually becomes computationally intractable. GPs are convenient models because given accumulated data Dn,the model for a candidate observation of f is also Gaussian. In particular, if Yn = ( Yx1 , . . . , Y xn ) then at any new point xn+1 ∈
+
+X, the distribution of (Yx1 , . . . , Y xn , Y xn+1 ) is Gaussian, and the conditional distribution Yxn+1 | Yn = fn is also Gaussian, with a mean and variance that depend on fn and Σ−1 
+
+> n
+
+. This model for 2N0
+
+N01 N02 
+
+N021 N022 
+
+Figure 2: The recursive partitioning of TreeBO implicitly creates a binary tree whose nodes represent subregions of the objective func-tion’s domain. Leaf nodes are split through clustering and flexible binary classification on the data therein, resulting in nonlinear parti-tions; see Figure 1 (a) and (b) for an example. Each node receives its own model of the objective function, fit with the data falling in that subregion, possibly supplemented with data nearby. The binary tree shown also illustrates the path notation introduced in Section 3. At each split of a node, two new child nodes are created whose paths are their parent node’s path appended with 1 or 2. Viewing this binary tree in context of Figure 1 (b), the root node N0 would correspond to the objective function domain X = [ −5, 5] 2, while child nodes N01 
+
+and N02 would correspond to the purple outer subregion and yellow inner subregion, respectively. If the yellow inner subregion in Figure 1 (b) were partitioned again (not shown), this would produce two new leaf nodes N021 and N022 .a new observation of f is used to define the acquisition function 
+
+α : X → R≥0, which is the focus of the second step in an iteration of Bayesian optimization. Let f min  
+
+> n
+
+:= min {f (x1), . . . , f (xn)},and for any x ∈ X, define the improvement Ix at x by Ix := max {f min  
+
+> n
+
+− (Yxn+1 | Yn = fn), 0}. The improvement at x is a measurable function of the Gaussian random variable Yxn+1 | Yn =
+
+fn, hence the expected improvement (EI) E[Ix] is defined at any 
+
+x ∈ X. This expectation has a closed form that can be interpreted as balancing the competing goals of exploration and exploitation in selecting the location at which to take the next observation of f [6, Ch. 8]. The acquisition function is then defined by α(x) := E[Ix].This is a multimodal, non-negative function that requires its own maximization; once done, f is evaluated at the point of maximization of α.Computationally, a variety of techniques are used to optimize ℓ
+
+and α, including quasi-Newton methods (such as L-BFGS-B) and genetic algorithms [20, 22]. A common choice of software library for Bayesian optimization is the R package DiceOptim [20, 21]. The modern genesis of Bayesian optimization as a repeating triplet of actions began with Jones et al. [11]. For a description of the historical development of Bayesian optimization, see [6, Ch. 12]. 
+
+# 3 Contributions 
+
+The essence of Bayesian optimization is a repeating triplet of actions, as described in Section 2: 1) fit a GP model for f ; 2) using the GP model, define and maximize an acquisition function that measures the desirability of acquiring the next observation of f at any point in the domain X; and 3) observe f at the maximizing point of the acquisition function. Our method, which we call TreeBO, builds on this structure by constructing a binary tree whose nodes correspond to subregions of the domain of the objective function f . The root node corresponds to X while the leaf node(s) correspond to the most up-to-date partitioning of X. In Algorithms 1–4 we use the notation N or Np for a node, where p refers to the path to the node from the root node. Computationally, we append to a node the items particular to that node, including: 
+
+• the (x, f (x)) pairs where x falls within the node’s subregion, 
+
+Dp;
+
+• the node’s GP model, GP p;
+
+• the node’s acquisition function, αp;
+
+• the point of maximization of the node’s acquisition function, 
+
+x∗
+
+> p
+
+, which determines the point at which the next observation of f would be taken within the node, if the node were chosen for the next observation of f ;
+
+• the value of the acquisition function at its point of maximiza-tion, αp(x∗
+
+> p
+
+), which determines the desirability of taking the next observation of f in the node (relative to the respective acquisition-function maxima in the other leaf nodes); and 
+
+• for non-leaf nodes, the node’s binary classifier BC p.Because there is a one-to-one correspondence between nodes and subregions of X as determined by the binary partitioning process, we sometimes refer to a node as though it were a subregion, without risk of confusion. A leaf node Np is split into two child nodes Np+1 and Np+2 ,corresponding to a binary partition of the parent node’s subregion of X, when the number of observations of f acquired within Np
+
+reaches the parameter value nnode ∈ N. As will be implied by Table 1, in practice we set nnode to 50 –75% of ntotal , the budget of observations for f .We next define the path notation p, because this relates the struc-ture of the binary tree to the partitioning of X. A path from the root node is a string of symbols beginning with 0 and then either 1 or 2 in all subsequent positions. The root node is represented by 0, and in all binary splits, the two children are labeled as 1 and 2. Therefore the path p = 021 is at depth 3 in the binary tree in Figure 2, and represents traversing from the root node, to the second child of the root node, then to the first child of that node. We use the + symbol to concatenate two paths, particularly in the context of splitting a leaf node. Thus, if p = 02 then splitting N02 produces the two child nodes Np+1 and Np+2 , or more explicitly N021 and N022 .With this basic understanding of the binary tree produced by TreeBO and the sequence of leaf node splits, the mechanics of the partitioning process are best understood in the context of the descrip-tion of TreeBO in Algorithm 1. The algorithm begins in line 2 with a choice of the parameters ninit , n node and ntotal , which represent the number of initial observations of f to acquire, the maximum per-missible number of observations in a node, and the total observation budget, respectively. Of these, only nnode is unique to TreeBO; it is the only additional tunable hyperparameter compared to standard Bayesian optimization. (Additional hyperparameters, such as those related to clustering and classification, are either fixed or tuned in-ternally as part of the algorithm. They were not modified manually during the testing described in Section 4.) The root node of the binary tree is prepared in line 6 by calling the function UpdateNode () . This function is described in Algorithm 32; briefly, it endows a leaf node with attributes such as its GP model and acquisition function, and then maximizes the latter, or updates those attributes after acquiring a new observation of f . In line 8 the algorithm begins recording the leaf-node paths in the tree. This is needed because the top of the optimization loop, beginning in line 12, must select the leaf node in which to acquire the next observation of f . In line 14 the path to the leaf node with the highest optimized acquisition-function value is selected. After taking the new observation of f in line 16, the next important aspect of Algorithm 1 begins in line 24, which checks whether the number of observations taken in the chosen leaf node meets or exceeds the threshold nnode . If yes, then the function SplitNode () is called on the chosen leaf node in line 26, which produces the two new child nodes Np+1 and Np+2 . The function SplitNode () is described in Algorithm 2, but for now note that splitting a leaf node corresponds directly to partitioning a subregion of the domain of f . (Attempts to split a leaf node can occasionally fail; this is discussed in Section 6.) After the two new leaf nodes are initialized via UpdateNode () in lines 28–29, the only remaining part of the node-splitting logic is to update the record of leaf-node paths in line 31. If on the other hand the number of observations taken in the chosen leaf node is less than 
+
+nnode (or the attempted leaf node split failed) then the chosen leaf node is simply updated as normal in line 34. In such a case, assuming the binary tree is not trivial, the algorithm may choose a different leaf-node path at line 14 in the next loop iteration if the updated 
+
+αp(x∗
+
+> p
+
+) value for the current leaf node is no longer the largest among all leaf nodes in the tree. Algorithm 1 terminates when the total budget of observations 
+
+ntotal has been exhausted, saving all of the observations taken 
+
+Dntotal = {(x1, f (x1)) , . . . , (xntotal , f (xntotal )) }, among which there is hopefully some pair (x, f (x)) such that f (x) is close to the global minimum of f . Empirical results for Algorithm 1 are given in Sec-tion 4. We next describe Algorithm 2, which defines the procedures 
+
+UpdateNode () and SplitNode () , beginning with UpdateNode () .If the argument to UpdateNode () , the leaf node Np, is not the root node (line 4) and has fewer than nnode observations (line 6), 
+
+UpdateNode () calls BorrowData () in line 8 to augment the data of node Np with the nearest points from other leaf nodes until the augmented dataset has nnode observations. BorrowData () is de-scribed in Algorithm 3; its main benefit is that it helps the ensuing GP model for node Np find a better balance between globally and locally modeling f , as mentioned in Section 1. The partitioning process, and having separate GP models for each subregion ( i.e. , leaf node), provides multiple more locally focused models of f . How-ever, the flexibility of the binary partitioning process, to be described as part of SplitNode () in Algorithm 2, can produce very uneven partitions of subregions in which one of the new child nodes Np+1 
+
+and Np+2 receives 10% or fewer of the nnode observations from the parent node Np. Thus, always fitting GP models for non-root leaf nodes with exactly nnode observations improves the balance between the local and global aspects of modeling f and ensures more grad-ual changes in the GP models for subregions as observations are acquired and subregions are partitioned. With or without augmenting the data Dp for node Np, Algorithm 2 proceeds by fitting the GP model for node Np in line 12 and then defining the acquisition function αp using the GP model in line 14. Because the partitioning process can produce arbitrarily shaped subregions, αp cannot be defined as ordinary, unconstrained EI and optimized over a simple box-shaped subset of X. Therefore αp must 
+
+Algorithm 1 TreeBO for objective function f : X → R 
+
+> 1:
+
+# Set initial parameters  
+
+> 2:
+
+let ninit , n node , n total ∈ N, where ninit ≤ nnode < n total  
+
+> 3:
+
+# Gather initial dataset  
+
+> 4:
+
+Dninit ← { (x1, f (x1)) , . . . , (xninit , f (xninit )) } 
+
+> 5:
+
+# Initialize root node N0 
+
+> 6:
+
+N0 ← UpdateNode (N 0) 
+
+> 7:
+
+# Define set of leaf-node paths  
+
+> 8:
+
+P := {0} 
+
+> 9:
+
+# Define number of observations taken  
+
+> 10:
+
+n ← ninit  
+
+> 11:
+
+# Begin optimization loop  
+
+> 12:
+
+while n < n total do  
+
+> 13:
+
+# Select leaf-node path with highest acq. fun. value  
+
+> 14:
+
+p ← arg max π∈P απ (x∗ 
+
+> π
+
+) 
+
+> 15:
+
+# Take new observation of objective function  
+
+> 16:
+
+f (x∗
+
+> p
+
+) ← TakeObservation (x∗
+
+> p
+
+) 
+
+> 17:
+
+# Update leaf-node data  
+
+> 18:
+
+Dp ← Dp ∪ { (x∗
+
+> p
+
+, f (x∗
+
+> p
+
+)) } 
+
+> 19:
+
+# Increment number of observations taken  
+
+> 20:
+
+n ← n + 1  
+
+> 21:
+
+# If budget not exhausted, check if should split node  
+
+> 22:
+
+if n < n total then  
+
+> 23:
+
+# If node is above threshold, split into child nodes  
+
+> 24:
+
+if #D p ≥ nnode then  
+
+> 25:
+
+# Split the node  
+
+> 26:
+
+Np+1 , Np+2 ← SplitNode (N p) 
+
+> 27:
+
+# Initialize the new child nodes  
+
+> 28:
+
+Np+1 ← UpdateNode (N p+1 ) 
+
+> 29:
+
+Np+2 ← UpdateNode (N p+2 ) 
+
+> 30:
+
+# Update set of leaf-node paths  
+
+> 31:
+
+P ← (P \ { p}) ∪ { p + 1 , p + 2 } 
+
+> 32:
+
+else  
+
+> 33:
+
+# Else node was below threshold, so don’t split  
+
+> 34:
+
+Np ← UpdateNode (N p) 
+
+> 35:
+
+end if  
+
+> 36:
+
+end if  
+
+> 37:
+
+end while  
+
+> 38:
+
+# End optimization loop 
+
+be carefully defined to force the optimizer to respect the subregion boundaries. This is accomplished by penalizing αp when x does not fall within the node’s subregion. Understanding the penalty and hence the definition of αp, the latter given in (1), will require significant preparation which we undertake shortly. Before we begin to understand the penalization of αp, we extend the path notation that we defined earlier in Section 3. We define |p|
+
+to be the length of a path p, so if p = 021 as before then |p| = 3 .We further define pj to be the jth component of p if |p| = k and 
+
+j = 0 , 1, . . . , k − 1. We also use the components pj consecutively to denote sub-paths of p. For example, if p = 021 then p0p1 = 02 .To describe the penalization of αp, we begin by understanding how the binary classifications are used to determine whether x falls within the node’s subregion, because the penalty is applied to αp
+
+when x falls outside the subregion. For this we recursively define the subregion Xp corresponding to a node Np. For the base case we define X0 := X, because the subregion corresponding to the root node N0 is the domain of f . Next, if Xp has been defined and Np
+
+has been split, then the classifier BC p has been fit and assigned to 4Np so we define the two new subregions Xp+1 := {x ∈ X : ( x ∈
+
+Xp) ∧ (BC p(x) = 1) } ⊆ Xp and Xp+2 := {x ∈ X : ( x ∈
+
+Xp) ∧ (BC p(x) = 2) } ⊆ Xp corresponding to the new child nodes Np+1 and Np+2 of Np, respectively. Informally, in order for 
+
+x ∈ Xp+1 to be true, we must have correct binary classifications according to the path p from all prior classifiers, if any exist, and the correct binary classification for x, i.e. , 1, from the new classifier BC p.The intuition for x ∈ Xp+2 is similar except that in this case we require the opposite classification for x, i.e. , 2, from BC p. Assuming that |p| = k > 1 so p = p 0p1 . . . pk−1, the recursive definition of 
+
+Xp implies that Xp = {x ∈ X : BC p0 (x) = p 1, BC p0p1 (x) = p2, . . . , BC p0p1... pk−2 (x) = p k−1}, so determining if x lands in 
+
+Xp requires evaluating the classifications from all |p| − 1 = k − 1
+
+classifier models on the path from the root node N0 to Np. The computational implications of these evaluations on the choice of the parameter nnode are discussed in Section 6. Returning to the example of Figure 1 (b) clarifies the necessity of these evaluations. Figure 1 (b) shows only one binary partition, so the corresponding binary tree has two levels and three nodes 
+
+N0, N01 and N02 . Supposing N02 corresponded to the yellow inner subregion, if N02 were itself split, resulting in child nodes N021 and 
+
+N022 (and resulting in a binary tree exactly as shown in Figure 2), it is not possible that both new subregions X021 and X022 , if defined naïvely and non-recursively, would be proper subsets of X02 as required by a binary partitioning method. The necessary conditions 
+
+X021 , X 022 ⊆ X02 can only be enforced by requiring that both 
+
+BC 0 and BC 02 correctly classify x. More precisely, we require that 
+
+X021 := {x ∈ X : (BC 0(x) = 2) ∧ (BC 02 (x) = 1) } and X022 := 
+
+{x ∈ X : (BC 0(x) = 2) ∧ (BC 02 (x) = 2) }. Informally, first BC 0
+
+ensures that x is in X02 , and then BC 02 classifies x depending on where x falls within the partition of X02 , i.e. , either into X021 or 
+
+X022 .Now that it is clear how the classifiers are used to determine whether x ∈ Xp or x /∈ Xp, we can understand the penaliza-tion of αp when x /∈ Xp. The penalization relies on classifiers’ decision function dp : X → R, whose sign informs the classifi-cation of x ∈ X by BC p. An important property of dp used by TreeBO is that |dp(x)| increases for x further from the decision boundary. In this way, dp behaves like a signed distance function (SDF) which can be used to construct an informative penalty for 
+
+αp. In particular, consider the condition defining the set Xp, i.e. ,
+
+BC p0 (x) = p 1, BC p0p1 (x) = p 2, . . . , BC p0p1... pk−2 (x) = p k−1,and for any x ∈ X, let I stand for the set of paths of classifiers which incorrectly classify x. For example, considering the binary tree in Figure 2, if p = 021 then perhaps for some x ∈ X, BC 0(x) = 1 
+
+and BC 02 (x) = 2 , so I = {0, 02 } because neither model gave the sought prediction. Furthermore let dp represent the decision function corresponding to BC p for any path p. If EI p stands for EI for node Np, then we define αp : X → R by 
+
+αp(x) := 
+
+(
+
+EI p(x) if I = ∅,
+
+− max π∈I|dπ(x)| otherwise . (1) If x ∈ Xp then αp is unpenalized. However, if x /∈ Xp then the boundary defining Xp may be set by more than one classifier, so we consider all misclassifications of x and then set the penalty for αp
+
+to be the “most wrong” decision value. Because decision functions behave like SDFs, this definition encourages larger penalties for x
+
+further away from Xp, which encourages the optimizer to stay within the subregion or move closer if outside the subregion. For details of the specific binary classifier and hence decision function used in TreeBO, see Section 3.1. Returning to Algorithm 2, having defined αp in line 14 the algo-rithm then attempts to generate starting points via GenAcqPoints () 
+
+in line 16 for the optimizer that lie entirely within Xp. Because 
+
+Xp may be arbitrarily shaped and/or a small subset of X, this is not trivial; GenAcqPoints () is described in Algorithm 4. With αp
+
+defined and starting points generated, αp is maximized in line 18, after which the node Np is updated in line 20. With the foregoing we can describe the mechanics of the par-titioning process, as promised earlier in Section 3, by describing 
+
+SplitNode () . As mentioned in Section 1, the partitioning proceeds via clustering and flexible binary classification. In line 24 cluster-ing is performed on the node data by Partitioning Around Medoids (PAM) [13, Ch. 2], which produces binary labels Lp for the node data Dp. PAM, also known as k-medoids clustering, is similar to the better-known k-means clustering, but the former uses genuine data as cluster centers (medoids), whereas the latter uses the averages of cluster points as cluster centers (centroids), which are not neces-sarily near any observation of f . In qualitative testing, k-medoids produced better partitions than k-means. We emphasize that the clustering is performed in Rd+1 . As an example, in Figure 1 (b) the clustering—which colors ( i.e. , labels) the points yellow or black—was performed in R3, not R2. Because the clustering considers both the x ∈ X ⊊ R d and f (x) ∈ R
+
+components of elements of Dp, the node data are clustered based on proximity within X and also similarity of values of f . This is desirable given the goal described in Section 1 of locating a neighborhood of the arguments of the minima of f .With binary labels Lp for the node data Dp, SplitNode () pro-ceeds to fit the flexible binary classifier BC p using the labeled dataset in line 26. Because the classifier is a function from X to {1, 2}, it is fit using only the x components of Dp along with the binary labels. The newly created BC p is added to the node in line 28 because as described earlier in Section 3, classifier predictions from non-leaf nodes determine whether an arbitrary x ∈ X falls within a leaf node. The classifier BC p effectively partitions Np, and indeed X, through its classifications. This is indicated in the example of Figure 1 (b) by coloring the domain. The data Dp of node Np are partitioned for the datasets Dp+1 and Dp+2 of the new child nodes Np+1 and Np+2 in lines 30–31 according to the predictions of BC p. Thus, in Figure 1 (b) the points in the yellow inner subregion (and their values of f )are apportioned to the dataset for one of the new child nodes, and the points in the outer purple subregion (and their values of f ) are apportioned to the dataset for the other new child node. The function 
+
+SplitNodes () initializes the child nodes in lines 33–34 and returns them in line 36. We claimed in Section 1 that TreeBO has only one additional tunable hyperparameter compared to standard Bayesian optimization: 
+
+nnode . This is so because even though clustering and classification have their own hyperparameters, these are fixed for the former, and tuned internally by cross-validation as part of Class () in line 26 for the latter. See Section B in the supplement for details. We next describe Algorithm 3, which defines the procedure 
+
+BorrowData () called as part of UpdateNode () in Algorithm 2. As mentioned when describing UpdateNode () , BorrowData () is only called for non-root leaf nodes having fewer than nnode data points. In practice this means that BorrowData () is not called until the root node of the binary tree is split, which occurs when the total number of observations gathered reaches nnode .5Algorithm 2 UpdateNode () and SplitNode ()  
+
+> 1:
+
+# Define procedure to update a leaf node  
+
+> 2:
+
+def UpdateNode (node: Np): 
+
+> 3:
+
+# Only consider borrowing data for non-root node  
+
+> 4:
+
+if !IsRootNode (N p) then  
+
+> 5:
+
+# Check if node has fewer than nnode points  
+
+> 6:
+
+if #D p < n node then  
+
+> 7:
+
+# If yes, borrow data from other leaf nodes  
+
+> 8:
+
+Dp ← BorrowData (N p) 
+
+> 9:
+
+end if  
+
+> 10:
+
+end if  
+
+> 11:
+
+# Fit GP model for node  
+
+> 12:
+
+GP p ← FitGP (D p) 
+
+> 13:
+
+# Define acquisition function for node  
+
+> 14:
+
+αp ← DefineEI (GP p) 
+
+> 15:
+
+# Generate starting points to maximize EI  
+
+> 16:
+
+Sp ← GenAcqPoints (N p) 
+
+> 17:
+
+# Maximize EI for node  
+
+> 18:
+
+(x∗
+
+> p
+
+, α p(x∗
+
+> p
+
+)) ← MaximizeEI (αp, Sp) 
+
+> 19:
+
+# Update node with new GP model and EI data  
+
+> 20:
+
+Np ← (GP p, α p, x∗
+
+> p
+
+, α p(x∗
+
+> p
+
+))  
+
+> 21:
+
+# Define procedure to split a leaf node  
+
+> 22:
+
+def SplitNode (node: Np): 
+
+> 23:
+
+# Generate labels for node data by clustering  
+
+> 24:
+
+Lp ← Clust (D p) 
+
+> 25:
+
+# Fit binary classifier using labeled data  
+
+> 26:
+
+BC p ← Class (D p, Lp) 
+
+> 27:
+
+# Add classifier to node  
+
+> 28:
+
+Np ← (BC p) 
+
+> 29:
+
+# Partition node data using classifications  
+
+> 30:
+
+Dp+1 ← { (x, f (x)) ∈ Dp : BC p(x) = 1 } 
+
+> 31:
+
+Dp+2 ← { (x, f (x)) ∈ Dp : BC p(x) = 2 } 
+
+> 32:
+
+# Initialize child nodes  
+
+> 33:
+
+Np+1 ← (D p+1 ) 
+
+> 34:
+
+Np+2 ← (D p+2 ) 
+
+> 35:
+
+# Return child nodes  
+
+> 36:
+
+return Np+1 , Np+2 
+
+As previously mentioned in Section 3, BorrowData () improves the balance of the GP model for node Np between globally and locally modeling f . In line 4 the number of points nadd to borrow for fitting the model GP p is calculated. After gathering the data points from all the other leaf nodes in lines 6–11 and storing them in the variable Dother , in line 13 the shortest distances from each of the points in Dother to any of the points in Dp are computed and stored in the variable ∆. These distances are computed in Rd, i.e. , using only the x components of the elements of Dother and Dp. Since the goal of BorrowData () is to add nearby points in X to the points of Np when fitting the GP model for Np, the f (x) components of the elements of Dother and Dp are not relevant here. The number of elements ( i.e. , distances) in ∆ is the same as the number of elements of Dother . In line 15 the indices of the nadd 
+
+smallest of these distances are computed by IndicesofSmallest () ,which correspond to the indices of the nadd elements of Dother that are closest to Dp. These elements of Dother are selected in line 15 and augment Dp in line 17. The augmented data Daug , containing the original #D p points of node Np and the closest nadd points from the other leaf nodes, for a total of nnode points, are returned in line 19. Note that Daug contains the (x, f (x)) components of elements of Dp
+
+Algorithm 3 Borrow data for GP model fit  
+
+> 1:
+
+# Define procedure to borrow leaf node data  
+
+> 2:
+
+def BorrowData (node: Np) 
+
+> 3:
+
+# Calculate how many points to borrow  
+
+> 4:
+
+nadd ← nnode − #D p 
+
+> 5:
+
+# Initialize variable for points in all other leaf nodes  
+
+> 6:
+
+Dother ← ∅  
+
+> 7:
+
+# Loop over other leaf-node paths  
+
+> 8:
+
+for π in P \ { p} do  
+
+> 9:
+
+# Accumulate points from other leaf nodes  
+
+> 10:
+
+Dother ← Dother ∪ Dπ 
+
+> 11:
+
+end for  
+
+> 12:
+
+# Compute distances to nearest node point  
+
+> 13:
+
+∆ ← DistancesToNearest (D p, Dother ) 
+
+> 14:
+
+# Bind the nadd nearest points  
+
+> 15:
+
+Dadd ← Dother [IndicesofSmallest (∆ , n add ), :]  
+
+> 16:
+
+# Borrow the data  
+
+> 17:
+
+Daug ← Dp ∪ Dadd  
+
+> 18:
+
+# Return augmented data  
+
+> 19:
+
+return Daug 
+
+and Dadd in order to fit the GP model GP p in line 12 of Algorithm 2. We claimed in Section 1 that TreeBO has constant complexity when training the GP models for f , a significant reduction from the cubic complexity of standard Bayesian optimization. This is because once the total number of observations of f gathered reaches 
+
+nnode , that many points are used to fit every model for f thereafter. Similarly, computing the predictive mean and variance at a candidate point x during EI maximization is constant once nnode observations have been reached, versus the standard quadratic complexity in the number of training points for the variance. For the complexity analy-sis of TreeBO itself, see Section A in the supplement. These changes can reduce runtime by several days for especially challenging opti-mization problems; see Section 4. To conclude Section 3 we describe Algorithm 4, which defines the procedures GenAcqPoints () and GenColumn () that generate starting points for maximizing αp in lines 16 and 18 of Algorithm 2, respectively. A good set of starting points ought to be within Xp and hopefully near the arguments of the maxima of αp. As mentioned earlier in Section 3, this is not trivial. Naïvely, Figure 1 (b) suggests that it is sufficient to generate potential starting points randomly within the domain of f and keep those in Xp. (By definition in (1), 
+
+x ∈ Xp if and only if αp(x) ≥ 0.) This is unsatisfactory for two reasons. First, as Algorithm 1 proceeds the binary tree becomes deeper and the subregions become smaller. Second is the curse of dimensionality. Empirically, for d = 10 , millions of samples generated naïvely may be insufficient to gather, say, 1, 000 starting points in a small subregion. Another approach is to sample near pre-existing observations x ∈ Xp. However, this is also unsatisfactory because while such points might be more likely to lie within the subregion, their value according to αp is nearly zero, making them poor starting points for the purpose of maximizing αp.From this discussion there is a clear need for a technique to gen-erate starting points likely to fall within Xp yet some distance from pre-existing observations, so they could be near points with large values of αp. From the intuition that large EI values often occur between pre-existing observations, Algorithm 4 takes inspiration from Latin Hypercube Sampling (LHS) [3]. Unlike LHS, however, 6Algorithm 4 Generate starting points for MaximizeEI ()  
+
+> 1:
+
+# Define procedure to generate starting points  
+
+> 2:
+
+def GenAcqPoints (node: Np) 
+
+> 3:
+
+# Loop over columns (coordinates) of x values  
+
+> 4:
+
+for i = 1 , . . . , d do  
+
+> 5:
+
+# Select ith column of x matrix  
+
+> 6:
+
+xi ← xmatrix [: , i ] 
+
+> 7:
+
+# Generate ith column of starting points  
+
+> 8:
+
+ci ← GenColumn (xi) 
+
+> 9:
+
+end for  
+
+> 10:
+
+# Return starting points  
+
+> 11:
+
+return (c1, . . . , cd) 
+
+> 12:
+
+# Define procedure to generate ith column  
+
+> 13:
+
+def GenColumn (column: xi) 
+
+> 14:
+
+# Sort the column  
+
+> 15:
+
+xi ← Sort (xi) 
+
+> 16:
+
+# Loop over adjacent elements in sorted column  
+
+> 17:
+
+for j = 1 , . . . , Len (xi) − 1 do  
+
+> 18:
+
+# Draw uniformly between adjacent elements  
+
+> 19:
+
+sj ← Unif (xij , x ij+1 ) 
+
+> 20:
+
+end for  
+
+> 21:
+
+# Randomly permute the samples  
+
+> 22:
+
+s ← Permute (s1, . . . , s Len (xi)−1) 
+
+> 23:
+
+# Return the permuted samples  
+
+> 24:
+
+return s
+
+which draws uniformly within quantiles of [0 , 1] , Algorithm 4 works with the matrix of x points of Np, where rows are observations and columns are their coordinates. Algorithm 4 proceeds column-wise, and GenAcqPoints () in lines 2–11 gathers the columns re-turned by GenColumn () in lines 13–24. Given a column xi of the matrix, GenColumn () sorts the column in line 15, draws uni-formly between adjacent entries in the sorted column in lines 17–20 and then permutes the samples in line 22 before returning them to 
+
+GenAcqPoints () in line 24. 
+
+# 3.1 Choice of classifier 
+
+To this point, our description of TreeBO has supposed a general binary classifier BC . We use support vector machine (SVM) models in particular. In this section we briefly describe details related to this choice. For flexible partitioning we use SVM models with a Gaussian kernel K : X × X → R given by K(x, x′) = exp( −γ∥x − x′∥2),where γ ∈ R>0 is a hyperparameter affecting the curvature of the decision boundary of the fitted model. To describe the decision function d : X → R in this case we recall details from [18, Chs. 5–6]. Consider the example of Figure 1 (b) again, supposing we have data 
+
+{(x1, l 1), . . . , (xn, l n)} where l1, . . . , l n ∈ {− 1, 1}. Fitting the model SVM 0 gives rise to coefficients λ1, . . . , λ n and the quantity 
+
+b := li − Pnj=1 λj lj K(xj , xi) for any (xi, l i) where 0 < λ i < C 
+
+and C is a regularization parameter. The model’s decision function is then d0(x) := Pnj=1 λj lj K(xj , x) + b, the sign of which informs the classification of x by SVM 0. The decision function is such that 
+
+d0(x) < 0 for x ∈ X01 and d0(x′) > 0 for x′ ∈ X \ X01 = X02 
+
+(or vice-versa). Furthermore |d0(x)| increases locally for x further away from the decision boundary. 
+
+# 4 Empirical tests 
+
+The central claim of Section 1 is that TreeBO ameliorates the com-putational intractability of standard Bayesian optimization and im-proves the local-global balance of modeling f , reducing runtimes and improving performance compared to the standard. To demonstrate these claims we compare TreeBO with the Bayesian optimization R library DiceOptim [20] on a diverse set of 7 test functions in medium and high dimensions. The Ackley, Hartmann, Levy, Michalewicz, Rastrigin and Schwefel functions come from the Virtual Library of Simulation Experiments [23], and a seventh, high-dimensional test derives from an automotive mass-minimization problem from Gen-eral Motors [10]. The latter is colloquially known as the MOPTA08 Jones Benchmark [9, 10]; we refer to it as the Automotive problem. The favorable results we describe in this section are not cherry-picked from a larger set of tests. These functions provide a broad set of challenges for any optimiza-tion method: some are additive (Michalewicz, Rastrigin, Schwefel), some are non-additive (Ackley, Hartmann, Levy), some are highly os-cillatory and multimodal (Michalewicz, Rastrigin, Schwefel), some are highly misleading over most of their domain (Ackley), most are very nonlinear, and the characteristics of some (Hartmann and Automotive) are sufficiently obscure as to be black boxes. We present two tests here, but all tests are presented in Section D in the supplement. The Rastrigin function f : [ −5.12 , 5.12] d → R
+
+is defined by f (x) = 10 d + Pdi=1 (x2 
+
+> i
+
+− 10 cos(2 πx i)) . A surface plot for d = 2 is given in Figure 1 (a). The Automotive problem is originally a linear function g : [0 , 1] 124 → R with 68 nonlinear inequality constraints hi : [0 , 1] 124 → R for i = 1 , . . . , 68 such that 
+
+hi(x) ≤ 0 is required for all i. Because TreeBO is defined for uncon-strained optimization, we consider instead g′ : [0 , 1] 124 → R given by g′(x) = g(x) + P68  
+
+> i=1
+
+hi(x)2 · [hi(x) > 0] , where the second factor in each summand is the Iverson bracket. This modification nonlinearizes the Automotive problem by adding the sum of the squared violated constraints. As mentioned, the characteristics of g′
+
+are unknown. One hundred repeats were performed for all tests except Auto-motive, which received only 10 due to their long duration. Many repeats over different sets of starting function evaluations ensure that our favorable results are not due to a small number of selectively chosen starting points. Every repeat was paired, with both TreeBO and DiceOptim starting from the the same ninit initial points and random seed. All tests except Schwefel used the power-exponential kernel; the latter used the Matérn kernel for numerical reasons. Computations proceeded on the Cedar and Fir clusters at Simon Fraser University and the Sockeye cluster at the University of British Columbia. One CPU core and 4 GB RAM were used per method, per repeat. Because DiceOptim is an R package, TreeBO was also written in R [21]. This allowed us to use identical methods and settings to fit GP models for both methods, promoting comparison. DiceOptim uses genetic optimization (with a quasi-Newton step) to maximize the acquisition function [17]. TreeBO originally followed suit, but after significant testing we found that particle-swarm optimization (also with a quasi-Newton step) of the acquisition function improved optimization of the objective function [2]. Our implementation of the latter is altered to accept bespoke starting points, as described in Section 3 and Algorithm 4. Comparison between DiceOptim and the Python library BoTorch [1] found the latter uncompetitive, so we did not pursue it further. 7All test functions are written in R [21] except Automotive, which is written in MATLAB [24]. In order to run DiceOptim and TreeBO as R programs and evaluate Automotive as a MATLAB program, we wrote a simple system-level interface to pass information to and from MATLAB. Table 1 summarizes the configurations and results for all 7 tests. The Ackley, Levy, Michalewicz, Rastrigin and Schwefel functions are defined for arbitrary d, whereas Hartmann and Automotive are defined for d = 6 and d = 124 , respectively. The number of starting points ninit follows the informal rule that ninit = 10 d [16], except for Automotive for which ninit = d + 1 , the smallest number to avoid errors when fitting GP models ( ninit = 10 d would be excessive if only some of the 124 inputs have dominant effects). Starting points were generated via Latin hypercube space-filling designs [3, 12]. The number of observations of f to acquire after the ninit obser-vations is given in the ntotal − ninit column of Table 1. The choices of ntotal for each test are in keeping with the theme from Section 1 of objective functions that are expensive to evaluate, and to keep runtimes manageable. To promote comparison, we equated ninit for both methods in each test, and similarly for ntotal , but the reduced complexity of TreeBO would facilitate larger ninit and/or ntotal if so desired by the practitioner. Mean runtimes ranged from a few hours for the Hartmann tests to 14 days for the DiceOptim Automotive tests. Higher-dimensional tests are presumably more challenging and hence require more observations. See Section 6 for discussion of the effect of ntotal on the performance of TreeBO. The nnode parameter, mentioned in Section 3 as the maximum number of observations for a leaf node before a split is attempted, is set to 50 –75% of ntotal . This parameter was not tuned for different tests but was set to a large fraction of ntotal to limit the growth of the binary tree. We observed deleterious effects otherwise; see Section 6 for discussion. The columns DiceOptim avg. min. and TreeBO avg. min. show the average over all runs of the smallest objective-function value observed. The entries in the latter column are bold because in all tests TreeBO prevails over DiceOptim. Hence, in all 7 tests TreeBO has superior optimization performance, on average, compared to DiceOptim: this substantiates our claim from Section 1 that TreeBO is better balanced between local and global modeling aspects than standard Bayesian optimization, and hence finds smaller values of varied objective functions across a range of dimensionalities. The improvements of TreeBO compared to DiceOptim are extreme for the Ackley function; significant for the Levy, Rastrigin and Schwefel functions; and more minor for the Hartmann, Michalewicz and Automotive functions. The global minima, so far as they are known, are given in the final column. Despite converting the original constrained Automotive test to an unconstrained test, we nevertheless recorded the number of con-straints violated, and the sum of the squared violations, at the min-imum observed objective-function value for both DiceOptim and TreeBO. For DiceOptim, the number of violated constraints was between 40 and 47 , and the sums of the squared violations were between 5.91 and 7.98 . For TreeBO, the corresponding figures were 
+
+40 and 47 , and 4.72 and 10 .16 .To further substantiate our claims from Section 1 beyond means, we provide distributional evidence in side-by-side boxplots of the minimum observed objective-function values over all repeats at several points during the optimization process. This is shown in Figure 3 for the Ackley test and Figure 4 for the Automotive test. Figures for all tests are in Section E in the supplement. These figures begin with 0 subsequent observations on the x-axis, for which both methods start with the same ninit evaluations for any repeat, hence the boxplots at 0 subsequent observations are identical. For the Ackley test in Figure 3, from 0 through 75 subsequent ob-servations the performance of TreeBO is comparable to DiceOptim. After 100 subsequent observations ( 160 total observations), however, the median and 75 th percentile for TreeBO have significantly de-creased relative to DiceOptim, and by 140 subsequent observations (200 total observations) the boxplot for TreeBO is so compressed near 0 as to be nearly invisible. In contrast, the 75 th percentile for DiceOptim is approximately 8. We attribute this improvement to the binary partitioning of TreeBO promoting a better balance of ex-ploration and exploitation when searching for the region of rapid de-crease near the origin. (For a surface plot of the Ackley function, see 
+
+https://www.sfu.ca/~ssurjano/ackley.html .) The Ackley function is relatively flat over most of its domain, so DiceOptim’s single, global GP model and acquisition-function optimization may struggle to locate the promising region near the origin. In contrast, TreeBO fits separate GP models for distinct subregions of the domain and thus may acquire multiple perspectives of the domain through the different GP models, increasing the chance of finding the global minimum. 0 25 50 75 100 125 140 Subsequent observations 
+
+0
+
+5
+
+10 
+
+15 
+
+20 
+
+> Best objective function value
+
+# Ackley test fun., best obj.-fun. value 
+
+TreeBO DiceOptim 
+
+Figure 3: Side-by-side boxplots of the results for the Ackley test function in 6 dimensions. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 100 paired runs. At zero subsequent observa-tions the distributions are identical for both methods, because both methods are given identical sets of 60 initial points for each paired run. The results show that DiceOptim is frequently unable to home in on a neighborhood of the arguments of the minima, where the objective-function values significantly decrease towards the global minimum, zero. In contrast, TreeBO almost always discovers the global minimum, as evidenced by the near disappearance of the red boxplot after 140 subsequent observations. For the high-dimensional Automotive test, as a black box we cannot speculate about how DiceOptim and TreeBO differ in their approaches. However, we again see that TreeBO performs worse that DiceOptim through 300 subsequent observations ( 425 total observations), beyond which TreeBO improves relatively so that after 475 subsequent observations ( 600 total observations), the 75 th 
+
+percentile of TreeBO is below the 25 th percentile of DiceOptim. 8Table 1: Test Results for TreeBO and DiceOptim. TreeBO Obtains Lower Average Values for all Tests. 
+
+Test function Dim. Runs ninit ntotal − ninit nnode DiceOptim avg. min. TreeBO avg. min. Global min. 
+
+Ackley 6 100 60 140 100 3.829 0.657 0
+
+Hartmann 6 100 60 140 100 −3.017 −3.024 −3.042 
+
+Rastrigin 6 100 60 340 300 1.837 1.486 0
+
+Schwefel 6 100 60 340 300 280 .473 203 .517 0
+
+Levy 10 100 100 350 350 0.486 0.292 0
+
+Michalewicz 10 100 100 350 350 −9.109 −9.151 −9.660 
+
+Automotive 124 10 125 475 375 197 .945 194 .073 Unknown 0 75 150 225 300 375 450 475 Subsequent observations 
+
+200 
+
+220 
+
+240 
+
+260 
+
+280 
+
+> Best objective function value
+
+# Automotive test fun., best obj.-fun. value 
+
+TreeBO DiceOptim 
+
+Figure 4: Side-by-side boxplots of the results for the Automotive test function in 124 dimensions. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot repre-sents the distribution over all 10 paired runs. At zero subsequent observations the distributions are identical for both methods, be-cause both methods are given identical sets of 125 initial points for each paired run. The results show that DiceOptim leads during the first half of the optimization process, after which TreeBO gradually gains ground and eventually finishes ahead. In addition to superior optimization performance, the mean runtime for TreeBO was approx-imately 9 days, compared to approximately 14 days for DiceOptim. This reduction in runtime is primarily because TreeBO fits Gaussian process models for f with at most 375 data points, whereas DiceOp-tim fits models with all available data points—eventually 600 .The plots for the Michalewicz, Rastrigin and Hartmann tests show similar trends: TreeBO initially performs worse than DiceOptim but eventually surpasses the latter. We discuss possible implications of this phenomenon for TreeBO as part of our discussion of its potential shortcomings in Section 6. 
+
+# 5 Related work 
+
+Of the two shortcomings of standard Bayesian optimization de-scribed in Section 1, research on the first, computational intractabil-ity, is more plentiful than the second, balancing local and global aspects of modeling f . One strain of research involves approximat-ing the GP model to facilitate the acquisition of more observations of f , perhaps in the four or five figures or higher [8,15,29]. However, acquiring 10 ,000 observations or more is not in keeping with the theme of minimizing objective functions that are expensive to evalu-ate. Another not necessarily distinct strain focuses on optimization over high-dimensional spaces, i.e. , d ≥ 100 [5, 28, 31]. In contrast, our work demonstrates improvements relative to standard Bayesian optimization in both lower- and higher-dimensional settings. Because our work addresses the shortcomings of standard Bayesian optimization in Section 3 by partitioning the domain of f ,we focus on describing other research in the same vein. Li et al. [14] primarily inspire our partitioning method; in turn they draw from Wang et al. [27]. Both [14] and [27] focus solely on high-dimensional optimization, in contrast to our work. Both use k-means clustering with k = 2 to learn binary labels for the (x, f (x)) data pertaining to a node, whereas we use PAM [13, Ch. 2]. The labeled data are used to train an SVM model whose decision boundary partitions the node. Repeating this process constructs a binary tree. However, having partitioned the domain so, there remain many choices: 1) how and when to partition a node; 2) if and when to re-construct the binary tree; 3) how to select a node ( i.e. , subregion) in which to observe f ; and 4) at which point within the selected node to observe 
+
+f . TreeBO differs from [14] and [27] at each step. First, [27] sets an upper bound nmax on the number of observations of f within a node; once exceeded, the node is split. Wang et al. [27] also split when the regret in a node reaches a “plateau”; how to reconcile this with nmax is not clear. Li et al. [14] split nodes as part of their strategy of rebuilding the entire tree at every iteration (discussed below). In contrast, in TreeBO a node split is attempted once it contains more than nnode observations. In addition, by augmenting the node data with nearby points to fit the GP model, we fit all models with nnode observations once the total number of observations gathered is at least nnode , irrespective of the partition of observations when splitting a node. Second, Li et al. [14] reconstruct their tree from scratch at ev-ery iteration, varying the depth based on recent performance of the optimization process. If the smallest value of f observed has re-cently been decreasing, tree depth is reduced to promote exploration. Conversely, if it has not been decreasing, tree depth is increased to promote exploitation. This requires a parameter for the maximum tree depth. Our method never rebuilds the binary tree, avoiding extra parameters. Third, to select a node both [14] and [27] use Upper Confidence Bound (UCB) techniques, which come from multi-armed bandits and require a parameter to control the exploration-exploitation trade-off. Li et al. [14] use this as input to calculate a “partition score” for each leaf node, which requires applying a parameter-dependent softmax function to the UCB scores. In contrast, TreeBO requires no additional parameters for node selection, only optimizing the acquisition function for each node and then selecting the node with the highest such value. 9Fourth, to select a point within the selected node, [27] modifies the trust region approach of [5] because the nodes are not box-shaped. Li et al. [14] weight acquisition-function values by the partition score to try to incorporate global information in the local search. In contrast, TreeBO accomplishes both node selection and point selection therein by the same means: optimize each acquisition function over its subregion using the global f min , select the node with the highest such value and observe f at the maximizing point. This is a more natural and parsimonious adaptation of standard Bayesian optimization to the problem of selecting nodes and observations. Neither [14] nor [27] share their code, precluding comparisons. Instead, in Section 4 we compare TreeBO to the standard Bayesian optimization library DiceOptim [20] in a variety of settings, both low- and high-dimensional. 
+
+# 6 Conclusion 
+
+Bayesian optimization in its standard form is an effective and widely used technique for minimizing objective functions f about which little is known and whose evaluations are expensive. Its compu-tational limitation is that updating the GP model for f has cubic complexity in the number of observations gathered, which eventually renders the method intractable. Moreover, Bayesian optimization needs to balance local and global priorities in modeling f , and its approach of fitting a single global model is not necessarily opti-mal. TreeBO addresses these shortcomings through flexible, re-cursive, binary partitioning of the domain of f , creating a binary tree whose leaf nodes represent candidate subregions in which to acquire the next observation. Because there is a limit on the number of observations in any leaf node, the computation required to fit a model for f is eventually constant, which ameliorates the first shortcoming of standard Bayesian optimization. Furthermore each leaf node has its own model, which provides multiple perspectives on the objective function and improves the local-global balance in modeling f , thereby ameliorating the second shortcoming. These benefits are demonstrated through paired comparisons of TreeBO with DiceOptim over hundreds of runs on seven difficult tests with varying characteristics, including a high-dimensional, black-box au-tomotive mass-minimization problem, over all of which TreeBO bests DiceOptim. We now discuss observed limitations of TreeBO and potential pitfalls. First, we mentioned in Section 3 that the nnode parameter is typically set to 50 –75% of ntotal , in particular to limit the growth of the binary tree. A small value of nnode leads to more node splits and a deeper binary tree, which has multiple negative effects. First, each node split incurs the computational costs of calling SplitNode () 
+
+from Algorithm 2. Moreover, partitions are not guaranteed to be as effective as shown in Figure 1 (b), so a deeper binary tree increases the chance of dubious or harmful node splits. A deeper binary tree also implies smaller subregions of X for the leaf nodes, hence greater difficulty generating starting points for the optimization of 
+
+αp as in Algorithm 4, as discussed in Section 3. A small nnode 
+
+value affects the optimization of αp in other ways as well. We mentioned in Section 3 that if |p| = k then every evaluation of αp,both when generating starting points as in Algorithm 4 and when calling MaximizeEI () in Algorithm 2, requires the evaluation of 
+
+k − 1 classifier models. For larger k we have observed significantly slower optimization of αp, which counteracts the runtime reductions from fitting GP models more rapidly. We mentioned in Section 4 that we did not meaningfully tune nnode so we cannot say how a small nnode value affects optimization performance. Another potential limitation of TreeBO concerns the definition of 
+
+αp in (1). By definition, αp is negative for x /∈ Xp and non-negative for x ∈ Xp, and so may not be continuous at the boundary of Xp.The penalty for αp was chosen to uphold the integrity of the binary partitioning process, since points outside Xp must be inadmissible when acquiring the next observation of f within Xp. A hypotheti-cal alternative α′
+
+> p
+
+(x) := EI p(x) − p(x), where p : X → R≥0 is a continuous penalty function such that p(x) = 0 for x ∈ Xp while 
+
+p(x) approaches zero as x approaches the boundary of Xp from the outside, would be continuous as the difference of two continuous functions. However, EI may grow for x further away from Xp, i.e. ,further away from observations in Xp, because EI can value explo-ration far from observations. If EI p(x) > p (x) for x /∈ Xp then 
+
+α′
+
+> p
+
+(x) > 0 for such x and it is possible that MaximizeEI () would find a larger value of α′ 
+
+> p
+
+outside Xp than inside Xp, which would destroy the integrity of the partitioning of X. The current definition of αp in (1) makes such a scenario very unlikely, at the price of discontinuity at the boundary of Xp. In earlier versions of TreeBO, on rare occasions MaximizeEI () would throw an error, perhaps due to this discontinuity. We solved this by wrapping MaximizeEI () in a tryCatch () block where the block handling the error reattempts the optimization without the quasi-Newton component mentioned in Section 4. On a related topic, we mentioned in Section 3 that dp
+
+behaves like an SDF [19, Ch. 2]. However, dp as in Section 3.1 is clearly not a true SDF since lim ∥x∥→∞ dp(x) = b. SDFs are well known in the computer graphics community, but it is not clear to us whether it would be possible, much less beneficial, to use a true SDF in place of the ersatz SDF dp.Reductions in runtime of a magnitude observed for Automotive for TreeBO (9 days) compared to DiceOptim (14 days) will not always manifest, especially for smaller problems requiring fewer observa-tions. See Section C in the supplement. Another potential limitation of TreeBO concerns the ntotal parameter. In particular, based on our tests TreeBO may be more likely to outperform DiceOptim for larger 
+
+ntotal . Again see Section C in the supplement for a brief discussion of this phenomenon. A computational oddity of TreeBO mentioned in Section 3 is that an attempted node split can fail. This can occur for multiple reasons. TreeBO puts few restrictions on the clustering process, so no effort is made to control the balance of the resulting binary labels. If the two classes are imbalanced, during the ensuing classifier training the training set may consist of points from one class, which causes 
+
+SplitNode () from Algorithm 2 to throw an error. Another reason a node split may fail concerns the allocation of points to the two child nodes. As with clustering, TreeBO puts few restrictions on the classification process, so little effort is made to control the allotment of points to the two child nodes. If one child node receives d or fewer points, SplitNode () has been designed to refuse to split the node because FitGP () from [22] throws an error when attempting to fit a GP model with d or fewer observations. This problem occurred before the addition of BorrowData () from Algorithm 3 to TreeBO, which ensures that GP models for all non-root leaf nodes are fit with exactly nnode observations. Since this addition it is possible that the refusal logic can now be removed from SplitNode () without issue, but this has not been investigated. Another reason a node split could fail, earlier in the development of TreeBO, is that the genetic optimizer from [17] would throw an error if the x components of observations given to one child node had very nearly the same 10 coordinates for one component of x. Again, such problems can arise because of the flexibility of the partitioning process and the fact that we do not attempt to control the process tightly. As with the previous problem, this issue arose before switching from genetic optimization to particle-swarm optimization from [2], so it’s again possible that this is not an issue for the particle-swarm optimizer, but as before we have not investigated. The development of TreeBO opens avenues for further research and development that we now discuss. These avenues can be cate-gorized as either improvements in the implementation of TreeBO or improvements in its design. We begin with the former category. First, further reduction in runtime could be obtained by parallelizing the initialization of the two child nodes via UpdateNode () in Al-gorithm 1, assuming additional computing resources are available. A second, more complicated optimization would be to parallelize the calls to the binary classifiers that are required as part of the definition of αp, described in Section 3. The implementation of TreeBO has emphasized correctness, not optimization, so further gains may be possible. In the latter category, it is possible that a more sophisticated definition of αp in (1) could maintain the integrity of the partitioning process while also achieving continuity of αp at the boundary of Xp. This might improve the maximization of αp;on the other hand one would hope that the optimization proceeds mostly or entirely within Xp, in which case the behavior of αp at or outside the boundary of Xp would be unimportant. Without detailed knowledge of how optimization of αp proceeds, it’s not possible to determine a priori the impact of a continuous modification of αp.Another possibility is whether the optimizer used for αp can be mod-ified to work more naturally over the arbitrarily shaped subregions produced by TreeBO [4]. Optimizers are frequently written to work over a Cartesian product of intervals like X, not arbitrarily shaped subregions. Another aspect of TreeBO that deserves scrutiny is the balance between x and f (x) when clustering the (x, f (x)) pairs. As de-scribed in Section 3 this clustering occurs in Rd+1 and incorporates information on the location of observations within X and their corre-sponding objective-function values. Prioritizing these two pieces of information is presumably important for the quality of the clustering and hence the partitioning. The current form of clustering is subject not only to changes in d but also changes in the units of measure-ment for f (and indeed x). For d = 2 , the relative weight of f in the clustering is 1/3, whereas for d = 99 the relative weight is 1/100 .We attempted to counteract this by replicating f (x) an additional 
+
+d − 1 times in the vector (x, f (x)) , so that irrespective of d both the 
+
+x and f (x) components have equal weight in the clustering. Based on non-exhaustive testing this worsened optimization performance. Another possibility would be to introduce another hyperparameter 
+
+λ > 0 and cluster the vectors (x, λf (x)) . This has the disadvan-tages of lacking a priori guidance for setting λ, requiring tuning, and increasing the complexity of TreeBO. Regarding sensitivity to changes in units of measurement, we have no suggestions. More generally, it is interesting to note that there is no sharing of information between the covariance function for the GP model as described in Section 2 and the Gaussian kernel for the SVM as described in Section 3.1. The two kernels function completely independently. We briefly explored sharing information from the former with the latter, for example using the GP kernel for the SVM, but preliminary results were so poor that we abandoned the idea. If part of the strength of TreeBO results from the independence of the binary partitioning process from the GP model, this may imply poor quality of the GP models of f in general. To the extent that poor models for f are a problem in Bayesian optimization, possible steps toward a solution are unclear. This research was supported by the computational resources and services provided by the BC DRI Group and the Digital Re-search Alliance of Canada (alliancecan.ca), Advanced Research Computing at the University of British Columbia, and also sup-ported by the Natural Sciences and Engineering Research Coun-cil of Canada (NSERC; funding reference numbers 566582609, RGPIN-2024-06474). Code and documentation are available at https://github.com/jsa378/bo_partition. 
+
+# References 
+
+[1] Maximilian Balandat, Brian Karrer, Daniel R. Jiang, Samuel Daulton, Benjamin Letham, Andrew Gordon Wilson, and Ey-tan Bakshy. BoTorch: A Framework for Efficient Monte-Carlo Bayesian Optimization. In Advances in Neural Information Processing Systems 33 , 2020. 7 [2] Claus Bendtsen. pso: Particle Swarm Optimization , 2022. R package version 1.0.4. 7, 11 [3] Rob Carnell. lhs: Latin Hypercube Samples , 2024. 6, 8 [4] Maurice Clerc. Standard particle swarm optimisation. HAL preprint hal-00764996 , 2012. 11 [5] David Eriksson, Michael Pearce, Jacob Gardner, Ryan D Turner, and Matthias Poloczek. Scalable global optimization via local Bayesian optimization. In Advances in Neural Infor-mation Processing Systems , 2019. 9, 10 [6] Roman Garnett. Bayesian Optimization . Cambridge University Press, 2023. 1, 2, 3 [7] Daniel Golovin, Benjamin Solnik, Subhodeep Moitra, Greg Kochanski, John Karro, and D. Sculley. Google Vizier: A service for black-box optimization. In Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining , 2017. 1 [8] Felix Jimenez and Matthias Katzfuss. Scalable Bayesian opti-mization using Vecchia approximations of Gaussian processes. In Proceedings of The 26th International Conference on Artifi-cial Intelligence and Statistics , 2023. 9 [9] Donald R Jones. Mopta 2008 benchmark, 2008. 7 [10] Donald R Jones. Benchmark problems for constrained global optimization with high-dimensional black-box functions, 2025. 7, 14 [11] Donald R Jones, Matthias Schonlau, and William J Welch. Efficient global optimization of expensive black-box functions. 
+
+Journal of Global optimization , 1998. 3 [12] Xiaomeng Ju and William J. Welch. EGO: Efficient Global Optimization , 2023. 8 [13] Leonard Kaufman and Peter J. Rousseeuw. Finding Groups in Data: An Introduction to Cluster Analysis . John Wiley & Sons, Inc., 1990. 5, 9, 13 11 [14] Wenxuan Li, Taiyi Wang, and Eiko Yoneki. Navigating in high-dimensional search space: A hierarchical Bayesian opti-mization approach. arXiv preprint arXiv:2410.23148 , 2024. 9, 10 [15] Haitao Liu, Yew-Soon Ong, Xiaobo Shen, and Jianfei Cai. When Gaussian process meets big data: A review of scalable gps. IEEE transactions on neural networks and learning sys-tems , 2020. 9 [16] Jason L Loeppky, Jerome Sacks, and William J Welch. Choos-ing the sample size of a computer experiment: A practical guide. Technometrics , 2009. 8 [17] Walter R. Mebane, Jr. and Jasjeet S. Sekhon. Genetic optimiza-tion using derivatives: The rgenoud package for R. Journal of Statistical Software , 2011. 7, 10 [18] Mehryar Mohri, Afshin Rostamizadeh, and Ameet Talwalkar. 
+
+Foundations of Machine Learning . MIT Press, 2 edition, 2018. 7[19] Stanley Osher and Ronald Fedkiw. Level Set Methods and Dy-namic Implicit Surfaces . Number 153 in Applied Mathematical Sciences. Springer, 2003. 10 [20] Victor Picheny, David Ginsbourger, and Olivier Roustant. 
+
+DiceOptim: Kriging-Based Optimization for Computer Ex-periments , 2025. 1, 3, 7, 10 [21] R Core Team. R: A Language and Environment for Statistical Computing . R Foundation for Statistical Computing, 2024. 3, 7, 8 [22] Olivier Roustant, David Ginsbourger, and Yves Deville. DiceK-riging, DiceOptim: Two R packages for the analysis of com-puter experiments by kriging-based metamodeling and opti-mization. Journal of Statistical Software , 2012. 3, 10 [23] Sonja Surjanovic and Derek Bingham. Virtual library of sim-ulation experiments: Test functions and datasets, 2013. 7, 14 [24] The MathWorks Inc. MATLAB , 2024. 8 [25] Sinnu Susan Thomas, Jacopo Palandri, Mohsen Lakehal-Ayat, Punarjay Chakravarty, Friedrich Wolf-Monheim, and Matthew B. Blaschko. Kinematics design of a MacPherson suspension architecture based on Bayesian optimization. IEEE Transactions on Cybernetics , 2023. 1 [26] Ryan Turner, David Eriksson, Michael McCourt, Juha Kiili, Eero Laaksonen, Zhen Xu, and Isabelle Guyon. Bayesian op-timization is superior to random search for machine learning hyperparameter tuning: Analysis of the black-box optimiza-tion challenge 2020. In Proceedings of the NeurIPS 2020 Competition and Demonstration Track , 2021. 1 [27] Linnan Wang, Rodrigo Fonseca, and Yuandong Tian. Learning search space partition for black-box optimization using Monte Carlo tree search. Advances in Neural Information Processing Systems , 2020. 9, 10 [28] Ziyu Wang, Frank Hutter, Masrour Zoghi, David Matheson, and Nando De Feitas. Bayesian optimization in a billion dimen-sions via random embeddings. Journal of Artificial Intelligence Research , 2016. 9 [29] Yunyue Wei, Vincent Zhuang, Saraswati Soedarmadji, and Yanan Sui. Scalable Bayesian optimization via focalized sparse Gaussian processes. In Advances in Neural Information Pro-cessing Systems , 2024. 9 [30] Aaron Wilson, Alan Fern, and Prasad Tadepalli. Using trajec-tory data to improve Bayesian optimization for reinforcement learning. Journal of Machine Learning Research , 2014. 1 [31] Juliusz Krzysztof Ziomek and Haitham Bou Ammar. Are ran-dom decompositions all we need in high dimensional Bayesian optimisation? In International Conference on Machine Learn-ing , 2023. 9 
+
+Jesse Schneider received the B.Sc. in Data Science and Business Analytics from the University of London in 2021, and the M.Sc. in Statistics from Simon Fraser University in 2023. Beginning that year, he is pursuing the Ph.D. in Statistics at the University of British Columbia, where his research is focused on Bayesian optimization. Please see https://jesse-schneider.com for a complete list of publications. 
+
+William J. Welch received the B.Sc. degree in Management Sci-ences from Loughborough University, UK, in 1977 and the M.Sc. (Statistics) and Ph.D. degrees (Mathematics) from Imperial College, London in 1978 and 1981, respectively. After working with British Telecom, he was an Assistant Professor with the University of British Columbia (UBC), then a Visiting Assistant Professor and Research Associate at the University of Illinois at Urbana-Champaign. From 1987 to 2003 he was an Associate Professor, then Professor at the University of Waterloo. In 2003 he rejoined UBC as a Professor. His research spans computer-aided design of experiments, quality improvement, the design and analysis of computer experiments, sta-tistical methods for drug discovery, numerical optimization, and machine/statistical learning; please see http://scholar.google. com/citations?user=Bus4Xi8AAAAJ&hl=en .12 Supplement 
+
+The supplementary material consists of a complexity analysis for TreeBO in Section A, details of hyperparameter selection for cluster-ing and classification in Section B, a discussion of further limitations of TreeBO in Section C, definitions of all seven test functions in Section D, and figures for each function in Section E. 
+
+# A Complexity analysis 
+
+We justify our claim that TreeBO has O(n) computational com-plexity per iteration, where n is the number of objective-function observations gathered. Every GP model is eventually fit with nnode observations once 
+
+n ≥ nnode . Because the number of observations used for fitting is eventually constant, fitting a single GP model is O(1) . TreeBO fits more GP models than standard Bayesian optimization because of the partitioning scheme, but in the worst case this additional work can be bounded above as follows. Suppose after acquiring 
+
+nnode observations, TreeBO splits a leaf node after acquiring every subsequent observation of f . TreeBO would then fit two GP models after taking every observation instead of one. Because a constant factor of 2 is omitted in complexity analysis, the complexity of GP model fitting is still O(1) . Similarly, PAM clustering and SVM fitting are performed on nodes to be split, which have nnode observations as well. For the same reasons as above, then, PAM clustering and SVM fitting are also O(1) .The child nodes after a split will each have fewer than nnode ob-servations, hence BorrowData() from Algorithm 3 in the paper will be called to augment their data to nnode points each for their respective GP model fits. Suppose one of the new child nodes has 
+
+k < n node < n data points. For each of the n − k points belonging to the other leaf nodes, the distance from that point to each of the k
+
+points in the chosen node must be calculated; this is O(dk ). Since this must be done for each of the n − k points belonging to the other leaf nodes, the complexity is then O(dk (n − k)) , which simplifies to O(n) because d and k are constant and bounded, respectively. Having calculated the distances, in line 15, IndicesofSmallest () 
+
+then finds the indices of the nnode − k smallest of these distances. Since nnode − k is bounded, in particular nnode − k ≤ nnode , this is a linear-time selection operation so the complexity of borrowing data is O(n) + O(n) = O(n).Next, the process of maximizing αp begins by generating start-ing points as in GenAcqPoints() in Algorithm 4 in the paper. 
+
+GenAcqPoints() operates on at most nnode points, and in the code for TreeBO it is called a finite number of times per iteration of TreeBO. Hence the total work generating starting points to maxi-mize αp is O(1) . With the starting points in hand, the particle-swarm algorithm used to maximize αp proceeds for a limited number of iterations and uses a fixed swarm size, so the total number of eval-uations of αp during its maximization is bounded. To determine the complexity of evaluating αp, by definition in (1) in the paper it suffices to analyze the complexities of evaluating EI p, and the SVM predictions needed to determine whether x ∈ Xp or x /∈ Xp. For the former, as explained in Section 3 in the paper the complexity of evaluating EI p is O(1) because the number of observations used to fit GP p is at most nnode . For the latter, as described in Section 3 in the paper the number of SVM models to evaluate is one less than the depth of the leaf node in question, or equivalently |p| − 1. The cost of a classification from a single SVM model is O(ds ) where 
+
+s ≤ nnode is the number of support vectors. With respect to n, this is O(1) . Bounding the worst case again, even if the binary tree is completely unbalanced the depth of the leaf node is less than n, so 
+
+|p| − 1 < n . Thus predictions from all |p| − 1 SVM models from the root node to the parent of the leaf node are O(n), and it follows that the complexity of evaluating αp is O(1) + O(n) = O(n). Hence in the worst case, maximizing αp involves calling an O(n) function a bounded number of times, so it follows that the complexity of maximizing αp is also O(n).Putting the pieces together, the complexity of TreeBO per iteration is therefore 
+
+> GP fit
+
+z }| { 
+
+O(1) + 
+
+> PAM clust.
+
+z }| { 
+
+O(1) +
+
+> SVM fit
+
+z }| { 
+
+O(1) + 
+
+> Bor. data
+
+z }| { 
+
+O(n) + 
+
+> Start pts.
+
+z }| { 
+
+O(1) +  
+
+> Max. αp
+
+z }| { 
+
+O(n)= O(n).
+
+# B Hyperparameter tuning for clustering and classification 
+
+Tuning of the clustering and classification models was mentioned in Section 3 in the paper. In more detail, clustering via PAM uses the Euclidean distance between points with 10 random starts [13, Ch. 2]. The SVM models using the Gaussian kernel are tuned using 10 -fold cross-validation with a grid search over the γ and C
+
+hyperparameters, which are described in Section 3.1 in the paper. The vectors for grid search are γ := ( d−3, d −2, . . . , d 2, d 3) and 
+
+C := (2 −4, 2−3, . . . , 23, 24). See Section 6 in the paper for source code. 
+
+# C Further limitations of TreeBO 
+
+The runtime reduction in the Automotive problem for TreeBO com-pared to DiceOptim, described in Section 4 and Figure 4, both in the paper, cannot be expected for all optimization problems. For smaller problems such as the Ackley problem with d = 6 and ntotal = 200 ,the number of observations may be insufficient to elucidate the difference between the O(n3) and O(n) complexities of global op-timization for DiceOptim and TreeBO, respectively. Theoretical differences in complexity may be obscured in practice by large lead-ing constants, and for small numbers of observations other factors may preponderate, such as acquisition-function optimization. We do not report runtimes for all seven tests described in Section 4 in the paper because they were performed on heterogeneous hardware: our main computing cluster was replaced during the development of TreeBO, precluding comparison. It is not clear if there is a demarcation beyond which an optimiza-tion problem is large enough for TreeBO to run significantly faster than DiceOptim, but the Automotive problem has passed that point. Another potential limitation of TreeBO concerns the ntotal pa-rameter. From the side-by-side boxplots in Figures 3 and 4 in the paper, and other plots in the supplement, TreeBO sometimes initially performs worse than DiceOptim before eventually surpassing the latter. The initial difference in performance may manifest before TreeBO has performed any partitioning, and so may be attributable to differences in acquisition-function optimization, or some other factor. Hence in practice it may be desirable to set ntotal higher for TreeBO; this advice is admittedly vague. As suggested in Section 4 13 in the paper, the linear complexity of TreeBO makes a larger ntotal 
+
+computationally feasible if the practitioner is willing to invest in additional observations of the objective function. 
+
+# D Test function definitions 
+
+As mentioned in Section 4 of the paper, all test functions except the Automotive problem come from the Virtual Library of Simulation Experiments [23]. The Automotive problem comes from an auto-motive mass-minimization problem from General Motors [10]. We use the same variable f to denote all test functions without risk of confusion. 
+
+# D.1 Ackley 
+
+The Ackley function f : [ −32 .768 , 32 .768] d → R is defined by 
+
+f (x) = −a exp 
+
+−b
+
+vuut 1
+
+d
+
+> d
+
+X
+
+> i=1
+
+x2
+
+> i
+
+ − exp 1
+
+d
+
+> d
+
+X
+
+> i=1
+
+cos( cx i)
+
+!
+
++ a + exp(1) ,
+
+where a = 20 , b = 0 .2 and c = 2 π.
+
+# D.2 Hartmann 
+
+The Hartmann 6-dimensional function f : [0 , 1] 6 → R is defined by 
+
+f (x) = − 11.94 
+
+2.58 + 
+
+> 4
+
+X
+
+> i=1
+
+αi exp 
+
+−
+
+> 6
+
+X
+
+> j=1
+
+Aij (xj − Pij )2
+
+ ,
+
+where α = (1 .0, 1.2, 3.0, 3.2) ⊺, and the matrices A and P are given by 
+
+A =
+
+
+
+10 3 17 3.5 1.7 80.05 10 17 0.1 8 14 3 3.5 1.7 10 17 817 8 0.05 10 0.1 14 
+
+
+
+P = 10 −4
+
+
+
+1312 1696 5569 124 8283 5886 2329 4135 8307 3736 1004 9991 2348 1451 3522 2883 3047 6650 4047 8828 8732 5743 1091 381 
+
+ .
+
+# D.3 Rastrigin 
+
+The Rastrigin function f : [ −5.12 , 5.12] d → R is defined by 
+
+f (x) = 10 d +
+
+> d
+
+X
+
+> i=1
+
+(x2 
+
+> i
+
+− 10 cos(2 πx i)) .
+
+# D.4 Schwefel 
+
+The Schwefel function f : [ −500 , 500] d → R is defined by 
+
+f (x) = 418 .9829 d −
+
+> d
+
+X
+
+> i=1
+
+xi sin 
+
+p |xi|
+
+
+
+.
+
+# D.5 Levy 
+
+The Levy function f : [ −10 , 10] d → R is defined by 
+
+f (x) = sin 2(πw 1) + 
+
+> d−1
+
+X
+
+> i=1
+
+(wi − 1) 2[1 + 10 sin 2(πw i + 1)] + ( wd − 1) 2[1 + sin 2(2 πw d)] ,
+
+where wi = 1 + ( xi − 1) /4 for all i = 1 , . . . , d .
+
+# D.6 Michalewicz 
+
+The Michalewicz function f : [0 , π ]d → R is defined by 
+
+f (x) = −
+
+> d
+
+X
+
+> i=1
+
+sin( xi) sin 2m
+
+ ix 2
+
+> i
+
+π
+
+
+
+,
+
+where m = 10 .
+
+# D.7 Automotive 
+
+The Automotive problem is originally a linear function 
+
+f : [0 , 1] 124 → R with 68 nonlinear inequality constraints 
+
+gi : [0 , 1] 124 → R for i = 1 , . . . , 68 such that gi(x) ≤ 0 is required for all i. Because TreeBO is defined for unconstrained test functions, we consider instead f ′ : [0 , 1] 124 → R given by 
+
+f ′(x) = f (x) + 
+
+> 68
+
+X
+
+> i=1
+
+gi(x)2[gi(x) > 0] ,
+
+where the second factor in each summand is the Iverson bracket. 
+
+# E Figures 
+
+For each of the seven test functions, we present three types of figures. These figures show the relative performance of TreeBO and DiceOp-tim, as expected, but some of the figures also provide qualitative evidence of the salutary effect of the binary partitioning process on the performance of TreeBO. In particular, Figures 7 and 8 for the Ackley function, and Figures 17 and 18 for the Michalewicz function, show a marked increase in performance for TreeBO precisely when TreeBO splits the root node of the binary tree. In this section, we only describe the figures for the Automotive problem, Figures 5, 6 and 19, because the figures for the other test functions are analogous. However, note that Figures 11, 12 and 22 (Rastrigin), and 15, 16 and 24 (Levy), have been plotted with a logarithmic scale on the vertical axis to clarify the differences in performance between DiceOptim and TreeBO. In particular, Figures 12 and 16 use a symmetric-logarithmic scale. Panels (a) and (b) in Figure 5 show the decline in the smallest value of the Automotive function observed for DiceOptim and TreeBO, respectively. The lines representing individual runs have been made faint. The average of the runs is shown as a blue line for DiceOptim and a red line for TreeBO. For each method, the standard deviation of the runs is added to and subtracted from the mean line, and the space between the mean line and these lines above and below is shaded. Figure 6 shows similar information to Figure 5, but each line for DiceOptim is subtracted from the corresponding line for TreeBO. 14 0 100 200 300 400 
+
+> Subsequent observation number (a)
+> 200 220 240 260 280
+
+## DiceOptim     
+
+> 0100 200 300 400
+> Subsequent observation number (b)
+
+## TreeBO Best objective function value Automotive test function Figure 5: The smallest value of the Automotive function observed for (a) DiceOptim and (b) TreeBO. The faint lines represent individual runs while the bold lines represent the mean of all runs. For each method, the standard deviation of the runs is added to and subtracted from the mean line to create a shaded region around the mean. The panels show that DiceOptim performs worse than TreeBO on average, although with smaller variance. The higher variance of TreeBO is primarily attributable to one outlier run that performs poorly. The mean runtimes for the two methods (not shown) were approximately 14 days for DiceOptim, and 9 days for TreeBO. This type of plot focuses more clearly on the delta between the two methods. The dashed horizontal line at 0 on the vertical axis represents equal performance between the two methods. Lines below the dashed line show TreeBO outperforming DiceOptim, while the reverse is true for lines above the dashed line. Figure 19 is equivalent to Figure 4 from the paper but in double-column width. Both figures show side-by-side boxplots of the small-est objective-function value found over all runs at selected points during the optimization process. Each of the figures that follows has a similar description to the foregoing in its caption, along with a brief commentary on the results shown in that particular figure. For a numerical summary of the tests shown in these figures, see Table 1 in the paper. 15 0 100 200 300 400 
+
+Subsequent observation number 
+
+020 40 60 
+
+> TreeBO  − DiceOptim
+
+## Automotive test function, ∆ in best objective-function value Figure 6: The delta between the smallest value of the Automotive function observed for DiceOptim and TreeBO. For each pair of runs, the smallest value observed for DiceOptim is subtracted from the smallest value observed for TreeBO. The faint lines represent the deltas for individual pairs of runs while the bold line represents the mean of all deltas. The standard deviation of the deltas is added to and subtracted from the mean line to create a shaded region around the mean. The plot shows that DiceOptim outperforms TreeBO, on average, until approximately 360 subsequent observations. From that point on, TreeBO outperforms DiceOptim. The plot also shows that TreeBO outperforms DiceOptim on 8 of 10 runs. 0 25 50 75 100 125 
+
+Subsequent observation number (a) 
+
+0510 15 20 
+
+## DiceOptim 
+
+0 25 50 75 100 125 
+
+Subsequent observation number (b) 
+
+## TreeBO Best objective function value Ackley test function 
+
+Figure 7: The smallest value of the Ackley function observed for (a) DiceOptim and (b) TreeBO. The faint lines represent individual runs while the bold lines represent the mean of all runs. For each method, the standard deviation of the runs is added to and subtracted from the mean line to create a shaded region around the mean. The panels show that DiceOptim performs worse than TreeBO on average, and with larger variance. Many of the individual runs for DiceOptim are unable to locate the region of steep descent to the global minimum near the origin, and so struggle to locate values of the objective function that are less than 5 or 10 . In contrast, TreeBO accomplishes this on all but 4 runs out of 100 . Also, the slope of the mean line for TreeBO noticeably decreases at roughly 40 subsequent observations. From Table 1 in the paper, in this test ninit = 60 and nnode = 100 , so this improvement in performance coincides with the first partition by TreeBO of the domain of the Ackley function. 0 20 40 60 80 100 120 140 
+
+Subsequent observation number 
+
+−15 
+
+−10 
+
+−50510 15 
+
+> TreeBO  − DiceOptim
+
+## Ackley test function, ∆ in best objective-function value Figure 8: The delta between the smallest value of the Ackley function observed for DiceOptim and TreeBO. For each pair of runs, the smallest value observed for DiceOptim is subtracted from the smallest value observed for TreeBO. The faint lines represent the deltas for individual pairs of runs while the bold line represents the mean of all deltas. The standard deviation of the deltas is added to and subtracted from the mean line to create a shaded region around the mean. The plot shows that DiceOptim outperforms TreeBO, on average, until approximately 70 subsequent observations. From that point on, TreeBO substantially outperforms DiceOptim. The plot also shows that TreeBO outperforms DiceOptim on the vast majority of runs. The mean delta between the two methods noticeably decreases in favor of TreeBO starting at 40 subsequent observations, which coincides with the first partition by TreeBO of the domain of the Ackley function. This is because, as shown in Table 1 in the paper, for this test ninit = 60 and nnode = 100 , so the first split occurs at 40 subsequent observations. 0 25 50 75 100 125 
+
+> Subsequent observation number (a)
+> −3.0
+> −2.8
+> −2.6
+> −2.4
+> −2.2
+> −2.0
+> −1.8
+
+## DiceOptim      
+
+> 025 50 75 100 125
+> Subsequent observation number (b)
+
+## TreeBO Best objective function value Hartmann test function 
+
+Figure 9: The smallest value of the Hartmann function observed for (a) DiceOptim and (b) TreeBO. The faint lines represent individual runs while the bold lines represent the mean of all runs. For each method, the standard deviation of the runs is added to and subtracted from the mean line to create a shaded region around the mean. The panels show that DiceOptim performs worse than TreeBO on average, although the difference is slight. It appears that within 25 or 50 subsequent observations, both methods locate a local minimum whose value is quite near the global minium. However, after roughly 100 subsequent observations, TreeBO locates the global minimum on a noticeably higher proportion of runs than does DiceOptim. 17 0 20 40 60 80 100 120 140 
+
+Subsequent observation number 
+
+−0.4
+
+−0.20.00.20.40.6
+
+> TreeBO  − DiceOptim
+
+## Hartmann test function, ∆ in best objective-function value Figure 10: The delta between the smallest value of the Hartmann function observed for DiceOptim and TreeBO. For each pair of runs, the smallest value observed for DiceOptim is subtracted from the smallest value observed for TreeBO. The faint lines represent the deltas for individual pairs of runs while the bold line represents the mean of all deltas. The standard deviation of the deltas is added to and subtracted from the mean line to create a shaded region around the mean. The plot shows that DiceOptim outperforms TreeBO, on average, until approximately 20 subsequent observations. From then until 100 subsequent observations there is little apparent difference between the two methods. However, from roughly 100 subsequent observations on, TreeBO locates the global minimum on several runs while DiceOptim fails to do so. This is indicated by the descent of several faint lines below the dashed line at 0.0 on the vertical axis. 0 100 200 300 
+
+Subsequent observation number (a) 
+
+10 −2
+
+10 −1
+
+10 0
+
+10 1
+
+10 2
+
+## DiceOptim 
+
+0 100 200 300 
+
+Subsequent observation number (b) 
+
+## TreeBO Best objective function value Rastrigin test function 
+
+Figure 11: The smallest value of the Rastrigin function observed for (a) DiceOptim and (b) TreeBO. The vertical axis is on a logarithmic scale. The faint lines represent individual runs while the bold lines represent the mean of all runs. For each method, the standard deviation of the runs is added to and subtracted from the mean line to create a shaded region around the mean. The panels show that DiceOptim performs worse than TreeBO on average. Although its global minimum is 0, the Rastrigin function has many local minima with values around 1, and the plot shows that from roughly 200 subsequent observations on, substantially more runs of TreeBO succeed in finding objective-function values smaller than 1 than for DiceOptim. 18 0 50 100 150 200 250 300 350 
+
+> Subsequent observation number
+> −10 1
+> −10 0
+> 010 0
+> 10 1
+> TreeBO  − DiceOptim
+
+## Rastrigin test function, ∆ in best objective-function value Figure 12: The delta between the smallest value of the Rastrigin function observed for DiceOptim and TreeBO. The vertical axis is on a symmetric-logarithmic scale. For each pair of runs, the smallest value observed for DiceOptim is subtracted from the smallest value observed for TreeBO. The faint lines represent the deltas for individual pairs of runs while the bold line represents the mean of all deltas. The standard deviation of the deltas is added to and subtracted from the mean line to create a shaded region around the mean. The plot shows that DiceOptim outperforms TreeBO, on average, until approximately 150 subsequent observations. From that point on, TreeBO outperforms DiceOptim. For the majority of runs the delta between the methods is approximately ±1 since one method or the other finds a better local minimum. The the plot shows that −1 is more common than 1, which is consistent with the superiority of TreeBO over DiceOptim for this test. 0 100 200 300 
+
+> Subsequent observation number (a)
+> 0500 1000 1500
+
+## DiceOptim    
+
+> 0100 200 300
+> Subsequent observation number (b)
+
+## TreeBO Best objective function value Schwefel test function 
+
+Figure 13: The smallest value of the Schwefel function observed for (a) DiceOptim and (b) TreeBO. The faint lines represent individual runs while the bold lines represent the mean of all runs. For each method, the standard deviation of the runs is added to and subtracted from the mean line to create a shaded region around the mean. The panels show that DiceOptim performs worse than TreeBO, on average. The mean lines in both panels have similar shapes, but the line for TreeBO appears to have a more negative slope throughout the optimization process than the line for DiceOptim. Similar to the Rastrigin function, the Schwefel function has many local minima and both methods struggle to find the global minimum of 0. However, on a noticeably higher proportion of runs, TreeBO finds better local minima than does DiceOptim. 19 0 50 100 150 200 250 300 350 
+
+> Subsequent observation number
+> −1000
+> −750
+> −500
+> −250 0250 500 750
+> TreeBO  − DiceOptim
+
+## Schwefel test function, ∆ in best objective-function value Figure 14: The delta between the smallest value of the Schwefel function observed for DiceOptim and TreeBO. For each pair of runs, the smallest value observed for DiceOptim is subtracted from the smallest value observed for TreeBO. The faint lines represent the deltas for individual pairs of runs while the bold line represents the mean of all deltas. The standard deviation of the deltas is added to and subtracted from the mean line to create a shaded region around the mean. The plot shows that TreeBO outperforms DiceOptim, on average, over the entire optimization process. The delta between the two methods peaks at roughly 40 subsequent observations before receding until 200 
+
+subsequent observations, and then grows again from that point on. 0 100 200 300 
+
+> Subsequent observation number (a)
+> 10 −1
+> 10 0
+> 10 1
+
+## DiceOptim    
+
+> 0100 200 300
+> Subsequent observation number (b)
+
+## TreeBO Best objective function value Levy test function 
+
+Figure 15: The smallest value of the Levy function observed for (a) DiceOptim and (b) TreeBO. The vertical axis is on a logarithmic scale. The faint lines represent individual runs while the bold lines represent the mean of all runs. For each method, the standard deviation of the runs is added to and subtracted from the mean line to create a shaded region around the mean. The panels show that DiceOptim performs worse than TreeBO, on average. Both mean lines have similar shapes, but it is clear that by the end ( 350 subsequent observations) the mean line for TreeBO is lower than for DiceOptim. The faint lines representing individual runs show that for TreeBO, many runs find values of the objective function as small as 0.2 or 0.3, close to the global minimum of 0, compared to only a few such runs for DiceOptim. 20 0 50 100 150 200 250 300 350 
+
+Subsequent observation number 
+
+−10 1
+
+−10 0
+
+010 0
+
+10 1
+
+> TreeBO  − DiceOptim
+
+## Levy test function, ∆ in best objective-function value Figure 16: The delta between the smallest value of the Levy function observed for DiceOptim and TreeBO. The vertical axis is on a symmetric-logarithmic scale. For each pair of runs, the smallest value observed for DiceOptim is subtracted from the smallest value observed for TreeBO. The faint lines represent the deltas for individual pairs of runs while the bold line represents the mean of all deltas. The standard deviation of the deltas is added to and subtracted from the mean line to create a shaded region around the mean. The plot shows that DiceOptim outperforms TreeBO, on average, until approximately 20 subsequent observations. From that point on, TreeBO outperforms DiceOptim. The plot also shows that TreeBO outperforms DiceOptim on the vast majority of runs, as indicated by the paucity of lines above the dashed line at 0 on the vertical axis. 0 100 200 300 
+
+Subsequent observation number (a) 
+
+−8
+
+−6
+
+−4
+
+## DiceOptim 
+
+0 100 200 300 
+
+Subsequent observation number (b) 
+
+## TreeBO Best objective function value Michalewicz test function 
+
+Figure 17: The smallest value of the Michalewicz function observed for (a) DiceOptim and (b) TreeBO. The faint lines represent individual runs while the bold lines represent the mean of all runs. For each method, the standard deviation of the runs is added to and subtracted from the mean line to create a shaded region around the mean. The panels show that DiceOptim performs worse than TreeBO, on average. However, DiceOptim outperforms TreeBO for most of the duration, especially during the first 100 subsequent observations. It is only at roughly 250 subsequent observations that TreeBO improves markedly and all the runs descend below −8 on the vertical axis. From Table 1 in the paper, for this test ninit = 100 and nnode = 350 , so this marked improvement at 250 subsequent observations coincides with the first partition by TreeBO of the domain of the Michalewicz function. 21 0 50 100 150 200 250 300 350 
+
+Subsequent observation number 
+
+−3
+
+−2
+
+−101234
+
+> TreeBO  − DiceOptim
+
+## Michalewicz test function, ∆ in best objective-function value Figure 18: The delta between the smallest value of the Michalewicz function observed for DiceOptim and TreeBO. For each pair of runs, the smallest value observed for DiceOptim is subtracted from the smallest value observed for TreeBO. The faint lines represent the deltas for individual pairs of runs while the bold line represents the mean of all deltas. The standard deviation of the deltas is added to and subtracted from the mean line to create a shaded region around the mean. The plot shows that DiceOptim outperforms TreeBO, on average, until approximately 300 subsequent observations. From that point on, TreeBO outperforms DiceOptim. The delta between the two methods noticeably decreases in favor of TreeBO at 250 subsequent observations, which coincides with the first partition by TreeBO of the domain of the Michalewicz function. This is because, as shown in Table 1 in the paper, for this test ninit = 100 and nnode = 350 , so the first split occurs at 250 subsequent observations. 0 75 150 225 300 375 450 475 Subsequent observations 
+
+200 
+
+220 
+
+240 
+
+260 
+
+280 
+
+> Best objective function value
+
+## Automotive test function, best objective-function value 
+
+TreeBO DiceOptim 
+
+Figure 19: Side-by-side boxplots of the results for the Automotive test function in 124 dimensions. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 10 paired runs. At 0 subsequent observations the distributions are identical for both methods, because both methods are given identical sets of 125 initial points for each paired run. The boxplots show that DiceOptim outperforms TreeBO until roughly 300 subsequent observations. From that point on, TreeBO outperforms DiceOptim. The final pair of boxplots at 475 subsequent observations shows that the 75 th percentile for TreeBO is less than the 25 th percentile for DiceOptim. 22 0 25 50 75 100 125 140 Subsequent observations 
+
+> 0.0
+> 2.5
+> 5.0
+> 7.5
+> 10 .0
+> 12 .5
+> 15 .0
+> 17 .5
+> 20 .0
+> Best objective function value
+
+## Ackley test function, best objective-function value  
+
+> TreeBO DiceOptim
+
+Figure 20: Side-by-side boxplots of the results for the Ackley test function in 6 dimensions. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 100 paired runs. At 0 subsequent observations the distributions are identical for both methods, because both methods are given identical sets of 60 initial points for each paired run. The boxplots show that both methods perform similarly through 75 
+
+subsequent observations. However, from that point on, TreeBO substantially outperforms DiceOptim. The final pair of boxplots at 140 
+
+subsequent observations shows that TreeBO almost always discovers the global minimum, whereas DiceOptim only does so on less than half of all runs. 0 25 50 75 100 125 140 Subsequent observations 
+
+> −3.0
+> −2.8
+> −2.6
+> −2.4
+> −2.2
+> −2.0
+> −1.8
+> Best objective function value
+
+## Hartmann test function, best objective-function value 
+
+> TreeBO DiceOptim
+
+Figure 21: Side-by-side boxplots of the results for the Hartmann test function in 6 dimensions. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 100 paired runs. At 0 subsequent observations the distributions are identical for both methods, because both methods are given identical sets of 60 initial points for each paired run. The boxplots do not show meaningful differences between the two methods. See Figures 9 and 10 for alternative plots that do show TreeBO outperforming DiceOptim on the Hartmann test function. 23 0 50 100 150 200 250 300 340 Subsequent observations 
+
+10 −2
+
+10 −1
+
+10 0
+
+10 1
+
+10 2
+
+> Best objective function value
+
+## Rastrigin test function, best objective-function value 
+
+TreeBO DiceOptim Figure 22: Side-by-side boxplots of the results for the Rastrigin test function in 6 dimensions. The vertical axis is on a logarithmic scale. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 100 paired runs. At 0 subsequent observations the distributions are identical for both methods, because both methods are given identical sets of 60 initial points for each paired run. The boxplots show very little difference between the two methods until roughly 200 subsequent observations. From that point on, TreeBO outperforms DiceOptim. The final pair of boxplots at 340 subsequent observations shows that the median for DiceOptim is roughly 2, while the median for TreeBO is roughly 1.0 50 100 150 200 250 300 340 Subsequent observations 
+
+0
+
+250 
+
+500 
+
+750 
+
+1000 
+
+1250 
+
+1500 
+
+1750 
+
+> Best objective function value
+
+## Schwefel test function, best objective-function value 
+
+TreeBO DiceOptim 
+
+Figure 23: Side-by-side boxplots of the results for the Schwefel test function in 6 dimensions. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 100 paired runs. At 0 subsequent observations the distributions are identical for both methods, because both methods are given identical sets of 60 initial points for each paired run. The boxplots show that TreeBO outperforms DiceOptim from beginning to end, although the gap between the two methods is larger at the beginning and end of the optimization process than in the middle. The final pair of boxplots at 340 subsequent observations shows that the 25 th percentile for TreeBO is much lower than for DiceOptim. This indicates that TreeBO more frequently finds smaller local minima of the Schwefel function than does DiceOptim, although both methods struggle to locate the global minimum of 0.24 0 50 100 150 200 250 300 350 Subsequent observations 
+
+10 −1
+
+10 0
+
+10 1
+
+> Best objective function value
+
+## Levy test function, best objective-function value 
+
+TreeBO DiceOptim Figure 24: Side-by-side boxplots of the results for the Levy test function in 10 dimensions. The vertical axis is on a logarithmic scale. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 100 paired runs. At 0 subsequent observations the distributions are identical for both methods, because both methods are given identical sets of 100 initial points for each paired run. The boxplots show that TreeBO outperforms DiceOptim from beginning to end, and the gap between the two methods grows over time. The final pair of boxplots at 350 
+
+subsequent observations shows that the 75 th percentile for TreeBO is less than the 25 th percentile for DiceOptim. Moreover, the value of the objective function found on the worst run for TreeBO (the single red dot) is approximately equal to the 75 th percentile for DiceOptim. 0 50 100 150 200 250 300 350 Subsequent observations 
+
+−9
+
+−8
+
+−7
+
+−6
+
+−5
+
+−4
+
+−3
+
+> Best objective function value
+
+## Michalewicz test function, best objective-function value 
+
+TreeBO DiceOptim 
+
+Figure 25: Side-by-side boxplots of the results for the Michalewicz test function in 10 dimensions. The boxplots show the smallest objective-function value found, for both DiceOptim and TreeBO, at several points over the optimization process. Each boxplot represents the distribution over all 100 paired runs. At 0 subsequent observations the distributions are identical for both methods, because both methods are given identical sets of 100 initial points for each paired run. The boxplots show that DiceOptim outperforms TreeBO until roughly 300 subsequent observations. From that point on, TreeBO outperforms DiceOptim. The final pair of boxplots at 350 subsequent observations shows a slight advantage for TreeBO over DiceOptim in both the 25 th –75 th percentiles and in the outliers. 25

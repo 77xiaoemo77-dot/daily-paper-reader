@@ -1,0 +1,488 @@
+Title: QUIVER: Cost-Aware Adaptive Preference Querying in Surrogate-Assisted Evolutionary Multi-Objective Optimization
+
+URL Source: https://arxiv.org/pdf/2605.04267v1
+
+Published Time: Thu, 07 May 2026 00:16:09 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# QUIVER: Cost-Aware Adaptive Preference Querying in Surrogate-Assisted Evolutionary Multi-Objective Optimization 
+
+# Florian A. D. Burnat ∗
+
+# May 7, 2026 
+
+Abstract 
+
+Interactive multi-objective optimization systems face a budget allocation dilemma: one can spend resources on expensive objective evaluations or on eliciting decision-maker preferences that identify the relevant region of the Pareto set. Moreover, preference elicitation itself spans modalities with different information content and cognitive burden, ranging from cheap, noisy pairwise preference statements (PS) to richer but costlier indifference adjustments (IA). We study cost-aware optimization under an unknown scalarization and intro-duce QUIVER (Query-Informed Value Estimation for Regret), a surrogate-assisted evolutionary multi-objective optimizer that adaptively chooses between objective evaluations and heterogeneous preference queries. At each step, QUIVER selects the next action by maximizing the expected decision-quality improvement per unit total cost. Across DTLZ and WFG benchmarks under synthetic decision-maker models, QUIVER achieves the lowest final utility regret on challenging WFG prob-lems (utility regret of 2.14 on WFG4, 2.82 on WFG9: a 25% improvement over baselines), outperforming all single-modality baselines. We analyze how the opti-mal mix of PS and IA adapts to problem difficulty: on easy problems (DTLZ2), QUIVER selects 80% PS queries; on hard problems (WFG9), it shifts to 35% IA queries. This adaptive modality selection demonstrates cost-aware preference learning in action. 
+
+Keywords: interactive multi-objective optimization, surrogate-assisted EMO, pref-erence elicitation, cost-aware optimization, evolutionary computation 
+
+> ∗
+
+Warwick Business School, University of Warwick, Coventry, England, UK. Email: 
+
+florian.burnat@warwick.ac.uk .
+
+> arXiv:2605.04267v1 [cs.LG] 5 May 2026
+
+# 1 Introduction 
+
+Multi-objective optimization (MOO) seeks solutions that trade off multiple conflicting objectives. In many real-world applications, from engineering design to portfolio selection, objective evaluations are expensive and involve physical experiments, costly simulations, or time-consuming computations. This has motivated extensive research on surrogate-assisted and budgeted optimization methods that carefully allocate evaluation budget to efficiently approximate the Pareto front. However, the Pareto front is typically infinite, and ultimately, a decision-maker (DM) must select a single solution. This selection depends on an unknown scalar utility that captures the DM’s preferences over trade-offs. Without knowledge of these preferences, even a perfect approximation of the Pareto front may fail to identify the solution that the DM actually wants. This creates a fundamental tension: objective evaluations explore the Pareto set, whereas preference elicitation identifies which region of that set matters. 
+
+The cost-aware allocation problem. Given a fixed total budget, how should an op-timizer allocate resources between objective evaluation and preference elicitation? Spend-ing too much on evaluations may yield a well-approximated front in a region that the DM does not care about; spending too much on preference queries may identify the tar-get region precisely but leave it poorly explored. The optimal allocation depends on the relative costs and informativeness of each action, which vary across problem instances and over the course of optimization. 
+
+Heterogeneous preference modalities. Preference elicitation spans modalities with different information content and cognitive burden. Pairwise preference statements (PS)— “Do you prefer 𝐴 or 𝐵 ?”—are cognitively cheap but yield only ordinal (1-bit) information. Indifference adjustments (IA)—“How much would you adjust objective 𝑘 to make 𝐴 and 
+
+𝐵 equally preferred?”—are more demanding but reveal cardinal trade-off information, identifying the DM’s marginal rate of substitution. This heterogeneity raises a second allocation question: When should we use cheap, low-information queries versus expensive, high-information queries? 
+
+Novelty and approach. Most interactive EMO methods assume a fixed preference query protocol (e.g., periodic pairwise queries at fixed generations), whereas most surrogate-assisted EMO methods focus on Pareto front exploration and treat the DM as an aposteriori selector. In contrast, we treat {objective evaluation (Eval), PS, IA} as a uni-fied budgeted action space and introduce an adaptive controller that selects actions to maximize the expected decision-quality improvement per unit total cost . The value-of-information (VOI) perspective unifies objective exploration and preference learning under 1a single optimization criterion. 
+
+Optimizer-agnostic design. We designed the VOI-per-cost controller to be optimizer-agnostic. In this study, we instantiate it with a surrogate-assisted NSGA-II and evaluate it using a protocol appropriate for evolutionary multi-objective optimization. The con-troller requires only a minimal backend interface: (i) a mechanism to generate candidate designs 𝑥 , (ii) storage for evaluated points, (iii) optionally a surrogate providing predic-tive distributions, and (iv) the ability to interleave preference queries with evaluations. Any optimization backend satisfying these requirements, including Bayesian optimiza-tion, random search, or other population-based methods, can use the same VOI-per-cost action selection principle. 
+
+Contributions. This study makes four contributions. 1. We formalize cost-aware interactive MOO with heterogeneous preference query modalities (PS and IA) under an unknown linear scalarization. 2. We derive a practical VOI-based action selection rule using Monte Carlo estimation of expected entropy reduction. 3. We propose QUIVER ( Qu ery-Informed Value Estimation for Regret), an evolu-tionary algorithm with NSGA-II backbone that implements this adaptive allocation policy via a particle-filter preference posterior. 4. We empirically evaluate on DTLZ and WFG benchmarks, demonstrating that QUIVER achieves lower utility regret per unit cost than fixed-schedule and single-modality baselines, with IA queries dominating when their information-per-cost ratio exceeds that of PS. 
+
+# 2 Related Work 
+
+Surrogate-assisted evolutionary multi-objective optimization. Expensive black-box multi-objective optimization has motivated extensive research on surrogate-assisted evolutionary algorithms. ParEGO Knowles, 2006 scalarizes objectives via randomly sam-pled weight vectors and applies single-objective Bayesian optimization. More recent ap-proaches integrate surrogates directly into population-based EMO frameworks, including MOEA/D-EGO Zhang et al., 2010 and K-RVEA Chugh, Jin, et al., 2018. Chugh et al. Chugh, Sindhya, et al., 2019 categorized surrogate management strategies for ex-pensive MOO. These methods focus on efficiently approximating the Pareto front, but typically do not learn DM preferences online. 2Interactive and preference-based EMO. Interactive evolutionary multi-objective optimization incorporates DM feedback to guide the search towards preferred regions. Preference-based EMO learns implicit utilities from comparisons or rankings Branke et al., 2015; Brochu et al., 2007. However, most approaches adopt fixed querying schedules and do not adaptively allocate budget between evaluations and preference elicitation. Existing interactive EMO typically assume a fixed query budget or schedule, whereas we study joint allocation across evaluation and heterogeneous query types under a single cost budget. 
+
+Preference elicitation modalities and cognitive cost. Pairwise preference state-ments (PS) yield ordinal information and are commonly modelled using Bradley–Terry or probit likelihoods Bradley and Terry, 1952. Indifference adjustments (IA) provide cardinal trade-off information and can identify marginal rates of substitution in multi-attribute utility models Keeney and Raiffa, 1993. Recent empirical work by Haidinger et al. Haidinger et al., 2025 quantifies this trade-off: among 83 roofing professionals, IAs re-quire only ∼15% more time and cognitive effort than PSs, yet provide substantially richer information about cardinal preferences. These differing cost–information trade-offs mo-tivate adaptive strategies that choose query modalities based on the expected value per cost. 
+
+Cost-aware Bayesian optimization. Our cost-aware acquisition builds on the value-of-information (VOI) principles from decision analysis Howard, 1966; Raiffa and Schlaifer, 1961. In active learning, cost-sensitive methods select queries that maximize the infor-mation gain per unit cost Settles, 2009. A recent study on cost-aware BO Lee et al., 2020 proposed acquisition functions that explicitly account for evaluation costs. Our con-tribution extends cost-awareness to preference queries, unifying objective evaluation and preference elicitation under a single, budgeted decision framework. 
+
+RLHF and preference optimization. Reinforcement learning from human feedback (RLHF) Ouyang et al., 2022 and direct preference optimization Rafailov et al., 2023 rely almost exclusively on pairwise comparisons. Our framework suggests that the strategic use of richer query types (analogous to IA) during critical training phases could reduce annotation budgets, which we discuss in Section 8. 
+
+# 3 Problem Setup 
+
+We consider the minimization of 𝑚 objectives f(𝑥) ∈ ℝ 𝑚 over a feasible domain 𝒳 
+
+(maximization problems are handled via sign-flip). Objective evaluations are expensive 3and are counted against the cost budget. A DM selects solutions according to an unknown utility 𝑢( f(𝑥); 𝑤) parameterized by latent preferences 𝑤 .
+
+# 3.1 Decision Objective: Decision Quality per Total Cost 
+
+Let 𝑥 ⋆ denote the (unknown) utility-maximizing solution on the Pareto set, and let ̂ 𝑥 
+
+be the algorithm’s recommendation. We evaluate decision quality via recommendation regret :
+
+ℛ = 𝑢( f(𝑥 ⋆
+
+> PF
+
+); 𝑤) − 𝑢( f(̂𝑥); 𝑤). (3.1) In the benchmarks, 𝑥 ⋆ 
+
+> PF
+
+denotes the utility-optimal solution on the true Pareto front (computed analytically for DTLZ/WFG problems). This metric is computed offline :
+
+𝑥 ⋆ 
+
+> PF
+
+is the global optimum under 𝑤 ⋆, and is not limited to evaluated points. We study optimization under a fixed total budget 𝐵 measured in cost units. 
+
+Note on regret metrics. Evolutionary algorithms can generate new solutions beyond any fixed candidate set; therefore, we measured regret against the true Pareto front optimal (computed analytically for benchmark problems). Alternative backends (e.g., pool-based BO) that search over a finite candidate set may instead measure regret against the best point in that pool. Because regret is defined relative to the analytic Pareto optimum, absolute regret values should not be compared across different optimization backbones. 
+
+# 3.2 Actions and Costs 
+
+At each step 𝑡 , the optimizer chooses an action 𝑎 𝑡 from: • Eval : evaluate objectives f(𝑥) for a selected candidate 𝑥 (cost 𝑐 eval ). • PS : ask the DM to compare two outcomes f(𝑥 𝑖 ) and f(𝑥 𝑗 ) (cost 𝑐 PS ). • IA : ask the DM to adjust an attribute until indifference between two outcomes (cost 𝑐 IA ). The total spent cost must satisfy ∑𝑡 𝑐(𝑎 𝑡 ) ≤ 𝐵 . We define the IA fraction as the proportion of IA queries among all preference queries. IA fraction = 𝑛 IA 
+
+𝑛 IA + 𝑛 PS 
+
+, (3.2) where 𝑛 IA and 𝑛 PS are the counts of IA and PS queries, respectively. This metric excludes objective evaluations and focuses on query modality selection. 44 Preference Models 
+
+We describe the likelihood models for PS and IA and maintain a posterior 𝑝(𝑤 ∣ 𝒟 pref )
+
+over latent preferences. For concreteness, we use a linear utility model 𝑢( f; 𝑤) = 𝑤 ⊤f
+
+with 𝑤 ∈ Δ 𝑚−1 , but the framework extends to other scalarizations. 
+
+# 4.1 Pairwise Preference Statements (PS) 
+
+A PS query returns 𝑦 ∈ {0, 1} indicating whether outcome 𝐴 is preferred to 𝐵 , where 
+
+𝐴 = f(𝑥 𝑖 ) and 𝐵 = f(𝑥 𝑗 ) are objective vectors of two candidate solutions. We model noisy comparisons using a logistic likelihood: Pr (𝑦 = 1 ∣ 𝐴, 𝐵, 𝑤) = 𝜎(𝛽 [𝑢(𝐴; 𝑤) − 𝑢(𝐵; 𝑤)]), (4.1) where 𝜎(𝑧) = (1 + 𝑒 −𝑧 )−1 and 𝛽 > 0 controls noise. 
+
+# 4.2 Indifference Adjustments (IA) 
+
+An IA query asks the DM to adjust one attribute (objective) until the two outcomes are equally preferred. Let 𝑒 𝑘 denote the 𝑘 th unit vector. Given outcomes 𝐴 and 𝐵 , the DM reports an adjustment ̃ 𝛿 such that 
+
+𝑢(𝐴; 𝑤) ≈ 𝑢(𝐵 +̃ 𝛿𝑒 𝑘 ; 𝑤). (4.2) Under linear utility, this implies 
+
+𝑤 ⊤(𝐴 − 𝐵) ≈ 𝑤 𝑘 ̃ 𝛿. (4.3) We model the reported adjustment with additive noise as follows: ̃𝛿 ∣ (𝐴, 𝐵, 𝑤, 𝑘) ∼ 𝒩( 𝑤 ⊤(𝐴−𝐵)  
+
+> max (𝑤 𝑘 ,𝜖)
+
+, 𝜎 2
+
+> IA
+
+), (4.4) where 𝜖 > 0 prevents numerical instability. We treat IA as an abstract trade-off query that reveals an implied marginal rate of substitution along dimension 𝑘 rather than a literal objective edit. This provides a cardinal signal about trade-offs and is typically more informative than PS, but incurs a higher cognitive cost. 
+
+# 4.3 Posterior Inference over Preferences 
+
+We maintain a posterior 𝑝(𝑤 ∣ 𝒟 pref ) given the PS/IA observations using sequential Monte Carlo (SMC) with importance weighting. 5Particle filter representation. We represent the posterior using 𝑆 weighted particles 
+
+{(𝑤 (𝑠) , 𝜔 (𝑠) )} 𝑆 𝑠=1 where each 𝑤 (𝑠) ∈ Δ 𝑚−1 is sampled from a Dirichlet prior Dir (𝛼) at initialization. Upon observing a PS or IA response, we updated the particle weights via the corresponding likelihood as follows: 
+
+𝜔 (𝑠) ← 𝜔 (𝑠) ⋅ 𝑝( observation ∣ 𝑤 (𝑠) ). (4.5) When the effective sample size ESS = 1/ ∑ 𝑠 (𝜔 (𝑠) )2 (a measure of how many particles carry meaningful weight; low ESS indicates weight degeneracy) drops below a thresh-old (we use 𝑆/2 ), we resample particles with replacement proportional to weights and reset the weights to uniform. This approach supports fast 𝑂(𝑆) updates and avoids the computational cost of the MCMC while providing a flexible nonparametric posterior approximation. 
+
+# 5 QUIVER Method 
+
+QUIVER couples (i) an NSGA-II-based search layer that maintains and evolves a pop-ulation of candidate solutions with (ii) a cost-aware controller that decides whether to spend budget on objective evaluations or preference queries. 
+
+# 5.1 Search Layer: NSGA-II Backbone 
+
+We use NSGA-II Deb, Pratap, et al., 2002 as the evolutionary backbone, maintaining a population 𝑃 𝑡 of size 𝑁 and an archive 𝒜 of evaluated solutions with their true objective values. 
+
+Variation operators. Offspring are generated using simulated binary crossover (SBX) with distribution index 𝜂 𝑐 = 20 and polynomial mutation with distribution index 𝜂 𝑚 =20 , following standard practice. 
+
+Environmental selection. After each evaluation, we updated the population using the NSGA-II selection mechanism: (1) combine parents and offspring, (2) perform fast non-dominated sorting to assign Pareto ranks, (3) compute crowding distance within each front, and (4) select the best 𝑁 individuals by rank (lower is better) with crowding distance as tiebreaker (higher is better). 
+
+Preference-biased selection. When recommending a final solution, we select the evaluated point that maximizes the posterior expected utility: ̂𝑥 = arg max  
+
+> 𝑥∈𝒜
+
+𝔼 𝑤∼𝑝(𝑤|𝒟 pref )[𝑢( f(𝑥); 𝑤)]. (5.1) 6This was approximated by averaging the particles. 
+
+# 5.2 Cost-Aware Action Selection 
+
+At each decision step, the controller selects an action 𝑎 from {Eval, PS, IA} by maximizing the expected improvement per unit cost: 
+
+𝑎 ⋆ = arg max 
+
+> 𝑎
+
+𝔼[Δ𝑄 ∣ 𝑎, ℋ 𝑡 ]𝑐(𝑎) , (5.2) where ℋ𝑡 denotes the optimization history, and 
+
+Decision-quality proxy 𝑄 and VOI definitions. We used posterior entropy over preferences as a proxy for decision quality. Specifically, 𝑄 = −𝐻(𝑝(𝑤 ∣ 𝒟 pref )) , where 
+
+𝐻(⋅) denotes Shannon entropy (a scalar summary of posterior uncertainty: high entropy means the weight posterior is spread over many possible preference vectors, low entropy means it is concentrated), so that Δ𝑄 corresponds to expected entropy reduction (infor-mation gain, IG). This yields a unified VOI mapping as follows: • Preference queries (PS and IA): Δ𝑄 = IG (𝜃; observation ), the expected en-tropy reduction in the preference posterior. • Evaluation actions: Δ𝑄 = VOC eval , the expected improvement in posterior expected utility (a value-of-clairvoyance proxy). This VOI decomposition is a general controller design choice, not specific to NSGA-II; any backend providing candidates and a preference posterior can use it. Lower prefer-ence uncertainty concentrates the posterior mass over scalarizations, which improves the probability that the recommended solution maximizes DM utility. 
+
+Estimating expected information gain. For preference queries (PS and IA), we estimate 𝔼[Δ𝑄] using a Monte Carlo simulation (Algorithm 2). We sampled possible query outcomes from the current posterior, computed the resulting posterior update, and measured the entropy reduction. 
+
+Binned mutual information for IA. A technical subtlety arises when comparing information gain across modalities: IA queries yield continuous responses, whereas PS queries yield binary responses. The raw entropy-based MI for continuous outcomes can be artificially inflated. We address this by discretizing IA outcomes into 𝐵 = 15 bins before computing the information gain: ̃𝛿 binned = bin_center (digitize (̃𝛿, edges )). (5.3) 7Algorithm 1 QUIVER (high-level)  
+
+> 1:
+
+Initialize population 𝑃 , empty evaluation archive 𝒜 , preference data 𝒟 pref ← ∅  
+
+> 2:
+
+Spend initial budget on a small batch of Eval to seed 𝒜  
+
+> 3:
+
+while spent cost ≤ 𝐵 do  
+
+> 4:
+
+// Backend: generate candidates (EA-specific)  
+
+> 5:
+
+Fit/update surrogate ̂ f using archive 𝒜 ▷ Optional; omit if no surrogate  
+
+> 6:
+
+Generate offspring candidates 𝐶 from 𝑃 via variation operators (optionally with surrogate pre-screening)  
+
+> 7:
+
+// Controller: VOI/cost action selection (optimizer-agnostic)  
+
+> 8:
+
+Select action 𝑎 ∈ { Eval , PS , IA } using Eq. (5.2)  
+
+> 9:
+
+// Backend: execute action and update models  
+
+> 10:
+
+if 𝑎 = Eval then  
+
+> 11:
+
+Choose 𝑥 ∈ 𝐶 (e.g., surrogate-guided infill), evaluate f(𝑥) , update 𝒜  
+
+> 12:
+
+else if 𝑎 = PS then  
+
+> 13:
+
+Choose pair (𝑥 𝑖 , 𝑥 𝑗 ), query preference label 𝑦 , update 𝒟 pref  
+
+> 14:
+
+else  
+
+> 15:
+
+Choose IA query (𝑥 𝑖 , 𝑥 𝑗 , 𝑘) , observe ̃ 𝛿 , update 𝒟 pref  
+
+> 16:
+
+end if  
+
+> 17:
+
+Update preference posterior 𝑝(𝑤 ∣ 𝒟 pref ) 
+
+> 18:
+
+Update population 𝑃 (e.g., NSGA-II selection biased to preferred region)  
+
+> 19:
+
+end while Ensure: Recommended solution ̂ 𝑥  
+
+> 20:
+
+return ̂ 𝑥 maximizing posterior expected utility This binned MI approach ensures a fair comparison between modalities while preserv-ing the ordinal information content of the IA responses. For evaluations, we use a decision-aligned value: let 𝑈 best = max 𝑥∈𝒜 𝔼 𝑤 [𝑢( f(𝑥); 𝑤)] be the current best poste-rior expected utility among the evaluated points. The evaluation value is VOC eval =
+
+max (0, 𝑈 cand − 𝑈 best ), where 𝑈 cand is the expected utility of the best candidate. This makes the evaluation VOC comparable to the preference query VOC: both measure the expected improvement in decision quality. Although IG and VOC eval measure different quantities (entropy reduction vs. utility improvement), both are proxies for the same underlying goal: reducing recommendation regret. The cost-normalized ratio in Eq. (5.2) compares their expected contributions to this shared objective, making cross-modality comparison meaningful. 
+
+Query pair selection. For preference queries, we select pairs (𝐴, 𝐵) from the evaluated archive using posterior disagreement , an active learning approach. For each candidate pair, we sampled 𝑛 weight vectors from the posterior and computed the fraction 𝑝 that preferred 𝐴 over 𝐵 . The disagreement score is min (𝑝, 1 − 𝑝) , maximized at 𝑝 = 0.5 
+
+when the posterior is maximally uncertain of the preference. We select the pair with the highest disagreement, ensuring that the queries are informative rather than trivial. For IA queries, we additionally select the objective 𝑘 with the highest posterior variance 8Algorithm 2 Estimating Expected Information Gain 
+
+Require: Query (𝐴, 𝐵) for PS, or (𝐴, 𝐵, 𝑘) for IA; particles {(𝑤 (𝑠) , 𝜔 (𝑠) )} ; 𝑀 Monte Carlo samples 
+
+Ensure: Estimated expected information gain EIG  
+
+> 1:
+
+𝐻 0 ← entropy of current particle weights  
+
+> 2:
+
+EIG ← 0  
+
+> 3:
+
+for 𝑖 = 1 to 𝑀 do  
+
+> 4:
+
+Sample 𝑤 ∗ ∼ 𝑝(𝑤|𝒟 pref ) ▷ Sample from posterior  
+
+> 5:
+
+Simulate observation 𝑜 ∼ 𝑝(𝑜|𝑤 ∗, query ) ▷ PS: 𝑦 ∈ {0, 1} ; IA: ̃ 𝛿 ∈ ℝ  
+
+> 6:
+
+{̃𝜔 (𝑠) } ← update weights given 𝑜 ▷ Temporary copy  
+
+> 7:
+
+𝐻 after ← entropy of {̃𝜔 (𝑠) } 
+
+> 8:
+
+EIG ← EIG + (𝐻 0 − 𝐻 after )/𝑀  
+
+> 9:
+
+end for  
+
+> 10:
+
+return EIG Var [𝑤 𝑘 ], targeting the most uncertain dimension of the weight vector. 
+
+# 5.3 Theoretical Analysis 
+
+We provide a theoretical grounding for the VOI-per-cost policy, establishing when each query modality is preferred. 
+
+Information content of query modalities. The informativeness of PS and IA queries differs fundamentally. Under linear utility 𝑢(𝑓; 𝑤) = 𝑤 ⊤𝑓 , a PS query comparing out-comes 𝐴 and 𝐵 yields Fisher information: 
+
+𝐼 PS (𝑤) = (𝑤 ⊤(𝐴 − 𝐵)) 2
+
+𝜎 2
+
+> PS
+
+⋅ 𝑝(1 − 𝑝), (5.4) where 𝑝 = 𝜎(𝑤 ⊤(𝐴−𝐵)/𝜎 PS ) is the probability of preferring 𝐴 . This information vanishes when the DM is nearly indifferent ( 𝑝 ≈ 0.5 ) or strongly opinionated ( 𝑝 ≈ 0 or 1). In contrast, an IA query adjusting objective 𝑘 yields the Fisher information: 
+
+𝐼 (𝑘)  
+
+> IA
+
+(𝑤) = 1𝜎 2
+
+> IA
+
+, (5.5) independent of the current preference estimate. This explains IA’s advantage: its infor-mativeness does not depend on query difficulty, whereas PS information content varies with the preference gap. 
+
+Modality switching threshold. The VOI-per-cost policy in Eq. (5.2) induces a natural threshold for the query modality selection. 9Remark 5.1 (Modality switching threshold) . Under the cost-normalized policy, QUIVER selects IA over PS if and only if IG IA 
+
+IG PS 
+
+> 𝑐 IA 
+
+𝑐 PS 
+
+. (5.6) This follows directly from Eq. (5.2): IA is selected when IG IA /𝑐 IA > IG PS /𝑐 PS .This threshold has an intuitive interpretation: IA queries are worthwhile only when their relative information advantage exceeds their relative cost disadvantage. For the empirically grounded cost ratio 𝑐 IA /𝑐 PS = 1.15 Haidinger et al., 2025, QUIVER requires IA to provide at least 15% more information than PS to justify selection. Our cost sensitivity experiments (Section 7) confirm a crossover near 𝑐 IA /𝑐 PS ≈ 2 , indicating that IA provides approximately twice the information of PS under our noise model. 
+
+# 6 Experimental Setup 
+
+Benchmarks. We evaluate on standard DTLZ Deb, Thiele, et al., 2005 and WFG Huband et al., 2006 test suites: • DTLZ2 (𝑚 = 3, 5 ): Concave Pareto front, tests convergence and distribution. • WFG4 (𝑚 = 3 ): Multi-modal, separable, concave front. • WFG9 (𝑚 = 3 ): Non-separable, multi-modal, deceptive—a challenging test case. The decision space dimension was 𝑑 = 𝑚 + 9 for DTLZ and 𝑑 = 2𝑚 + 20 for WFG, following the standard practice. While our experiments focus on 𝑚 ∈ {3, 5} objectives, the QUIVER framework (preference posterior, VOI/cost controller, and action selection) is general and applies to any number of objectives 𝑚 ≥ 2 .
+
+Cost model. We set costs as: 𝑐 eval = 5.0 , 𝑐 PS = 1.0 , and 𝑐 IA = 1.15 (15% higher than PS). The IA cost premium is grounded in empirical findings from Haidinger et al., 2025, who studied 83 roofing professionals and found that indifference adjustments require only 
+
+∼15% more response time and cognitive effort than pairwise comparisons. The total budget is 𝐵 = 500 cost units, allowing approximately 100 evaluations or 435 PS queries. 
+
+Synthetic DMs. We sampled ground-truth preference weights 𝑤 ⋆ from Dir (1, … , 1) 
+
+and simulated noisy responses: • PS: Bradley-Terry with noise parameter 𝜎 PS = 0.15 
+
+• IA: Gaussian noise with 𝜎 IA = 0.18 (20% higher than PS) Higher IA noise reflects the greater difficulty in specifying exact indifference adjustments. 10 Baselines. We compared against five baselines sharing the same NSGA-II backbone: 1. Eval-only : Standard surrogate-assisted EMO without preference learning. The final recommendation uses uniform weights 𝑤 = (1/𝑚, … , 1/𝑚) .2. PS-only : All preference budget spent on pairwise statements with random pair selection. 3. IA-only : All preference budget spent on indifference adjustments with random pair/objective selection. 4. Fixed-schedule : Alternates Eval, PS, IA at fixed intervals. 5. Random : Samples actions proportional to inverse cost (with cheaper actions more likely). The Eval-only baseline uses uniform weights for recommendation because it has no pref-erence information; this is a fair baseline because any other fixed weighting would be arbitrary. 
+
+Algorithm parameters. Population size 𝑁 = 20 , 𝑆 = 2048 particles for the prefer-ence posterior, 𝑀 = 50 Monte Carlo samples for EIG estimation. All experiments were run for five independent seeds with different 𝑤 ⋆ samples. 
+
+Metrics. We report: • Utility regret ℛ (Eq. 3.1): the difference between the optimal and recommended utilities • Query mix : fraction of budget spent on Eval, PS, and IA. • Final entropy : posterior uncertainty at termination. 
+
+# 7 Results 
+
+# 7.1 Main Benchmark Results 
+
+Tables 1 and 2 summarize the final utility regret and query modality selection across all benchmarks. Key findings: • DTLZ2: All methods achieve near-zero regret. On DTLZ2 ( 𝑚 = 3, 5 ), all methods, including Eval-only, achieve essentially zero regret ( ≤ 0.02 ), indicating that this benchmark is relatively easy with a sufficient budget. 11 Table 1: Final utility regret (mean ± std, 5 seeds, 𝐵 =500). Lower is better. Bold indicates best per row.                        
+
+> Problem Eval-only PS-only IA-only QUIVER DTLZ2 (3) .02 ± .04 .00 .00 .00
+> DTLZ2 (5) .00 ± .01 .00 .00 .00
+> WFG4 (3) 2.43 ± .12 2.24 ± .13 2.24 ± .13 2.14 ± . 15
+> WFG9 (3) 3.77 ± .91 3.90 ± 1.5 3.90 ± 1.5 2.82 ±1.4
+
+Table 2: Action counts for QUIVER (mean over 5 seeds, 𝐵 = 500 ). Shows the number of PS queries (n_ps), IA queries (n_ia), and IA fraction among preference queries. The policy adapts modality selection to problem difficulty.                
+
+> Problem n_ps n_ia IA fraction DTLZ2 ( 𝑚 =3) 28.8 7.2 20% DTLZ2 ( 𝑚 =5) 31.4 4.6 13% WFG4 ( 𝑚 =3) 26.6 9.4 26% WFG9 ( 𝑚 =3) 23.4 12.6 35%
+
+• WFG benchmarks reveal method differences. Clear differences emerged in the more challenging WFG4 and WFG9 problems. QUIVER achieves the lowest 
+
+regret on both (2.14 and 2.82, respectively), outperforming all baselines, including PS-only and IA-only. • 25% improvement on WFG9. On the hardest benchmark (WFG9), QUIVER achieves a regret of 2.82 vs. 3.77–3.90 for baselines, a 25% reduction. • Adaptive modality selection. QUIVER’s VOI-per-cost policy adapts modality selection to problem difficulty: on easy problems (DTLZ2), it uses 80–87% PS queries; on hard problems (WFG9), it shifts to 35% IA queries to gather richer information. 
+
+# 7.2 Query Mix Analysis 
+
+Figure 1 visualizes the regret comparison across all benchmarks. On DTLZ2, all the methods achieved near-zero regret. On WFG4 and WFG9, QUIVER achieved the lowest regret, demonstrating the value of adaptive action selection in challenging problems. Figure 2 shows the budget allocation for QUIVER. The policy adapts its modality selection based on the problem difficulty. • On DTLZ2 ( 𝑚 =3): 29 PS, 7 IA (20% IA fraction—easy problem, cheap PS queries suffice). • On WFG4: 27 PS, 9 IA (26% IA fraction—moderate difficulty). 12 Eval PS IA QUIVER    
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> Utility Regret
+> WFG4 (m=3)
+> Eval PS IA QUIVER
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> Utility Regret
+> WFG9 (m=3)
+
+Figure 1: Utility regret comparison across benchmarks. Preference-learning methods achieve near-zero regret while Eval-only has 23–34% regret. • On WFG9: 23 PS, 13 IA (35% IA fraction—hard problem, richer IA queries pre-ferred). This demonstrates the core contribution: QUIVER automatically shifts to more infor-mative (but costlier) IA queries on harder problems, where the additional information is worth the cost. 
+
+# 7.3 Cost Ratio Sensitivity 
+
+To test robustness, we varied the IA cost ratio 𝑐 IA /𝑐 PS from 1.0 to 3.0 on DTLZ2 ( 𝑚 = 3 ). Figure 3 shows how QUIVER’s query selection adapts to the cost structure. As IA becomes more expensive, the IA fraction decreases: • At 𝑐 IA /𝑐 PS = 1.0 : IA fraction is 23% (IA provides good value). • At 𝑐 IA /𝑐 PS = 1.5 : IA fraction drops to 13%. • At 𝑐 IA /𝑐 PS = 3.0 : IA fraction falls to 10% (PS dominates). This gradual decline demonstrates that the VOI/cost policy automatically adapts to the cost structure, progressively shifting towards cheaper PS queries as IA becomes relatively more expensive. 
+
+Setting-dependent behavior. The observed modality usage is protocol dependent (benchmark geometry, noise, budget, and candidate construction); therefore, we report our conclusions within this experimental setup. In QUIVER’s evolutionary setting on DTLZ2, PS queries dominated across all cost ratios (77–90% of preference queries), with IA usage decreasing as its relative cost increased. The key finding is that VOI-per-cost control adapts query modality usage as costs evolve, automatically selecting the most cost-efficient modality. 13 DTLZ2 
+
+> (m=3)
+> DTLZ2
+> (m=5)
+> WFG4
+> (m=3)
+> WFG9
+> (m=3)
+> Problem
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Fraction of Budget
+> QUIVER Query Mix
+> Eval
+> PS
+> IA
+
+Figure 2: Budget allocation for QUIVER across benchmarks. Evaluations dominate the cost budget ( ∼92%), with IA fraction among preference queries ranging from 20% (easy DTLZ2) to 35% (hard WFG9). 
+
+# 7.4 Fatigue Regime: Dynamic IA Cost 
+
+To demonstrate true adaptive behavior, we implemented a fatigue regime where the IA cost increases with usage: 
+
+𝑐 IA (𝑡) = 𝑐 0 
+
+> IA
+
+× (1 + 𝛼 × 𝑛 IA (𝑡)), (7.1) where 𝛼 is the fatigue coefficient, and 𝑛 IA (𝑡) is the cumulative IA query count. This models cognitive fatigue, where complex queries become progressively more burdensome. Table 3 shows the results for DTLZ2 ( 𝑚 = 3 ) with varying fatigue coefficients. Key findings: • Adaptive switching demonstrated. As fatigue 𝛼 increases, the IA fraction decreases from 62% to 55%, showing that the policy responds to increasing costs. • Reduced total queries. Higher fatigue reduces overall preference queries ( 𝑛 IA +𝑛 PS drops from 159 to 70) as the algorithm shifts budget toward evaluations when preference queries become expensive. • Graceful degradation. Regret increased gradually from 0% to 14% with higher fatigue, not catastrophically. 14 1.00 1.25 1.50 1.75 2.00 2.25 2.50 2.75 3.00  
+
+> Cost Ratio cIA /cPS
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Fraction of IA Queries
+> Cost Sensitivity (DTLZ2, m=3)
+> QUIVER
+
+Figure 3: Cost sensitivity analysis on DTLZ2 ( 𝑚 = 3 ). QUIVER gradually reduces IA usage as the cost ratio increases, demonstrating cost-aware modality selection. Table 3: Fatigue experiment results on DTLZ2 ( 𝑚 = 3 , 5 seeds). As fatigue coefficient 𝛼 
+
+increases, QUIVER adaptively reduces IA usage. 
+
+Fatigue 𝛼 Regret IA Fraction 𝑛 IA 𝑛 PS 
+
+0.00 0.00 ± 0.00 62% 99 60 0.05 0.03 ± 0.06 58% 53 39 0.10 0.13 ± 0.21 54% 47 42 0.15 0.14 ± 0.18 55% 38 32 
+
+# 8 Discussion 
+
+Problem difficulty matters. On DTLZ2, all methods achieved near-zero regret, sug-gesting that this benchmark is relatively easy when the budget is sufficient. The real test comes on WFG4 and WFG9, where QUIVER achieves the lowest regret among all methods (2.14 and 2.82, respectively). Notably, on these harder problems, even PS-only and IA-only with 347–400 preference queries achieve higher regret than QUIVER, demonstrating the value of adaptive action selection. 
+
+Adaptive allocation outperforms fixed strategies. QUIVER adapts its action mix to the problem at hand: on DTLZ2, it uses 92 evals with mostly PS queries (20% IA), whereas on WFG9, it shifts to 35% IA queries to gather richer information. This problem-dependent allocation explains why QUIVER achieves lower regret on harder problems: it recognizes when preference learning is more valuable and allocates accordingly. Fixed strategies cannot make this adaptation, leading to suboptimal performance when budget 15 allocation does not match the problem structure. 
+
+Baselines as ablation study. Our comparisons are between QUIVER and its own internal variants (Eval-only, PS-only, IA-only, Fixed-schedule, Random), all sharing the same NSGA-II backbone. This ablation design isolates the contribution of adaptive VOI/cost action selection from confounds introduced by different optimization backends. Comparison with existing interactive EMO methods (e.g., NAUTILUS, NIMBUS, or preference-based MOEA/D variants) would require controlling for differences in search strategy, population management, and stopping criteria, which is beyond the scope of this study. We view such cross-method comparison as important future work, noting that the VOI/cost controller is optimizer-agnostic and could be combined with these alternative backends. 
+
+Limitations. Our experiments used synthetic DMs with linear utilities. Real DMs may exhibit inconsistencies or non-linear preferences that our model does not capture. 
+
+Linear utility assumption. The linear scalarization 𝑢( f; 𝑤) = 𝑤 ⊤f cannot represent preferences over non-convex regions of the Pareto front, because linear utility maximiza-tion can only recover solutions on the convex hull of the Pareto set. For problems with non-convex or disconnected Pareto fronts, this assumption may exclude the DM’s true preferred solution from the reachable set. Extending QUIVER to Chebyshev scalarization 
+
+𝑢( f; 𝑤) = max 𝑘 𝑤 𝑘 |𝑓 𝑘 −𝑧 ∗𝑘 | or general non-linear utility models would require replacing the closed-form IA likelihood (Eq. 4.4) with a simulation-based likelihood, but the VOI/cost controller and particle-filter posterior remain applicable without modification. We view this extension as a priority for future work. We address fatigue via a dynamic cost model (Section 7.4), which shows that the framework can accommodate time-varying cognitive costs. The particle filter posterior requires 𝑂(𝑆) storage and update cost, although this is negligible compared to objective evaluations in expensive optimization settings. The VOI policy’s reliance on entropy-based information gain may not capture all aspects of deci-sion quality, and integrating surrogate predictions for candidates could improve action selection. 
+
+Human factors and cognitive modelling. Our cost model treats 𝑐 PS and 𝑐 IA as fixed constants, but real cognitive costs may vary with user fatigue, query difficulty, and individual differences in fatigue and difficulty. Moreover, fatigue may increase not only the cost but also the noise of responses: a fatigued DM may provide less precise indiffer-ence adjustments ( 𝜎 IA increases) and more erratic pairwise comparisons ( 𝜎 PS increases), reducing the information content of each query. Jointly modelling cost and noise degrada-tion is an important direction for realistic deployment. The fatigue regime (Section 7.4) 16 demonstrates that the framework can accommodate dynamic costs. Future work could model individual-specific cost functions learned online, enabling personalized query se-lection that accounts for heterogeneity across decision-makers. Strategic or inconsistent users, who may misreport preferences or violate transitivity, present another challenge that robust preference learning techniques could address. 
+
+Computational complexity. The per-step cost of QUIVER’s action selection is dom-inated by the EIG estimation (Algorithm 2): 𝑂(𝑀 ⋅ 𝑆) for 𝑀 Monte Carlo samples over 
+
+𝑆 particles, evaluated for each candidate action. With 𝑀 = 50 and 𝑆 = 2048 , this yields 
+
+∼10 5 lightweight operations per decision step—negligible compared to the wall-clock cost of an expensive objective evaluation. The NSGA-II backbone adds 𝑂(𝑁 2𝑚) per genera-tion for non-dominated sorting. Overall, the computational overhead of adaptive action selection is small relative to the evaluation budget it manages. 
+
+Connection to information-directed sampling. QUIVER’s cost normalized acqui-sition can be viewed through the lens of information-directed sampling (IDS) Russo and Van Roy, 2018, which balances information gain against instantaneous regret. Our for-mulation extends this principle to heterogeneous query types: rather than trading off exploration vs. exploitation within a single query modality, we trade off across modalities with different information-cost profiles. The modality-switching threshold (Remark 5.1) provides an interpretable rule that is analogous to the information ratio in the IDS. 
+
+Implications for RLHF efficiency. The principles underlying our method (adap-tively selecting query modalities to maximize information per unit cost) have direct implications for reinforcement learning from human feedback (RLHF). Current RLHF pipelines rely almost exclusively on pairwise comparisons; however, our results suggest that the strategic use of richer query types (analogous to IA) during critical training phases could reduce annotation budgets. For example, when fine-tuning is nearly com-plete and the model needs to distinguish between high-quality responses, more informative (but costlier) queries may be justified in this case. The cost-normalized VOI framework provides a principled way to make such decisions. 
+
+Extensions. The framework naturally extends to (i) additional query modalities (e.g., ranking queries, reference point specification), (ii) non-linear utility models via appro-priate likelihood functions, (iii) cognitive budget constraints that limit total preference queries independent of cost, and (iv) improved Eval VOI using surrogate-predicted can-didate utilities. 17 9 Conclusion 
+
+We introduced QUIVER, a cost-aware interactive evolutionary multi-objective optimizer that adaptively allocates budget between objective evaluations and heterogeneous pref-erence queries (PS and IA). The key innovation is a VOI/cost action selection rule that maximizes the expected information gain per unit cost, implemented via Monte Carlo estimation over a particle-filter preference posterior. Our main finding is that adaptive modality selection outperforms fixed strate-gies for challenging problems . On DTLZ2, all methods achieve near-zero regret. However, on the harder WFG4 and WFG9 benchmarks, QUIVER achieves the lowest 
+
+regret (2.14 and 2.82, respectively—a 25% improvement on WFG9), outperforming both Eval-only and fixed preference strategies. The key advantage is QUIVER’s adaptive modality selection: for easy problems, it uses cheap PS queries (80% PS); for hard prob-lems, it shifts to richer IA queries (35% IA), where the additional information is worth the cost. Across our baselines, the consistent finding is that VOI-per-cost control improves util-ity regret per unit cost and adapts query modality usage as costs and uncertainty evolve. The framework demonstrates that treating {Eval, PS, IA} as a unified action space with different costs enables principled resource allocation in interactive multi-objective opti-mization. This cost-normalized action selection principle is the key innovation, which is applicable regardless of the specific optimization backend. Future work will investigate improved Eval VOI estimation using surrogate predictions, validate the findings with real human DMs—whose fatigue patterns, inconsistencies, and learning effects may differ substantially from our synthetic models—, and extend to non-linear utility models. 
+
+# References 
+
+Bradley, R. A., and Terry, M. E. (1952) Rank analysis of incomplete block designs: I. the method of paired comparisons. Biometrika , 39 (3/4), pp. 324–345. Available at: https://doi.org/10.2307/2334029. Branke, J., Greco, S., Slowinski, R., and Zielniewicz, P. (2015) Learning value functions in interactive evolutionary multiobjective optimization. IEEE Transactions on Evolu-tionary Computation , 19 (1), pp. 88–102. Available at: https://doi.org/10.1109/tevc. 2014.2303783. Brochu, E., Freitas, N. d., and Ghosh, A. (2007) Active preference learning with discrete choice data. In: Proceedings of the 21st International Conference on Neural Infor-mation Processing Systems . NIPS’07. Vancouver, British Columbia, Canada: Curran Associates Inc., pp. 409–416. 18 Chugh, T., Jin, Y., Miettinen, K., Hakanen, J., and Sindhya, K. (2018) A surrogate-assisted reference vector guided evolutionary algorithm for computationally expen-sive many-objective optimization. IEEE Transactions on Evolutionary Computation ,
+
+22 (1), pp. 129–142. Available at: https://doi.org/10.1109/tevc.2016.2622301. Chugh, T., Sindhya, K., Hakanen, J., and Miettinen, K. (2019) A survey on handling computationally expensive multiobjective optimization problems with evolutionary algorithms. Soft Computing , 23 (9), pp. 3137–3166. Available at: https://doi.org/10. 1007/s00500-017-2965-0. Deb, K., Pratap, A., Agarwal, S., and Meyarivan, T. (2002) A fast and elitist multiobjec-tive genetic algorithm: NSGA-II. IEEE Transactions on Evolutionary Computation ,
+
+6(2), pp. 182–197. Available at: https://doi.org/10.1109/4235.996017. Deb, K., Thiele, L., Laumanns, M., and Zitzler, E. (2005) “Scalable test problems for evolutionary multiobjective optimization”. In: Advanced Information and Knowledge Processing . London: Springer-Verlag, pp. 105–145. Available at: https://doi.org/10. 1007/1-84628-137-7\_6. Haidinger, W., Burnat, F. A. D., Branke, J., and Gutjahr, W. J. (2025) How much harder are indifference adjustments? An experiment on the cognitive effort in multi-criteria decisions. SSRN Electronic Journal . Available at: https : / / doi . org / 10 . 2139 / ssrn . 5525460. Howard, R. A. (1966) Information value theory. IEEE Transactions on Systems Science and Cybernetics , 2(1), pp. 22–26. Available at: https://doi.org/10.1109/TSSC.1966. 300074. Huband, S., Hingston, P., Barone, L., and While, L. (2006) A review of multiobjective test problems and a scalable test problem toolkit. IEEE Transactions on Evolutionary Computation , 10 (5), pp. 477–506. Available at: https://doi.org/10.1109/tevc.2005. 861417. Keeney, R. L., and Raiffa, H. (1993) Decisions with multiple objectives: Preferences and value trade-offs . Probability & Mathematical Statistics S. Cambridge, England: Cam-bridge University Press. Available at: https://doi.org/10.1017/cbo9781139174084. Knowles, J. (2006) ParEGO: a hybrid algorithm with on-line landscape approximation for expensive multiobjective optimization problems. IEEE Transactions on Evolutionary Computation , 10 (1), pp. 50–66. Available at: https : / / doi . org / 10 . 1109 / tevc . 2005 . 851274. Lee, E. H., Perrone, V., Archambeau, C., and Seeger, M. (2020) Cost-aware Bayesian Optimization. In: 7th ICML Workshop on Automated Machine Learning . Available at: https://www.automl.org/wp-content/uploads/2020/07/AutoML_2020_paper_8. pdf. Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C. L., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., Schulman, J., Hilton, J., Kelton, F., Miller, L., Simens, 19 M., Askell, A., Welinder, P., Christiano, P., Leike, J., and Lowe, R. (2022) Training language models to follow instructions with human feedback. In: Proceedings of the 36th International Conference on Neural Information Processing Systems . NIPS ’22. New Orleans, LA, USA: Curran Associates Inc. Rafailov, R., Sharma, A., Mitchell, E., Ermon, S., Manning, C. D., and Finn, C. (2023) Direct preference optimization: your language model is secretly a reward model. In: 
+
+Proceedings of the 37th International Conference on Neural Information Processing Systems . NIPS ’23. New Orleans, LA, USA: Curran Associates Inc. Raiffa, H., and Schlaifer, R. (1961) Applied Statistical Decision Theory . Harvard Univer-sity Press. Russo, D., and Van Roy, B. (Feb. 2018) Learning to optimize via information-directed sampling. Operations Research , 66 (1), pp. 230–252. Available at: https://doi.org/10. 1287/opre.2017.1663. Settles, B. (2009) Active Learning Literature Survey . University of Wisconsin-Madison. Zhang, Q., Liu, W., Tsang, E., and Virginas, B. (2010) Expensive multiobjective optimiza-tion by MOEA/D with Gaussian process model. IEEE Transactions on Evolutionary Computation , 14 (3), pp. 456–474. Available at: https://doi.org/10.1109/tevc.2009. 2033671. 20

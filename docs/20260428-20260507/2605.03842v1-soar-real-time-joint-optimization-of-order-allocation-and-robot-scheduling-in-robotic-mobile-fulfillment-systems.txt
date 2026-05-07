@@ -1,0 +1,1011 @@
+Title: SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems
+
+URL Source: https://arxiv.org/pdf/2605.03842v1
+
+Published Time: Wed, 06 May 2026 01:22:05 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems 
+
+# Yibang Tang 1, Yifan Yang 1, Jingyuan Wang 1, Junhua Chen 1, Zhen Zhao 2 
+
+> 1
+
+School of Computer Science and Engineering, Beihang University, Beijing, China  
+
+> 2
+
+Geekplus Technology Co., Ltd., Beijing, China China 
+
+## Abstract 
+
+Robotic Mobile Fulfillment Systems (RMFS) rely on mobile robots for automated inventory transportation, coordinating order allo-cation and robot scheduling to enhance warehousing efficiency. However, optimizing RMFS is challenging due to strict real-time constraints and the strong coupling of multi-phase decisions. Exist-ing methods either decompose the problem into isolated sub-tasks to guarantee responsiveness at the cost of global optimality, or rely on computationally expensive global optimization models that are unsuitable for dynamic industrial environments. To bridge this gap, we propose SOAR , a unified Deep Reinforcement Learning framework for real-time joint optimization. SOAR transforms order allocation and robot scheduling into a unified process by utilizing soft order allocations as observations. We formulate this as an Event-Driven Markov Decision Process, enabling the agent to perform si-multaneous scheduling in response to asynchronous system events. Technically, we employ a Heterogeneous Graph Transformer to en-code the warehouse state and integrate phased domain knowledge. Additionally, we incorporate a reward shaping strategy to address sparse feedback in long-horizon tasks. Extensive experiments on synthetic and real-world industrial datasets, in collaboration with Geekplus, demonstrate that SOAR reduces global makespan by 7.5% and average order completion time by 15.4% with sub-100ms latency. Furthermore, sim-to-real deployment confirms its practical viability and significant performance gains in production environments. The code is available at https://github.com/200815147/SOAR. 
+
+## Keywords 
+
+Robotic Mobile Fulfillment Systems, Deep Reinforcement Learning, Joint Optimization, Order Allocation, Robot Scheduling 
+
+## 1 Introduction 
+
+Driven by the explosive demand in global e-commerce, the Robotic Mobile Fulfillment System (RMFS) has emerged as a mainstream solution for modern intelligent warehousing. RMFS revolutionizes traditional operations by applying a “goods-to-person” paradigm. In this system, autonomous robots transport shelves with inventory directly to fixed workstations, eliminating the need for human pick-ers to traverse the warehouse. This architecture offers significant advantages, including superior throughput efficiency and scalabil-ity, making it indispensable for handling the high-volume order volumes in large-scale logistics centers [2, 7, 9]. As illustrated in Figure 1, the RMFS comprises robots for trans-portation, shelves for items storage, workstations for order ful-fillment, and storage locations for shelves placement. Within this environment, the RMFS necessitates a scheduling paradigm com-prising two coupled layers that govern a sequential four-phase 
+
+(a) Robot delivering a shelf 
+
+(b) Top view of the RMFS 
+
+(c) RMFS workflow 
+
+Figure 1: RMFS overview: snapshots and workflow. 
+
+decision process. Specifically, the Order Allocation layer governs the initial order allocation phase, where incoming orders are allo-cated to specific shelves and workstations. The physical execution is then managed by the Robot Scheduling layer, which orchestrates the subsequent three phases: Pick-up to retrieve shelves, Delivery to transport shelves to workstations, and Return to restore shelves to storage locations. Operating at a massive scale with hundreds of robots, the system aims to minimize the total time of order ful-fillment. However, achieving this is non-trivial due to intrinsic challenges: strict real-time constraints imposed by stochastic or-der arrivals and rapid robot movements, and the complex coupling 
+
+between multi decision phases. While existing research has advanced the development of RMFS, current approaches struggle to balance real-time responsiveness and global performance. On the one hand, some research [ 30 ] pri-oritizes real-time responsiveness by adopting a decoupled decision 
+
+> arXiv:2605.03842v1 [cs.AI] 5 May 2026 Tang and Yang, et al.
+
+paradigm. These methods decompose the complex system into isolated sub-problems, i.e separate order allocation [ 14 , 21 , 28 ]and robot scheduling [ 12 , 19 ]. While this decomposition signifi-cantly reduces the computational complexity of each individual phase, it inherently restricts the optimization to local objectives and often results in globally suboptimal performance. On the other hand, another targets global optimization by formulating RMFS as a Mixed Integer Programming model [ 27 , 31 , 34 ] to optimize multiple phases simultaneously. However, these models suffer from com-putational complexity and are inherently static. They struggle to capture real-time fluctuations efficiently, rendering them unsuitable for large-scale, dynamic industrial applications. Therefore, a unified approach that can simultaneously ensure real-time responsiveness and achieve multi-phase joint optimization is highly desirable. To bridge this gap, we propose SOAR (Soft O rder Allocation and R obot Scheduling ), a deep reinforcement learning-based framework designed for the joint optimization of order allocation and robot scheduling . Unlike decoupled approaches, our method con-solidates them into a unified joint decision-making process. Specifi-cally, we first introduce a Soft Order Allocation mechanism. Instead of executing immediate fixed allocation, this module dynamically calculates matching degree between orders, shelves, and worksta-tions. These matching degrees serve as inputs for the subsequent phase, effectively fusing the previously isolated phases into a uni-fied optimization process. Building upon this, we formulate the joint decision-making process as an Event-Driven Markov Decision Process. The operational cycle is driven asynchronously by distinct events. At each decision step, the system gets the real-time global state with the soft allocation information to generate actions, which drive the continuous evolution of the system environment. In collaboration with Geekplus 1, a leading warehouse robotics company, we evaluated SOAR on both large-scale synthetic and real-world industrial datasets. Experimental results demonstrate that our framework significantly outperforms state-of-the-art solutions, reducing the global makespan by 7.5% and average order completion time by 15.4%. Furthermore, we successfully executed a sim-to-real deployment in a physical production environment. Extensive on-site testing confirms that SOAR yields consistent and significant improvements across all key metrics under real-world conditions. Crucially, these performance gains are achieved while maintaining sub-100ms response latency. SOAR successfully bridges the gap be-tween real-time responsiveness and global performance, exhibiting immense potential for broad industrial application. The main contributions of this paper are summarized as follows: 
+
+• To the best of our knowledge, SOAR is one of the initial at-tempts into the dynamic joint optimization of order alloca-tion and robot scheduling in RMFS. 
+
+• We propose a novel decision paradigm that synergizes soft order allocation with an event-driven markov decision process .This paradigm effectively dissolves the boundary between order allocation and robot scheduling, transforming them into a uni-fied optimization process . Building upon this, we develop a reinforcement learning-based system that presents a new solu-tion for addressing complex scheduling challenges in RMFS. 
+
+> 1https://www.geekplus.com/en
+
+• Extensive experiments on both large-scale synthetic and real-world industrial datasets demonstrate that SOAR significantly outperforms state-of-the-art solutions, reducing the global makespan by 7.5% and average order completion time by 15.4% while maintaining sub-100ms latency . Furthermore, we successfully bridged the reality gap through a sim-to-real deployment in production environments, validating that SOAR yields significant improvements under real-world constraints. 
+
+## 2 Preliminaries and System Overview 2.1 Preliminaries 
+
+The warehouse environment is modeled as a 2D grid map of size 
+
+𝐻 × 𝑊 . It contains following entities: 
+
+Definition 2.1 (Item). The basic unit of inventory, representing a product category. The warehouse manages 𝑁 𝑘 unique item types. 
+
+Definition 2.2 (Order). An order 𝑜 = (𝑡 𝑜 , 𝒅 𝑜 ) consists of an ar-rival time 𝑡 𝑜 and a demand list 𝒅 𝑜 ∈ Z𝑁 𝑘 , where 𝒅 𝑜 [𝑖 ] denotes the demanded quantity of the 𝑖 -th item. O denotes the set of orders. 
+
+Definition 2.3 (Shelf). A shelf 𝑠 = (𝑥 𝑠 , 𝑦 𝑠 , 𝒒 𝑠 ) consists of its posi-tion (𝑥 𝑠 , 𝑦 𝑠 ) and inventory 𝒒 𝑠 ∈ Z𝑁 𝑘 , where 𝒒 𝑠 [𝑖 ] is the quantity of the 𝑖 -th item on shelf. S denotes the set of shelves with size 𝑁 𝑠 .
+
+Definition 2.4 (Storage Location). A storage location 𝑙 is defined by a tuple (𝑥 𝑙 , 𝑦 𝑙 ), where (𝑥 𝑙 , 𝑦 𝑙 ) denotes its fixed position for hold-ing shelves. L denotes the set of storage locations with size 𝑁 𝑙 .
+
+Definition 2.5 (Workstation). A workstation 𝑤 is defined by a tuple (𝑥 𝑤 , 𝑦 𝑤 ), where (𝑥 𝑤 , 𝑦 𝑤 ) denotes its fixed position. Pickers at workstations retrieve items from shelves to fulfill order demands. 
+
+W denotes the set of workstations with size 𝑁 𝑤 .
+
+Definition 2.6 (Robot). A robot 𝑟 is defined by a tuple (𝑥 𝑟 , 𝑦 𝑟 , 𝑠 𝑟 ),where (𝑥 𝑟 , 𝑦 𝑟 ) denotes the position, 𝑠 𝑟 ∈ S ∪ {∅} indicates the loaded shelf (or ∅ if unloaded). Unloaded robots can traverse storage locations by passing under the shelves. The robot transports the shelf to the workstation. R denotes the set of robots with size 𝑁 𝑟 .
+
+Definition 2.7 ( Dynamic Order Allocation and R obot S cheduling Problem, DOARS Problem). Given the warehouse and dynamically arriving orders O, the DOARS Problem involves making decisions on 1) Order Allocation : Allocating each order to a workstation and shelves that contain all required items; 2) Robot Scheduling :Scheduling robots to specific targets, such as moving to a storage location with shelf for pick-up, a workstation for delivery or an empty storage location for return shelf. The goal is to minimize the 
+
+makespan 𝑀 :
+
+min 𝑀 = max   
+
+> 𝑟 ∈ R
+
+𝑇 𝑟 , (1) where 𝑇 𝑟 denotes the elapsed time for robot 𝑟 from the start to the completion of the scheduling process. 
+
+## 2.2 System Overview 
+
+The framework of SOAR is illustrated in Figure 2, comprising the warehouse environment, a Soft Order Allocation module, and a Robot Scheduling module. The environment operates in an event-driven manner, governed by two key events: order arrivals and decision events. Upon order arrival, Soft Order Allocation evaluates allocation SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems 
+
+Figure 2: The overall framework of SOAR . Purple arrows indicate that an event triggered a module, and orange arrows indicate the information flow in an Event-Driven MDP. 
+
+candidates to provide preliminary guidance, deferring the final commitment to the subsequent robot scheduling phase. Triggered by decision events, Robot Scheduling determines the robot’s next destination based on prior soft allocations and the current state. This module outputs an action while finalizing specific order allocations, driving state transitions that generate new events. 
+
+## 3 Soft Order Allocation 
+
+Traditional methods that immediately allocate orders to fixed shelves and workstations overlook the system dynamics that evolve be-tween allocation and the transportation of shelves to workstations. 
+
+SOAR employs a soft allocation mechanism. This process is triggered instantaneously upon the arrival of each new order. Its objective to update: 1) Soft Orders Set O𝑠 , represents the orders potentially allocated to the shelf 𝑠 . The collection of soft order sets across all shelves is denoted by O(·) . 2) Heat Vectors 𝒉 𝑆 ∈ R𝑁 𝑠 , 𝒉 𝑊 ∈ R𝑁 𝑤 ,represent the potential of shelves and workstations for allocation to the orders that have already arrived. These subsequently serves as guidance for robot scheduling. For every incoming order 𝑜 , the following steps are executed sequentially: 
+
+Step 1: Construction of Matching Degree Matrix. For the incoming order 𝑜 , we construct a matching degree matrix 𝑽 (𝑜 ) ∈ R𝑁 𝑠 ×𝑁 𝑤 ,where 𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+quantifies the suitability of delivering shelf 𝑠 to work-station 𝑤 to fulfill order 𝑜 . A higher 𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+indicates that shelf 𝑠 is highly relevant to order 𝑜 and is close to workstation 𝑤 . Formally: 
+
+𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+=
+
+Í𝑁 𝑘  
+
+> 𝑖 =1
+
+min (𝒅 𝑜 [𝑖 ], 𝒒 𝑠 [𝑖 ]) 
+
+dist (𝑠, 𝑤 ) + 𝜖 , (2) where dist (𝑠, 𝑤 ) denotes the distance between the shelf and the workstation, and 𝜖 is a small constant to prevent division by zero. The numerator represents the quantity of items retrievable from the shelf to satisfy the order, while the denominator denotes the distance required to transport the shelf to the workstation. 
+
+Step 2: Top-𝐾 Candidate Shelves Filtering. In this step, we fil-ter out the most promising candidates shelves to avoid the heavy computational burden arising from the large shelf number. For each workstation 𝑤 , we select the subset of shelves C (𝑜 )
+
+> 𝑤
+
+with the Top-𝐾 highest matching degrees, where 𝐾 represents the size of the candidate set. The candidate set for workstation 𝑤 is defined as: 
+
+C (𝑜 ) 
+
+> 𝑤
+
+=
+
+n
+
+𝑠 ∈ S | rank (𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+) ≤ 𝐾 
+
+o
+
+, (3) where rank (𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+) corresponds to the position of 𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+within 𝑽 (𝑜 )
+
+> :,𝑤
+
+(column 𝑤 of 𝑽 (𝑜 ) ) arranged in descending order. This step prunes the soft allocation space, retaining only the Top-𝐾 shelves that are most likely to be selected for order 𝑜 at workstation 𝑤 .
+
+Step 3: Soft Allocation and Heat Vectors Update. This step involves two parallel processes: maintaining the Soft Orders Set O𝑠 and accu-mulating values for the Heat Vectors 𝒉 𝑆 ∈ R𝑁 𝑠 , 𝒉 𝑊 ∈ R𝑁 𝑤 of both shelves and workstations. First, let C (𝑜 ) 
+
+> 𝑎𝑙𝑙
+
+= Ð𝑤 ∈ W C (𝑜 ) 
+
+> 𝑤
+
+be the union of all candidate shelves identified in Step 2. The updates are defined as follows: 
+
+• Soft Orders Set Update ( O(·) ): For every shelf 𝑠 that appears in the candidate list of any workstation, we consider order 𝑜 is potentially allocated to the shelf. We update the set O𝑠 for each shelf 𝑠 ∈ C (𝑜 ) 
+
+> 𝑎𝑙𝑙
+
+by appending the current order: 
+
+O𝑠 ← O 𝑠 ∪ { 𝑜 }. (𝑠 ∈ C (𝑜 ) 
+
+> 𝑎𝑙𝑙
+
+) (4) This set O𝑠 records which orders are competing for shelf 𝑠 , pro-viding semantic information for the subsequent robot scheduling. Notably, an order may be allocated to at most 𝑁 𝑤 × 𝐾 shelves. 
+
+• Shelf Heat Update ( 𝒉 𝑆 ): For each shelf 𝑠 ∈ C (𝑜 ) 
+
+> 𝑎𝑙𝑙
+
+, we accumulate the matching degrees from all workstations that selected it: 
+
+ℎ𝑆 𝑠 ← ℎ𝑆 𝑠 +∑︁  
+
+> 𝑤 ∈ W
+
+I(𝑠 ∈ C (𝑜 ) 
+
+> 𝑤
+
+) · 𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+, (5) where I(·) is the indicator function. The update of 𝒉 𝑆 guides robots to retrieve shelves that are urgently needed. 
+
+• Workstation Heat Update ( 𝒉 𝑊 ): For each workstation 𝑤 ∈ W ,we aggregate the degrees of its top-𝐾 candidates: 
+
+ℎ𝑊 𝑤 ← ℎ𝑊 𝑤 +∑︁    
+
+> 𝑠 ∈ C (𝑜 )
+> 𝑤
+
+𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+. (6) The update of 𝒉 𝑊 indicates which workstations have a better supply of required goods nearby. 
+
+𝒉 𝑊 , 𝒉 𝑆 , O(·) form the global context that bridges the gap be-tween order allocation and robot scheduling. In the subsequent robot scheduling phase, the policy model utilizes these information with the real-time status of robots as state inputs and the precise allocation is finalized. 
+
+## 4 Robot Scheduling and Final Order Allocation 
+
+The scheduling module monitors the dynamic events in warehouse to schedule robots and finalize orders allocation. To achieve real-time response to asynchronous events, we formulate the sched-uling process as an Event-Driven Markov Decision Process Tang and Yang, et al.  
+
+> Idle Pick-up Completion
+> Delivery Completion
+
+Delivery 
+
+Pick-up Delivery 
+
+Return 
+
+Figure 3: The Cycle of Event Generation and Policy Actions. (ED-MDP) . Building upon the ED-MDP, we implement a sched-uling module based on Deep Reinforcement Learning (DRL). By modeling the warehouse environment as a heterogeneous graph, this model utilizes an HGT module to encode environment states and incorporates Phase-Knowledge to make real-time decisions. 
+
+## 4.1 Event-Driven Markov Decision Process 
+
+The scheduling cycle is governed by three distinct types of events, each necessitating a event-specific action: 
+
+• Idle: Triggered when status of any robot becomes IDLE . The robot selects a storage location with shelf to pick up. Action space A = {𝑙 ∈ L | 𝑙 is occupied by a shelf }.
+
+• Pick-up Completion: Triggered when a robot picks up a shelf. The robot selects a target workstation to deliver the carried shelf. Action space A = W.
+
+• Delivery Completion: Triggered when a picker at a worksta-tion completes the picking of items from a shelf transported by a robot. The robot selects next workstation to delivery or selects an empty storage location to restore the shelf. After restoring the shelves, the robot status becomes IDLE and completes one cycle of scheduling. Action space A = W ∪ { 𝑙 ∈ L | 𝑙 is empty }.The actions taken by the policy model trigger the generation of further events, as illustrated in Figure 3. 
+
+## 4.2 State Representation 
+
+To make informed decisions, the agent requires a comprehensive understanding of the warehouse environment state. Given the het-erogeneity of the warehouse entities, we formulate them as a het-erogeneous graph and employ a Heterogeneous Graph Transformer (HGT) as the state encoder to process the complex global state. At any decision step 𝑡 triggered by an event, the raw state 𝑠 𝑡 
+
+serves as the input, composed of two distinct states: 
+
+• Entity State ( 𝑠 𝑒𝑛𝑡 𝑡 ): Represents the physical reality of the ware-house, including the spatial coordinates of entities, robot avail-ability, and real-time storage occupancy. 
+
+• Soft Allocation State ( 𝑠 𝑠𝑜 𝑓 𝑡 𝑡 ): Represents the guidance from soft order allocation, specifically heat vectors 𝒉 𝑆 , 𝒉 𝑊 and the soft orders sets O(·) .Formally, the raw state 𝑠 𝑡 at step 𝑡 is constructed by concatenating these two feature groups: 𝑠 𝑡 = [𝑠 𝑒𝑛𝑡 𝑡 ; 𝑠 𝑠𝑜 𝑓 𝑡 𝑡 ].
+
+Entities Selection and Feature Projection. We choose robots, work-stations and storage locations as the encoded entities, where shelves are considered as features of robots or storage locations rather than independent entities. For each encoded entity 𝑣 , we extract its corre-sponding raw attributes 𝑠 𝑡 [𝑣 ] and project them into a dense vector 
+
+𝒉 0 
+
+> 𝑣
+
+via type-specific MLP. The details of projection is provided in Appendix E. 
+
+Graph Construction and HGT Encoding. We construct a hetero-geneous graph G𝑡 = (V 𝑡 , E𝑡 ), where V𝑡 consists of all encoded entities and the special Phase Node with the event type specific learnable embedding 𝒉 0 
+
+> 𝑝ℎ𝑎𝑠𝑒
+
+to model the impact of different events on decision-making. And E𝑡 consists of bi-directional edges be-tween all heterogeneous entity pairs weighted by distance, and directed edges from Phase Node to other nodes. We employ a stack of 𝐿 HGT layers to perform global message passing on the constructed graph. The representation of the ℓ-th layer is denoted as 𝒉 (ℓ ) 
+
+> 𝑖
+
+. For each target node 𝑖 , it is updated by aggregating messages from neighbors under specific relations: 
+
+𝒉 (ℓ+1) 
+
+> 𝑖
+
+= HGT 
+
+
+
+𝒉 (ℓ ) 
+
+> 𝑖
+
+,
+
+n
+
+𝒉 (ℓ )
+
+> 𝑗
+
+o 
+
+, 𝑗 ∈ N ( 𝑖 ), ℓ = 0, . . . , 𝐿 − 1, (7) where HGT operator applies relation-specific Graph Attention mechanisms [ 4 ]. The implementation details are provided in Ap-pendix F. 
+
+## 4.3 Action Generation 
+
+Once the state is encoded, the Phase-Knowledge-Guided De-coder interprets these representations to generate optimal actions, which subsequently drive the system state transition. The decoder fuses the state embedding with phase-specific priors to generate actions. For an active robot 𝑟 ∗ and any candidate target 
+
+𝑖 , the logit 𝑧 𝑖 is computed via a MLP augmented by a phase-specific bias :
+
+𝑧 𝑖 = MLP dec (𝒉 (𝐿 ) 
+
+> 𝑖
+
+∥𝒉 (𝐿 )  
+
+> 𝑟 ∗
+
+) + 𝑏 𝑖 (8) where 𝒉 (𝐿 ) 
+
+> 𝑖
+
+and 𝒉 (𝐿 )  
+
+> 𝑟 ∗
+
+are the final-layer representations from the HGT encoder. The bias 𝑏 𝑖 injects phase-specific priors: 
+
+𝑏 𝑖 =
+
+
+
+log (ℎ𝑆 𝑖 + 𝜖 ) phase: Pick-up 
+
+− log (𝑢 𝑖 + 𝜖 ) phase: Delivery 
+
+− log (dist (𝑟 ∗, 𝑖 ) + 𝜖 ) phase: Return 
+
+(9) The rationale behind these priors is three-fold: (i) Pick-up : Priori-tizing shelves with higher heat ℎ𝑆 𝑖 to maximize fulfillment potential; (ii) Delivery : 𝑢 𝑖 denotes the workload of 𝑤 𝑖 (The quantity of un-processed items). Penalizing workstations with lower 𝑢 𝑖 to ensure global load balancing and reduce queuing; (iii) Return : Minimizing travel distance dist (𝑟 ∗, 𝑖 ) to accelerate robot turnover. Then we apply a validity mask 𝒎 according to the action space of current event to yield the policy distribution: 
+
+𝜋 (𝑎 𝑡 = 𝑖 |𝑠 𝑡 ) = Softmax (𝑧 𝑖 + 𝑚 𝑖 ). (10) Finally, we sample from this distribution to obtain action 𝑎 𝑡 .
+
+## 4.4 Final Order Allocation 
+
+Simultaneously with the robot’s decision 𝑎 𝑡 , the system converts the soft order allocations into deterministic allocations to fulfill order requirements. Specifically, the allocation of orders to shelves and the update of soft information is executed during the pick-up phase, while the assignment of orders to workstations is performed during the delivery phase. SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems 
+
+Pick-up (Order-to-Shelf Allocation). During the soft allocation phase, the items on the shelf 𝑠 may not be able to meet all demands of order in soft orders set O𝑠 (Formula 4). We need to determine which orders can be fulfilled and which cannot, and simultaneously complete the step of allocating the fulfillable orders to the shelves. Let the robot pick up shelf 𝑠 ∗. We define two disjoint sets: O𝑓 𝑒𝑎𝑠 
+
+for orders that can be fully satisfied by the current shelf items 
+
+𝒒 𝑠 ∗ , and O𝑟𝑒𝑚 for orders that remain unsatisfied. Specifically, we iterate through each order 𝑜 ∈ O 𝑠 ∗ . If the current items suffice (i.e., 
+
+𝒒 𝑠 ∗ [𝑖 ] ≥ 𝒅 𝑜 [𝑖 ], ∀1 ≤ 𝑖 ≤ 𝑁 𝑘 ), we allocate 𝑜 to 𝑠 ∗:
+
+O𝑓 𝑒𝑎𝑠 ← O 𝑓 𝑒𝑎𝑠 ∪ { 𝑜 }, (11) and subtract order demand from shelves’ items: 
+
+𝒒 𝑠 ∗ ← 𝒒 𝑠 ∗ − 𝒅 𝑜 . (12) Otherwise, we add 𝑜 to O𝑟𝑒𝑚 :
+
+O𝑟𝑒𝑚 ← O 𝑟𝑒𝑚 ∪ { 𝑜 }, (13) for subsequent processing. 
+
+Update Soft Information. Given that orders in O𝑠 ∗ are possibly soft allocated to multiple shelves, it is necessary to eliminate the influence of them on other shelves and workstations. Specifically, for every 𝑜 ∈ O 𝑠 ∗ , we remove it from all soft orders sets: 
+
+O𝑠 ← O 𝑠 \ { 𝑜 }, ∀𝑠 ∈ S (14) and subtract its contribution to the heat vectors for shelves and workstations 𝒉 𝑆 , 𝒉 𝑊 :
+
+ℎ𝑆 𝑠 ← ℎ𝑆 𝑠 −∑︁  
+
+> 𝑤 ∈ W
+
+I(𝑠 ∈ C (𝑜 ) 
+
+> 𝑤
+
+) · 𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+, ∀𝑠 ∈ S (15) 
+
+ℎ𝑊 𝑤 ← ℎ𝑊 𝑤 −∑︁    
+
+> 𝑠 ∈ C (𝑜 )
+> 𝑤
+
+𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+. ∀𝑤 ∈ W (16) 
+
+Delivery (Order-to-Workstation Allocation and Remainder Han-dling). Finally, we need to complete order-to-workstation allocation and selecting shelves for orders in O𝑟𝑒𝑚 . Let robot deliver shelf 𝑠 ∗ to workstation 𝑤 ∗. Orders in O𝑓 𝑒𝑎𝑠 enter the workstation’s queue and are fulfilled after the picker completes the picking operation. For every order in O𝑟𝑒𝑚 , we rank remaining shelves 𝑠 ∈ S \ { 𝑠 ∗ } based on their matching degree with 𝑤 ∗ (i.e., 𝑽 (𝑜 ∗ ) 
+
+> 𝑠,𝑤 ∗
+
+) and greedily select them in descending order until all requirements are met. Further im-plementation details are available in the Appendix B, and analysis of its impact on performance are available in the Appendix J. 
+
+## 5 Training Paradigm 
+
+We employ a deep reinforcement learning approach to optimize the event-driven markov decision process, where the objective of the RMFS is to minimize the makespan . However, directly optimizing this objective presents significant challenges: (1) Sparse Feedback: 
+
+The makespan is only determined at the end of the episode, caus-ing severe delayed credit assignment; (2) Zero Gradient Feedback: 
+
+The non-differentiable nature of the makespan yields zero gradi-ents for non-bottleneck robots, preventing them from learning to improve efficiency. To address these issues, we propose a dense reward mechanism based on 𝑝 -norm Reward Shaping serving as a smooth surrogate of the original makespan objective. 
+
+## 5.1 𝑝 -norm Reward Shaping 
+
+We address the sparse and non-smooth nature of the objective by approximating the 𝐿 ∞ landscape with a smoother 𝐿 𝑝 surrogate. Let 
+
+𝑻 𝑡 ∈ R𝑁 𝑟 denote the vector of accumulated active times for all robots at decision step 𝑡 . We define a state potential function Φ(𝑠 𝑡 )
+
+based on the scaled 𝐿 𝑝 -norm: 
+
+Φ(𝑠 𝑡 ) = 1
+
+𝑁 𝑟 ∑︁ 𝑟 ∈ R 
+
+(𝑇 𝑟,𝑡 )𝑝 
+
+!1/𝑝 
+
+(17) where 𝑝 is a hyperparameter controlling sensitivity to outliers. Following the logic of Potential-Based Reward Shaping (PBRS) [ 18 ], we construct a dense reward 𝑟 shape  
+
+> 𝑡
+
+for the transition 𝑠 𝑡 → 𝑠 𝑡 +1:
+
+𝑟 shape  
+
+> 𝑡
+
+= − ( 𝛾 Φ(𝑠 𝑡 +1) − Φ(𝑠 𝑡 )) , (18) where 𝛾 is the discount rate. By minimizing the incremental growth of the 𝑝 -norm, the agent receives immediate feedback for action. 
+
+## 5.2 Time-Aware PPO Optimization 
+
+We employ PPO [ 23 ] to optimize the policy. A critical challenge in our Event-Driven MDP is the variable time intervals between decision steps. We address this by incorporating the physical time duration into the discount mechanism. Let 𝜏 𝑡 denote the physical timestamp of the 𝑡 -th decision event. The duration of the transition 
+
+𝑠 𝑡 → 𝑠 𝑡 +1 is given by Δ𝜏 𝑡 = 𝜏 𝑡 +1 − 𝜏 𝑡 . We define the dynamic discount factor as 𝛾 𝑡 = 𝛾 Δ𝜏 𝑡 , where 𝛾 is the standard discount rate per unit time. To reduce variance, we utilize Generalized Advantage Estimation (GAE) [ 22 ]. The time-aware TD-error 𝛿 𝑡 and the advantage ˆ𝐴 𝑡 are computed as: 
+
+𝛿 𝑡 = 𝑟 shape  
+
+> 𝑡
+
++ 𝛾 Δ𝜏 𝑡 𝑉 (𝑠 𝑡 +1) − 𝑉 (𝑠 𝑡 ), (19) 
+
+ˆ𝐴 𝑡 =
+
+> ∞
+
+∑︁ 
+
+> 𝑘 =0
+
+(𝜆𝛾 )𝑇 𝑘 𝛿 𝑡 +𝑘 where 𝑇 𝑘 = 
+
+> 𝑘 −1
+
+∑︁ 
+
+> 𝑗 =0
+
+Δ𝜏 𝑡 +𝑗 (20) Here, we apply the discount cumulatively over physical time. The final training objective is to maximize the following function: 
+
+𝐽 (𝜃 ) = E𝑡 
+
+LCLIP  
+
+> 𝑡
+
+(𝜃 ) − 𝑐 1 LVF  
+
+> 𝑡
+
+(𝜃 ) + 𝑐 2𝑆 [𝜋 𝜃 ] ( 𝑠 𝑡 ) (21) where LCLIP is the standard PPO surrogate objective, 𝑆 denotes the entropy bonus to encourage exploration, and the value function loss is defined as LVF  
+
+> 𝑡
+
+= ∥𝑉 (𝑠 𝑡 ) − ( 𝑟 shape  
+
+> 𝑡
+
++ 𝛾 Δ𝜏 𝑡 𝑉 (𝑠 𝑡 +1))∥ 2. The raw features of value function is detailed in Appendix E. 
+
+## 6 Experiments 6.1 Experiment Settings 
+
+Datasets. We evaluate our method across two distinct scenarios, yielding a total of six datasets. The scenarios include a Real-World environment sourced from a Geekplus warehouse (spanning 31 days of historical operations on a 40 × 72 grid map) and a Synthetic environment ( 100 × 80 grid map). For each scenario, we construct three datasets of varying scales: Small, Medium, and Large. These datasets range in problem size, specifically regarding the number of robots ( 𝑁 𝑟 ∈ { 15 , 20 , 25 }) and total orders ( 𝑁 𝑜 ∈ { 200 , 500 , 1000 }). Detailed statistical parameters are provided in Appendix A. 
+
+Baselines. We compare SOAR against comprehensive baselines Tang and Yang, et al. 
+
+Table 1: Performance on synthetic and real-world datasets. Dataset Synth-Small Synth-Medium Synth-Large Metrics Obj ( ↓) CompT ( ↓) Time ( ↓) Obj ( ↓) CompT ( ↓) Time ( ↓) Obj ( ↓) CompT ( ↓) Time ( ↓)SQF+Nearest 1669.47 716.06 0.81s 3079.12 1208.14 1.58s 4760.42 1643.87 2.50s SQF+Earliest 1856.94 776.67 0.79s 3158.61 1213.41 1.53s 4617.98 1633.91 2.68s SQF+TSP 1375.56 606.47 1.05s 2347.68 916.51 1.91s 3684.72 1261.73 3.61s SQF+PSMDRL 1278.03 502.89 4.09s 2170.25 718.67 10.02s 3374.01 947.52 16.72s WLB+Nearest 1231.12 474.12 1.07s 2010.73 648.02 1.97s 2918.21 816.41 3.62s WLB+Earliest 1749.07 757.01 1.09s 2639.03 1002.58 2.26s 3510.60 1140.82 4.26s WLB+TSP 1187.91 467.30 1.40s 1878.96 654.27 3.57s 2761.08 852.32 7.88s WLB+PSMDRL 1316.54 615.60 4.27s 2005.14 635.90 9.19s 2856.74 827.10 17.02s OR Tools+Nearest 1173.21 539.01 4m 12s 2160.55 868.56 10m 21s 3686.29 904.32 17m 31s OR Tools+Earliest 1137.10 577.78 4m 7s 1629.95 695.51 9m 8s 3004.79 780.09 15m 35s OR Tools+TSP 998.10 442.57 4m 8s 1635.95 420.24 9m 46s 2446.59 547.90 15m 45s JOTP 1272.98 501.99 1.74s 2138.72 703.33 3.97s 3124.54 829.30 8.01s SABS 1023.84 347.24 4m 10s 1925.40 560.38 10m 54s 2614.15 705.17 20m 9s 
+
+SOAR 811.01 243.25 8.74s 1387.82 289.94 20.43s 2160.47 362.08 39.60s Improvement 18.7% 29.9% - 14.9% 31.0% - 11.7% 33.9% -
+
+Dataset Real-Small Real-Medium Real-Large Metrics Obj ( ↓) CompT ( ↓) Time ( ↓) Obj ( ↓) CompT ( ↓) Time ( ↓) Obj ( ↓) CompT ( ↓) Time ( ↓)SQF+Nearest 618.62 259.91 0.60s 966.22 435.03 1.01s 1445.08 611.81 1.64s SQF+Earliest 604.61 242.27 0.60s 993.60 424.71 0.99s 1585.79 675.22 1.62s SQF+TSP 614.88 242.29 0.62s 955.79 404.59 1.32s 1533.20 649.67 1.90s SQF+PSMDRL 550.59 218.33 2.50s 901.60 365.28 5.68s 1265.79 580.30 8.19s WLB+Nearest 494.19 201.41 0.63s 743.77 258.55 1.44s 916.77 315.23 2.07s WLB+Earliest 606.33 257.18 0.73s 892.97 330.77 1.29s 1377.31 587.61 2.30s WLB+TSP 520.75 204.66 0.89s 770.33 275.02 6.57s 940.60 348.00 1m 29s WLB+PSMDRL 480.92 222.28 2.40s 811.50 319.33 4.15s 926.90 347.26 6.28s OR Tools+Nearest 414.06 184.50 1m 34s 761.74 281.98 3m 58s 1229.56 447.28 7m 36s OR Tools+Earliest 449.13 204.98 1m 38s 786.61 310.63 3m 57s 1245.25 505.75 7m 1s OR Tools+TSP 416.62 185.66 1m 39s 735.52 271.47 3m 55s 1178.07 426.11 7m 19s JOTP 528.69 205.28 0.95s 812.89 270.88 2.01s 1001.95 332.70 3.64s SABS 465.05 192.74 1m 50s 792.42 268.37 4m 23s 978.12 329.74 8m 15s 
+
+SOAR 406.79 152.03 5.06s 653.41 217.02 8.51s 828.44 275.68 16.34s Improvement 1.8% 17.6% - 11.2% 16.1% - 9.6% 12.5% -categorized into Phased Methods and Joint Methods. The phased methods combine three order allocation heuristics—Shortest Queue First (SQF) [ 15 ], Work Load Balance (WLB) [ 26 ], and an OR-Tools solver—with four robot scheduling strategies: Nearest[ 16 ], Earliest[ 8], TSP[ 13 ], and PSMDRL[ 35 ]. For joint optimization, we include state-of-the-art algorithms such as JOTP[ 32 ] and SABS[ 31 ]. The imple-mentation details are provided in Appendix C. 
+
+Evaluation Metrics. Performance is assessed using three key met-rics: (1) Makespan (Obj), defined as the maximum completion time across all robots, serving as a proxy for overall system throughput; (2) Average Order Completion Time (CompT), which measures the average duration from order arrival to fulfillment, reflecting service responsiveness; and (3) Computation Time (Time), evaluating the computational efficiency of each method per instance. For reproduction and evaluation of all methods, we built a sim-ulation environment in which the experiments were conducted. More details of the experiments are provided in Appendix G. 
+
+## 6.2 Main Results 
+
+As presented in Table 1, our proposed method explicitly domi-nates all baselines across both synthetic and real-world datasets, achieving the optimal Makespan and Average Order Completion Time. Specifically, compared to the strongest baseline in real-world scenarios, our framework reduces the makespan by 7.5% and the order completion time by 15.4% . SOAR introduces a soft alloca-tion mechanism to achieve joint optimization. Furthermore, the Event-Driven MDP modeling ensures real-time decision-making capabilities, thereby yielding superior performance. 
+
+Comparison with Decoupled Methods. Decoupled methods gener-ally maintain high computational efficiency by decomposing the problem. However, their inability to coordinate order allocation and robot scheduling leads to suboptimal resource utilization. While they provide a baseline level of responsiveness, they consistently trail SOAR in global efficiency metrics, confirming that decoupling decision phases inherently limits the system performance. 
+
+Comparison with Joint Methods. Joint methods do not exhibit a significant advantage over phased methods. We attribute this SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems 
+
+Table 2: Results of ablation studies. Dataset Synth-Small Synth-Medium Synth-Large Metrics Obj ( ↓) CompT ( ↓) Obj ( ↓) CompT ( ↓) Obj ( ↓) CompT ( ↓)all 811.01 243.25 1387.82 289.94 2160.47 362.08 
+
+w/o Soft 1184.12 463.72 2047.31 649.60 2895.31 750.07 w/o HGT 826.16 275.40 1508.50 370.47 2280.69 373.68 RS-Sum 895.44 269.81 1440.56 316.95 2347.62 391.16 RS-Max 877.30 265.84 1447.04 320.25 2271.81 376.91 w/o Bias 882.03 271.29 1455.09 316.95 2403.80 390.21 Only Bias 980.74 291.81 1614.72 351.31 2437.38 403.98 
+
+Dataset Real-Small Real-Medium Real-Large Metrics Obj ( ↓) CompT ( ↓) Obj ( ↓) CompT ( ↓) Obj ( ↓) CompT ( ↓)all 406.79 152.03 653.41 217.02 828.44 275.68 
+
+w/o Soft 509.98 207.37 774.18 269.16 940.42 325.02 w/o HGT 433.67 178.13 725.52 260.23 1003.87 395.11 RS-Sum 420.38 166.89 683.73 221.10 876.51 289.67 RS-Max 427.70 168.31 665.98 226.78 850.46 295.22 w/o Bias 424.15 167.29 689.00 237.36 927.67 360.04 Only Bias 446.27 174.91 696.46 229.84 886.97 302.02 
+
+to their reliance on a Rolling-Horizon mechanism to adapt static optimization models to dynamic environments. First, the high com-putational overhead of solving static joint models causes significant delays, rendering decisions outdated by the time they are executed; Second, optimizing discrete static time windows fails to capture the continuous, long-term evolution of the system. 
+
+Computational Efficiency. Regarding inference speed, while our deep learning-based approach incurs a marginal overhead com-pared to simple heuristics, it is significantly faster than the SABS and OR-Tools. In practical deployment, our model achieves a single-phase decision latency in sub-100ms , fully satisfying the real-time responsiveness requirements. 
+
+## 6.3 Ablation Studies 
+
+The settings of the ablation experiments are as follows: 
+
+• w/o Soft Allocation : Replace soft allocation with random allo-cation. 
+
+• w/o HGT : The Heterogeneous Graph Transformer is replaced with a Transformer [ 29 ], where the relationships among hetero-geneous entities are modeled in a uniform manner. 
+
+• RS-Sum: utilizes the cumulative potential Φ(𝑠 ) = Í𝑟 ∈ R 𝑇 𝑟 .
+
+• RS-Max: utilizes the bottleneck potential Φ(𝑠 ) = max 𝑟 ∈ R 𝑇 𝑟 .
+
+• w/o Bias: remove the phase-specific bias. 
+
+• Only Bias: select action with the highest bias value. The experimental results are presented in table 2. The exclusion of soft allocation exerts the most significant impact on performance. This is attributed to the model’s inability to defer decision-making, thereby failing to account for the dynamic variations within the system. Replacing the HGT with a standard Transformer also re-sults in performance degradation. This stems from the standard Transformer’s incapacity to model distinct relationships among heterogeneous entities. The reward shaping also makes a contri-bution to performance. Using phase-bias alone is slightly worse than the decoder-only method except for dataset Real-Large. This is because this phase-knowledge are raw features in the decision model. Adding phase-bias directly only guides the effective explo-ration in the early stages of reinforcement learning training, while complex global decision information still needs to rely on deep 1 5 10 15 20                     
+
+> Number of Candidate Shelves ( K)
+> 2
+> 4
+> 8
+> 16
+> 32
+> Parameter  p
+> 895.5 857.3 851.8 867.7 881.7
+> 879.4 844.8 836.6 851.8 864.0
+> 871.4 834.3 828.4 845.1 856.1
+> 880.8 840.7 835.6 850.9 861.1
+> 881.8 845.8 839.2 853.8 866.0
+> 830
+> 840
+> 850
+> 860
+> 870
+> 880
+> 890
+> Makespan (s)
+
+(a) Real-Large 1 5 10 15 20                      
+
+> Number of Candidate Shelves ( K)
+> 2
+> 4
+> 8
+> 16
+> 32
+> Parameter  p
+> 2386.4 2351.1 2347.6 2365.5 2380.8
+> 2289.5 2268.3 2258.1 2273.4 2296.2
+> 2190.7 2167.1 2160.4 2177.1 2196.2
+> 2197.6 2164.2 2165.0 2184.6 2198.3
+> 2221.7 2193.9 2189.5 2209.6 2229.0
+> 2200
+> 2250
+> 2300
+> 2350
+> Makespan (s)
+
+(b) Synth-Large 
+
+Figure 4: Sensitivity analysis of 𝐾 and 𝑝 in Large datasets. 
+
+neural networks for modeling. 
+
+## 6.4 Sensitivity Analysis 
+
+We analyzed the candidate shelf size 𝐾 ∈ { 1, 5, 10 , 15 , 20 } and re-ward shaping parameter 𝑝 ∈ { 2, 4, 8, 16 , 32 } on the Large datasets. The experimental results are presented in Fig. 4. 
+
+Impact of Candidate Shelf Size ( 𝐾 ): The Makespan follows a U-shaped trend, achieving optimality at 𝐾 = 10 . A small 𝐾 limits the global perspective, degenerating into a greedy local search. Conversely, an excessive 𝐾 (𝐾 > 10 ) introduces low-relevance noise into the HGT, increasing state complexity and interfering with critical feature extraction. 
+
+Impact of Reward Shaping Parameter ( 𝑝 ): Lower values prioritize cumulative time rather than the makespan, failing to penalize sys-tem bottlenecks. Higher values ( 𝑝 = 32 ), while theoretically closer to the 𝐿 ∞ norm, create steep optimization landscapes that cause training instability and convergence to local optima. 
+
+## 7 Real-World Deployment 
+
+To further evaluate the actual performance of SOAR , we deployed it in a typical e-commerce RMFS environment. The warehouse covers a total area of 5,158 𝑚 2 and is equipped with 861 shelves, 16 workstations, and seeding walls comprising 40 slots. The entire cluster consists of 198 robots, operating collaboratively under high-concurrency scenarios with a daily order volume exceeding 13,000. 
+
+## 7.1 Digital Twin Platform 
+
+To ensure the robustness of the policy during deployment, we used a high-fidelity digital twin platform based on the actual production environment, as shown in Fig. 5. This platform directly integrates the control kernel and physical kinematic models of the production-grade Robot Management System, thereby ensuring that the policy derived from simulation training can be seamlessly transferred to the online environment. 
+
+## 7.2 Sim-to-Real Adaptation 
+
+Episode Alignment. We segment training episodes according to worker rest schedules (approximately 4 to 6 hours). During these breaks, the order backlog is naturally cleared, which effectively disentangles state dependencies, ensuring that each experimental cycle starts from a fresh state without mutual interference. Tang and Yang, et al. 
+
+Figure 5: Digital Twin Platform. 
+
+Path Planning. SOAR framework provides high-level destina-tion selection, while the lower-level planner plans an efficient, collision-free path from the current location to the target loca-tion in millisecond-level. This ensures a closed loop of efficient decision-making and safe execution. 
+
+Entities Pruning for Inference Scaling. To address latency in real-world scenarios, we introduce an Entities Pruning Mechanism. Specifically, for the two most numerous entities robots and storage locations, we perform the following processing: 1) Robots: Only encode the 𝐾 1 robots closest to the decision-making robot; 2) Stor-age Locations: Only encode the storage locations of the Top-𝐾 2
+
+shelves ranked by 𝒉 𝑆 and empty storage locations. This optimiza-tion reduces the number of encoded entities and caps inference latency at 100 ms. 
+
+## 7.3 Real-World Evaluation 
+
+To validate the robustness of SOAR in a dynamic industrial setting, we deployed the framework into the production environment for a consecutive 7-day field test. 
+
+Testing via Digital Twin. Conducting fair comparisons in a live warehouse is challenging due to the high variance in order volume and structure across different time windows. To overcome this, we implemented a testing strategy utilizing the digital twin platform. While SOAR governed the physical robots in the real world, we si-multaneously executed all baseline methods within the digital twin, feeding them the identical mirrored real-time order stream .
+
+Baseline Selection. We benchmarked SOAR against the fast, com-petitive methods from our simulation experiments: OR Tools+TSP, JOTP, WLB+Nearest, and WLB+TSP. Additionally, we included the 
+
+Prod Heuristic , a phased heuristic algorithm currently applied in system, to represent the current industrial standard. 
+
+Analysis of Comprehensive Performance Metrics. As detailed in Table 3, we evaluated the system across four core dimensions: 
+
+(1) Workstation Throughput (Efficiency): defined as the num-ber of shelves processed per workstation per hour. SOAR achieved a 
+
+3.85% increase over the prod heuristic. This improvement indicates that SOAR effectively balances the workload across workstations and accelerates transportation. 
+
+(2) Average Order Completion Time (Service Level): defined as the latency from order arrival to picking completion. Our method reduced this metric by 55 seconds on average. 
+
+(3) Shelf Hit Rate (Optimization Quality): defined as the 
+
+Table 3: Performance on real-world deployment. Metrics Throughput (↑) CompT (↓) Hit Rate (↑) Distance (↓)OR Tools+TSP 28.61 2104.77 1.20 35705.47 JOTP 37.27 1862.41 1.21 32105.81 WLB+Nearest 38.34 1765.84 1.24 31250.54 WLB+TSP 39.02 1753.38 1.28 30420.23 Prod Heuristic 41.95 1624.46 1.32 29451.66          
+
+> SOAR 43.56 1569.52 1.40 28623.80
+> SOAR (Real) 43.41 1574.57 1.41 29035.91
+
+average number of required items picked per shelf entry. We ob-served a significant 6% increase in hit rate. This indicates that our framework successfully learned an order batching strategy based on the soft allocation mechanism. 
+
+(4) Average Robot Travel Distance (Sustainability): defined as the average cumulative distance traveled by a robot to fulfill the same batch of orders. The average travel distance decreased by 
+
+2.81% . This is a direct consequence of the improved Shelf Hit Rate: fewer trips are required to fulfill the same demand. The marginal performance gap between the digital twin platform and the real-world deployment also confirms the effectiveness of the evaluation. Due to the strict time constraints, the performance of this OR Tools degrades significantly. 
+
+## 8 Related Works 
+
+Our work relates to phased methods, including order allocation and robot scheduling, as well as joint methods. Details are as follows: 
+
+Order Allocation Methods. The order allocation problem is fre-quently formulated as a matching problem involving orders, shelves, and workstations. Some approaches model the global matching process as an Integer Programming problem [ 14 , 24 ], while oth-ers [ 21 , 25 , 28 ] employ algorithms related to bipartite graph match-ing to derive solutions. 
+
+Robot Scheduling Methods. Static robot scheduling problems are frequently formulated as Vehicle Routing Problems (VRP) [ 5 , 10 ,12 , 33 ] or Integer Programming problems [ 1 , 3, 37 ]. Conversely, dynamic robot scheduling problems are typically solved using re-inforcement learning techniques. Early studies [ 6, 11 , 20 ] adopted a distributed decision-making paradigm, which necessitated de-termining the step-wise movement of every robot. Subsequent research [35, 36] decided the destination only. 
+
+Joint Methods. Existing joint decision-making methodologies primarily concentrate on static problems. These approaches typi-cally formulate the problem mathematically and subsequently em-ploy meta-heuristic algorithms [ 31 ] or Mixed-Integer Programming (MIP) [27, 34] to derive solutions. Compared with these methods, SOAR introduces a soft allocation mechanism and an event-driven decision-making mechanism to enable real-time joint decision-making. 
+
+## 9 Conclusions 
+
+This paper presents SOAR , a real-time system that jointly optimizes order allocation and robot scheduling for Robotic Mobile Fulfill-ment Systems (RMFS). By leveraging a soft allocation mechanism and an event-driven decision strategy, SOAR significantly enhances SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems 
+
+system throughput while ensuring real-time responsiveness. Exten-sive experiments on both synthetic and real-world datasets, along with sim-to-real deployment, demonstrate that SOAR effectively bridges the gap between real-time responsiveness and global opti-mization, showing promising application prospects. Currently, the framework focuses on high-level scheduling optimization and has not yet integrated physical-level controls such as path planning and collision avoidance. In future work, we aim to integrate physical execution to realize a more comprehensive, end-to-end framework. 
+
+## References 
+
+[1] Maria Torcoroma Benavides-Robles, Jorge M Cruz-Duarte, José Carlos Ortiz-Bayliss, and Ivan Amaya. 2025. Algorithm Selection for Allocating Pods Within Robotic Mobile Fulfillment Systems: A Hyper-Heuristic Approach. IEEE Access 
+
+(2025). [2] Maria Torcoroma Benavides-Robles, Gerardo Humberto Valencia-Rivera, Jorge M. Cruz-Duarte, Iván Amaya, and José Carlos Ortiz-Bayliss. 2024. Robotic Mobile Fulfillment System: A Systematic Review. IEEE Access 12 (2024), 16767–16782. [3] Hualing Bi, Guangpu Yang, Zhe Wang, and Fuqiang Lu. 2025. Enhancing E-Commerce RMFS Order Fulfillment Through Pod Positioning with Jointly Opti-mized Task Allocation. Systems 13, 11 (2025), 995. [4] Shaked Brody, Uri Alon, and Eran Yahav. 2021. How attentive are graph attention networks? arXiv preprint arXiv:2105.14491 (2021). [5] Byoungho Choi, Minkyu Kim, and Heungseob Kim. 2025. An Optimization Framework for Allocating and Scheduling Multiple Tasks of Multiple Logistics Robots. Mathematics 13, 11 (2025), 1770. [6] Filippos Christianos, Lukas Schäfer, and Stefano Albrecht. 2020. Shared expe-rience actor-critic for multi-agent reinforcement learning. Advances in neural information processing systems 33 (2020), 10707–10717. [7] Ítalo Renan da Costa Barros and Tiago Pereira Nascimento. 2021. Robotic mobile fulfillment systems: A survey on recent developments and research opportunities. 
+
+Robotics and Autonomous Systems 137 (2021), 103729. [8] Dingxiong Deng, Cyrus Shahabi, Ugur Demiryurek, and Linhong Zhu. 2016. Task selection in spatial crowdsourcing from worker’s perspective. GeoInformatica 
+
+20, 3 (2016), 529–568. [9] Marko Filipović and Kristijan Rogić. 2025. Robotic Mobile Fulfilment System: A Literature Review. Transportation Research Procedia 91 (2025), 465–472. [10] Amir Gharehgozli and Nima Zaerpour. 2020. Robot scheduling for pod retrieval in a robotic mobile fulfillment system. Transportation Research Part E: Logistics and Transportation Review 142 (2020), 102087. [11] Aleksandar Krnjaic, Raul D Steleac, Jonathan D Thomas, Georgios Papoudakis, Lukas Schäfer, Andrew Wing Keung To, Kuan-Ho Lao, Murat Cubuktepe, Matthew Haley, Peter Börsting, et al . 2024. Scalable multi-agent reinforcement learning for warehouse logistics with robotic and human co-workers. In 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 677–684. [12] Kunpeng Li, Tengbo Liu, PN Ram Kumar, and Xuefang Han. 2024. A rein-forcement learning-based hyper-heuristic for AGV task assignment and route planning in parts-to-picker warehouses. Transportation research part E: logistics and transportation review 185 (2024), 103518. [13] Kunpeng Li, Tengbo Liu, PN Ram Kumar, and Xuefang Han. 2024. A rein-forcement learning-based hyper-heuristic for AGV task assignment and route planning in parts-to-picker warehouses. Transportation research part E: logistics and transportation review 185 (2024), 103518. [14] Yafei Li, Huiling Li, Xin Huang, Jianliang Xu, Yu Han, and Mingliang Xu. 2022. Utility-aware dynamic ridesharing in spatial crowdsourcing. IEEE Transactions on Mobile Computing 23, 2 (2022), 1066–1079. [15] Kaibo Liang, Li Zhou, Jianglong Yang, Huwei Liu, Yakun Li, Fengmei Jing, Man Shan, and Jin Yang. 2023. Research on a dynamic task update assignment strategy based on a “parts to picker” picking system. Mathematics 11, 7 (2023), 1684. [16] Hang Ma, Jiaoyang Li, TK Kumar, and Sven Koenig. 2017. Lifelong multi-agent path finding for online pickup and delivery tasks. arXiv preprint arXiv:1705.10868 
+
+(2017). [17] James Munkres. 1957. Algorithms for the assignment and transportation prob-lems. Journal of the society for industrial and applied mathematics 5, 1 (1957), 32–38. [18] Andrew Y Ng, Daishi Harada, and Stuart Russell. 1999. Policy invariance under reward transformations: Theory and application to reward shaping. In Icml ,Vol. 99. Citeseer, 278–287. [19] Georgios Papoudakis, Filippos Christianos, Lukas Schäfer, and Stefano V Albrecht. 2020. Benchmarking multi-agent deep reinforcement learning algorithms in cooperative tasks. arXiv preprint arXiv:2006.07869 (2020). [20] Georgios Papoudakis, Filippos Christianos, Lukas Schäfer, and Stefano V Albrecht. 2020. Benchmarking multi-agent deep reinforcement learning algorithms in cooperative tasks. arXiv preprint arXiv:2006.07869 (2020). [21] Xiaoran Qin, Hai Yang, Yinghui Wu, and Hongtu Zhu. 2021. Multi-party ride-matching problem in the ride-hailing market with bundled option services. 
+
+Transportation Research Part C: Emerging Technologies 131 (2021), 103287. [22] John Schulman, Philipp Moritz, Sergey Levine, Michael Jordan, and Pieter Abbeel. 2015. High-dimensional continuous control using generalized advantage estima-tion. arXiv preprint arXiv:1506.02438 (2015). [23] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proximal Policy Optimization Algorithms. CoRR abs/1707.06347 (2017). [24] Xiang Shi, Fang Deng, Miao Guo, Jiachen Zhao, Lin Ma, Bin Xin, and Jie Chen. 2023. A novel fulfillment-focused simultaneous assignment method for large-scale order picking optimization problem in RMFS. IEEE Transactions on Systems, Man, and Cybernetics: Systems 54, 2 (2023), 1226–1238. [25] Huiheng Suo, Qiang Hu, Jian Wu, Xie Ma, Youxuan Cai, Shiai Bi, Jingwen Zhang, and Xiushui Ma. 2023. Multi-AGV Task Scheduling Method for Intelligent Warehousing. (2023). [26] Giorgi Tadumadze, Julia Wenzel, Simon Emde, Felix Weidinger, and Ralf Elbert. 2023. Assigning orders and pods to picking stations in a multi-level robotic mobile fulfillment system. Flexible Services and Manufacturing Journal 35, 4 (2023), 1038–1075. [27] Sander Teck and Reginald Dewil. 2022. A bi-level memetic algorithm for the integrated order and vehicle scheduling in a RMFS. Applied Soft Computing 121 (2022), 108770. [28] Yongxin Tong, Libin Wang, Zhou Zimu, Bolin Ding, Lei Chen, Jieping Ye, and Ke Xu. 2017. Flexible online task assignment in real-time spatial data. Proceedings of the VLDB Endowment 10, 11 (2017), 1334–1345. [29] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. Advances in neural information processing systems 30 (2017). [30] Jingwen Wu, Zhiyuan Yang, Lu Zhen, Wenxin Li, and Yiran Ren. 2025. Joint optimization of order picking and replenishment in robotic mobile fulfillment systems. Transportation Research Part E: Logistics and Transportation Review 194 (2025), 103930. [31] Xiying Yang, Guowei Hua, Li Zhang, TC Cheng, and Tsan Ming Choi. 2021. Joint order assignment and picking station scheduling in KIVA warehouses with multiple stations. arXiv preprint arXiv:2108.09056 (2021). [32] Shaohui Zhang, Qiuying Han, Hai Zhu, Hongfeng Wang, Huiling Li, and Ke Wang. 2025. Real time task planning for order picking in intelligent logistics warehousing. Scientific Reports 15, 1 (2025), 7331. [33] Junpeng Zhao and Chu Zhang. 2025. Order Allocation Strategy Optimization in a Goods-to-Person Robotic Mobile Fulfillment System with Multiple Picking Stations. Applied Sciences 15, 16 (2025), 9173. [34] Ziyan Zhao, Bingchen Cao, Jiaqi Liang, Shixin Liu, and Mengchu Zhou. 2025. Learning-Based Approach to Integrated Operational Optimization Problems in Robot-Assisted Multistation Warehouse Systems. IEEE Transactions on Systems, Man, and Cybernetics: Systems (2025). [35] Xuan Zhou, Xiang Shi, Wenqing Chu, Jingchen Jiang, Lele Zhang, and Fang Deng. 2024. Learning to Solve Multi-AGV Scheduling Problem with Pod Reposi-tioning Optimization in RMFS. In 2024 IEEE International Conference on Industrial Technology (ICIT) . IEEE, 1–8. [36] Xuan Zhou, Xiang Shi, Lele Zhang, Chen Chen, Hongbo Li, Lin Ma, Fang Deng, and Jie Chen. 2024. Scalable Hierarchical Reinforcement Learning for Hyper Scale Multi-Robot Task Planning. arXiv preprint arXiv:2412.19538 (2024). [37] Yanling Zhuang, Yun Zhou, Elkafi Hassini, Yufei Yuan, and Xiangpei Hu. 2022. Rack retrieval and repositioning optimization problem in robotic mobile ful-fillment systems. Transportation Research Part E: Logistics and Transportation Review 167 (2022), 102920. Tang and Yang, et al. 
+
+## A Dataset Details 
+
+Table 4: Summary of Dataset Parameters                    
+
+> (a) Warehouse Settings
+> Real Synth
+> 𝑁 𝑠 861 1600
+> 𝑁 𝑤 16 23 Scale 40 ×72 100 ×80
+> Cshelf 510 Citem 24
+> (b) Problem Scales
+> Small Medium Large
+> 𝑁 𝑟 15 20 25
+> 𝑁 𝑜 200 500 1000
+
+To comprehensively evaluate SOAR , we conducted experiments on six datasets encompassing both real-world and synthetic scenar-ios across three distinct scales. The static characteristics of these scenarios are summarized in Table 4a, with the scale specifications detailed in Table 4b. The items processing time is calculated by: 
+
+𝑛𝑢𝑚 𝑖𝑡𝑒𝑚 × 𝐶 item + 𝐶 shelf . The specific data sources and processing procedures for these datasets are described as follows: 
+
+• Real Dataset : Sourced from a real-world Geekplus warehouse, comprising actual layouts, inventory snapshots, and 31 days of historical order data. We chronologically partitioned the data into training (21 days), validation (5 days), and test (5 days) sets. To ensure operational intensity, sub-problems were sampled based on high order density criteria. Both the validation and test sets contain 100 instances. 
+
+• Synthetic Dataset : To simulate the wave release characteristics inherent in warehousing systems, order arrival times are not distributed uniformly; instead, they follow a wave distribution incorporating random perturbations. We assume a total of 𝑁 𝑡𝑜𝑡𝑎𝑙 
+
+orders, with the number of orders per wave set to 𝑆 𝑤𝑎𝑣𝑒 (de-faulting to 50) and the wave interval set to 𝑇 𝑤𝑎𝑣𝑒 (defaulting to 60 seconds). For the 𝑖 -th order, the arrival time 𝑡 𝑖 is generated according to the following formula: 
+
+𝑡 𝑖 = 𝑘 · 𝑇 𝑤𝑎𝑣𝑒 + 𝜖, 𝑘 ∼ 𝑈 {0, 𝑁 𝑤𝑎𝑣𝑒𝑠 − 1}, 𝜖 ∼ 𝑈 {− 3, 3} (22) where 𝑁 𝑤𝑎𝑣𝑒𝑠 = ⌈𝑁 𝑡𝑜𝑡𝑎𝑙 /𝑆 𝑤𝑎𝑣𝑒 ⌉ represents the total number of waves, 𝑘 denotes the randomly sampled wave index, and 𝜖 rep-resents uniform random noise within the range [− 3, 3] seconds, intended to simulate minute temporal discrepancies in order release times within a single wave. Consistent with the characteristics of actual warehousing data, both the number of distinct item types contained in an order (Number of Order Lines, 𝐿 𝑖 ) and the specific quantity required for each item (Quantity per item, 𝑄 𝑖 𝑗 ) follow a Truncated Pareto Distribution. This distribution is selected to capture the long-tail characteristic typically described as “few large, many small.” Specifically, let Pareto (𝛼 ) denote a random variable following a Pareto distribution with a shape parameter 𝛼 (set to 𝛼 = 2 in the experiments). The generated values are calculated as follows: 
+
+𝑋 = min (⌊ Pareto (𝛼 ) + 1⌋, 𝑋 𝑚𝑎𝑥 ) (23) For the number of order lines 𝐿 𝑖 , the truncation upper limit 𝑋 𝑚𝑎𝑥 
+
+is set to 𝐿 𝑚𝑎𝑥 (defaulting to 4); for the quantity per item 𝑄 𝑖 𝑗 , the truncation limit is set to 𝑄 𝑚𝑎𝑥 (defaulting to 4). The specific item IDs are sampled uniformly at random from the set of items with non-zero current inventory. 
+
+## B Default Order Allocation Strategy 
+
+Algorithm 1 Default Order Allocation 
+
+Input: Arriving order 𝑜 ; Set of workstations W; Set of shelves S;
+
+Output: The workstation allocated to order 𝑤 𝑜 ; The shelves set allocated to order S𝑜  
+
+> 1:
+
+Select allocated workstation 𝑤 𝑜 based on rules  
+
+> 2:
+
+S𝑜 ← ∅  
+
+> 3:
+
+while 𝒅 𝑜 ≠ 0 do  
+
+> 4:
+
+for each shelf 𝑠 ∈ S do  
+
+> 5:
+
+Calculate matching degree 𝑽 (𝑜 ) 
+
+> 𝑠,𝑤
+
+via Eq. (2)  
+
+> 6:
+
+end for  
+
+> 7:
+
+Select the shelf 𝑠 ′ with the maximum matching degree  
+
+> 8:
+
+S𝑜 ← S 𝑜 ∪ { 𝑠 ′ } 
+
+> 9:
+
+𝒂 ← min (𝒅 𝑜 , 𝒒 𝑠 ′ ) 
+
+> 10:
+
+𝒅 𝑜 ← 𝒅 𝑜 − 𝒂  
+
+> 11:
+
+𝒒 𝑠 ′ ← 𝒒 𝑠 ′ − 𝒂  
+
+> 12:
+
+end while  
+
+> 13:
+
+return 𝑤 𝑜 , S𝑜 
+
+Upon the pick-up of a shelf by a robot, the soft order allocation method allocates all soft-allocated orders to that shelf; however, the items on the shelf may be insufficient. To address this deficiency, it is necessary to allocate the order to additional shelves to ulti-mately satisfy the order requirements. The specific methodology is described in Algorithm 1. This method is also employed in several baselines. 
+
+## C Baseline Details 
+
+We selected two categories of methodologies: phased decision-making methods and joint decision-making methods. For the phased methods, we selected three order allocation methods and three robot scheduling methods, respectively, and evaluated the performance of all nine resulting combinations. 
+
+## C.1 Order Allocation Methods 
+
+• Shortest Queue First (SQF) [ 15 ]: This method allocates the order to the workstation with the shortest expected queue time and subsequently selects shelves based on Algorithm 1. 
+
+• Work Load Balancing (WLB) [ 26 ]: This method allocates the order to the workstation with the minimum workload and sub-sequently selects shelves based Algorithm 1. 
+
+• OR Tools : This method model the dynamic order allocation as a static problem via a rolling-horizon approach and solve it using the Google OR-Tools CP-SAT solver. 
+
+## C.2 Robot Scheduling Methods 
+
+• Nearest Neighbor [ 16 ]: This method selects the nearest valid target. 
+
+• Earliest Arrival Order [ 8 ]: This method selects the earliest arriving order for completion. Furthermore, to adapt it to our three-phase decision problem, its return strategy is set to the nearest neighbor approach. SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems 
+
+• TSP [ 13 ]: This method models the robot scheduling process as a Traveling Salesman Problem. 
+
+• PSMDRL [ 35 ]: A reinforcement learning method employs a Transformer architecture for decision. 
+
+## C.3 Joint Optimization Methods 
+
+• JOTP [ 32 ]: A joint optimization method combining the Kuhn-Munkres algorithm [17] and reinforcement learning. 
+
+• SABS [ 31 ]: A hybrid heuristic algorithm combining simulated annealing and beam search for the joint optimization. 
+
+## D Evaluation Metrics 
+
+To ensure a comprehensive assessment of system performance, we utilize three key metrics: 
+
+• Makespan (Obj): Defined as the maximum completion time among all robots. This metric indicates the total time required to clear the current batch of orders, serving as a direct proxy for the system’s overall throughput and efficiency. 
+
+• Average Order Completion Time (CompT): Defined as the average duration between the arrival of an order and its final fulfillment. This metric reflects the system’s responsiveness and the quality of service provided to individual orders. 
+
+• Time: The average computation time per problem instance. 
+
+## E Entity Encoding and Value Function Features Details 
+
+The continuous features to be modeled for robot 𝑟 , storage location 
+
+𝑙 , and workstation 𝑤 are as follows: 
+
+𝒇 𝑟𝑎𝑤 𝑟 = 𝑥 𝑟 ∥𝑦 𝑟 ∥𝑡𝑎𝑠𝑘 𝑟 ∥ℎ𝑟 ∥𝑠𝑜 𝑓 𝑡 𝑟 . (24) 
+
+𝒇 𝑟𝑎𝑤 𝑙 = 𝑥 𝑙 ∥𝑦 𝑙 ∥𝑑𝑖𝑠𝑡 𝑙 ∥𝑡𝑎𝑠𝑘 𝑙 ∥ℎ𝑙 ∥𝑠𝑜 𝑓 𝑡 𝑙 . (25) 
+
+𝒇 𝑟𝑎𝑤 𝑤 = 𝑥 𝑤 ∥𝑦 𝑤 ∥𝑑𝑖𝑠𝑡 𝑤 ∥𝑡𝑎𝑠𝑘 𝑤 ∥ℎ𝑤 ∥𝑢 𝑤 ∥𝑐𝑜𝑠𝑡 𝑤 . (26) Here, 𝑥, 𝑦 represent the entity coordinates; 𝑡𝑎𝑠𝑘 denotes the number of tasks (when processing orders in O𝑟𝑒𝑚 that cannot be resolved by soft allocation, additional shelves need to be allocated and moved to workstations; each move is called a task) assigned to the entity (or its carried shelf for robot, its shelf for storage location, hereinafter the same); 𝑑𝑖𝑠𝑡 denotes the distance to the decision-making robot; ℎ represents the soft allocation heat of the entity; and 𝑠𝑜 𝑓 𝑡 indicates the size of soft orders set for the entity. 𝑢 
+
+represents the workload of the workstation, and 𝑐𝑜𝑠𝑡 indicates the potential increase in total queuing time resulting from proceeding to that workstation. Robots and storage locations exhibit high state dynamics. Fur-thermore, there are significant differences in decision-making logic across entities in different status. To model this discrete state in-formation, we sum the learnable state embedding vectors with the continuous feature vectors to obtain the final representation for each entity: 
+
+𝒉 0 
+
+> 𝑟
+
+= MLP 𝑟 (𝒇 𝑟𝑎𝑤 𝑟 ) + 𝒆 𝑟 (𝑠𝑡𝑎𝑡𝑢𝑠 𝑟 ). (27) 
+
+𝒉 0 
+
+> 𝑙
+
+= MLP 𝑙 (𝒇 𝑟𝑎𝑤 𝑙 ) + 𝒆 𝑙 (𝑠𝑡𝑎𝑡𝑢𝑠 𝑙 ). (28) 
+
+𝒉 0 
+
+> 𝑤
+
+= MLP 𝑤 (𝒇 𝑟𝑎𝑤 𝑤 ). (29) 
+
+𝒉 0 
+
+> 𝑟
+
+∈ R𝐷 , 𝒉 0 
+
+> 𝑙
+
+∈ R𝐷 , and 𝒉 0 
+
+> 𝑤
+
+∈ R𝐷 are the dense embedding vec-tors for robot 𝑟 , storage location 𝑙 , and workstation 𝑤 , respectively. 
+
+𝑠𝑡𝑎𝑡𝑢𝑠 𝑟 denotes the scheduling phase for 𝑟 and 𝑠𝑡𝑎𝑡𝑢𝑠 𝑙 denotes the shelf occupancy status for 𝑙 . We set the dimension of the embedding vectors for all entities to a uniform value 𝐷 .For PPO value function, we use a linear layer that takes a feature vector comprising the number of remaining orders, completed soft orders, and completed tasks as input. 
+
+## F Heterogeneous Graph Transformer 
+
+HGT employs 𝐿 layers of heterogeneous attention convolutions. Relation set T is defined as {𝜏 𝑟 𝑤 , 𝜏 𝑤𝑟 , 𝜏 𝑟𝑙 , 𝜏 𝑙𝑟 , 𝜏 𝑤𝑙 , 𝜏 𝑙 𝑤 }. Each layer consists of a multi-relational aggregation operator, HeteroConv ,which applies a variant of GAT[ 4 ] with edge features for each relation 𝜏 ∈ T :
+
+𝒉 (ℓ+1) 
+
+> 𝑣
+
+=∑︁  
+
+> 𝜏 ∈ T
+
+GAT 𝜏 
+
+
+
+𝒉 (ℓ ) , 𝑫 
+
+
+
+, ℓ = 0, . . . , 𝐿 − 1, (30) where 𝑫 represents the distance matrix between entities. The computation of the GAT operator is defined as follows: 
+
+𝒉 ′ 
+
+> 𝑖
+
+=∑︁    
+
+> 𝑗 ∈ N ( 𝑖 )∪{ 𝑖 }
+
+𝛼 𝑖,𝑗 𝑾 𝑡 𝒉 𝑗 , (31) 
+
+𝛼 𝑖,𝑗 = exp  𝒂 ⊤LeakyReLU  𝑾 𝑠 𝒉 𝑖 + 𝑾 𝑡 𝒉 𝑗 + 𝑾 𝑒 𝑫 𝑖,𝑗 
+
+ Í𝑘 ∈ N ( 𝑖 )∪{ 𝑖 } exp  𝒂 ⊤LeakyReLU  𝑾 𝑠 𝒉 𝑖 + 𝑾 𝑡 𝒉 𝑘 + 𝑾 𝑒 𝑫 𝑖,𝑘 
+
+ .
+
+(32) The aggregation method across relations is summation. To sta-bilize training and preserve original representations, residual con-nections and layer normalization are applied to each node type at every layer: 
+
+˜𝒉 (ℓ+1) 
+
+> 𝜏
+
+= LayerNorm 
+
+
+
+𝒉 (ℓ+1) 
+
+> 𝜏
+
++ 𝒉 (ℓ )
+
+> 𝜏
+
+
+
+, ∀𝜏 ∈ T . (33) 
+
+## G Detailed Experimental Settings 
+
+In this section, we detail the experimental setup. All experiments were conducted using Python 3.9.23 and PyTorch 2.4.1. Regarding the reinforcement learning algorithm, we employed Proximal Policy Optimization (PPO) as the core training algorithm, utilizing the following parameter configuration: The number of local parallel environments is set to 8, with each environment col-lecting 128 time steps of data prior to each policy update. Upon the completion of data collection, the policy network undergoes updates for 4 epochs. To enhance computational efficiency, the data is further partitioned into 4 minibatches for gradient descent. The PPO clip coefficient 𝜖 is set to 0.1 to constrain the magnitude of policy updates and prevent drastic policy oscillations. Concurrently, the entropy coefficient is set to 0.01 to encourage exploration, and the value function coefficient is set to 0.1. To mitigate gradient ex-plosion, the maximum gradient norm is limited to 0.5. Furthermore, we established a target KL divergence threshold of 0.01 ; should the approximate KL divergence exceed this value, the updates for the current epoch are terminated prematurely. The total number of timesteps for the entire training process is set to 4 × 10 6.Regarding the model architecture, we employed a Heterogeneous Graph Attention Network comprising 4 layers of heterogeneous Tang and Yang, et al. 
+
+Table 5: Results of bias ablation study. Dataset Synth-Small Synth-Medium Synth-Large Metrics Obj ( ↓) CompT ( ↓) Obj ( ↓) CompT ( ↓) Obj ( ↓) CompT ( ↓)                                             
+
+> SOAR 811.01 243.25 1387.82 289.94 2160.47 362.08
+> w/o bias 882.03 265.84 1455.09 316.95 2403.80 376.91 Only bias 980.74 291.81 1614.72 351.31 2437.38 403.98
+> Dataset Real-Small Real-Medium Real-Large Metrics Obj ( ↓)CompT ( ↓)Obj ( ↓)CompT ( ↓)Obj ( ↓)CompT ( ↓)
+> SOAR 406.79 152.03 653.41 217.02 828.44 275.68
+> w/o bias 427.70 168.31 689.00 237.36 927.67 360.04 Only bias 446.27 174.91 696.46 229.84 886.97 302.02
+
+attention convolutions. The hidden size 𝐷 is set to 256 , and the number of attention heads is set to 2.For hyperparameter in SOAR , the size of the candidate set 𝐾 is set to 10 , the threshold for the number of encoded robots ( 𝐾 1) and stor-age locations ( 𝐾 2) is set to 50 , the reward shaping hyperparameter 
+
+𝑝 is set to 8.During the training process, we monitored the model’s perfor-mance on the validation set and retained the best-performing model as the final model. 
+
+## H OR Tools Implementation Details 
+
+We employ a rolling-horizon approach to transform the dynamic order allocation problem into a static problem. Specifically, we maintain a dynamic order pool into which incoming orders are accumulated. When the number of orders in the pool reaches a specific threshold or the time elapsed since the previous allocation exceeds a designated time limit, Google OR-Tools is invoked to de-termine the order allocation scheme for the current pool, which is subsequently cleared. In the experiments, the order quantity thresh-old is set to 10 , the elapsed time threshold is set to 60 time units, and the upper limit of solver solution time is set to 10 seconds for real dataset, 15 seconds for synthetic dataset. If the threshold is exceeded, the default allocation method will be used. We formulate the order allocation problem as a Constraint Programming (CP) problem, with the objective of minimizing the total shelf trans-portation distance required to fulfill the batch of orders, subject to inventory constraints and workstation assignment constraints. 
+
+## H.1 Sets and Parameters 
+
+• 𝑂 : Set of orders in the current batch. 
+
+• 𝑆 : Set of candidate shelves containing required items. 
+
+• 𝑊 : Set of available workstations. 
+
+• 𝐾 : Set of item types. 
+
+• 𝑅 𝑜,𝑘 : The quantity of items 𝑘 required by order 𝑜 .
+
+• 𝐼 𝑠,𝑘 : The inventory quantity of items 𝑘 on shelf 𝑠 .
+
+• 𝐷 𝑠,𝑤 : The travel distance between the storage location of shelf 𝑠 
+
+and workstation 𝑤 .
+
+## H.2 Decision Variables 
+
+The model utilizes the following decision variables: 
+
+• 𝑦 𝑜,𝑤 ∈ { 0, 1}: Binary variable. Equal to 1 if order 𝑜 is assigned to workstation 𝑤 , and 0 otherwise. 
+
+• 𝑧 𝑠,𝑤 ∈ { 0, 1}: Binary variable. Equal to 1 if shelf 𝑠 is transported to workstation 𝑤 , and 0 otherwise. 
+
+• 𝑥 𝑜,𝑘,𝑠 ∈ Z≥0: Integer variable. Represents the quantity of item 
+
+𝑘 for order 𝑜 picked from shelf 𝑠 . Note that the workstation dimension is optimized out in this variable to reduce model complexity. 
+
+## H.3 Objective Function 
+
+The objective is to minimize the total distance traveled by the shelves to the assigned workstations: Minimize ∑︁  
+
+> 𝑠 ∈𝑆
+
+∑︁ 𝑤 ∈𝑊 
+
+𝐷 𝑠,𝑤 · 𝑧 𝑠,𝑤 (34) 
+
+## H.4 Constraints 
+
+1. Order Assignment Constraint: Each order must be assigned to exactly one workstation to be processed. ∑︁  
+
+> 𝑤 ∈𝑊
+
+𝑦 𝑜,𝑤 = 1, ∀𝑜 ∈ 𝑂 (35) 
+
+2. Demand Satisfaction Constraint: For every order and every required item, the total quantity picked from all shelves must equal the order’s requirement. ∑︁  
+
+> 𝑠 ∈𝑆
+
+𝑥 𝑜,𝑘,𝑠 = 𝑅 𝑜,𝑘 , ∀𝑜 ∈ 𝑂, ∀𝑘 ∈ 𝐾 where 𝑅 𝑜,𝑘 > 0 (36) 
+
+3. Inventory Capacity Constraint: The total quantity of a specific item picked from a shelf by all orders cannot exceed the shelf’s available inventory. ∑︁  
+
+> 𝑜 ∈𝑂
+
+𝑥 𝑜,𝑘,𝑠 ≤ 𝐼 𝑠,𝑘 , ∀𝑠 ∈ 𝑆, ∀𝑘 ∈ 𝐾 where 𝐼 𝑠,𝑘 > 0 (37) 
+
+4. Shelf-Workstation Coupling Constraint: This constraint links the picking variable 𝑥 , the order assignment 𝑦 , and the shelf move-ment 𝑧 . It ensures that if an order 𝑜 assigned to workstation 𝑤 picks any item from shelf 𝑠 , then shelf 𝑠 must visit workstation 𝑤 . In the CP-SAT model, this is implemented using logical implication: if shelf 𝑠 does not visit workstation 𝑤 (𝑧 𝑠,𝑤 = 0), and order 𝑜 is assigned to 𝑤 (𝑦 𝑜,𝑤 = 1), then no items can be picked from 𝑠 for 𝑜 .
+
+(𝑧 𝑠,𝑤 = 0)∧( 𝑦 𝑜,𝑤 = 1) =⇒ 𝑥 𝑜,𝑘,𝑠 = 0, ∀𝑜 ∈ 𝑂, 𝑠 ∈ 𝑆, 𝑤 ∈ 𝑊 , 𝑘 ∈ 𝐾 
+
+(38) Equivalently, this enforces that a shelf trip is generated ( 𝑧 𝑠,𝑤 = 1)whenever a picking activity occurs at that workstation. 
+
+## I Ablation Study of Phase-Specific Bias 
+
+To verify the synergistic effect between the decoder model and the phase-bias, we conducted ablation study, and the results are shown in the table 5. Results show that using phase-bias alone is significantly worse than the SOAR , and is slightly worse than the decoder-only method except for dataset Real-Large. This is because this phase-knowledge are raw features in the decision model. Adding phase-bias directly only guides the effective exploration in the early stages of reinforce-ment learning training, while complex global decision information still needs to rely on deep neural networks for modeling. SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems 1 2 3 4-5 6-10 >10  
+
+> Order Size (Items per Order)
+> 0
+> 50000
+> 100000
+> 150000
+> 200000
+> Frequency (Number of Orders)
+> 223372
+> 103664
+> 41553
+> 23837
+> 8689 2889
+> Distribution of Order Sizes (Binned)
+
+Figure 6: Order Size Distribution. 
+
+## J Analysis of Default Order Allocation Strategy’s Impact on Performance 
+
+To assess the impact of the default allocation module on overall system performance, we first analyzed the distribution of order sizes (i.e., the number of items per order), as illustrated in Fig. 6. The data exhibits a characteristic long-tail distribution, where ap-proximately 91.2% of orders contain only 1 to 3 items. This implies that the vast majority of orders can be fulfilled by a single shelf, offering significant potential for order batching. Such a distribution aligns perfectly with our Soft Allocation mechanism, allowing it to process the majority of orders efficiently. Consequently, the default allocation strategy is relegated to handling only the small fraction of complex, large-scale orders, thereby minimizing its impact on overall throughput. To further verify this, we counted the number of orders completed by soft allocation and the default allocation strategy in real-world scenarios 78.3% of the orders were completed by soft allocation.

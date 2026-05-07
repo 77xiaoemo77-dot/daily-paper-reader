@@ -1,0 +1,5219 @@
+Title: On the Expressive Power of GNNs to Solve Linear SDPs
+
+URL Source: https://arxiv.org/pdf/2604.27786v2
+
+Published Time: Tue, 05 May 2026 01:49:18 GMT
+
+Number of Pages: 46
+
+Markdown Content:
+# On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Chendi Qian 1 Christopher Morris 1
+
+## Abstract 
+
+Semidefinite programs (SDPs) are a powerful framework for convex optimization and for con-structing strong relaxations of hard combinatorial problems. However, solving large SDPs can be computationally expensive, motivating the use of machine learning models as fast computational surrogates. Graph neural networks (GNNs) are a natural candidate in this setting due to their sparsity-awareness and ability to model variable-constraint interactions. In this work, we study what expressive power is sufficient to recover opti-mal SDP solutions. We first prove negative results showing that standard GNN architectures fail on recovering linear SDP solutions. We then identify a more expressive architecture that captures the key structure of SDPs and can, in particular, em-ulate the updates of a standard first-order solver. Empirically, on both synthetic and S DP LIB bench-marks of various classes of SDPs, this more ex-pressive architecture achieves consistently lower prediction error and objective gap than theoreti-cally weaker baselines. Finally, using the learned high-quality predictions to warm-start the first-order solver yields practical speedups of up to 
+
+80% .
+
+## 1. Introduction 
+
+Semidefinite programming (SDP) is a cornerstone of modern optimization, serving as a fundamental tool in both combi-natorial and convex optimization (Boyd & Vandenberghe, 2004; Nocedal & Wright, 1999). In particular, it provides tight relaxations for NP -hard combinatorial optimization 
+
+(CO) problems, such as max-cut (Goemans & Williamson, 1995), max clique (Galli & Letchford, 2017), and graph col-oring (Charikar, 2002); and it subsumes important problem classes including second-order cone programming (SOCP),    
+
+> 1Faculty of Computer Science, RWTH Aachen University, Ger-many. Correspondence to: Chendi Qian <chendi.qian@log.rwth-aachen.de>.
+> Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s).
+
+quadratically constrained quadratic programming (QCQP), and linear programming (LP) (Dattorro, 2010), see Sec-tion D for more details. Despite their theoretical utility, solv-ing large-scale SDPs remains computationally prohibitive; state-of-the-art interior point method (IPM) solvers typically scale super-cubically with the problem size, e.g., O(n3) or even O(n6) per-iteration, depending on the concrete imple-mentation (Helmberg et al., 1996; Vandenberghe & Boyd, 1996; Jiang et al., 2020). To address these scalability challenges, learning-to-optimize 
+
+(L2O) has emerged as a promising approach that aims to re-place computationally intensive optimization routines with lightweight machine learning proxies. In this context, graph neural networks (GNNs) (Scarselli et al., 2008; Gilmer et al., 2017) have shown strong potential, particularly for learning to solve mixed-integer linear programs (MILPs) by repre-senting them as variable-constraint bipartite graphs (Gasse et al., 2019; Chen et al., 2023). Recent works have further aligned GNNs with classical algorithms, such as the IPM or 
+
+primal-dual hybrid gradient (PDHG) algorithm (Qian et al., 2024; Li et al., 2024a). However, extending this success to SDPs poses a funda-mental challenge, and there is currently a lack of neural architectures capable of effectively representing even linear SDPs . Unlike LPs, where variables are vector entries, SDP variables are matrix entries, where the underlying matrix is constrained to the positive semidefinite (PSD) cone. This introduces unique structural symmetries, such as equivari-ance under simultaneous row and column permutations, that standard bipartite representations fail to capture. While the expressivity of GNNs and their connection to the Weisfeiler– Leman ( WL ) hierarchy of graph isomorphism tests (Cai et al., 1992) are well-studied (Xu et al., 2018; Morris et al., 2019; 2020; Maron et al., 2019a), the specific expressive power required to represent the mapping from a linear SDP instance to its optimal matrix solution remains unclear. 
+
+Present work In this work, we bridge GNN expressivity theory and an important class of SDP. That is, we formally characterize the inductive bias needed to represent linear SDPs. Our analysis reveals that 1- and 2-WL -like methods, which we term VC -WL and VC -2-WL , are insufficient. In contrast, we show that a folklore 2-dimensional Weisfeiler– Leman (2-FWL ) equivalent architecture, which we denote 1
+
+> arXiv:2604.27786v2 [cs.LG] 4 May 2026
+
+On the Expressive Power of GNNs to Solve Linear SDPs min ⟨C, X⟩                          
+
+> ⟨A1,X⟩=b1
+> ⟨A2,X⟩=b2
+> . . .
+> ⟨Ak,X⟩=bk
+> X∈Sn
+> +
+> A1,ij X11 X12 . . .
+> X21
+> . . .
+> Xij
+> . . .
+> . . .
+> ←hash( ,{{ ,, . . . }} ,{{ ,}} )
+> For t= 1 ,2,3, . . .
+> . . .
+> X∗
+
+Figure 1. Our framework initializes variable and constraint embeddings directly from the SDP problem data. At each step t, the model iteratively updates these representations by aggregating messages from variable and constraint neighbors via permutation-equivariant functions. Finally, the variable embeddings are decoded to predict the optimal solution X∗.
+
+as VC -2-FWL , is capable of capturing linear SDPs. Concretely, we contribute the following. 1. Impossibility results We prove that standard constraint-variable message passing ( VC -WL ) fails to represent SDPs. Furthermore, we show that the higher-order architecture VC -2-WL is also insufficient to cap-ture SDPs. 2. Theoretical sufficiency for solution We establish that the expressivity of VC -2-FWL is sufficient to represent SDP solutions. Specifically, we prove that the algo-rithmic operations of the PDHG solver (Chambolle & Pock, 2016; Wang et al., 2024) are subsumed by the stable coloring of VC -2-FWL . This implies that 
+
+VC -2-FWL possesses the expressivity to simulate the solver’s trajectory and approximate the solution. 3. Empirical validation We validate our theory on synthetic and real-world benchmarks, showing that VC -2-FWL -expressive architectures consistently achieve the lowest loss and objective gap. Moreover, we demonstrate that utilizing these high-quality pre-dictions to warm-start a standard solver significantly reduces convergence time. 
+
+In summary, we formally establish the expressivity level required to solve linear SDPs, offering the first rigorous theoretical framework to ground the design of neural SDP solvers. By validating that expressive power directly trans-lates to solution quality, our work establishes a principled blueprint for future research in learning-based optimization. 
+
+1.1. Related work 
+
+In the following, we discuss related work. 
+
+MPNNs and L2O Message-passing neural networks 
+
+(MPNNs) (Gilmer et al., 2017; Scarselli et al., 2008) have been extensively studied and are broadly categorized into spatial and spectral variants. Spatial MPNNs (Bresson & Laurent, 2017; Duvenaud et al., 2015; Hamilton et al., 2017; Veliˇ ckovi´ c et al., 2017; Xu et al., 2018) follow the message-passing paradigm introduced by Gilmer et al. (2017). MPNNs have shown strong potential in L2O. A widely adopted approach represents MILPs using constraint-variable bipartite graphs (Gasse et al., 2019; Ding et al., 2020; Chen et al., 2022b; Khalil et al., 2022; Qian et al., 2024). Recent work has also aligned MPNNs with various optimization algorithms, including IPMs (Qian et al., 2024; Qian & Morris, 2025b), PDHG (Li et al., 2024a), and some distributed algorithms (Li et al., 2024b; 2025a). From a theoretical perspective, several studies have analyzed the expressivity of MPNNs in approximating solutions to LP, QP, and more general SOCP (Chen et al., 2022b; 2023; 2024b;a; Qian et al., 2024; Wu et al., 2024; Qian & Mor-ris, 2025a; Li et al., 2025b). In contrast, there has been relatively little work on applying machine learning to SDP. Early approaches leveraged the relation between KKT condi-tions and dynamical system equilibria to model SDP solving via ODEs (Jiang & Wang, 1999; Gao, 2004; Nikseresht & Nazemi, 2019; Kriváchy et al., 2021). However, these meth-ods are empirically limited to small-scale instances with few variables. Closely related is Yau et al. (2024), which aligns GNNs with low-rank SDP relaxations for maximum constraint satisfaction problems (Max-CSP). However, a crucial distinction lies in the problem objective: Yau et al. (2024) analyzes GNNs as approximation algorithms for CO problems, using the algorithms of their SDP relaxations as a tool. In contrast, our work treats general linear SDPs as the primary object of study, focusing on the GNN’s ability to recover the optimal SDP solution itself. 
+
+Expressivity of GNNs MPNNs are limited by the ex-pressivity of the 1-WL test (Xu et al., 2018; Morris et al., 2019). To address this, various approaches have been pro-2On the Expressive Power of GNNs to Solve Linear SDPs 
+
+posed, including, among others, higher-order GNNs (Mor-ris et al., 2019; 2020; Maron et al., 2019a; Morris et al., 2022), subgraph-based methods (Bevilacqua et al., 2022; Papp et al., 2021; Qian et al., 2022; Bevilacqua et al., 2023; Frasca et al., 2022; Bar-Shalom et al., 2024; Zhang et al., 2023; Southern et al., 2025), feature augmentation (Sato et al., 2021; You et al., 2021; Brasoveanu et al., 2023; Elia-sof et al., 2023), and techniques probing local structure (Zhang & Li, 2021; Chen et al., 2022a; Huang et al., 2022; Zhao et al., 2022). Graph transformers (Dwivedi & Bres-son, 2020; Rampášek et al., 2022; Kim et al., 2022; Müller et al., 2023) have also been analyzed through the lens of the 
+
+WL hierarchy (Müller & Morris, 2024; Müller et al., 2024). Notably, Hu et al. (2022) study 2-WL and 2-FWL for link prediction using second-order features, similar in form to our approach. However, our work differs in principle and fo-cuses on semidefinite programming. For a survey on graph expressivity, see Morris et al. (2021). 
+
+1.2. Background 
+
+Here, we provide the necessary background; see Section B for an extended background. 
+
+SDP Let Sn ⊂ Rn×n denote the set of symmetric matri-ces, and Sn 
+
+> +
+
+⊂ Sn denote the cone of PSD matrices. We consider the standard linear SDP problem with primal vari-able X ∈ Sn 
+
+> +
+
+of the form: 1
+
+min 
+
+> X∈Sn
+> +
+
+⟨C, X⟩
+
+s.t. ⟨Ak, X⟩ = bk, k ∈ [m].
+
+(1) Here, Ak ∈ Sn represents the k-th constraint matrix, whose entry indexed at (i, j ) is Ak,ij , and we denote the stack of them as a tensor A ∈ Rm×n×n. Here, the dot product on matrices is defined as ⟨C, X⟩ := ∑ni=1 
+
+∑nj=1 Cij Xij .Further, we define the linear operator 
+
+A : Sn → Rm, A(X) = ( ⟨A1, X⟩ , . . . , ⟨Am, X⟩ )⊺,
+
+and its adjoint operator 
+
+A∗ : Rm → Sn, A∗(y) = 
+
+> m
+
+∑
+
+> i=k
+
+ykAk
+
+for brevity. While the primal variable X contains n2 entries, the symmetry requirement restricts the problem to n(n+1) 2
+
+free variables. We assume the constraints are linearly inde-pendent; otherwise, some of them can be reduced, or the problem is infeasible, thus m is bounded by O(n2). With-out loss of generality, we assume the coefficient matrices    
+
+> 1In some literature, the min is replaced by inf , as the minimum may not be reached. We exclude this case.
+
+C and {Ak}mk=1 are symmetric. 2 SDP problems may admit multiple optimal solutions with various ranks (Han et al., 2025), making the solution set diverse and intractable to characterize. To ensure a well-defined learning target, we follow Chen et al. (2022b) in the LP case and focus on the unique optimal solution with the minimum Frobenius norm .
+
+Proposition 1.1. The SDP problem defined in Equation (1) 
+
+has a unique primal solution X∗ with the minimum Frobe-nius norm ∥X∗∥2
+
+> F
+
+.
+
+WL hierarchy The WL hierarchy is one of the heuristics for the graph isomorphism problem (Cai et al., 1992), and a measurement for the expressive power of GNNs (Morris et al., 2021). Let [n] := {1, . . . , n } and let {{. . . }} denote multisets. A graph G := ( V, E ) consists of a finite set of nodes V and edges E ⊆ { (u, v ) | u, v ∈ V }.34 The 
+
+1-WL (Weisfeiler & Leman, 1968) (or color refinement )iteratively updates the color ctv , for iteration t > 0, of a node v based on the colors of its neighbors N (v) := {u ∈
+
+V | (u, v ) ∈ E}. The node colors are initialized with labeling function l : V → N as c0 
+
+> v
+
+:= l(v), and updated with 
+
+ctv := hash 
+
+(
+
+ct−1 
+
+> v
+
+,
+
+{{
+
+ct−1 
+
+> u
+
+| u ∈ N (v)
+
+}}) 
+
+,
+
+for t > 0. To distinguish more graphs, the hierarchy ex-tends to k-tuples of nodes ( k ≥ 2), leading to the k-WL .In this work, we focus on the case k = 2 , where colors are assigned to node pairs (u, v ) ∈ V 2. The initialization 
+
+c0 
+
+> uv
+
+:= atp (u, v ) is the atomic type , which encodes the iso-morphism type of the pair, i.e., whether u = v and whether 
+
+(u, v ) ∈ E. The folklore (2-FWL ) and standard (2-WL )variants differ in how they aggregate information from a third node w ∈ V . That is, the 2-FWL aggregates the joint 
+
+configuration of w with respect to both u and v, i.e., 
+
+ctuv := hash 
+
+(
+
+ct−1 
+
+> uv
+
+,
+
+{{(ct−1 
+
+> wv
+
+, ct−1
+
+> uw
+
+) | w ∈ V
+
+}}) 
+
+.
+
+In contrast, 2-WL aggregates the interaction of w with each node independently: 
+
+hash 
+
+(
+
+ct−1 
+
+> uv
+
+,
+
+({ {
+
+ct−1 
+
+> wv
+
+| w ∈ V
+
+}}
+
+,
+
+{{
+
+ct−1 
+
+> uw
+
+| w ∈ V
+
+}})) 
+
+.
+
+Crucially, 2-FWL is strictly more expressive than 2-WL 
+
+(Grohe, 2017). Both algorithms run until stabilization and yield a unique stable coloring c∞. Finally, we say algorithm 
+
+A refines B, denoted A ⊑ B , if A leads to a finer partition-ing of (higher-order) nodes than B. The corresponding strict relation is denoted by ⊏.                
+
+> 2If Cis not symmetric, it can be replaced by (C+C⊺)/2
+> without affecting the objective value, as Xis symmetric.
+> 3Sometimes denoted as V(G)and E(G)for specific G.
+> 4For notational convenience, we usually write (u, v )for the undirected edge {u, v }.
+
+3On the Expressive Power of GNNs to Solve Linear SDPs 
+
+MPNNs MPNNs learn a d-dimensional real-valued vector of each node in a graph by aggregating information from neighboring nodes. Following Gilmer et al. (2017), let G
+
+be an attributed, edge-weighted graph with edge-weights 
+
+w : E(G) → R with initial node-feature h0 
+
+> v
+
+∈ Rd0 , d0 ∈
+
+N, for v ∈ V (G). An MPNN architecture consists of a composition of L neural network layers for some L > 0. In each layer , t ∈ N, we compute a node feature 
+
+mtv = AGG t ({ {(ht−1 
+
+> v
+
+, ht−1 
+
+> u
+
+, w vu 
+
+) | u ∈ N (v)
+
+}}) 
+
+htv = UPD t(ht−1 
+
+> v
+
+, mtv
+
+) ∈ Rdt
+
+where UPD t and AGG t may be parameterized functions, e.g., neural networks. In the case of graph-level tasks, one uses a READOUT function 
+
+hG := READOUT 
+
+({ {
+
+hLv | v ∈ V (G)
+
+}}) 
+
+∈ Rd,
+
+to compute a single vectorial representation based on learned node features after iteration L. Again, READOUT 
+
+may be a parameterized function. 
+
+## 2. Representing SDP instances 
+
+Here, we outline our graph representation for faithfully encoding SDP problems. 
+
+2.1. From LP to SDP 
+
+We first revisit the standard graph representation used for LP. Given an LP instance I : min x≥0 c⊺x s.t. Ax = b,we can construct a bipartite variable-constraint (V-C) graph with constraint nodes C(I) and variable nodes V (I) (Chen et al., 2022b). Edges between C(I) and V (I) are defined by nonzero entries of A with weights Acv , for v ∈ V (I), c ∈
+
+C(I). Since LP is a special case of SDP where all matrices are diagonal, it is natural to extend this representation to the general SDP setting. Specifically, we treat the matrix-shaped variable X as a collection of n2 individual variables, initializing node features with coefficients from the objective matrix C; and create m constraint nodes initialized with b.A variable node indexed by (i, j ) is connected to a constraint node k if Ak,ij ̸ = 0 , with edge weight Ak,ij . We hereby define the neighbors of variable nodes N (ij ) := {k ∈
+
+[m] | Ak,ij ̸ = 0 }, corresponding to the variable Xij , and of constraint nodes N (k) := {(i, j ) ∈ [n]2 | Ak,ij ̸ = 0 },corresponding to the constraint indexed k.To study the expressive power of MPNNs operating on V-C graphs for SDPs, we define a variant VC -WL of the 1-WL .To that, let vtij and ctk denote the colors of variable node 
+
+(i, j ) and constraint node k at iteration t, respectively. We define the initialization and color update as follows, 
+
+v0 
+
+> ij
+
+:= init v(Cij , Ii=j ), for i, j ∈ [n],
+
+c0 
+
+> k
+
+:= init c(bk), for k ∈ [m], (2) 
+
+vtij := hash (vt−1 
+
+> ij
+
+, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}) ,
+
+ctk := hash (ct−1 
+
+> k
+
+, {{(Ak,ij , vt−1 
+
+> ij
+
+) | (i, j ) ∈ N (k)}}) ,
+
+where init and hash are injective functions, Ii=j is a diago-nal indicator which takes 1 if i = j otherwise 0. While this representation captures the sparsity of the problem and in-herits the invariance and equivariance of MPNNs, we show it fundamentally lacks the expressivity required for SDPs. 
+
+Proposition 2.1. The VC -WL fails to represent linear SDP solutions. That is, there exist instances where the stable coloring of the VC -WL satisfies v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+for distinct vari-able indices (i, j ) and (p, q ), yet the entries in the unique optimal solution differ, i.e., X∗
+
+> ij
+
+̸ = X∗ 
+
+> pq
+
+.
+
+Hence, in the following, we investigate more powerful algo-rithms. 
+
+2.2. Leveraging higher-order information 
+
+The limitation of standard bipartite graph representation stems from treating SDP variables as independent entities, effectively flattening the problem and discarding the cru-cial intrinsic matrix geometry. Unlike standard LPs, the primal variables Xij of an SDP form a PSD matrix, charac-terized by spectral properties and global correlations. Con-sequently, an effective representation must move beyond bipartite graph representation and instead explicitly model the global interactions among Xij .We seek a neural architecture NN : Sn ×(Sn)m ×Rm → Sn
+
+that maps an SDP instance to a solution X while strictly re-specting the problem’s underlying symmetries. Specifically, we enforce three design principles. 1. Symmetry Since the solution resides in Sn
+
+> +
+
+, for any symmetric inputs C and A, the solution X := 
+
+NN (C, A, b) must satisfy X = X⊺.2. Equivariance For any permutation matrix P ∈{0, 1}n×n, transforming the inputs via P CP ⊺ and 
+
+P A kP ⊺ for all k must result in the equivalently per-muted output P XP ⊺.3. Invariance For any permutation matrix Q ∈{0, 1}m×m applied to the constraints, the out-put must remain unchanged: NN (C, QA, Qb ) =
+
+NN (C, A, b).Since the primal variables are indexed by pairs (i, j ), they are structurally analogous to the colored 2-tuples in a higher-order graph. Guided by these principles, 2-WL and 2-FWL 
+
+emerge not merely as heuristics, but also as the natural in-ductive bias for this domain. Consequently, we can adapt 4On the Expressive Power of GNNs to Solve Linear SDPs 
+
+the iterative color refinement to distinguish the variables of SDP instances. We formally introduce two variants, the 
+
+VC -2-WL and VC -2-FWL , by extending the standard 2-WL 
+
+and 2-FWL with slight modifications and the incorporation of constraint nodes. We define both variants because of the established hierarchy that 2-FWL ⊏ 2-WL in graph theory. This comparative approach allows us to theoretically pin-point the exact level of expressivity required, i.e., whether the VC -2-WL suffices or whether joint structural modeling of VC -2-FWL is necessary. Both variants initialize variable and constraint features ac-cording to Equation (2). The VC -2-WL update rule extends the standard 2-WL by integrating constraint node informa-tion alongside the structural aggregation, i.e., 
+
+vtij := hash 
+
+(
+
+vt−1 
+
+> ij
+
+,{{vt−1 
+
+> uj
+
+| u ∈ [n]}}, {{vt−1 
+
+> iu
+
+| u ∈ [n]}},
+
+{{( Ak,ij , ct−1
+
+> k
+
+) | k ∈ N (ij )}})
+
+(3) 
+
+ctk := hash 
+
+(
+
+ct−1 
+
+> k
+
+,{{( Ak,ij , vt−1
+
+> ij
+
+) | (i, j ) ∈ N (k)}})
+
+.
+
+The variable update aggregates row and column neighbor-hoods independently, reflecting standard 2-WL . However, this creates an asymmetry, as the hash function treats the row- and column-neighbor multisets as an ordered tuple, meaning the updated vij and vji are not guaranteed to be identical. To strictly enforce symmetry in output, we explic-itly symmetrize the states: vtji ← vtij for all i < j .In contrast, the VC -2-FWL update couples the neighbor indices to capture joint interactions, i.e., 
+
+vtij := hash 
+
+(
+
+vt−1 
+
+> ij
+
+,{{{{vt−1 
+
+> uj
+
+, vt−1 
+
+> iu
+
+}} | u ∈ [n]}},
+
+{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+(4) 
+
+ctk := hash 
+
+(
+
+ct−1 
+
+> k
+
+,{{( Ak,ij , vt−1
+
+> ij
+
+) | (i, j ) ∈ N (k)}})
+
+.
+
+Unlike standard 2-FWL , which aggregates a multiset of or-dered tuples , our design aggregates a multiset of unordered multisets {{vtuj , vtiu }}. This modification ensures the up-dated vtij = vtji without the need for manual symmetriza-tion. For theoretical comparison, we define a tuple-based version, VC -2-FWL +, in Section E.1. We establish the fol-lowing strict hierarchy of expressivity, see Section C.2 for the detailed proof, i.e., 
+
+VC -2-FWL + ⊏ {VC -2-FWL ̸ ≡ VC -2-WL } ⊏ VC -WL .
+
+That is, VC -2-FWL + strictly refines VC -2-FWL and 
+
+VC -2-WL , while VC -2-FWL and VC -2-WL are incompa-rable, and they both strictly refine VC -WL . Guided by this hierarchy, we first examine the limitations of the intermedi-ate variant, VC -2-WL . Despite strictly refining the VC -WL ,we demonstrate that it remains insufficient. 
+
+Proposition 2.2. The VC -2-WL fails to represent linear SDP solutions. That is, there exist instances where the stable colors under VC -2-WL satisfy v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+for distinct indices (i, j ) and (p, q ), yet the unique optimal solution entries differ, i.e., X∗
+
+> ij
+
+̸ = X∗ 
+
+> pq
+
+.
+
+However, we argue that VC -2-FWL + is overly expressive 
+
+by proving in Section C.4 that VC -2-FWL is sufficiently expressive for this domain. Formally, 
+
+Theorem 2.3. Let X∗ ∈ Sn 
+
+> +
+
+be the primal optimal solution to a given SDP instance and given indices (i, j ), (p, q ). If the stable colorings of VC -2-FWL satisfy v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+, then the solution values satisfy X∗ 
+
+> ij
+
+= X∗ 
+
+> pq
+
+.
+
+In practice, excessive expressivity can introduce unneces-sarily too many colors or features, potentially causing the neural network to overfit. On the contrary, by discarding unnecessary directional information, our design yields a smaller set of colors which facilitates faster convergence, and encourages the neural network to learn more robust and generalizable embeddings. In summary, both VC -2-WL and VC -2-FWL satisfy our three design principles: symmetric outputs, permutation equivariance regarding C, A, and invariance to constraint ordering. Crucially, VC -2-FWL provides the expressivity level required to solve the problem. 
+
+2.3. Complexity 
+
+We analyze the computational complexity of VC -2-FWL by mapping it to the standard 1-WL operating on an implicit auxiliary graph. By leveraging tight complexity bounds from Berkholz et al. (2017), we have the following proposi-tion (see Section C.5 for proof): 
+
+Proposition 2.4. Given an SDP of n × n variables and m constraints, nnz (A) denotes the number of non-zero entries in A, then VC -2-FWL converges in time 
+
+O ((n3 + nnz (A)) log n).
+
+The derived complexity is highly competitive for practi-cal applications. In many applications, such as max-cut, the constraint tensor is sparse , rendering the nnz (A) term negligible. Notably, our total complexity is comparable to the fastest implementation of IPM for SDPs (Jiang et al., 2020), which has complexity O(n3.5 log 1 
+
+> ϵ
+
+). Besides, the per-iteration of our VC -2-FWL is O(n3 +nnz (A)) , which is comparable to any SDP solver per iteration (Wen et al., 2010; Jiang et al., 2020; Wang et al., 2024), as they all require spectral decomposition of complexity O(n3). A critical advantage of our approach, however, is that the neuralized 
+
+VC -2-FWL being highly compatible for parallelization on GPUs. 5On the Expressive Power of GNNs to Solve Linear SDPs 
+
+2.4. Expressive neural architecture 
+
+Based on the initialization functions of Equation (2) and the update functions of Equation (4), we can neuralize the 
+
+VC -2-FWL using multi-layer perceptrons (MLPs) and in-stantiate a neural network, which we name VC -2-FMPNN .The feature initialization is 
+
+h0 
+
+> k
+
+:= INIT c(bk) ∈ Rd
+
+h0 
+
+> ij
+
+:= INIT v(Cij , Ii=j ) ∈ Rd (5) and the update function 
+
+mtij, v→v := ∑
+
+> u∈[n]
+
+MSG t
+
+> v→v
+
+(MAP t (ht−1
+
+> uj
+
+) + MAP t (ht−1
+
+> iu
+
+)) 
+
+mtij, c→v := ∑ 
+
+> k∈N(ij )
+
+MSG t
+
+> c→v
+
+(Ak,ij , ht−1
+
+> k
+
+) (6) 
+
+mtk, v→c := ∑ 
+
+> (i,j )∈N(k)
+
+MSG t
+
+> v→c
+
+(Ak,ij , ht−1
+
+> ij
+
+)
+
+htij := UPD t
+
+> v
+
+(ht−1 
+
+> ij
+
+, mtij, v→v, mtij, c→v
+
+)
+
+htk := UPD t
+
+> c
+
+(ht−1 
+
+> k
+
+, mtk, v→c
+
+)
+
+where INIT , MSG , MAP , UPD are MLPs. We now formally establish that this neural architecture possesses the capacity to fully simulate the VC -2-FWL algorithm, thereby inherit-ing its theoretical expressivity. 
+
+Proposition 2.5. There exists a set of parameters for the functions INIT , UPD , MSG , MAP , such that VC -2-FMPNN 
+
+has maximal expressivity equal to the VC -2-FWL .
+
+See to Section C.6 for a proof and how we also neuralize 
+
+VC -WL and VC -2-WL to VC -MPNN and VC -2-MPNN .
+
+## 3. Empirical results 
+
+In the following, we aim to assess the extent to which our theoretical results translate to practice. Concretely, we an-swer the following questions. 
+
+Q1 Expressivity Do the theoretical hierarchies of expres-sivity translate into approximation performance on SDP? 
+
+Q2 Efficiency Can the proposed neural architecture accel-erate the solving process for state-of-the-art solvers? The implementation of our neural methods and base-lines can be accessed at https://github.com/ chendiqian/GNN4SDP .
+
+3.1. Experimental protocol 
+
+Here, we outline the architectural configuration and details on training and evaluation. Before presenting our empirical findings, it is important to clarify the scope of our evalua-tion. The primary objective of this work is to develop neural architectures capable of approximating solutions to general linear SDPs, rather than serving as an end-to-end solver for CO problems. Consequently, our main experiments evalu-ate the quality of the predicted SDP continuous solutions against exact SDP solvers. While mapping these continuous embeddings back to discrete integer solutions is beyond our core focus, we have included downstream evaluations comparing our approximated SDP solutions to exact CO targets in Appendix X for completeness. 
+
+Neural architecture We evaluate the approximation performance of VC -2-FMPNN for solving SDPs against theoretically weaker baselines, i.e., VC -MPNN and 
+
+VC -2-MPNN , to verify whether empirical results align with our expressivity hierarchy. Besides, there are a few in-teresting neural architectures. The δ-VC -2-MPNN and 
+
+VC -2-IGN , adapted from δ-2-WL (Morris et al., 2020) and 2-IGN (Maron et al., 2019b) respectively, are similar in form to VC -2-MPNN , see Section E.2 and Section E.3 for their definition and expressivity analysis. Furthermore, we bench-mark against the VC -ET , a variant of Edge Transformer (ET) with expressivity equivalent to 2-FWL (Müller et al., 2024), see Section E.4 for details. 
+
+Datasets We employ synthetic SDP problems as relax-ations of classical CO problems, i.e., max-cut, max-clique, max independent set (MIS), vertex cover, and max 2-SAT, as well as linear matrix inequality (LMI) problems from control theory. Detailed problem formulations are provided in Section D. For each problem class, we generate 10 000 
+
+instances and partition them into training, validation, and test sets with 8:1:1 ratio. For the graph-based tasks, i.e., max-cut, max-clique, MIS, and vertex cover, we construct instances from Erd˝ os–Rényi graphs (Erd˝ os & Rényi, 1959) with 100 nodes and edge probability of 0.1, resulting in SDP problems with 10 000 variables. To specifically challenge the expressivity of weaker baselines and expose approxima-tion gaps, we also curate a more difficult max-cut dataset comprising 10 -regular graphs with 100 nodes. Beyond the graph problems, the suite includes max 2-SAT instances with 100 variables and 1000 clauses, as well as LMI control problems with 2500 variables and 500 constraints. We em-phasize that our experimental design prioritizes learnability and structural expressivity over scalability. While the in-stance sizes are moderate, they are sufficient to: (i) reveal the limitations of weaker architectures and (ii) demonstrate significant acceleration for classical SDP solvers. To demonstrate real-world applicability beyond synthetic benchmarks, we also evaluate our method on real-world instances from the S DP LIB (Borchers, 1999). We select the class of max-cut problems, which consists of 13 instances 6On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Table 1. Loss and relative objective gap (%) on test set. The best results across all are highlighted. 
+
+Target Model Problems 
+
+Max-Cut Max-Cut (reg) Max-Clique MIS Vertex Cover Max 2-SAT Test loss 
+
+VC -MPNN 0.216 ±0.000 0.221 ±0.000 1.016e-5 ±0.000 9.945e-6 ±0.000 0.099 ±0.000 0.217 ±0.000 
+
+VC -2-MPNN 0.119 ±0.018 0.221 ±0.000 5.108e-6 ±0.000 5.032e-6 ±0.000 0.029 ±0.001 0.053 ±0.009 
+
+δ-VC -2-MPNN 0.014 ±0.015 0.026 ±0.003 5.395e-6 ±0.000 5.058e-6 ±0.000 0.028 ±0.001 0.038 ±0.009 
+
+VC -2-IGN 0.215 ±0.000 0.221 ±0.000 6.310e-6 ±0.000 6.120e-6 ±0.000 0.030 ±0.002 0.082 ±0.007 
+
+VC -2-FMPNN 5.515e-5 ±0.000 5.140e-5 ±0.000 5.197e-7 ±0.000 4.772e-7 ±0.000 0.001 ±0.000 0.001 ±0.000 
+
+VC -ET 0.0001 ±0.000 0.0002 ±0.000 2.906e-6 ±0.000 1.895e-6 ±0.000 0.013 ±0.008 0.017 ±0.011 
+
+Raw obj gap (%) 
+
+VC -MPNN 1.297 ±0.003 1.226 ±0.001 1.228 ±0.005 1.148 ±0.006 1.048 ±0.039 2.044 ±0.166 
+
+VC -2-MPNN 1.046 ±0.073 1.225 ±0.001 0.889 ±0.023 0.858 ±0.063 1.235 ±0.050 0.882 ±0.053 
+
+δ-VC -2-MPNN 0.835 ±0.041 0.841 ±0.002 0.915 ±0.014 0.882 ±0.035 1.203 ±0.031 0.823 ±0.093 
+
+VC -2-IGN 1.282 ±0.005 1.225 ±0.001 1.305 ±0.071 1.224 ±0.121 1.274 ±0.067 0.918 ±0.084 
+
+VC -2-FMPNN 0.126 ±0.003 0.111 ±0.009 0.438 ±0.036 0.412 ±0.026 0.429 ±0.044 0.901 ±0.201 
+
+VC -ET 0.142 ±0.043 0.125 ±0.038 0.659 ±0.104 0.525 ±0.124 0.503 ±0.019 1.149 ±0.262 
+
+Proj. obj gap (%) 
+
+VC -MPNN 26.027 ±0.144 24.722 ±0.018 1.217 ±0.006 1.139 ±0.005 4.948 ±0.108 29.341 ±0.254 
+
+VC -2-MPNN 13.662 ±2.078 24.729 ±0.019 0.884 ±0.020 0.852 ±0.059 1.478 ±0.265 7.173 ±0.128 
+
+δ-VC -2-MPNN 1.929 ±0.021 3.781 ±0.045 0.906 ±0.016 0.874 ±0.033 1.321 ±0.062 4.208 ±1.222 
+
+VC -2-IGN 24.796 ±0.007 24.737 ±0.008 1.344 ±0.035 1.242 ±0.145 1.677 ±0.447 10.607 ±0.927 
+
+VC -2-FMPNN 0.111 ±0.017 0.092 ±0.004 0.436 ±0.035 0.411 ±0.025 0.469 ±0.051 0.862 ±0.211 
+
+VC -ET 0.159 ±0.043 0.128 ±0.032 0.647 ±0.102 0.523 ±0.135 0.510 ±0.015 1.104 ±0.146 
+
+that are homogeneous in problem structure but vary signif-icantly in scale, as detailed in Table 9. Due to the limited number of available instances, the standard train-validation split is infeasible. Instead, we treat this as a direct test of 
+
+trainability , i.e., assessing whether the architectures can overfit and effectively predict the near-optimal solution. 
+
+Training and evaluation All models were trained using the Adam optimizer (Kingma & Ba, 2015) with default hy-perparameters and batch size of 256. The training objective is to minimize the supervised mean squared error (MSE) between the predicted and ground-truth solution matrices. Training for synthetic datasets were conducted on a compute cluster with four NVIDIA L40S GPUs, whereas S DP LIB 
+
+utilized a single GPU. We trained for at most 1000 epochs, using a learning rate scheduler that decays the learning rate after 100 consecutive epochs without improvement in the relative objective gap on the validation set. Additionally, early stopping was applied if this metric failed to improve for 200 consecutive epochs. To quantify the computational efficiency of neural SDP solvers, we benchmarked inference time against classical solvers using the max-cut problem as a representative case study. We compared against SDPLR, a solver based on Burer-Monteiro method (Burer & Monteiro, 2003), MOSEK (ApS, 2022), an IPM solver, and SCS (O’Donoghue, 2021), a first-order solver based on the ADMM algorithm (Wen et al., 2010). SDPLR and MOSEK were executed on an Intel ® Xeon ® Silver 4510 CPU, as they lack native GPU support. Both the SCS solver and all the neural architectures were executed on a single NVIDIA L40S GPU. Additionally, we investigate the practical utility of our approach by using the VC -2-FMPNN prediction to warm-start the SCS solver. For all experiments, including model training and solver timing, we compute evaluation metrics, specifically loss and objective gap, by averaging over the full dataset. We repeat this process using five different random seeds and report the resulting mean and standard deviation. 
+
+3.2. Results and discussion 
+
+In the following, we present results and discuss them. 
+
+Approximation performance The results of test loss and relative objective gap are reported in Table 1. The optimal objective values for LMI are 0, so we report the predicted objective in Table 6. We first examine the test loss. Consis-tent with the theoretical hierarchy, our VC -2-FMPNN and equally powerful VC -ET achieve the lowest losses across all problems, suggesting that 2-FWL -like updates are essential for SDP approximation. This advantage is most significant on max-cut, where VC -2-FMPNN outperforms VC -MPNN ,
+
+VC -2-MPNN , δ-VC -2-MPNN , and VC -2-IGN by orders of magnitude, revealing a clear expressivity hierarchy and the incapacity in those weaker baselines. To further evaluate the quality of the predicted solutions, we compute the relative objective gap over the test set D, defined as 
+
+1
+
+|D| 
+
+∑
+
+> I∈D
+
+∣∣∣∣
+
+(obj (I) − obj ∗(I)) 
+
+obj ∗(I)
+
+∣∣∣∣ · 100% ,
+
+where obj (I) denotes the predicted objective value and obj ∗(I) the optimal value for instance I. Furthermore, the predicted solution matrix X can be projected onto the PSD cone, as shown in Algorithm 1. The results in Ta-ble 1 mirror the test loss trends. For the raw objective gap, 
+
+VC -2-FMPNN outperforms almost all baselines across all tasks, except slightly worse than δ-VC -2-MPNN on max 2-SAT. However, the objective gaps for VC -2-FMPNN and 
+
+VC -ET after PSD projection remain low, indicating that 7On the Expressive Power of GNNs to Solve Linear SDPs 
+
+their predictions are not only accurate in objective value but also geometrically close to the PSD cone. In sharp contrast, models with weaker expressivity often produce solutions far from that. This is evidenced by the drastic degradation in their performance after projection. For instance, the gap for VC -MPNN on max-cut rockets from ∼ 1.3% to over 26%, with similar collapses observed on max 2-SAT. Inter-estingly, VC -MPNN , VC -2-MPNN and VC -2-IGN fail on the regular graph dataset, producing identical losses and gaps, but δ-VC -2-MPNN shows significant advantage over them, reflecting our theory of their hierarchy in Section E.2. 
+
+Table 2. Mean absolute residuals on constraints of max-cut prob-lems on test set, repeated with 5 seeds. 
+
+Model Cons. vio. Proj. cons. vio. 
+
+VC -MPNN 0.001 ±0.000 0.298 ±0.001 
+
+VC -2-MPNN 0.016 ±0.006 0.180 ±0.001 
+
+δ-VC -2-MPNN 0.006 ±0.001 0.069 ±0.019 
+
+VC -2-IGN 0.001 ±0.000 0.304 ±0.001 
+
+VC -2-FMPNN 0.003 ±0.001 0.003 ±0.001 
+
+VC -ET 0.001 ±0.000 0.003 ±0.001 
+
+Besides loss and objective, we also probe the structural feasibility of the predictions by measuring the mean absolute residuals on constraints for each problem instance: 
+
+1
+
+m
+
+∑
+
+> k∈[m]
+
+|⟨ Ak, X⟩ − bk|
+
+and averaged over the dataset. We show the results on max-cut problem as representative in Table 2. While some weaker methods show low level of constraint violation, such as VC -MPNN and VC -2-IGN , the projected solutions ex-hibit a huge gap, indicating their predicted solutions are far from feasible region. In comparison, VC -2-FMPNN main-tains negligible violation ( ∼ 0.003 ) both before and after projection, demonstrating that it successfully approximates the true geometry of the feasible solution. For more results on constraint violation, see Table 11. We compare VC -MPNN , VC -2-MPNN and VC -2-FMPNN 
+
+on S DP LIB . Table 3 reports the training MSE loss. For more complete results, see Table 10. The results reveal the dramatic gap in trainability: VC -MPNN and VC -2-MPNN 
+
+fail to even overfit the training data, observing from the high losses. In contrast, VC -2-FMPNN achieves negligible training loss around 10 −4 magnitude. Overall, these results align closely with our theory: 
+
+VC -2-FMPNN and VC -ET , with VC -2-FWL expressive power, not only approximate objective values more accu-rately but also produce solutions closer to the feasible region, showing their ability to learn high-quality SDP solutions. 
+
+Table 3. Training loss on S DP LIB instances. The best results across all are highlighted. 
+
+Name Loss 
+
+VC -MPNN VC -2-MPNN VC -2-FMPNN 
+
+MCP100 0.203 ±0.000 0.199 ±0.004 1.974e-4 ±0.000 
+
+MCP124-1 0.225 ±0.000 0.224 ±0.000 1.546e-4 ±0.000 
+
+MCP124-2 0.220 ±0.000 0.218 ±0.002 2.303e-4 ±0.000 
+
+MCP124-3 0.215 ±0.000 0.214 ±0.002 3.076e-4 ±0.000 
+
+MCP124-4 0.270 ±0.000 0.272 ±0.007 3.374e-4 ±0.000 
+
+MCP250-1 0.215 ±0.000 0.215 ±0.000 3.034e-4 ±0.000 
+
+MCP250-2 0.158 ±0.015 0.160 ±0.007 4.176e-4 ±0.000 
+
+MCP250-3 0.155 ±0.000 0.156 ±0.000 6.266e-4 ±0.000 
+
+MCP250-4 0.182 ±0.013 0.186 ±0.004 5.892e-4 ±0.000 
+
+MCP500-1 0.118 ±0.000 0.118 ±0.001 4.536e-4 ±0.000 
+
+MCP500-2 0.123 ±0.000 0.124 ±0.001 4.948e-4 ±0.000 
+
+MCP500-3 0.121 ±0.000 0.122 ±0.000 6.745e-4 ±0.000 
+
+MCP500-4 0.126 ±0.000 0.130 ±0.003 9.761e-4 ±0.000 
+
+Table 4. Timing (in seconds) on various sizes of max-cut problem. 
+
+Model Sizes 
+
+50 × 50 100 × 100 150 × 150 
+
+SDPLR 0.111 ±0.050 0.195 ±0.041 0.285 ±0.062 
+
+MOSEK 0.206 ±0.008 4.206 ±0.151 28.839 ±1.814 
+
+SCS 0.061 ±0.004 0.386 ±0.028 3.357 ±0.240 
+
+SCS (Warm s.) 0.042 ±0.005 0.280 ±0.041 2.092 ±0.298 
+
+VC -MPNN 0.006 ±0.000 0.006 ±0.000 0.008 ±0.000 
+
+VC -2-MPNN 0.009 ±0.000 0.009 ±0.000 0.012 ±0.000 
+
+δ-VC -2-MPNN 0.011 ±0.000 0.012 ±0.002 0.017 ±0.003 
+
+VC -2-IGN 0.010 ±0.000 0.010 ±0.000 0.015 ±0.000 
+
+VC -2-FMPNN 0.009 ±0.000 0.010 ±0.000 0.013 ±0.000 
+
+VC -ET 0.010 ±0.000 0.020 ±0.000 0.050 ±0.001 
+
+Timing As detailed in Table 4, classical solvers’ runtime scales aggressively with problem size, especially MOSEK. In contrast, neural inference time is negligible and ex-hibit minimal growth, due to GPU parallelism. Among the neural architectures, VC -2-FMPNN exhibits an opti-mal balance between efficiency and expressivity. It is only marginally slower than VC -MPNN , yet significantly faster than VC -ET , particularly as problem size increases. Finally, the warm-start experiments demonstrate the practical value of VC -2-FMPNN : initializing SCS with its prediction con-sistently reduces convergence time, e.g., from 3.35s to 2.09s on the largest instances, highlighting the potential applica-tion of neural approximation into classical optimization. For more timing results on SCS and our neural approach, see Table 11. We extend our timing analysis to the S DP LIB , where prob-lem difficulty varies significantly. Table 5 shows the tim-ing of the SCS solver versus our VC -2-FMPNN inference, as well as the performance gains achieved by using the neural prediction to warm-start the solver. The results un-derscore the scalability of our approach. While the classi-cal solver’s runtime grows rapidly over 5 minutes for the 8On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Table 5. Timing (in seconds) and warm start the solver on S DP LIB .                                                        
+
+> Name SCS VC -2-FMPNN Warm start Improvement MCP100 0.560 ±0.005 0.015 ±0.001 0.287 ±0.005 48.7% MCP124-1 3.243 ±0.006 0.016 ±0.000 0.623 ±0.067 80.7%
+> MCP124-2 1.152 ±0.003 0.016 ±0.000 0.532 ±0.002 53.8% MCP124-3 0.759 ±0.002 0.016 ±0.000 0.467 ±0.050 38.4% MCP124-4 0.546 ±0.005 0.016 ±0.000 0.484 ±0.056 11.3% MCP250-1 17.274 ±0.044 0.024 ±0.000 4.717 ±0.035 72.6% MCP250-2 12.308 ±0.035 0.024 ±0.000 5.971 ±1.029 51.5% MCP250-3 6.460 ±0.017 0.024 ±0.000 3.302 ±0.013 48.8% MCP250-4 4.556 ±0.011 0.024 ±0.000 3.316 ±0.035 27.2% MCP500-1 328.471 ±1.236 0.147 ±0.000 77.471 ±0.796 76.4% MCP500-2 217.164 ±1.629 0.151 ±0.005 68.822 ±0.849 68.3% MCP500-3 134.705 ±0.198 0.147 ±0.000 40.586 ±0.542 69.8% MCP500-4 81.779 ±0.944 0.148 ±0.000 39.425 ±0.242 51.8%
+
+hardest instance (MCP500-1), the VC -2-FMPNN inference time remains negligible, completing under 0.15 seconds across all cases. More importantly, initializing SCS with the VC -2-FMPNN prediction consistently accelerates con-vergence, yielding runtime reductions up to 80.7%. This confirms that VC -2-FMPNN is able to capture high-quality approximation of the global optimum, significantly reducing the workload for the iterative solver. 
+
+## 4. Conclusion 
+
+We studied the expressive power required of GNNs to pre-dict optimal solutions of linear SDPs, using the unique minimum-Frobenius-norm solution as the learning target. We proved that VC -WL and higher-order VC -2-WL can fail on SDPs, whereas VC -2-FWL -equivalent architectures are sufficient because they can emulate PDHG solver updates until convergence. Empirically, these more expressive archi-tectures achieve the lowest prediction error and the smallest objective gaps across synthetic and real-world benchmarks. Moreover, their predictions can warm-start a first-order solver (SCS), yielding substantial speedups on S DP LIB in-stances. Overall, our results sharpen the understanding of the expressivity required to learn solutions for a large, practically important class of convex optimization problems. 
+
+## Impact Statement 
+
+This paper presents work aimed at advancing the field of machine learning. There are many potential societal con-sequences of our work, none of which we feel must be specifically highlighted here. 
+
+## Acknowledgements 
+
+Christopher Morris and Chendi Qian are partially funded by a DFG Emmy Noether grant (468502433) and RWTH Junior Principal Investigator Fellowship under Germany’s Excellence Strategy. We thank Erik Müller for crafting the figures. 
+
+## References 
+
+ApS, M. Mosek optimizer api for python. Version , 9(17): 6–4, 2022. 7 Ba, J. L., Kiros, J. R., and Hinton, G. E. Layer normalization. 
+
+arXiv preprint arXiv:1607.06450 , 2016. 42, 43 Babai, L. Lectures on graph isomorphism. Univer-sity of Toronto, Department of Computer Science. Mimeographed lecture notes, October 1979, 1979. 14 Bar-Shalom, G., Eitan, Y., Frasca, F., and Maron, H. Aflexible, equivariant framework for subgraph gnns via graph products and graph coarsening. NeurIPS , 2024. 3 Bauschke, H. H. and Combettes, P. L. Correction to: convex analysis and monotone operator theory in hilbert spaces. In Convex analysis and monotone operator theory in Hilbert spaces , pp. C1–C4. Springer, 2020. 21 Berkholz, C., Bonsma, P., and Grohe, M. Tight lower and upper bounds for the complexity of canonical colour re-finement. Theory of Computing Systems , 60(4):581–614, 2017. 5, 27 Bevilacqua, B., Frasca, F., Lim, D., Srinivasan, B., Cai, C., Balamurugan, G., Bronstein, M. M., and Maron, H. Equivariant subgraph aggregation networks. In ICLR ,2022. 3 Bevilacqua, B., Eliasof, M., Meirom, E., Ribeiro, B., and Maron, H. Efficient subgraph gnns by learning effec-tive selection policies. arXiv preprint arXiv:2310.20082 ,2023. 3 Borchers, B. Sdplib 1.2, a library of semidefinite program-ming test problems. Optimization Methods and Software ,11(1-4):683–690, 1999. 6 Boyd, S. and Vandenberghe, L. Convex Optimization . Cam-bridge University Press, 2004. 1, 21 Boyd, S., El Ghaoui, L., Feron, E., and Balakrishnan, V. 
+
+Linear matrix inequalities in system and control theory .SIAM, 1994. 36 Brasoveanu, A. D., Jogl, F., Welke, P., and Thiessen, M. Extending graph neural networks with global features. In 
+
+LoG , 2023. 3 Bresson, X. and Laurent, T. Residual gated graph ConvNets. 
+
+arXiv preprint arXiv:1711.07553v2 , 2017. 2 Burer, S. and Monteiro, R. D. A nonlinear programming algorithm for solving semidefinite programs via low-rank factorization. Mathematical programming , 95(2):329– 357, 2003. 7 9On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Cai, J.-Y., Fürer, M., and Immerman, N. An optimal lower bound on the number of variables for graph identification. 
+
+Combinatorica , 12(4):389–410, 1992. 1, 3, 14, 15 Cai, T., Luo, S., Xu, K., He, D., Liu, T.-y., and Wang, L. Graphnorm: A principled approach to accelerating graph neural network training. In ICML , 2021. 43 Chambolle, A. and Pock, T. On the ergodic convergence rates of a first-order primal–dual algorithm. Mathematical Programming , 159(1):253–287, 2016. 2, 21, 25 Charikar, M. On semidefinite programming relaxations for graph coloring and vertex cover. In SODA , 2002. 1, 33 Chen, D., O’Bray, L., and Borgwardt, K. Structure-aware transformer for graph representation learning. In ICML ,2022a. 3 Chen, Z., Liu, J., Wang, X., Lu, J., and Yin, W. On repre-senting linear programs by graph neural networks. arXiv preprint arXiv:2209.12288 , 2022b. 2, 3, 4 Chen, Z., Liu, J., Wang, X., Lu, J., and Yin, W. On repre-senting mixed-integer linear programs by graph neural networks. arXiv preprint , 2023. 1, 2 Chen, Z., Chen, X., Liu, J., Wang, X., and Yin, W. Expres-sive power of graph neural networks for (mixed-integer) quadratic programs. arXiv preprint arXiv:2406.05938 ,2024a. 2 Chen, Z., Liu, J., Chen, X., Wang, W., and Yin, W. Rethink-ing the capacity of graph neural networks for branching strategy. NeurIPS , 37:123991–124024, 2024b. 2 Dattorro, J. Convex optimization & Euclidean distance geometry . Lulu. com, 2010. 1, 35 de Klerk, E. and Warners, J. Semidefinite programming approaches for max-2-sat and max-3-sat: computational perspectives. In Combinatorial and global optimization ,pp. 161–176. World Scientific, 2002. 34 Ding, J.-Y., Zhang, C., Shen, L., Li, S., Wang, B., Xu, Y., and Song, L. Accelerating primal solution findings for mixed integer programs based on solution prediction. In 
+
+AAAI , 2020. 2 Duvenaud, D., Maclaurin, D., Aguilera-Iparraguirre, J., Gómez-Bombarelli, R., Hirzel, T., Aspuru-Guzik, A., and Adams, R. P. Convolutional networks on graphs for learning molecular fingerprints. arXiv preprint arXiv:1509.09292 , 2015. 2 Dwivedi, V. P. and Bresson, X. A generalization of transformer networks to graphs. arXiv preprint arXiv:2012.09699 , 2020. 3 Eckstein, J. and Bertsekas, D. P. On the douglas—rachford splitting method and the proximal point algorithm for maximal monotone operators. Mathematical program-ming , 55(1):293–318, 1992. 20 Eliasof, M., Frasca, F., Bevilacqua, B., Treister, E., Chechik, G., and Maron, H. Graph positional encoding via random feature propagation. In ICML , 2023. 3 Erd˝ os, P. and Rényi, A. On random graphs i. Publ. math. debrecen , 6(290-297):18, 1959. 6 Frasca, F., Bevilacqua, B., Bronstein, M. M., and Maron, H. Understanding and extending subgraph GNNs by rethink-ing their symmetries. arXiv preprint arXiv:2206.11140 ,2022. 3 Fürer, M. Graph isomorphism testing without numerics for graphs of bounded eigenvalue multiplicity. In SODA ,1995. 24 Fürer, M. On the power of combinatorial and spectral in-variants. Linear algebra and its applications , 432(9): 2373–2380, 2010. 24 Galli, L. and Letchford, A. N. On the lovász theta function and some variants. Discrete Optimization , 25:159–174, 2017. 1, 33 Gao, X.-B. A novel neural network for nonlinear convex programming. IEEE Transactions on Neural Networks ,15(3):613–621, 2004. 2 Gasse, M., Chételat, D., Ferroni, N., Charlin, L., and Lodi, A. Exact combinatorial optimization with graph convolu-tional neural networks. NeurIPS , 2019. 1, 2, 44 Gilmer, J., Schoenholz, S. S., Riley, P. F., Vinyals, O., and Dahl, G. E. Neural message passing for quantum chem-istry. In ICML , 2017. 1, 2, 4 Goemans, M. X. and Williamson, D. P. Improved approx-imation algorithms for maximum cut and satisfiability problems using semidefinite programming. Journal of the ACM (JACM) , 42(6):1115–1145, 1995. 1, 32 Grohe, M. Descriptive complexity, canonisation, and defin-able graph structure theory . Cambridge University Press, 2017. 3, 14, 15 Grohe, M. The logic of graph neural networks. In Sympo-sium on Logic in Computer Science , 2021. 14 Hamilton, W., Ying, Z., and Leskovec, J. Inductive repre-sentation learning on large graphs. NeurIPS , 2017. 2 Han, Q., Li, C., Lin, Z., Chen, C., Deng, Q., Ge, D., Liu, H., and Ye, Y. A low-rank admm splitting approach for semidefinite programming. INFORMS Journal on Computing , 2025. 3 10 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Hatami, H., Magen, A., and Markakis, E. Integrality gaps of semidefinite programs for vertex cover and relations to \ell_1 embeddability of negative type metrics. SIAM Journal on Discrete Mathematics , 23(1):178–194, 2009. 34 Helmberg, C., Rendl, F., Vanderbei, R. J., and Wolkowicz, H. An interior-point method for semidefinite programming. 
+
+SIAM Journal on optimization , 6(2):342–361, 1996. 1 Horn, R. A. and Johnson, C. R. Topics in matrix analysis .Cambridge university press, 1994. 24, 25 Hrga, T. and Povh, J. Madam: a parallel exact solver for max-cut based on semidefinite programming and admm. 
+
+Computational Optimization and Applications , 80(2):347– 375, 2021. 44 Hu, Y., Wang, X., Lin, Z., Li, P., and Zhang, M. Two-dimensional weisfeiler-lehman graph neural networks for link prediction. arXiv preprint arXiv:2206.09567 , 2022. 3Huang, Y., Peng, X., Ma, J., and Zhang, M. Boosting the cycle counting power of graph neural networks with I 2 -GNNs. arXiv preprint arXiv:2210.13978 , 2022. 3 Immerman, N. and Lander, E. Describing graphs: A first-order approach to graph canonization. In Complexity Theory Retrospective: In Honor of Juris Hartmanis on the Occasion of His Sixtieth Birthday, July 5, 1988 , pp. 59–81, 1990. 14 Jiang, D. and Wang, J. A recurrent neural network for real-time semidefinite programming. IEEE transactions on neural networks , 10(1):81–93, 1999. 2 Jiang, H., Kathuria, T., Lee, Y. T., Padmanabhan, S., and Song, Z. A faster interior point method for semidefinite programming. In FOCS . IEEE, 2020. 1, 5 Khalil, E. B., Morris, C., and Lodi, A. Mip-gnn: A data-driven framework for guiding combinatorial solvers. In 
+
+AAAI , 2022. 2 Kim, J., Nguyen, T. D., Min, S., Cho, S., Lee, M., Lee, H., and Hong, S. Pure transformers are powerful graph learners. arXiv preprint arXiv:2207.02505 , 2022. 3 Kingma, D. P. and Ba, J. Adam: A method for stochastic optimization. In ICLR , 2015. 7 Kleinberg, J. and Goemans, M. X. The lovász theta func-tion and a semidefinite programming relaxation of vertex cover. SIAM Journal on Discrete Mathematics , 11(2): 196–204, 1998. 34 Kriváchy, T., Cai, Y., Bowles, J., Cavalcanti, D., and Brun-ner, N. High-speed batch processing of semidefinite pro-grams with feedforward neural networks. New Journal of Physics , 23(10):103034, 2021. 2 Levin, E., Ma, Y., Díaz, M., and Villar, S. On transferring transferability: Towards a theory for size generalization. 
+
+arXiv preprint arXiv:2505.23599 , 2025. 14 Li, B., Yang, L., Chen, Y., Wang, S., Chen, Q., Mao, H., Ma, Y., Wang, A., Ding, T., Tang, J., et al. PDHG-unrolled learning-to-optimize method for large-scale linear pro-gramming. arXiv preprint arXiv:2210.13978 , 2024a. 1, 2Li, Q., Ding, T., Yang, L., Ouyang, M., Shi, Q., and Sun, R. On the power of small-size graph neural networks for linear programming. In NeurIPS , 2024b. 2 Li, Q., Ouyang, M., Ding, T., Wang, Y., Shi, Q., and Sun, R. Towards explaining the power of constant-depth graph neural networks for structured linear programming. In 
+
+ICLR , 2025a. 2 Li, R., Liang, E., and Chen, M. On the expressivity of GNN for solving second order cone programming. In 
+
+NeurIPS Workshop on GPU-Accelerated and Scalable Optimization , 2025b. 2 Lobo, M. S., Vandenberghe, L., Boyd, S., and Lebret, H. Applications of second-order cone programming. Linear algebra and its applications , 284(1-3):193–228, 1998. 35 Lorenz, D. A. and Tran-Dinh, Q. Non-stationary douglas– rachford and alternating direction method of multipliers: adaptive step-sizes and convergence. Computational Op-timization and Applications , 74(1):67–92, 2019. 23 Maron, H., Ben-Hamu, H., Serviansky, H., and Lipman, Y. Provably powerful graph networks. In NeurIPS , 2019a. 1, 3, 29, 43 Maron, H., Ben-Hamu, H., Shamir, N., and Lipman, Y. Invariant and equivariant graph networks. In ICLR , 2019b. 6, 40 Morris, C., Ritzert, M., Fey, M., Hamilton, W. L., Lenssen, J. E., Rattan, G., and Grohe, M. Weisfeiler and Leman go neural: Higher-order graph neural networks. In AAAI ,2019. 1, 2, 3, 14, 29 Morris, C., Rattan, G., and Mutzel, P. Weisfeiler and Leman go sparse: Towards higher-order graph embeddings. In 
+
+NeurIPS , 2020. 1, 3, 6, 38 Morris, C., Lipman, Y., Maron, H., Rieck, B., Kriege, N. M., Grohe, M., Fey, M., and Borgwardt, K. Weisfeiler and Leman go machine learning: The story so far. arXiv preprint arXiv:2112.09992 , 2021. 3 11 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Morris, C., Rattan, G., Kiefer, S., and Ravanbakhsh, S. SpeqNets: Sparsity-aware permutation-equivariant graph networks. In ICML , 2022. 3 Müller, L. and Morris, C. Aligning transformers with Weisfeiler-Leman. arXiv preprint arXiv:2406.03148 ,2024. 3 Müller, L., Galkin, M., Morris, C., and Rampášek, L. At-tending to graph transformers. arXiv preprint , 2023. 3 Müller, L., Kusuma, D., Bonet, B., and Morris, C. Towards principled graph transformers. NeurIPS , 2024. 3, 6, 42 Nikseresht, A. and Nazemi, A. A novel neural network for solving semidefinite programming problems with some applications. Journal of Computational and Applied Mathematics , 350:309–323, 2019. 2 Nocedal, J. and Wright, S. J. Numerical optimization .Springer, 1999. 1 O’Donoghue, B. Operator splitting for a homogeneous embedding of the linear complementarity problem. SIAM Journal on Optimization , 31(3):1999–2023, 2021. 7 Oliveira, D. E., Wolkowicz, H., and Xu, Y. Admm for the sdp relaxation of the qap. Mathematical Programming Computation , 10(4):631–658, 2018. 35 O’Connor, D. and Vandenberghe, L. On the equivalence of the primal-dual hybrid gradient method and douglas– rachford splitting. Mathematical Programming , 179(1): 85–108, 2020. 20 Papp, P. A., Martinkus, K., Faber, L., and Wattenhofer, R. Dropgnn: Random dropouts increase the expressiveness of graph neural networks. NeurIPS , 2021. 3 Park, S. and Van Hentenryck, P. Self-supervised primal-dual learning for constrained optimization. In AAAI , 2023. 14 Povh, J. and Rendl, F. Copositive and semidefinite relax-ations of the quadratic assignment problem. Discrete Optimization , 6(3):231–241, 2009. 35 Qian, C. and Morris, C. Principled data augmentation for learning to solve quadratic programming problems. arXiv preprint arXiv:2506.01728 , 2025a. 2 Qian, C. and Morris, C. Towards graph neural networks for provably solving convex optimization problems. arXiv preprint arXiv:2502.02446 , 2025b. 2 Qian, C., Rattan, G., Geerts, F., Morris, C., and Niepert, M. Ordered subgraph aggregation networks. In NeurIPS ,2022. 3 Qian, C., Chételat, D., and Morris, C. Exploring the power of graph neural networks in solving linear optimization problems. In AISTATS , 2024. 1, 2 Rampášek, L., Galkin, M., Dwivedi, V. P., Luu, A. T., Wolf, G., and Beaini, D. Recipe for a general, powerful, scal-able graph transformer. NeurIPS , 2022. 3 Rontsis, N., Goulart, P., and Nakatsukasa, Y. Efficient semidefinite programming with approximate admm. Jour-nal of Optimization Theory and Applications , 192(1): 292–320, 2022. 21 Sato, R., Yamada, M., and Kashima, H. Random features strengthen graph neural networks. In Proceedings of the 2021 SIAM international conference on data mining (SDM) , pp. 333–341. SIAM, 2021. 3 Scarselli, F., Gori, M., Tsoi, A. C., Hagenbuchner, M., and Monfardini, G. The graph neural network model. IEEE Transactions on Neural Networks , 20(1):61–80, 2008. 1, 2Southern, J., Eitan, Y., Bar-Shalom, G., Bronstein, M., Maron, H., and Frasca, F. Balancing efficiency and ex-pressiveness: Subgraph gnns with walk-based centrality. 
+
+arXiv preprint arXiv:2501.03113 , 2025. 3 Tanneau, M. and Van Hentenryck, P. Dual lagrangian learn-ing for conic optimization. NeurIPS , 2024. 14 Vandenberghe, L. and Boyd, S. Semidefinite programming. 
+
+SIAM review , 38(1):49–95, 1996. 1 Veliˇ ckovi´ c, P., Cucurull, G., Casanova, A., Romero, A., Lio, P., and Bengio, Y. Graph attention networks. arXiv preprint arXiv:1710.10903 , 2017. 2 Wang, Y., Lan, H., and Ye, Y. A tuning-free primal-dual splitting algorithm for large-scale semidefinite program-ming. arXiv preprint arXiv:2402.00311 , 2024. 2, 5, 20, 21, 22, 23, 25 Weisfeiler, B. and Leman, A. The reduction of a graph to canonical form and the algebra which appears therein. nti, Series , 2(9):12–16, 1968. 3, 14 Wen, Z., Goldfarb, D., and Yin, W. Alternating direction augmented lagrangian methods for semidefinite program-ming. Mathematical Programming Computation , 2(3): 203–230, 2010. 5, 7 Wright, S. Optimization for data analysis, 2022. 21 Wu, C., Chen, Q., Wang, A., Ding, T., Sun, R., Yang, W., and Shi, Q. On representing convex quadratically con-strained quadratic programs via graph neural networks. 
+
+arXiv preprint arXiv:2411.13805 , 2024. 2 12 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Xu, K., Hu, W., Leskovec, J., and Jegelka, S. How powerful are graph neural networks? arXiv preprint arXiv:1810.00826 , 2018. 1, 2, 29 Yau, M., Karalias, N., Lu, E., Xu, J., and Jegelka, S. Are graph neural networks optimal approximation algo-rithms? NeurIPS , 2024. 2, 33, 44 You, J., Gomes-Selman, J. M., Ying, R., and Leskovec, J. Identity-aware graph neural networks. In AAAI , vol-ume 35, 2021. 3 Zhang, B., Feng, G., Du, Y., He, D., and Wang, L. Acomplete expressiveness hierarchy for subgraph gnns via subgraph Weisfeiler-Lehman tests. arXiv preprint arXiv:2302.07090 , 2023. 3 Zhang, M. and Li, P. Nested graph neural networks. In 
+
+NeurIPS , 2021. 3 Zhao, L., Jin, W., Akoglu, L., and Shah, N. From stars to subgraphs: Uplifting any GNN with local structure awareness. In ICLR , 2022. 3 13 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+## A. Limitations and future directions 
+
+A key limitation of our study is that the required 2-FWL -level expressivity comes at a nontrivial computational cost, as it requires considering every variable pair. In addition, our theoretical results demonstrate only that there exist parameter assignments that allow recovery of the optimal low-norm solution, and do not guarantee that gradient-descent-based methods will converge. In addition, our expressivity guarantees are non-uniform, in the sense that we only show the existence of a parameter for a given SDP problem instance size and do not shed light on the architectures’ size-generalization capabilities (Levin et al., 2025). 
+
+Looking forward , we identify three key directions. First, we propose designing efficient architectures for specific SDP subclasses where lower-order expressivity suffices. Second, the rigorous alignment between our architecture and the PDHG algorithm opens a promising avenue for self-supervised primal-dual learning (Park & Van Hentenryck, 2023; Tanneau & Van Hentenryck, 2024). Rather than relying on supervised learning, future models could be trained by directly minimizing algorithmic residuals or duality gaps. Finally, we aim to extend this framework to broader conic programs and integrate these learned components into combinatorial optimization pipelines, such as branch-and-cut frameworks. 
+
+## B. More background 
+
+B.1. Higher order Weisfeiler–Leman 
+
+We introduce some standard notations first. For n ≥ 1, let [n] := {1, . . . , n } ⊂ N. We use {{. . . }} to denote multisets, i.e., the generalization of sets allowing for multiple instances of each of its elements. A graph G is a pair (V (G), E (G)) with 
+
+finite sets of vertices V (G) and edges E(G) ⊆ {{ u, v } ⊆ V (G) | u̸ = v}. For ease of notation, we denote the edge {u, v }
+
+in E(G) by (u, v ) or (v, u ). A labeled graph G is a triple (V, E, l ) with (node) coloring or label function l : V (G) → N.The neighborhood of v in G is denoted by N (v) := {u ∈ V (G) | { v, u } ∈ E(G)}.Two graphs G and H are isomorphic and we write G ≃ H if there exists a bijection φ : V (G) → V (H) that preserves the adjacency relation, i.e., (u, v ) ∈ E(G) ⇐⇒ (φ(u), φ (v)) ∈ E(H). Then φ is an isomorphism between G and H. In the case of labeled graphs, we additionally require that l(v) = l(φ(v)) for v in V (G). We further define the atomic type 
+
+atp : V (G)k → N such that atp (v) = atp (w) for v, w ∈ V (G)k if and only if the mapping φ : V (G)k → V (G)k where 
+
+vi → wi induces a partial isomorphism, i.e., we have vi = vj ⇐⇒ wi = wj and (vi, v j ) ∈ E(G) ⇐⇒ (φ(vi), φ (vj )) ∈
+
+E(G).The 1-WL or color refinement is a simple heuristic for the graph isomorphism problem, originally proposed by Weisfeiler & Leman (1968). Intuitively, the algorithm determines if two graphs are non-isomorphic by iteratively coloring or labeling vertices. Given an initial coloring or labeling of the vertices of both graphs, e.g., their degree or application-specific information, in each iteration, two vertices with the same label get different labels if the number of identically labeled neighbors is not equal. If, after some iteration, the number of vertices annotated with a specific label is different in both graphs, the algorithm terminates and a stable coloring (partition) is obtained. We can then conclude that the two graphs are not isomorphic. It is easy to see that the algorithm cannot distinguish all non-isomorphic graphs (Cai et al., 1992). Formally, let G = ( V, E, l ) be a labeled graph. In each iteration t + 1 , the 1-WL computes a node coloring for node v as ctv ,which depends on the coloring of the neighbors. That is, 
+
+ct+1  
+
+> v
+
+:= hash (ctv , {{ctu | u ∈ N (v)}}) ,
+
+where hash injectively maps the above pair to a unique natural number, which has not been used in previous iterations. In iteration 0, the coloring c0 
+
+> v
+
+:= l(v).To test if two graphs G and H are non-isomorphic, we run the above algorithm in “parallel” on both graphs. If the two graphs have a different number of vertices colored c in N at some iteration, the 1-WL distinguishes the graphs as non-isomorphic. Moreover, if 
+
+ctv = ctw ⇐⇒ ct+1  
+
+> v
+
+= ct+1  
+
+> w
+
+,
+
+for all vertices v and w in V (G), the algorithm terminates. For such t, we define the stable coloring c∞ 
+
+> v
+
+= ctv for v in V (G).Due to the shortcomings of the 1-WL or color refinement in distinguishing non-isomorphic graphs, several researchers (Babai, 1979; Immerman & Lander, 1990; Cai et al., 1992; Grohe, 2017; Morris et al., 2019; Grohe, 2021) devised a more powerful generalization of the former, today known as the k-dimensional Weisfeiler-Leman algorithm (k-WL ). There are two versions 14 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+of k-WL algorithm, known as Folklore Weisfeiler-Leman (k-FWL ) and Oblivious Weisfeiler-Leman that is often used in the graph learning community, both will be discussed in this section. Intuitively, to surpass the limitations of the 1-WL , the k-FWL algorithm colors subgraphs instead of a single node. More precisely, given a graph G, it colors the tuples from V (G)k for k ≥ 2 instead of the vertices. By defining a neighborhood between these tuples, we can define a coloring similar to the 1-WL . Formally, let G be a graph, and let k ≥ 2. In each iteration t ≥ 0, the algorithm, similarly to the 1-WL , computes a coloring ct 
+
+> v
+
+for a tuple v. In the first iteration, t = 0 , the tuples v, w ∈ V (G)k get the same color if they have the same atomic type, i.e., c0 
+
+> v
+
+:= atp (v). The update of the coloring is defined by 
+
+ct+1  
+
+> v
+
+:= hash 
+
+(
+
+ct 
+
+> v
+
+,
+
+{{( 
+
+ctϕ1(v,w ), . . . , ctϕk (v,w )
+
+)
+
+| w ∈ V (G)
+
+}}) 
+
+,
+
+where 
+
+ϕj (v, w ) := ( v1, . . . , v j−1, w, v j+1 , . . . , v k).
+
+That is, ϕj (v, w ) replaces the j-th component of the tuple v with the node w. Hence, two tuples are adjacent or j-neighbors ,with respect to a node w, if they are different in the jth component (or equal, in the case of self-loops). 
+
+k-WL differs from k-FWL in the way the j-neighbors are collected and aggregated. Specifically, the update of k-WL is 
+
+ct+1  
+
+> v
+
+:= hash 
+
+(
+
+ct 
+
+> v
+
+,
+
+(
+
+{{ctϕ1(v,w ) | w ∈ V (G)}}, · · · , {{ctϕk (v,w ) | w ∈ V (G)}}
+
+)) 
+
+.
+
+Again, we run the k-WL or k-FWL algorithm until convergence, i.e., 
+
+ct 
+
+> v
+
+= ct 
+
+> w
+
+⇐⇒ ct+1  
+
+> v
+
+= ct+1  
+
+> w
+
+,
+
+for all v and w in V (G)k holds, and call the partition of V (G)k induced by ct the stable partition. For such t, we define the stable coloring c∞ 
+
+> v
+
+= ct 
+
+> v
+
+for v in V (G)k. Hence, two tuples v and w with the same color in iteration (t − 1) get different colors in iteration t if there exists a j in [k] such that the number of j-neighbors of v and w, respectively, colored with a certain color is different. To test whether two graphs G and H are non-isomorphic, we run the k-FWL or k-WL in “parallel” on both graphs. Then, if the two graphs have a different number of vertices colored c in N, the k-WL distinguishes the graphs as non-isomorphic. Finally, we characterize the relative expressive power of these algorithms. We say that an algorithm A refines B, denoted 
+
+A ⊑ B , if every pair of graphs distinguished by B is also distinguished by A. And we say an algorithm A strictly refines B,denoted A ⊏ B if there exists a pair of graphs that cannot be distinguished by B but A. Observing the update rules, k-FWL 
+
+aggregates the joint structure of neighbors across all tuple positions, whereas k-WL aggregates each position independently. Consequently, k-FWL is strictly more expressive than k-WL for k ≥ 2. In fact, it has been established that k-FWL possesses the same expressive power as (k + 1) -WL (Cai et al., 1992; Grohe, 2017). Since increasing the dimension k strictly increases discriminative power (Cai et al., 1992), we obtain the following hierarchy of expressivity: 
+
+· · · ≡ (k + 1) -FWL ⊏ (k + 1) -WL ≡ k-FWL ⊏ k-WL ≡ (k − 1) -FWL ⊏ . . . 
+
+## C. Omitted proofs 
+
+Proposition C.1 (Restatement of Proposition 1.1) . The SDP problem defined in Equation (1) has a unique primal solution 
+
+X∗ with the minimum Frobenius norm ∥X∗∥2
+
+> F
+
+.Proof for Proposition 1.1. We prove by contradiction. Suppose there exists another feasible solution X′̸ = X∗ ∈ Sn
+
+> +
+
+, such that A(X′) = b, and ⟨C, X′⟩ = ⟨C, X∗⟩, and ∥X′∥2 
+
+> F
+
+= ∥X∗∥2 
+
+> F
+
+. Note that we are not assuming ∥X′∥2 
+
+> F
+
+< ∥X∗∥2 
+
+> F
+
+or 
+
+⟨C, X′⟩ < ⟨C, X∗⟩, otherwise the X′ will replace X∗ to be the optimal solution with least Frobenius norm. Assuming the existence of X′, we can find a third solution X′′ = 12 (X∗ + X′), which is feasible and optimal, in that: • X′′ ∈ Sn
+
+> +
+
+, as X∗ ∈ Sn 
+
+> +
+
+and X′ ∈ Sn
+
+> +
+
+, and the PSD cone is a convex cone. • A(X′′ ) = 12 A(X∗) + 12 A(X′) = b, i.e., X′′ is feasible w.r.t. the constraints. 15 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+• ⟨C, X′′ ⟩ = 12 ⟨C, X∗⟩ + 12 ⟨C, X′⟩ = ⟨C, X∗⟩ = ⟨C, X′⟩, i.e., X′′ has the same objective value. Besides, ∥X′′ ∥2 
+
+> F
+
+= 14 ∥X∗ + X′∥2 
+
+> F
+
+≤ ∥X∗∥2 
+
+> F
+
++ ∥X′∥2
+
+> F
+
+2 = ∥X∗∥2 
+
+> F
+
+= ∥X′∥2 
+
+> F
+
+, and equality holds only when X∗ = X′.Since we assume X∗̸ = X′, this implies X′′ has a strictly lower Frobenius norm than X∗ and X′′ , contradicting the assumption that X∗ and X′ are minimum norm solutions. Thus, the minimum norm solution must be unique. 
+
+C.1. Proof for failure of VC-WL and VC-2-WL 
+
+Proposition C.2 (Restatement of Proposition 2.1) . The VC -WL fails to represent linear SDP solutions. That is, there exist instances where the stable coloring of the VC -WL satisfies v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+for distinct variable indices (i, j ) and (p, q ), yet the entries in the unique optimal solution differ, i.e., X∗
+
+> ij
+
+̸ = X∗ 
+
+> pq
+
+.Proof for Proposition 2.1. We prove by providing the following counter-example 
+
+C =
+
+
+
+1 1 01 1 00 0 1
+
+ , A1 =
+
+
+
+0 1 01 0 00 0 0
+
+ , A2 =
+
+
+
+0 0 10 0 01 0 0
+
+ , b = [1 1]
+
+on which VC -WL converges to colors 
+
+
+
+a b cb a dc d a
+
+, where {a, b, c, · · · } are from an alphabet to represent colors. Note that the diagonal entries (1 , 1) and (3 , 3) 5 are assigned the same color a. However, the unique optimal solution yields distinct values X∗ 
+
+> 11
+
+≈ 0.707 and X∗ 
+
+> 33
+
+≈ 0.354 . VC -WL fails because it treats variables independently and ignores the matrix structure. 
+
+Remark C.3 . From a measure-theoretic perspective, one might argue that a specific counterexample could merely reside on a set of measure zero, thereby still allowing a model to maintain universal approximation almost everywhere . However, this defense is inadequate for SDP relaxations of CO problems. First, the input distributions of CO problems are not uniformly drawn from Rn×n. Rather, they are heavily concentrated on specific discrete topological structures. Second, our identified failure cases are not isolated points. As established in Lemma C.24, scaling any failing instance by a scalar α > 0 generates an uncountable infinite set (a ray) of failures. This specific construction represents just one of many systematic methods to expose these representational blind spots. Ultimately, the empirical collapse of the less expressive models observed in Table 1 confirms that this theoretical failure translates into a severe, practical expressivity limitation, rather than a negligible mathematical anomaly. 
+
+Proposition C.4 (Restatement of Proposition 2.2) . The VC -2-WL fails to represent linear SDP solutions. That is, there exist instances where the stable colors under VC -2-WL satisfy v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+for distinct indices (i, j ) and (p, q ), yet the unique optimal solution entries differ X∗
+
+> ij
+
+̸ = X∗ 
+
+> pq
+
+.Proof for Proposition 2.2. We prove this by construction, using a counterexample in which the objective matrix C forms a Latin square. Consider the following SDP instance with n = 6 ,
+
+C =
+
+
+
+1 2 3 4 5 62 1 4 5 6 33 4 1 6 2 54 5 6 1 3 25 6 2 3 1 46 3 5 2 4 1
+
+
+
+, A1 = I6, b = [1] .
+
+We focus on the entries (1 , 5) and (2 , 4) . First, observe that their initial features are identical, i.e., C15 = C24 = 5 , and both are non-diagonal entries. Secondly, observe that every row and column in C contains the set of values {1, . . . , 6}.Consequently, for any index (u, v ), the row and column multisets are identical, i.e., 
+
+{{v0 
+
+> uk
+
+| k ∈ [n]}} = {{v0 
+
+> kv
+
+| k ∈ [n]}} = {{1, 2, 3, 4, 5, 6}}.
+
+> 5All matrix indices in this paper are 1-indexed.
+
+16 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Since VC -2-WL aggregates row and column multisets independently as in Equation (3), and both the node features and their neighborhoods are identical, the algorithm cannot distinguish (1 , 5) from (2 , 4) at initialization or any subsequent iteration. Thus, v∞ 
+
+> 15
+
+= v∞ 
+
+> 24
+
+under VC -2-WL algorithm. However, the unique minimum-norm solution yields X∗ 
+
+> 15
+
+≈ − 0.115 
+
+and X∗ 
+
+> 24
+
+≈ − 0.172 . Hence, the inability of VC -2-WL to distinguish these variables indicates it is insufficient for SDPs. 
+
+C.2. Proof for expressivity hierarchy 
+
+We first compare VC -WL and VC -2-WL by showing the following result. 
+
+Proposition C.5. The VC -2-WL algorithm strictly refines VC -WL , denoted as 
+
+VC -2-WL ⊏ VC -WL .
+
+Proof. Observing from the update functions of Equation (2) and Equation (3), we notice that the update of constraint nodes is exactly the same. Now, consider the variable nodes. Observe that the information aggregated by the VC -WL hash function for a variable vij consists solely of its constraint neighbors. By definition, the corresponding input for VC -2-WL includes this constraint information as a subset, strictly augmented by the structural row and column multisets. We now formally prove VC -2-WL ⊑ VC -WL , that is, for any iteration t, if VC -2-WL fails to distinguish vtij and vtpq , so cannot VC -WL . First, for t = 0 , the color v0 
+
+> ij
+
+is basically the encoding of the problem Cij , therefore if for VC -2-WL :
+
+v0 
+
+> ij
+
+= v0 
+
+> pq
+
+, it also holds for VC -WL . Then, for all t > 0, we have, by definition of VC -2-WL :
+
+vtij = vtpq 
+
+=⇒ hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{vt−1 
+
+> uj
+
+| u ∈ [n]}}, {{vt−1 
+
+> iu
+
+| u ∈ [n]}}, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}
+
+= hash 
+
+(
+
+vt−1 
+
+> pq
+
+, {{vt−1 
+
+> uq
+
+| u ∈ [n]}}, {{vt−1 
+
+> pu
+
+| u ∈ [n]}}, {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}}
+
+=⇒ hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+= hash 
+
+(
+
+vt−1 
+
+> pq
+
+, {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}})
+
+.
+
+Since this corresponds exactly to the update rule of VC -WL , it follows that VC -WL also cannot distinguish them. Thus, 
+
+VC -2-WL ⊑ VC -WL .To show the strict refinement, we pick the example in the proof of Proposition 2.1 where VC -WL fails to distinguish the variables X∗ 
+
+> 11
+
+and X∗
+
+> 33
+
+. In contrast, VC -2-WL converges to 
+
+
+
+a b cb e dc d f
+
+, where {a, b, c, · · · } are from an alphabet to represent colors. Here, the diagonal entries are distinguished ( a̸ = f ), allowing the VC -2-WL algorithm to distinguish the solutions. Therefore, VC -2-WL ⊏ VC -WL .Similarly, VC -2-FWL ⊏ VC -WL can be proven in exactly the same way with the same example; we omit the proof. Next, we show the hierarchy between VC -2-FWL + and VC -2-WL .
+
+Proposition C.6. The VC -2-FWL + algorithm strictly refines VC -2-WL , denoted as 
+
+VC -2-FWL + ⊏ VC -2-WL .
+
+Proof. The update of constraint nodes is exactly the same for VC -2-WL and VC -2-FWL +. Now, we consider the variable nodes. We first prove VC -2-FWL + ⊑ VC -2-WL . First, for t = 0 , the colors v0 
+
+> ij
+
+is basically the encoding of the problem Cij ,therefore if for VC -2-FWL +: v0 
+
+> ij
+
+= v0 
+
+> pq
+
+, it also holds for VC -2-WL . For any t > 0, we want to show that if for VC -2-FWL +:17 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+vtij = vtpq holds, it also holds for VC -2-WL update. Specifically, for VC -2-FWL +:
+
+vtij = vtpq 
+
+=⇒ hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{( vt−1 
+
+> uj
+
+, vt−1
+
+> iu
+
+) | u ∈ [n]}}, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+=hash 
+
+(
+
+vt−1 
+
+> pq
+
+, {{( vt−1 
+
+> uq
+
+, vt−1
+
+> pu
+
+) | u ∈ [n]}}, {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}})
+
+=⇒ vt−1 
+
+> ij
+
+= vt−1 
+
+> pq
+
+∧
+
+{{( vt−1 
+
+> uj
+
+, vt−1
+
+> iu
+
+) | u ∈ [n]}} = {{( vt−1 
+
+> uq
+
+, vt−1
+
+> pu
+
+) | u ∈ [n]}}∧
+
+{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}} = {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}
+
+=⇒ vt−1 
+
+> ij
+
+= vt−1 
+
+> pq
+
+∧
+
+{{vt−1 
+
+> uj
+
+| u ∈ [n]}} = {{vt−1 
+
+> uq
+
+| u ∈ [n]}}∧
+
+{{vt−1 
+
+> iu
+
+| u ∈ [n]}} = {{vt−1 
+
+> pu
+
+| u ∈ [n]}}∧
+
+{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}} = {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}
+
+=⇒ hash 
+
+(
+
+vt−1 
+
+> ij
+
+,
+
+{{vt−1 
+
+> uj
+
+| u ∈ [n]}}, {{vt−1 
+
+> iu
+
+| u ∈ [n]}}{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+=hash 
+
+(
+
+vt−1
+
+> pq
+
+{{vt−1 
+
+> uq
+
+| u ∈ [n]}}, {{vt−1 
+
+> pu
+
+| u ∈ [n]}}{{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+,
+
+thus with VC -2-WL update they also have the same color. The implication holds because the tuples are ordered, which ensures that their marginal entries form multisets that are respectively identical. We then prove strict refinement by giving an example in the proof of Proposition 2.2 where VC -2-WL fails. In this example, the converged VC -2-FWL + assigns different colors to every primal variable, except symmetric ones, effectively distinguishing the variables in the solution. Therefore, VC -2-FWL + ⊏ VC -2-WL .
+
+Proposition C.7. The VC -2-FWL + algorithm strictly refines VC -2-FWL , denoted as 
+
+VC -2-FWL + ⊏ VC -2-FWL .
+
+Proof. We first prove VC -2-FWL + ⊑ VC -2-FWL .First, for t = 0 , the colors initializations are the same, therefore if for VC -2-FWL +: v0 
+
+> ij
+
+= v0 
+
+> pq
+
+, it also holds for VC -2-FWL .For some t > 0, we want to show that if for VC -2-FWL +: vtij = vtpq holds, it also holds for VC -2-FWL update. Specifically, for VC -2-FWL +:
+
+vtij = vtpq =⇒
+
+hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{( vt−1 
+
+> uj
+
+, vt−1
+
+> iu
+
+) | u ∈ [n]}}, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+=hash 
+
+(
+
+vt−1 
+
+> pq
+
+, {{( vt−1 
+
+> uq
+
+, vt−1
+
+> pu
+
+) | u ∈ [n]}}, {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}})
+
+=⇒ hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{{{vt−1 
+
+> uj
+
+, vt−1 
+
+> iu
+
+}} | u ∈ [n]}}, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+=hash 
+
+(
+
+vt−1 
+
+> pq
+
+, {{{{vt−1 
+
+> uq
+
+, vt−1 
+
+> pu
+
+}} | u ∈ [n]}}, {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}})
+
+.
+
+The last implication is straightforward because a 2-multiset is an unordered 2-tuple. The last equation represents the 
+
+VC -2-FWL update, which cannot distinguish them either. This holds for all t, therefore by induction, VC -2-FWL + ⊑
+
+VC -2-FWL .18 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Next, we provide the strict refinement by providing an example where VC -2-FWL + distinguishes a pair, where VC -2-FWL 
+
+does not. Consider the example 
+
+C =
+
+
+
+0 1 2 31 0 4 22 4 0 13 2 1 0
+
+ , A1 = 14×4, b = [1] .
+
+We simply let v0 
+
+> ij
+
+= Cij . Consider the update for the indices (1 , 2) and (3 , 4) . Under VC -2-FWL :
+
+v112 := hash 
+
+(
+
+v012 , {{{{v012 , v011 }}, {{v022 , v012 }}, {{v032 , v013 }}, {{v042 , v014 }}}}, (1 , c01)
+
+)
+
+= hash 
+
+(
+
+1, {{{{1, 0}}, {{0, 1}}, {{4, 2}}, {{2, 3}}}}, (1 , c01)
+
+)
+
+,
+
+and 
+
+v134 := hash 
+
+(
+
+v034 , {{{{v014 , v031 }}, {{v024 , v032 }}, {{v034 , v033 }}, {{v044 , v034 }}}}, (1 , c01)
+
+)
+
+= hash 
+
+(
+
+1, {{{{3, 2}}, {{2, 4}}, {{1, 0}}, {{0, 1}}}}, (1 , c01)
+
+)
+
+.
+
+If we calculate the bins of 2-multisets, we notice they both have: two {{0, 1}}, one {{2, 3}}, one {{2, 4}}. Therefore, v112 and 
+
+v134 take on the same color under VC -2-FWL . VC -2-FWL + differs in that those 2-multisets become 2-tuples. Therefore, for 
+
+VC -2-FWL +, v112 update contains a tuple (2 , 3) and a (4 , 2) , and v134 contains a (3 , 2) and a (2 , 4) , thus v112 ̸ = v134 under 
+
+VC -2-FWL +. That means VC -2-FWL + distinguishes v12 and v34 at the 1st iteration while VC -2-FWL not. Therefore, VC -2-FWL + ⊏ VC -2-FWL .Finally, we show that VC -2-WL and VC -2-FWL are incomparable. 
+
+Proposition C.8. VC -2-WL and VC -2-FWL are incomparable in expressive power, denoted as 
+
+VC -2-WL ̸ ≡ VC -2-FWL .
+
+Proof. We first show that there exists an example where VC -2-WL can distinguish a pair of variables and VC -2-FWL cannot. Consider the following example: 
+
+C =
+
+
+
+1 0 4 20 1 2 34 2 1 02 3 0 1
+
+ , A1 = 14×4, b = [1] .
+
+We simply let v0 
+
+> ij
+
+= Cij . Consider the update for the indices (1 , 4) and (2 , 3) . Under VC -2-FWL :
+
+v114 := hash 
+
+(
+
+v014 , {{{{v014 , v011 }}, {{v024 , v012 }}, {{v034 , v013 }}, {{v044 , v014 }}}}, (1 , c01)
+
+)
+
+= hash 
+
+(
+
+2, {{{{2, 1}}, {{3, 0}}, {{0, 4}}, {{1, 2}}}}, (1 , c01)
+
+)
+
+,
+
+and 
+
+v123 := hash 
+
+(
+
+v023 , {{{{v013 , v021 }}, {{v023 , v022 }}, {{v033 , v023 }}, {{v043 , v024 }}}}, (1 , c01)
+
+)
+
+= hash 
+
+(
+
+2, {{{{4, 0}}, {{2, 1}}, {{1, 2}}, {{0, 3}}}}, (1 , c01)
+
+)
+
+.
+
+Therefore v114 = v123 under VC -2-FWL . While for VC -2-WL update: 
+
+v114 := hash 
+
+(
+
+v014 , {{v014 , v024 , v034 , v044 }}, {{v011 , v012 , v013 , v014 }}, (1 , c01)
+
+)
+
+= hash 
+
+(
+
+2, {{2, 3, 0, 1}}, {{1, 0, 4, 2}}, (1 , c01)
+
+)
+
+,
+
+19 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+and 
+
+v123 := hash 
+
+(
+
+v023 , {{v013 , v023 , v033 , v043 }}, {{v021 , v022 , v023 , v024 }}, (1 , c01)
+
+)
+
+= hash 
+
+(
+
+2, {{4, 2, 1, 0}}, {{0, 1, 2, 3}}, (1 , c01)
+
+)
+
+thus v114 ̸ = v123 under VC -2-WL .Next, we show there exists an example where VC -2-FWL can distinguish a pair of variables and VC -2-WL cannot. We reuse the example in the proof of Proposition 2.2. VC -2-FWL effectively distinguishes all the variables except symmetric ones, and is able to distinguish variables (1 , 5) and (2 , 4) where VC -2-WL fails. Therefore, VC -2-WL and VC -2-FWL are incomparable in expressive power. 
+
+Remark C.9 . The incomparability mainly stems from the directness of VC -2-WL . If we define a variant of VC -2-WL ,supposedly VC -2-WL −, where {{vt−1 
+
+> uj
+
+| u ∈ [n]}} and {{vt−1 
+
+> iu
+
+| u ∈ [n]}} are aggregated in an unordered way then used to update vij , it will not distinguish the variables v14 and v23 in the case above. However, it will be less expressive than 
+
+VC -2-WL , and also fails on the example of Proposition 2.2. Therefore, it is not valuable to investigate such a VC -2-WL 
+
+variant. 
+
+Remark C.10 . Although VC -2-WL and VC -2-FWL are theoretically incomparable, with VC -2-WL possessing superior distinguishing power in specific cases, the optimization dynamics of SDPs are still inherently subsumed by VC -2-FWL rather than VC -2-WL . We will later demonstrate that the algorithmic trajectory of an iterative solver, including both intermediate steps and the final converged solution, is strictly refined by the VC -2-FWL process. 
+
+C.3. Convergence of PDHG algorithm on SDP with least-norm solution 
+
+As a prerequisite to establishing the expressivity of VC -2-FWL , we first rigorously demonstrate the convergence of the PDHG algorithm applied to the SDP problem with Frobenius norm regularization. First, we briefly introduce some conventional notations based on Eckstein & Bertsekas (1992); O’Connor & Vandenberghe (2020); Wang et al. (2024). Let F be a set-valued operator which maps every x ∈ Rn to a subset of Rn. The notation is useful for subgradient methods, as the subgradient of a non-smooth function is usually a set. The graph gr of an operator F is the set 
+
+gr (F ) := {(x, y) ∈ Rn × Rn | y ∈ F (x)}.
+
+An operator F is monotone if 
+
+(y − ˆy)⊺(x − ˆx) ≥ 0, for all (x, y), ( ˆ x, ˆy) ∈ gr (F ).
+
+A monotone operator is maximal monotone if its graph is not contained in the graph of another monotone operator. An operator F is μ-strongly monotone if and only if 
+
+(y − ˆy)⊺(x − ˆx) ≥ μ(x − ˆx)⊺(x − ˆx), for all (x, y), ( ˆ x, ˆy) ∈ gr (F ).
+
+Given a positive scalar c and an operator F , the resolvent of an operator F is defined as JcF := ( I + cF )−1 where I is identity mapping. JcF (x) is the set of all the values y satisfying 
+
+x − y ∈ cF (y). (7) The resolvent of the subdifferential of a closed, convex and proper function f is called the proximal operator of f , denoted 
+
+prox cf = Jc∂f . Equation (7) is the optimality condition of the optimization problem 
+
+prox cf (x) := arg min 
+
+> y
+
+(
+
+cf (y) + 12 ∥y − x∥22
+
+)
+
+.
+
+In plain language, the proximal operator finds an optimal solution that minimizes the function f without searching too far 20 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+from the input x. The equivalence can be verified, 
+
+0 ∈ ∂
+
+(
+
+cf (y) + 12 ∥y − x∥22
+
+)
+
+=⇒ 0 ∈ c∂f (y) + ( y − x)=⇒ x ∈ c∂f (y) + y
+
+=⇒ x ∈ (I + c∂f )( y)=⇒ y = ( I + c∂f )−1 (x) = Jc∂f (x).
+
+(8) Now let’s state our problem setting. First, it is obvious that finding the primal solution X∗ to 
+
+min 
+
+> X∈Sn
+> +
+
+⟨C, X⟩
+
+s.t. A(X) = b
+
+with the minimum Frobenius norm is equivalent to finding the primal solution to 
+
+min 
+
+> X∈Sn
+> +
+
+⟨C, X⟩ + ε
+
+2 ⟨X, X⟩
+
+s.t. A(X) = b
+
+(9) with arbitrarily small ε → 0. The SDP with a Frobenius regularization term has a unique primal solution, as the objective is strictly convex and the feasible set is a convex set (Wright, 2022, p. 21), which aligns with our unique solution assumption Proposition 1.1. Then, we introduce the PDHG method Chambolle & Pock (2016) on this problem. We extend the PDHG for linear SDP in Wang et al. (2024) by inserting the quadratic term ε
+
+2 ⟨X, X⟩. Consequently, instead of the PDHG update form in Wang et al. (2024, Algorithm 1), we have the following form 
+
+Xt+1 := Proj Sn
+
+> +
+
+[ Xt − αtA∗(yt) − αtC
+
+1 + αtε
+
+]
+
+yt+1 := yt + βtA (Xt+1 + θt
+
+(Xt+1 − Xt)) − βtb,
+
+(10) where Xt, yt are primal-dual solutions at different iterations, and αt, β t, θ t are suitable step lengths. The Proj Sn 
+
+> +
+
+projects the matrix into the PSD cone Sn
+
+> +
+
+, specifically, by solving 
+
+Xt+1 := arg min 
+
+> X∈Sn
+> +
+
+∥∥∥∥X − Xt − αtA∗(yt) − αtC
+
+1 + αtε
+
+∥∥∥∥
+
+> 2
+> F
+
+.
+
+It can be done by spectral decomposition (Boyd & Vandenberghe, 2004, p. 399) (Rontsis et al., 2022), see Algorithm 1 for detailed process. 
+
+Algorithm 1 Projection onto the PSD Cone 
+
+Require: A symmetric matrix X ∈ Sn
+
+Ensure: The projected matrix XS := arg min X′∈Sn 
+
+> +
+
+∥X′ − X∥F 
+
+> 1:
+
+Compute the spectral decomposition X = V ΛV ⊺ 
+
+> 2:
+
+{Λ := diag (λ1, . . . , λ n) is the diagonal matrix of eigenvalues.}  
+
+> 3:
+
+{V is the orthonormal matrix of corresponding eigenvectors vi as its columns.}  
+
+> 4:
+
+Construct the projected matrix by dropping the negative eigen-pairs:  
+
+> 5:
+
+XS ← ∑ni=1 max( λi, 0) · viv⊺ 
+
+> i
+> 6:
+
+return XS
+
+As the constraints of the SDP problem are equality constraints, there is no projection on yt ∈ Rm needed. Wang et al. (2024, Theorem 2.1) showed that the PDHG algorithm on linear SDP (without our Frobenius term) weakly converges (Bauschke & Combettes, 2020, p. 35) to an optimal point. We hereby prove a similar result for Equation (10). 21 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Proposition C.11. If the adjustment of {( αt, θ t, β t
+
+)}  
+
+> t
+
+in Equation (10) follow 
+
+αt ∈ (αmin , α max ) ,
+
+> ∞
+
+∑
+
+> t=1
+
+|αt+1 − αt| < ∞, θt = αt
+
+αt−1
+
+, αtβt = R, 
+
+where 0 < α min ≤ αmax < ∞ and R < 1 
+
+> λmax (A∗A)
+
+. Then PDHG algorithm in Equation (10) weakly converges to (X∗, y∗)
+
+such that 0 ∈ C + εX∗ + ∂X ISn 
+
+> +
+
+(X∗) + ∂X I=b(A(X∗)) , for any ε > 0.Proof. Our proof establishes convergence by framing the algorithm as an instance of non-stationary Douglas-Rachford Splitting (DRS), following the methodology of Wang et al. (2024). We adapt their derivation to account for the Frobenius regularization term, which alters the primal variable update. We rewrite Equation (9) into the following non-smooth optimization problem: 
+
+min  
+
+> X
+
+⟨C, X⟩ + ε
+
+2 ⟨X, X⟩ + ISn 
+
+> +
+
+(X) + I=b (A(X)) , (11) with indicator function ISn 
+
+> +
+
+(X) = 0 if X ∈ Sn 
+
+> +
+
+otherwise +∞, and I=b (y) = 0 if y = b and +∞ otherwise. To apply DRS, we introduce an auxiliary variable ˆX (constrained to be zero) and a linear operator T : Sn → Rm. The regularized problem in Equation (11) is reformulated as 
+
+min  
+
+> X,ˆX
+
+⟨C, X⟩ + ε
+
+2 ⟨X, X⟩ + ISn 
+
+> +
+
+(X) + I=0 ( ˆX) + I=b
+
+(
+
+A(X) + T ( ˆX)
+
+)
+
+.
+
+As the problem is convex, it is equivalent to finding the first-order optimality condition: Find 
+
+(X
+
+ˆX
+
+)
+
+s.t. 0 ∈
+
+(C + εX
+
+0
+
+)
+
++
+
+(∂X ISn 
+
+> +
+
+(X)0
+
+)
+
++
+
+( 0
+
+∂ ˆX I=0 ( ˆX)
+
+)︸ ︷︷ ︸  
+
+> B=∂f (X,ˆX)
+
++
+
+(∂X I=b(A(X) + T ( ˆX)) 
+
+∂ ˆX I=b(A(X) + T ( ˆX)) 
+
+)︸ ︷︷ ︸ 
+
+> A=∂g (X,ˆX)
+
+, (12) Operators A and B are maximally monotone. Notably, due to the regularization term ε
+
+2 ⟨X, X⟩, the operator B in our case is ε-strongly monotone with respect to X. Following Wang et al. (2024) and applying non-stationary DRS to Equation (12) yields the following fixed-point iterations: 
+
+(Xt
+
+ˆXt
+
+)
+
+= Jαt−1∂f 
+
+( (Zt
+
+ˆZt
+
+) )
+
+(13) 
+
+(Xt+ 12
+
+ˆXt+ 12
+
+)
+
+= Jαt∂g 
+
+( (Xt
+
+ˆXt
+
+)
+
++ θt
+
+( ( Xt
+
+ˆXt
+
+)
+
+−
+
+(Zt
+
+ˆZt
+
+) ) )
+
+(14) 
+
+(Zt+1 
+
+ˆZt+1 
+
+)
+
+=
+
+(Xt+ 12
+
+ˆXt+ 12
+
+)
+
++ θt
+
+( (Zt
+
+ˆZt
+
+)
+
+−
+
+(Xt
+
+ˆXt
+
+) )
+
+. (15) While the overall structure matches the standard DRS form in Wang et al. (2024), the specific update in Equation (13) differs. In our case, Equation (13), by definition of the resolvent, can be simplified to 
+
+Xt = arg min 
+
+> X
+
+{
+
+⟨C, X⟩ + ε
+
+2 ⟨X, X⟩ + ISn 
+
+> +
+
+(X) + 12αt−1
+
+∥∥X − Zt∥∥2
+
+> F
+
+}
+
+(16) 
+
+ˆXt = 0 
+
+Equation (14) follows Wang et al. (2024), and we obtain: 
+
+yt = arg min 
+
+> y
+
+{
+
+I=b(y) −
+
+〈
+
+A(Xt + θt(Xt − Zt)) − θtT ( ˆZt), y
+
+〉
+
++ αt
+
+2 (∥A ∗(y)∥2 
+
+> F
+
++ ∥T ∗(y)∥2 
+
+> F
+
+)
+
+}
+
+(17) 
+
+Xt+ 12 = Xt + θt(Xt − Zt) − αtA∗(yt) (18) 
+
+ˆXt+ 12 = −θt ˆZt − αtT ∗(yt), (19) 22 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Subsequently, Equation (15) can be simplified to 
+
+Zt+1 = Xt − αtA∗(yt) (20) 
+
+ˆZt+1 = −αtT ∗(yt). (21) Substituting Equation (20) into Equation (16), we get 
+
+Xt+1 := arg min 
+
+> X
+
+{
+
+⟨C, X⟩ + ε
+
+2 ⟨X, X⟩ + ISn 
+
+> +
+
+(X) + 12αt
+
+∥∥X − (Xt − αtA∗(yt))∥ ∥2
+
+> F
+
+}
+
+= arg min 
+
+> X
+
+{
+
+ISn 
+
+> +
+
+(X) + 
+
+( ε
+
+2 + 12αt
+
+)
+
+⟨X, X⟩ +
+
+〈
+
+C − 1
+
+αt
+
+(Xt − αtA∗(yt)) , X
+
+〉 }
+
+= arg min 
+
+> X
+
+{
+
+ISn 
+
+> +
+
+(X) + 
+
+∥∥∥∥X − Xt − αtA∗(yt) − αtC
+
+1 + αtε
+
+∥∥∥∥
+
+> 2
+> F
+
+}
+
+(22) 
+
+= Prox 12 ISn 
+
+> +(·)
+
+[ Xt − αtA∗(yt) − αtC
+
+1 + αtε
+
+]
+
+= Proj Sn
+
+> +
+
+[ Xt − αtA∗(yt) − αtC
+
+1 + αtε
+
+]
+
+The derivation from arg min to Proj holds, as the the term 
+
+∥∥∥∥X − Xt − αtA∗(yt) − αtC
+
+1 + αtε
+
+∥∥∥∥
+
+> 2
+> F
+
+(23) is isotropic w.r.t. each entry of X and centered at 
+
+Xt − αtA∗(yt) − αtC
+
+1 + αtε . (24) Therefore, finding the minimizer to Equation (22) is equivalent to finding the minimizer to Equation (23), that is Equation (24), then do Euclidean projection to the space of PSD cone, which is exactly the definition of PSD projection. We notice that when ϵ → 0, the problem reduces to linear SDP and the formulation is exactly the same as in Wang et al. (2024). The dual update follows the derivation in Wang et al. (2024), the resolvent step Equation (17) simplifies to: 
+
+yt+1 := yt + βtA (Xt+1 + θt
+
+(Xt+1 − Xt)) − βtb, (25) Now we arrive at the same conclusion as Wang et al. (2024). Since our PDHG update Equation (10) is an instance of non-stationary DRS, convergence to the unique solution (X∗, y∗) follows immediately from Lorenz & Tran-Dinh (2019). 
+
+Remark C.12 (Notation and indexing) . We clarify the indexing convention used in our derivation compared to Wang et al. (2024). While their Algorithm 1 performs the primal update Xt followed by the dual update yt, their theoretical proof presents the dual update first. Although these schemes are functionally equivalent due to the cyclic nature of alternating updates, we prioritize consistency between the derivation and the implementation. In the proof of Wang et al. (2024), a variable substitution to yt+1 is employed in their Equation 8 during the derivation of the dual step. We observe that by retaining the index yt (i.e., avoiding this forward shift), the resulting fixed-point iteration aligns perfectly with the order of operations in their Algorithm 1. Consequently, our derivation adopts this convention in Equation (17), resulting in the PDHG algorithm in Equation (10) which updates the primal variable Xt first, thereby unifying the notation of the theory and the algorithm. 
+
+Remark C.13 (Strong convergence in finite dimensions) . Standard convergence analyses for operator splitting methods, such as those in Lorenz & Tran-Dinh (2019), typically guarantee only weak convergence of the iterates in general Hilbert spaces. However, our problem setting is the space of symmetric matrices Sn, which is a finite-dimensional space. It is a fundamental result that in finite-dimensional spaces, the weak topology coincides with the strong topology. Consequently, the weak convergence established in Proposition Section C.3 implies strong convergence in the Frobenius norm. That is, the sequence satisfies lim t→∞ ∥Xt − X∗∥F = 0 .23 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+C.4. Proof for VC-2-FWL expressivity Theorem C.14 (Restatement of Theorem 2.3) . Let X∗ ∈ Sn 
+
+> +
+
+be the primal optimal solution to a given SDP instance and given indices (i, j ), (p, q ). If the stable colorings of VC -2-FWL satisfy v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+, then the solution values satisfy 
+
+X∗ 
+
+> ij
+
+= X∗ 
+
+> pq
+
+.
+
+We begin by proving a critical lemma. While Fürer (1995; 2010) have proven that standard 2-FWL refines the spectral decomposition of the graph adjacency matrix, we contribute a similar result specifically for a multiset 2-FWL variant. Notably, we employ a novel proof technique to demonstrate that, despite its reduced expressivity, the multiset 2-FWL retains this crucial spectral refinement property. 
+
+Lemma C.15. Let M ∈ Sn be a symmetric matrix with spectral decomposition 
+
+M =
+
+> m
+
+∑
+
+> k=1
+
+λkPk
+
+where λ1 > λ 2 · · · > λ m are the non repeating eigenvalues, and Pk are Frobenius covariants (Horn & Johnson, 1994, p. 437), i.e., the symmetric matrices describing the projection onto the eigenspace of eigenvalue λk.The stable coloring v∞ are produced by the multiset 2-FWL algorithm: 
+
+v0 
+
+> ij
+
+= hash (Mij , Ii=j )
+
+vtij := hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{{{vt−1 
+
+> uj
+
+, vt−1 
+
+> iu
+
+}} | u ∈ [n]}})
+
+, ∀t > 0,
+
+where Ii=j is a diagonal indicator which takes value 1 if i = j otherwise 0. The following result holds: 
+
+v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒ (Pk)ij = ( Pk)pq , ∀k ∈ [m].
+
+Proof. The proof is based on the fact that the spectral projectors Pk are polynomials in M via Sylvester’s formula. We say a coloring v refines a matrix A, defined as: 
+
+vij = vpq =⇒ Aij = Apq .
+
+We proceed by induction to demonstrate that the multiset aggregation effectively simulates matrix multiplication: if the 
+
+2-FWL coloring at an iteration refines the entries of M d, the next iteration refines M d+1 . Consequently, the stable coloring refines any polynomial of M , and by extension, naturally refines all the specific polynomials defining the spectral projectors. At initialization t = 0 , the coloring of v0 refines M 1 naturally, as they are injectively defined by M . Besides, v0 also refines M 0 = I, because of the diagonal indicator Ii=j .Assume that at iteration t, the coloring vt refines the matrix power M d:
+
+vtij = vtpq =⇒ (M d) 
+
+> ij
+
+= (M d) 
+
+> pq
+
+.
+
+We show that the next iteration vt+1 will refine M d+1 :
+
+vt+1  
+
+> ij
+
+= vt+1  
+
+> pq
+
+=⇒ (M d+1 ) 
+
+> ij
+
+= (M d+1 ) 
+
+> pq
+
+.
+
+Specifically, by definition of the multiset 2-FWL :
+
+vt+1  
+
+> ij
+
+= vt+1 
+
+> pq
+
+=⇒ hash 
+
+(
+
+vtij , {{{{vtuj , vtiu }} | u ∈ [n]}})
+
+= hash 
+
+(
+
+vtpq , {{{{vtuq , vtpu }} | u ∈ [n]}})
+
+=⇒ hash 
+
+({{{{vtuj , vtiu }} | u ∈ [n]}})
+
+= hash 
+
+({{{{vtuq , vtpu }} | u ∈ [n]}})
+
+=⇒ f
+
+({{g (vtuj , vtiu 
+
+) | u ∈ [n]}})
+
+= f
+
+({{g (vtuq , vtpu 
+
+) | u ∈ [n]}})
+
+The last implication holds for all choices of functions f, g due to the injectivity of hash function, as long as g is invariant to the order of inputs. In this specific case, we pick f (· · · ) to be sum over a multiset. The choice for g is trickier, we introduce 24 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+extra functions h1
+
+(vtij 
+
+) = (M d) 
+
+> ij
+
+and h2
+
+(vtij 
+
+) = (M 1) 
+
+> ij
+
+, and g (a, b ) = h1(a)h2(b) + h2(a)h1(b). The construction for function h1 is valid because of the induction assumption vtij = vtpq =⇒ (M d) 
+
+> ij
+
+= (M d) 
+
+> pq
+
+, we can find such a function h1 that maps the colors to the matrix entries of M d. The construction for function h2 is also valid because v0
+
+already refines M , and vt refines v0. Besides, g is invariant to the order of the inputs: g (a, b ) = g (b, a ), compatible for the multiset. Further, we have 
+
+f
+
+({{g (vtuj , vtiu 
+
+) | u ∈ [n]}})
+
+= ∑
+
+> u∈[n]
+
+g (vtuj , vtiu 
+
+)
+
+= ∑
+
+> u∈[n]
+
+h1
+
+(vtuj 
+
+) h2
+
+(vtiu 
+
+) + h2
+
+(vtuj 
+
+) h1
+
+(vtiu 
+
+)
+
+= ∑
+
+> u∈[n]
+
+(M d)
+
+> uj
+
+(M 1) 
+
+> iu
+
++ (M 1)
+
+> uj
+
+(M d)
+
+> iu
+
+= ∑
+
+> u∈[n]
+
+(M 1)
+
+> iu
+
+(M d) 
+
+> uj
+
++ ∑
+
+> u∈[n]
+
+(M d)
+
+> iu
+
+(M 1)
+
+> uj
+
+= (M M d) 
+
+> ij
+
++ (M dM )
+
+> ij
+
+=2 (M d+1 )
+
+> ij
+
+Likewise, we have f
+
+({{g (vtuq , vtpu 
+
+) | u ∈ [n]}})
+
+= 2 (M d+1 ) 
+
+> pq
+
+. Therefore, vt+1  
+
+> ij
+
+= vt+1  
+
+> pq
+
+=⇒ (M d+1 ) 
+
+> ij
+
+=
+
+(M d+1 ) 
+
+> pq
+
+.By induction, the stable coloring v∞ refines M d for all d ∈ N. Consequently, it also refines any matrix polynomial 
+
+p(M ) = ∑∞ 
+
+> d=0
+
+adM d. This holds because the expressivity to distinguish the structural features of individual powers M d
+
+implies the ability to distinguish their linear combinations. The real-valued matrix M is symmetric and diagonalizable, therefore we apply spectral decomposition M = ∑mk=1 λkPk, where matrices Pk are given by the Sylvester’s formula (Horn & Johnson, 1994, p. 437): 
+
+Pk = ∏ 
+
+> j̸=k
+
+M − λj I
+
+λk − λj
+
+.
+
+Because each Pk is a polynomial in M , the stable coloring v∞ refines each Pk. Thus, it holds for all k that v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒
+
+(Pk)ij = ( Pk)pq .
+
+Remark C.16 . The lemma above analyzes multiset 2-FWL , a simplified VC -2-FWL algorithm acting solely on a symmetric matrix M without constraint nodes. Note that our full VC -2-FWL architecture Equation (4) subsumes this process. The 
+
+VC -2-FWL variable update aggregates the same multiset of variable neighbors {{{ {vuj , viu }} | u ∈ [n]}} together with constraint information. Therefore, VC -2-FWL is no less expressive than the simplified process, as it uses strictly more information for hashing, and any refinement made by the simplified process is guaranteed for VC -2-FWL as well. Thus, the spectral refinement properties proven above apply directly to the VC -2-FWL variable colors. Now with the lemma, we formally prove Theorem 2.3. 
+
+Proof of Theorem 2.3. We provide a constructive proof by simulating the primal-dual hybrid gradient (PDHG) algorithm (Chambolle & Pock, 2016; Wang et al., 2024). We show that the stable coloring of VC -2-FWL refines every update of PDHG algorithm, which is proven to converge. As established in Section C.3, the PDHG updates for the Frobenius-regularized SDP are given by: 
+
+Xt+1 := Proj Sn
+
+> +
+
+[ Xt − αtA∗(yt) − αtC
+
+1 + αtε
+
+]
+
+yt+1 := yt + βtA (Xt+1 + θt
+
+(Xt+1 − Xt)) − βtb.
+
+(26) 25 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+For any ε > 0, the SDP problem has a unique primal solution X∗. And if ε → 0, it reduces to normal linear SDP. We proceed by induction on t, initializing with X0 = 0n×n and y0 = 0m. Our goal is to show that for all t ≥ 0, the stable 
+
+VC -2-FWL coloring on variable and constraint nodes refines the intermediate primal-dual solutions of PDHG updates: 
+
+v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒ Xtij = Xtpq 
+
+c∞ 
+
+> k
+
+= c∞ 
+
+> l
+
+=⇒ ytk = ytl .
+
+Before the inductive step, we establish three key facts derived from the properties of the stable coloring. 
+
+Fact 1 Since the stable coloring v∞ refines the initial coloring v0, and v0 is defined by C, it holds that v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒
+
+Cij = Cpq . Furthermore, by applying Lemma C.15 to C, if its spectral decomposition is given by C = ∑ 
+
+> h
+
+λhPh, then the projection matrices also respect the coloring: ∀h : v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒ (Ph)ij = ( Ph)pq . Besides, we know c∞ refines b by its initialization c0 
+
+> k
+
+:= hash (bk).
+
+Fact 2 Consider any two pairs (i, j ), (p, q ) ∈ [n]2. According to VC -2-FWL definition Equation (4), if they have the same stable color, their hash function entries must be identical. Specifically, for all choices of function f :
+
+v∞ 
+
+> ij
+
+= v∞
+
+> pq
+
+=⇒ hash 
+
+(
+
+v∞ 
+
+> ij
+
+, {{{{v∞ 
+
+> uj
+
+, v∞ 
+
+> iu
+
+}} | u ∈ [n]}}, {{(Ak,ij , c∞ 
+
+> k
+
+) | k ∈ N (ij )}})
+
+=
+
+hash 
+
+(
+
+v∞ 
+
+> pq
+
+, {{{{v∞ 
+
+> uq
+
+, v∞
+
+> pu
+
+}} | u ∈ [n]}}, {{(Ak,pq , c∞ 
+
+> k
+
+) | k ∈ N (pq )}})
+
+=⇒ hash 
+
+({{(Ak,ij , c∞ 
+
+> k
+
+) | k ∈ N (ij )}})
+
+= hash 
+
+({{(Ak,pq , c∞ 
+
+> k
+
+) | k ∈ N (pq )}})
+
+=⇒ ∑ 
+
+> k∈N(ij )
+
+f (Ak,ij , c∞ 
+
+> k
+
+) = ∑ 
+
+> k∈N(pq )
+
+f (Ak,pq , c∞ 
+
+> k
+
+)=⇒ ∑ 
+
+> k∈N(ij )
+
+Ak,ij f (c∞ 
+
+> k
+
+) = ∑ 
+
+> k∈N(pq )
+
+Ak,pq f (c∞ 
+
+> k
+
+) , (we overload f for ease of notation) 
+
+=⇒ ∑
+
+> k∈[m]
+
+Ak,ij f (c∞ 
+
+> k
+
+) = ∑
+
+> k∈[m]
+
+Ak,pq f (c∞ 
+
+> k
+
+)
+
+The last implication holds as ∀k / ∈ N (ij ) : Ak,ij = 0 , by definition of neighbors. Consequently, for any function f mapping the c∞ to real numbers, the summations over these multisets are identical. In the inductive steps, we pick function f to map stable coloring to intermediate dual variables, f (c∞ 
+
+> k
+
+) = ytk for some suitable t, as we will show later. 
+
+Fact 3 Similarly for constraint nodes, consider k, l ∈ [m]. According to Equation (4), if two constraint nodes have the same stable colors, we have, for any function g:
+
+c∞ 
+
+> k
+
+= c∞
+
+> l
+
+=⇒ hash 
+
+(
+
+c∞ 
+
+> k
+
+, {{( Ak,ij , v∞
+
+> ij
+
+) | (i, j ) ∈ N (k)}})
+
+= hash 
+
+(
+
+c∞ 
+
+> l
+
+, {{( Al,ij , v∞
+
+> ij
+
+) | (i, j ) ∈ N (l)}})
+
+=⇒ hash 
+
+({{( Ak,ij , v∞
+
+> ij
+
+) | (i, j ) ∈ N (k)}})
+
+= hash 
+
+({{( Al,ij , v∞
+
+> ij
+
+) | (i, j ) ∈ N (l)}})
+
+=⇒ ∑ 
+
+> (i,j )∈N(k)
+
+g (Ak,ij , v∞
+
+> ij
+
+) = ∑ 
+
+> (i,j )∈N(l)
+
+g (Al,ij , v∞
+
+> ij
+
+)
+
+=⇒ ∑ 
+
+> (i,j )∈N(k)
+
+Ak,ij g (v∞
+
+> ij
+
+) = ∑ 
+
+> (i,j )∈N(l)
+
+Al,ij g (v∞
+
+> ij
+
+) , (we overload g for ease of notation) 
+
+=⇒ ∑
+
+> (i,j )∈[n]2
+
+Ak,ij g (v∞
+
+> ij
+
+) = ∑
+
+> (i,j )∈[n]2
+
+Al,ij g (v∞
+
+> ij
+
+)
+
+In the inductive steps, we will pick function g to map stable coloring to intermediate primal variables, similar to the choice of f .
+
+Proof by induction We now prove the theorem by induction on t. At initialization t = 0 , we have X0 = 0 and y0 = 0.The implications v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒ X0 
+
+> ij
+
+= X0 
+
+> pq
+
+and c∞ 
+
+> k
+
+= c∞ 
+
+> l
+
+=⇒ y0 
+
+> k
+
+= y0 
+
+> l
+
+hold trivially. 26 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Suppose the hypothesis holds for iteration t ≥ 0. We show it holds for iteration t + 1 .
+
+1. Primal Update. In the primal update step, we must evaluate the term A∗(yt) = ∑mk=1 ytkAk. We define the function f
+
+in Fact 2 as f (c∞ 
+
+> k
+
+) = ytk. This function is well-defined because, by the inductive hypothesis, ytk is refined by the color c∞ 
+
+> k
+
+,i.e., c∞ 
+
+> k
+
+= c∞ 
+
+> l
+
+=⇒ ytk = ytl . Applying Fact 2 with this f , we obtain: 
+
+v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒ ∑
+
+> k∈[m]
+
+Ak,ij ytk = ∑
+
+> k∈[m]
+
+Ak,pq ytk.
+
+The implication above shows that A∗(yt) is refined by the coloring v∞. Now consider the full term inside the PSD projection in Equation (26): 
+
+Zt := Xt − αtA∗(yt) − αtC
+
+1 + αtε .
+
+Since Xt (by hypothesis), C (by Fact 1), and A∗(yt) (by derivation) are all refined by the coloring v∞, their linear combination Zt also is. Finally, the update is Xt+1 = Proj Sn 
+
+> +
+
+(Zt). The PSD projection depends only on the spectral decomposition as detailed in Algorithm 1. Specifically, spectral decomposition is performed on Zt, and the Frobenius covariants corresponding to negative eigenvalues are removed. By Lemma C.15, we know v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+=⇒ Xt+1  
+
+> ij
+
+= Xt+1  
+
+> pq
+
+,that is, v∞ refines Xt+1 .
+
+2. Dual Update. In the dual update step, we evaluate the term inside the operator A:
+
+W t+1 := Xt+1 + θt
+
+(Xt+1 − Xt) .
+
+Since both Xt+1 and Xt are refined by v∞, so is W t+1 . We define the function g in Fact 3 as g (v∞
+
+> ij
+
+) = (W t+1 ) 
+
+> ij
+
+. This is well-defined because the value of (W t+1 ) 
+
+> ij
+
+is refined by the color v∞ 
+
+> ij
+
+. Applying Fact 3 with this g, we obtain: 
+
+c∞ 
+
+> k
+
+= c∞ 
+
+> l
+
+=⇒ [A(W t+1 )] 
+
+> k
+
+= [A(W t+1 )] 
+
+> l
+
+.
+
+Since yt (by hypothesis) and b (by Fact 1) are both refined by the coloring c∞, the sum yt+1 is refined by the coloring. In summary, we have proven by induction that if the stable coloring v∞ and c∞ refine Xt and yt in PDHG algorithm, they also refine Xt+1 and yt+1 .Since PDHG is guaranteed to converge to X∗ and y∗, this completes the proof. 
+
+Remark C.17 . Notably, this result extends to comparisons across distinct SDP instances. The pairs (i, j ) and (p, q ) do not need to belong to the same problem: provided consistent initialization, if their stable VC -2-FWL colorings are identical, their corresponding optimal values are guaranteed to be equal. This implies a form of universality, suggesting that the 
+
+VC -2-FWL hierarchy captures fundamental structural invariants that generalize across the whole space of SDP problems. 
+
+C.5. Proof for complexity analysis Lemma C.18 (Restatement of Theorem 12 of Berkholz et al. (2017)) . Let G = ( V, E, c ) be an edge colored digraph with N = |V | and M = |E|. In time O(( N + M ) log( N + M )) , a canonical coarsest edge-color stable coloring can be computed for G.
+
+Proposition C.19 (Restatement of Proposition 2.4) . Given an SDP of n × n variables and m constraints, nnz (A) denotes the number of non-zero entries in A, then VC -2-FWL converges in time 
+
+O ((n3 + nnz (A)) log n) .
+
+Proof. We analyze the computational complexity of VC -2-FWL by demonstrating that its update rule is algorithmically equivalent to standard 1-WL (color refinement) operating on a directed, edge-colored auxiliary graph. This equivalence allows us to invoke the tight complexity bounds established in Lemma C.18. 
+
+Auxiliary graph construction Let Gaux = ( V, E ) be the implicit auxiliary graph defined by the update rules in Equation (4). The node set V is the disjoint union of variable nodes and constraint nodes, and a set of higher-order nodes: V =
+
+Vvar ∪ Vcon ∪ Vtri .27 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+1. Vvar consists of the n2 variable nodes. These are initialized with colors a0 
+
+> ij
+
+:= αvar (Cij ), where αvar is a canonical mapping for variables. 2. Vcon consists of the m constraint nodes. These are initialized with colors b0 
+
+> k
+
+:= αcon (bk), where αcon is distinct from 
+
+αvar .3. We further construct a node set Vtri . For every variable node with index (i, j ), we construct n nodes with index (i, u, j )
+
+for u ∈ [n]. These are initialized with colors c0 
+
+> iuj
+
+= αtri ({{Ciu , C uj }}).Since the initialization functions α(·) have disjoint ranges, the color classes of three node sets remain disjoint throughout the execution. The total number of nodes is N = n2 + m + n3.The edge set E decomposes into the following: 1. Etri-v ⊆ Vtri × Vvar : These edges connect nodes from Vtri to Vvar . Specifically, every variable node indexed (i, j ) gets links from {(i, u, j ) | u ∈ [n]}. This requires n3 edges. The edge colors can be a constant. 2. Ev-tri ⊆ Vvar × Vtri : This is the other direction of above. Every higher order node (i, u, j ) gets links from variable nodes 
+
+(i, u ) and (u, j ), thus 2n3 edges. The edge colors can be a constant. 3. Ev-c ⊆ Vvar × Vcon : These edges encode the A structure. An edge exists from (i, j ) ∈ Vvar to k ∈ Vcon if and only if 
+
+Ak,ij ̸ = 0 . The edge colors are defined by the tensor entries: eij,k = αA(Ak,ij ). The size of this set is nnz (A).4. Ec-v ⊆ Vcon × Vvar : These edges are the opposite direction from Ev-c . The edge colors are the same: ek,ij = αA(Ak,ij ).The total number of edges is M = 3 n3 + 2 nnz (A).
+
+Update equivalence We now show that the 1-WL update on this edge-colored graph is equivalent to the VC -2-FWL update. For a constraint node, it updates in the sense of 1-WL as: 
+
+bt+1  
+
+> k
+
+:= hash (btk, {{(etij,k , atij 
+
+) | (i, j ) : Ak,ij ̸ = 0 }})
+
+which has exactly the same form as in Equation (4). For a variable node, we first update the higher-order nodes: 
+
+ct+1 /2 
+
+> iuj
+
+:= hash (ctiuj , {{vtiu , vtuj }}) ,
+
+regardless of the edge colors. Then, we update the variable nodes: 
+
+at+1  
+
+> ij
+
+:= hash 
+
+(
+
+atij , {{ct+1 /2 
+
+> i0j
+
+, · · · , ct+1 /2 
+
+> inj
+
+, (ek,ij , btk) · · ·} }
+
+)
+
+Since the node types Vtri and Vcon are distinguished by disjoint color spaces, we can partition the multiset into two distinct multisets without ambiguity: 
+
+at+1  
+
+> ij
+
+:= hash 
+
+(
+
+atij , {{ct+1 /2 
+
+> iuj
+
+| u ∈ [n]}}, {{(ek,ij , btk) | k : Ak,ij ̸ = 0 }}
+
+)
+
+.
+
+This form matches the variable update in Equation (4). Therefore, the variable update in Equation (4) can be implemented with 2 steps of 1-WL .Hence, we have shown the equivalence of our VC -2-FWL and standard 1-WL . Applying the bound in Lemma C.18 to our setting: N = |V | = n2 + m + n3 and M = |E| = O(n3 + nnz (A)) . Since m is bounded by O(n2) as we assume linearly independent constraints, O(( N + M )) = O(n3 + nnz (A)) , and O(log( N + M )) = O(log n). Substituting these values yields the total time complexity: O((n3 + nnz (A)) log n).
+
+C.6. Proof for neuralization 
+
+Remark C.20 . It is important to clarify the terminology regarding the hash function utilized in the WL test aggregation step. In standard computer science contexts, cryptographic or data-structure hash functions are inherently discrete and non-continuous. However, in the theoretical framework of GNN expressivity, a hash function simply denotes an injective mapping that assigns a unique, deterministic representation to any distinct multiset of neighbor features. Crucially, this 28 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+injective mapping is not required to be discrete. As established in the foundational GNN expressivity literature (Morris et al., 2019; Xu et al., 2018), there exist continuous, injective functions capable of perfectly resolving bounded multisets. Because these idealized WL aggregation functions can be chosen to be strictly continuous, they satisfy the necessary conditions to be arbitrarily approximated by MLPs via the universal approximation theorem. 
+
+Proposition C.21 (Restatement of Proposition 2.5) . There exists a set of parameters for the functions 
+
+INIT , UPD , MSG , MAP , such that VC -2-FMPNN has maximal expressivity equal to the VC -2-FWL .
+
+First, we state a lemma. 
+
+Lemma C.22. Let K ⊂ Rd be a compact set, and let X be the space of finite multisets of bounded maximum size with elements drawn from K. There exists an integer p ≥ 1 and a continuous, injective function 
+
+f : X → Rp
+
+such that for any two multisets X1, X 2 ∈ X ,
+
+f (X1) = f (X2) ⇐⇒ X1 = X2.
+
+This is exactly a restatement of Lemma 4 of Xu et al. (2018), if the multiset space is discrete and countable; or of Proposition 1 of Maron et al. (2019a), if it is a multiset of real number space, by using the power-sum multi-symmetric polynomial technique. In our case, unlike discrete graphs, we assume that the problem coefficients C, A, b as well as the intermediate outputs of the neural networks lie within a compact subset K, i.e., real space where the coefficients don’t go to infinity. This ensures that the inputs are bounded and allows for the application of the Stone-Weierstrass theorem for approximation. So we can reuse the proof technique in Maron et al. (2019a). Now let’s prove Proposition 2.5. 
+
+Proof for Proposition 2.5. We prove the equality of expressivity by showing both directions of refinement. 
+
+VC -2-FWL ⊑ VC -2-FMPNN : First, VC -2-FMPNN is no more expressive than VC -2-FWL . It is easy to verify with the same logic as Theorem 1 of Morris et al. (2019). The VC -2-FMPNN updates are deterministic functions of the unrolling trees defined by the VC -2-FWL color refinement. Therefore, if VC -2-FWL produces identical colors for two variable pairs, 
+
+VC -2-FMPNN must produce identical embeddings. 
+
+VC -2-FMPNN ⊑ VC -2-FWL : We show that VC -2-FMPNN can distinguish any two instances distinguishable by VC -2-FWL 
+
+at every iteration t.At initialization t = 0 , the initial features are directly encoded from the problem data. Since we assume the input space 
+
+K is compact, there exist MLPs by the universal approximation theorem that can implement the initialization functions injectively, preserving the distinction between different initial values of Cij or bk. At iteration t > 0, we consider the update for constraint and variable nodes, respectively. 
+
+Constraint node Consider the update of a constraint node k. The update requires an injective mapping of the tuple containing the constraint node’s previous feature ht−1 
+
+> k
+
+and the multiset of its variable neighbors’ features together with the edge weights: {{( Ak,ij , vt−1
+
+> ij
+
+) | (i, j ) ∈ N (k)}}. According to Lemma C.22, there exists an injective function that uniquely encodes this multiset. As shown in the constructive proof of Maron et al. (2019a, Proposition 1), this injective function can be realized as a summation of power-sum polynomials. Consequently, the MLP in the term 
+
+mtk, v→c := ∑ 
+
+> (i,j )∈N(k)
+
+MSG t
+
+> v→c
+
+(Ak,ij , ht−1
+
+> ij
+
+)
+
+can be parameterized to approximate these continuous mappings, ensuring that the summation yields a unique representation of the multiset. Furthermore, the injective combination of the node’s previous state ht−1 
+
+> k
+
+and this multiset embedding 
+
+mtk, v→c can be approximated arbitrarily well by concatenation of them and application of another MLP: 
+
+htk := UPD t
+
+> c
+
+(ht−1 
+
+> k
+
+, mtk, v→c
+
+) .
+
+Since the intermediate space K is compact, there exist MLPs that universally approximate the injective hash function in Equation (4). 29 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Variable node Consider the VC -2-FWL update for a variable index (i, j ). VC -2-FWL updates the variable color based on the variable node’s previous feature, the multiset of constraint neighbors and the multiset of variable neighbor pairs. For the multiset of constraint neighbors, it aggregates the multiset {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}, we apply Lemma C.22 once, and the term 
+
+mtij, c→v := ∑ 
+
+> k∈N(ij )
+
+MSG t
+
+> c→v
+
+(Ak,ij , ht−1
+
+> k
+
+)
+
+implements the injective mapping from constraint neighbors to a vector embedding. The multiset of variable pairs are formed by {{{{vt−1 
+
+> uj
+
+, vt−1 
+
+> iu
+
+}} | u ∈ [n]}}. To complete this injectively, we invoke Lemma C.22 twice. First, for a specific 
+
+u, the unordered pair su = {{vt−1 
+
+> uj
+
+, vt−1 
+
+> iu
+
+}} constitutes a 2-multiset. By Lemma C.22, there exists an MLP capturing the injectivity of su. The term 
+
+MAP t (ht−1
+
+> uj
+
+) + MAP t (ht−1
+
+> iu
+
+)
+
+explicitly implements this. Second, we must aggregate these encoded pairs over all u ∈ [n]. The target structure is the outer multiset Sij = {{su | u ∈ [n]}}. Applying Lemma C.22 again, there exists an injective mapping with MLP. Thus, the term 
+
+mtij, v→v := ∑
+
+> u∈[n]
+
+MSG t
+
+> v→v
+
+(MAP t (ht−1
+
+> uj
+
+) + MAP t (ht−1
+
+> iu
+
+)) 
+
+injectively encodes the nested multiset structure for the VC -2-FWL update. Finally, one can simply concatenate the embeddings (ht−1 
+
+> ij
+
+, mtij, v→v, mtij, c→v
+
+) and update it with the MLP UPD t
+
+> v
+
+:
+
+htij := UPD t
+
+> v
+
+(ht−1 
+
+> ij
+
+, mtij, v→v, mtij, c→v
+
+) .
+
+In summary, every component of VC -2-FWL in Equation (4) can be approximated by an MLP. By picking the output approximation error ϵ to be smaller than the separation margin of the distinct VC -2-FWL colors, VC -2-FMPNN maintains the injectivity of the update step. Thus, VC -2-FMPNN is at least as expressive as VC -2-FWL , which completes the proof. 
+
+VC-MPNN Similar to VC -2-FMPNN , we can neuralize the VC -WL to VC -MPNN , whose initialization is identical to Equation (5), and the update steps: 
+
+mtij, c→v := ∑ 
+
+> k∈N(ij )
+
+MSG t
+
+> c→v
+
+(Ak,ij , ht−1
+
+> k
+
+)
+
+mtk, v→c := ∑ 
+
+> (i,j )∈N(k)
+
+MSG t
+
+> v→c
+
+(Ak,ij , ht−1
+
+> ij
+
+)
+
+htij := UPD t
+
+> v
+
+(ht−1 
+
+> ij
+
+, mtij, c→v
+
+)
+
+htk := UPD t
+
+> c
+
+(ht−1 
+
+> k
+
+, mtk, v→c
+
+)
+
+(27) 
+
+Proposition C.23. There exists a set of parameters for the functions INIT , UPD , MSG , such that VC -MPNN has maximal expressivity equal to the VC -WL .Proof. We apply the same logic as the proof of Proposition 2.5, simplified for the reduced message passing structure. 
+
+VC -WL ⊑ VC -MPNN : Since the VC -MPNN update rules are deterministic functions of the VC -WL unrolling tree (which is actually a subset of the VC -2-FWL tree), the neural network cannot distinguish elements that the color refinement algorithm cannot. 
+
+VC -MPNN ⊑ VC -WL : We verify that the network components can implement the injective update steps of VC -WL . At initialization t = 0 , similar to Proposition 2.5, there exist MLPs that perform this mapping injectively. For iteration t > 0:
+
+Constraint node The constraint node update simply follows Proposition 2.5. 
+
+Variable node The VC -WL variable update aggregates only the constraint neighbors, omitting the variable node interactions. This is a simplified case of the variable update in Equation (6). The message term mtij, c→v with an MLP is sufficient to 30 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+injectively encode the constraint neighbor multiset {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}. The UPD t 
+
+> v
+
+then injectively maps the pair 
+
+(ht−1 
+
+> ij
+
+, mtij, c→v) to the next state. Thus, VC -MPNN is capable of simulating VC -WL injectively. Building on the limitation of VC -WL established in Proposition 2.2, we demonstrate that the neuralized VC -MPNN 
+
+architecture cannot universally approximate SDP solutions. We rely on the following homogeneity property of linear SDPs. 
+
+Lemma C.24. Consider a standard form SDP with data (C, A, b) and a triplet of primal, dual and slack solution 
+
+(X∗, y∗, S∗). If the vector b is scaled by a positive scalar α > 0 to αb, then αX∗ is an optimal primal solution to the scaled problem. Proof. Optimality in linear SDPs is characterized by the Karush-Kuhn-Tucker (KKT) conditions. The original solution satisfies: 
+
+A(X∗) = bC + A∗(y∗) − S∗ = 0
+
+X∗ ⪰ 0
+
+S∗ ⪰ 0
+
+⟨X∗, S∗⟩ = 0 
+
+(28) It is not hard to find that the following also holds: 
+
+A(αX∗) = αA(X∗) = αbC + A∗(y∗) − S∗ = 0
+
+αX∗ ⪰ 0
+
+S∗ ⪰ 0
+
+⟨αX∗, S∗⟩ = 0 .
+
+(29) Therefore, αX∗ is the solution to the scaled SDP problem; thus, it completes the proof. 
+
+Corollary C.25. The architecture VC -MPNN is not a universal approximator for SDPs. Specifically, for any ϵ > 0, there exists an SDP instance such that for any parameters of a VC -MPNN , the error between the predicted solution X′ and the optimal solution X∗ satisfies 
+
+∥X∗ − X′∥∞ ≥ ϵ. 
+
+Proof. According to Proposition C.23, the expressivity of VC -MPNN is bounded by the VC -WL coloring algorithm. Consider the counterexample from the proof of Proposition 2.1. In this instance, variables X11 and X33 are structurally indistinguishable under the VC -WL algorithm, and thus VC -MPNN forces the network to predict identical values, i.e., 
+
+X′ 
+
+> 11
+
+= X′ 
+
+> 33
+
+= v. However, in this case, the unique optimal solution satisfies X∗
+
+> 11
+
+̸ = X∗
+
+> 33
+
+. Let δ = |X∗ 
+
+> 11
+
+− X∗
+
+> 33
+
+| > 0. Now, scale the constraint vector to αb with α = 2 ϵ/δ . By Lemma C.24, the new optimal solution is αX∗, and the gap between the entries becomes |αX ∗ 
+
+> 11
+
+− αX ∗
+
+> 33
+
+| = αδ = 2 ϵ. Since the scaling of b preserves the structural symmetry of the graph, the unrolling trees for variable nodes v11 and v33 remain isomorphic, the VC -MPNN must still predict identical values for these entries, say v′. By the triangle inequality, the approximation error is bounded from below: 
+
+2ϵ = |αX ∗ 
+
+> 11
+
+− αX ∗
+
+> 33
+
+|≤ | αX ∗ 
+
+> 11
+
+− v′| + |v′ − αX ∗
+
+> 33
+
+|≤ 2 max ( |αX ∗ 
+
+> 11
+
+− v′|, |αX ∗ 
+
+> 33
+
+− v′|)
+
+≤ 2∥αX∗ − X′∥∞.
+
+Therefore, ∥αX∗ − X′∥∞ ≥ ϵ, proving that the error can be made arbitrarily large. 31 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+VC-2-MPNN We neuralize the VC -2-WL and instantiate a neural network, which we name VC -2-MPNN . The initialization follows Equation (5), and the update is 
+
+mtij, row := ∑
+
+> u∈[n]
+
+MSG t
+
+> row
+
+(ht−1 
+
+> iu
+
+)
+
+mtij, col := ∑
+
+> u∈[n]
+
+MSG t
+
+> col
+
+(ht−1 
+
+> uj
+
+)
+
+mtij, c→v := ∑ 
+
+> k∈N(ij )
+
+MSG t
+
+> c→v
+
+(Ak,ij , ht−1
+
+> k
+
+)
+
+mtk, v→c := ∑ 
+
+> (i,j )∈N(k)
+
+MSG t
+
+> v→c
+
+(Ak,ij , ht−1
+
+> ij
+
+)
+
+htij := UPD t
+
+> v
+
+(ht−1 
+
+> ij
+
+, mtij, col , mtij, row , mtij, c→v
+
+)
+
+htk := UPD t
+
+> c
+
+(ht−1 
+
+> k
+
+, mtk, v→c
+
+)
+
+(30) Besides, following Equation (3), we force symmetry by htji = htji , if i < j .
+
+Proposition C.26. There exists a set of parameters for the functions INIT , UPD , MSG , such that VC -2-MPNN has maximal expressivity equal to the VC -2-WL .Proof. We apply the same logic as the proof of Proposition 2.5, tailored for the message passing structure of VC -2-MPNN .
+
+VC -2-WL ⊑ VC -2-MPNN : Since the VC -2-MPNN update rules are deterministic functions of the VC -2-WL unrolling tree, the neural network cannot distinguish elements that the color refinement algorithm cannot. 
+
+VC -2-MPNN ⊑ VC -2-WL : We verify that the network components can implement the injective update steps of VC -2-WL .At initialization t = 0 , similar to Proposition 2.5, there exist MLPs that perform this mapping injectively. 
+
+Constraint node The constraint node update simply follows Proposition 2.5. 
+
+Variable node The VC -2-WL variable update aggregates the constraint neighbors, as well as the row and column variable neighbors separately. The message from constraint neighbors mtij, c→v with an MLP is sufficient to injectively encode the constraint neighbor multiset {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}. Similarly, the multisets of row and column neighbors mtij, row 
+
+and mtij, col can be encoded injectively with MLPs respectively. Finally, the update function UPD t 
+
+> v
+
+then injectively maps the vectors (ht−1 
+
+> ij
+
+, mtij, col , mtij, row , mtij, c→v) to the next state. Thus, VC -2-MPNN is capable of simulating VC -2-WL injectively. Next, we show a corollary that VC -2-MPNN is not a universal approximator to represent SDP. 
+
+Corollary C.27. VC -2-MPNN is not a universal approximator for SDPs. Specifically, for any ϵ > 0, there exists an SDP instance such that for any parameters of a VC -2-MPNN , the error between the predicted solution X′ and the optimal solution X∗ satisfies 
+
+∥X∗ − X′∥∞ ≥ ϵ. 
+
+Proof. We follow exactly the proof logic in Corollary C.25. In this case, for VC -2-MPNN , we can pick the example in the proof of Proposition 2.2 where VC -2-WL fails. 
+
+## D. SDP application 
+
+D.1. Relaxation of CO 
+
+In reality, SDP serves as the continuous relaxation of several graph CO problems. 
+
+Max-Cut (Goemans & Williamson, 1995). Let G be a graph with nodes V and edges E with edge weights wij ≥ 0, {i, j } ∈ 
+
+E. The goal of the max-cut problem is to partition the nodes into two disjoint sets such that the sum of weights of edges 32 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+crossing the cut is maximized. The problem formulation is 
+
+max 
+
+> x∈{− 1,1}n
+
+12
+
+∑
+
+> {i,j }∈ E
+
+wij (1 − xixj ), (31) where 1 and −1 denote different partitions. Instead of integer domain {− 1, 1}, we relax each variable xi to a unit vector 
+
+∥vi∥ = 1 , which defines Xij = v⊺ 
+
+> i
+
+vj (Yau et al., 2024). Thus, SDP relaxation is 
+
+max 
+
+> X∈Sn
+> +
+
+12
+
+∑
+
+> {i,j }∈ E
+
+wij (1 − Xij )
+
+s.t. Xii = 1 , ∀i ∈ [n]
+
+(32) 
+
+Max clique problem Let G be a graph with nodes V and edges E, let xi ∈ { 0, 1} denote whether xi is included in a clique. The max clique problem can be formulated as 
+
+max 
+
+> x∈{ 0,1}n
+
+∑
+
+> i
+
+xi
+
+s.t. xixj = 0 , ∀{ i, j } /∈ E. 
+
+(33) We know that the Lovász function (Galli & Letchford, 2017) is defined as the optimal value of the SDP relaxation of max-clique problem: 
+
+max 
+
+> X∈Sn
+> +
+
+⟨J, X⟩
+
+s.t. Tr( X) = 1 
+
+Xij = 0 , ∀{ i, j } /∈ E, 
+
+(34) where J is a ones matrix. 
+
+Max independent set The max independent set problem is the complement of the max clique problem. Formally, 
+
+max 
+
+> x∈{ 0,1}n
+
+∑
+
+> i
+
+xi
+
+s.t. xixj = 0 , ∀{ i, j } ∈ E. 
+
+(35) and its relaxation: max 
+
+> X∈Sn
+> +
+
+⟨J, X⟩
+
+s.t. Tr( X) = 1 
+
+Xij = 0 , ∀{ i, j } ∈ E. 
+
+(36) 
+
+Graph coloring The goal of the graph coloring problem is to assign colors to nodes such that no adjacent nodes share the same color. Let yk ∈ { 0, 1}, k ∈ [K] indicate whether the color k is used, where K is an upper bound, e.g., K = |V |. And let xik ∈ { 0, 1} indicate whether the node i is assigned to color k. The graph coloring problem in ILP form is defined as: 
+
+min ∑
+
+> k
+
+yk
+
+s.t. ∑
+
+> k
+
+xik = 1 
+
+xik + xjk ≤ yk, ∀{ i, j } ∈ Exik ≤ yk.
+
+(37) We have the SDP relaxation (Charikar, 2002): 
+
+min 
+
+> X∈Sn
+> +
+
+ks.t. Xij = − 1
+
+k − 1 , ∀{ i, j } ∈ EXii = 1 .
+
+(38) 33 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Min vertex cover A standard formulation of the minimum vertex cover problem as a quadratic integer program is as following: 
+
+min 
+
+> x∈{− 1,1}n
+
+∑
+
+> i
+
+12 (1 + xi)
+
+s.t. (1 − xi)(1 − xj ) = 0 , ∀{ i, j } ∈ E
+
+(39) The SDP relaxation is as following (Kleinberg & Goemans, 1998; Hatami et al., 2009), where we introduce an extra variable: 
+
+min 
+
+> X∈Sn+1 +
+
+∑
+
+> i
+
+12 (1 + X0i)
+
+s.t. Xij + X00 − X0i − X0j = 0 , ∀{ i, j } ∈ EXii = 1 , i ∈ { 0} ∪ V. 
+
+(40) 
+
+Max 2-SAT A max SAT problem is given a number of variables n, that takes on the values {− 1, 1}n, and a collection of clauses {C1, C 2, · · · , C k}, each clause is a disjunction (logical OR) of a subset of literals. A literal is either a variable or its negation. Each clause may be assigned a weight, and the goal of Max SAT is to find an assignment of variables that maximizes the total weight of satisfied clauses. A max k-SAT problem is one in which each clause has at most k literals. An instance with n variables and k clauses can be represented by a matrix A ∈ {− 1, 0, 1}k×n, where Aij = 1 if clause i
+
+includes the positive literal of variable j, Aij = −1 if it includes the negated literal, and Aij = 0 otherwise. We consider the unweighted setting, where all clause weights are equal, and the objective is to maximize the number of satisfied clauses. The quadratic assignment formulation of the max 2-SAT problem is (de Klerk & Warners, 2002) 
+
+min 
+
+> x∈{− 1,1}n
+
+18 (x⊺A⊺Ax − 21⊺Ax ) (41) whose SDP relaxation is 
+
+min 
+
+> X∈Sn+1 +
+
+18
+
+〈[ A⊺A − diag (A⊺A) −A⊺1
+
+−1⊺A 0
+
+]
+
+, X
+
+〉
+
+s.t. Xii = 1 , ∀i ∈ [n].
+
+(42) 
+
+D.2. Quadratic assignment problem 
+
+Besides, SDP is also a common relaxation for quadratic assignment problems (QAP). 
+
+Traveling salesman problem It is already known that the symmetric traveling salesman problem (TSP) is a special case of QAP. We first introduce the notation of circulant matrices on n vertices Cn. A circulant matrix in Rn×n has the form 
+
+
+
+c0 c1 c2 c3 · · · cn−1
+
+cn−1 c0 c1 c2 · · · cn−2
+
+cn−2 cn−1 c0 c1 · · · cn−3
+
+... ... ... ... . . . ...
+
+c1 c2 c3 c4 · · · c0
+
+
+
+We have a basis for symmetric circulant matrices consisting of {Cn 
+
+> 1
+
+, Cn 
+
+> 2
+
+, · · · , Cnd }, where Cni is a matrix with ci = cn−i =1 and 0 elsewhere. Besides, we have a symmetric matrix D where Dii = 0 and Dij = Dji > 0 is the cost per edge. The objective of TSP is 
+
+min 
+
+> X∈Pn
+
+12 Tr( DXC n 
+
+> 1
+
+X⊺), (43) where P is the permutation matrix group. XC n 
+
+> 1
+
+X can be interpreted as the adjacency matrix of the tour. 
+
+(Sub)graph isomorphism problem Given adjacency matrices A, B, supposed to be the same shape, we seek the largest isomorphic subgraphs by 
+
+min 
+
+> X∈Pn
+
+∥XA − BX ∥F . (44) 34 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+With some transformations, we have ∥XA − BX ∥F = ∥A∥F − 2 Tr( BXAX ⊺) + ∥B∥F , thus, the problem is equivalent to 
+
+max  
+
+> X∈Pn
+
+Tr( BXAX ⊺). (45) The TSP and GIP are special cases of QAP. The relaxation of SDP for QAP has been well-studied (Povh & Rendl, 2009; Oliveira et al., 2018). 
+
+D.3. Subsumption of convex optimization 
+
+SDP subsumes a lot of convex optimization problems, including second-order conic programming (SOCP), quadratically-constrained quadratic programming (QCQP), linearly-constrained quadratic programming (LCQP), and linear programming (LP) (Dattorro, 2010, p. 220). 
+
+LP It is straightforward to show that LP is a special case of SDP. Given an LP instance 
+
+min 
+
+> x∈Rn
+> ≥0
+
+c⊺x
+
+s.t. Ax = b,
+
+(46) we can turn it into an SDP instance by constructing C = diag (c) and Ai = diag (Ai), and extra constraints Xij = 0 , i ̸ = j.The positive semidefiniteness of SDP variables perfectly captures the positivity of the LP variables, as the SDP variables are forced to form a diagonal matrix. 
+
+SOCP The formulation of an SOCP is 
+
+min c⊺x
+
+s.t. ∥A(i)x + b(i)∥2 ≤ c⊺
+
+> (i)
+
+x + d(i), ∀i ∈ [m], (47) where A(i) ∈ Rki×n, b(i) ∈ Rki , c(i) ∈ Rn, d (i) ∈ R. The positivity constraints of variables can also be captured by such forms. Each constraint is in a second order cone Lk+1 := {(x, t ) ∈ Rk+1 |∥ x∥2 ≤ t}, hence the name. Using Schur decomposition, we turn the second order cone ∥x∥2 ≤ t into a PSD cone 
+
+[ t x⊺
+
+x tI
+
+]
+
+⪰ 0. So we can turn the SOCP problem into an SDP problem (Lobo et al., 1998) 
+
+min c⊺x
+
+s.t. 
+
+[ c⊺
+
+> (i)
+
+x + d(i)
+
+(A(i)x + b(i)
+
+)⊺
+
+A(i)x + b(i)
+
+(
+
+c⊺
+
+> (i)
+
+x + d(i)
+
+)
+
+I
+
+]
+
+⪰ 0, ∀i ∈ [m]. (48) Note that it is not the standard primal form of Equation (1), but a dual form 
+
+min b⊺y
+
+s.t. C +
+
+> m
+
+∑
+
+> i=1
+
+yiAi ⪰ 0. (49) 
+
+QP To show that LCQPs and QCQPs are also special cases of SDP, we just need to show they are included in the SOCP family. Given a QCQP instance 
+
+min x⊺Q(0) x + 2 q⊺
+
+> (0)
+
+x + q(0) 
+
+s.t. x⊺Q(i)x + 2 q⊺
+
+> (i)
+
+x + q(i) ≤ 0, ∀i ∈ [m], (50) for the problem to be convex, we assume Q(i) to be PSD matrices. This allows us to transform the QCQP in the following form (Lobo et al., 1998): 
+
+min ∥Q1/2(0) x + Q−1/2(0) q(0) ∥22 + c(0) − q⊺
+
+> (0)
+
+Q−1(0) q(0) 
+
+s.t. ∥Q1/2(i) x + Q−1/2(i) q(i)∥22 + c(i) − q⊺
+
+> (i)
+
+Q−1(i) q(i) ≤ 0, ∀i ∈ [m], (51) 35 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+and further in SOCP form 
+
+min t
+
+s.t. ∥Q1/2(i) x + Q−1/2(i) q(i)∥2 ≤
+
+(
+
+q⊺
+
+> (i)
+
+Q−1(i) q(i) − c(i)
+
+)1/2
+
+, ∀i ∈ [m]
+
+∥Q1/2(0) x + Q−1/2(0) q(0) ∥2 ≤ t. 
+
+(52) And LCQP is a special case of QCQP. 
+
+D.4. Control theory Linear Matrix Inequality Lyapunov stability analysis is a fundamental problem in control theory used to verify if a dynamical system ˙z = Asys z is stable. A necessary and sufficient condition for stability is the existence of a quadratic Lyapunov function V (z) = z⊺P z with P ≻ 0 such that the derivative ˙V (z) < 0. Formally, this is the Linear Matrix Inequality (LMI): Find P ∈ Sn
+
+> +
+
+s.t. A⊺
+
+> sys
+
+P + P A sys ≺ 0. (53) To optimize numerical properties or check for specific performance bounds, this is cast as a Semidefinite Program. We adopt the formulation from Boyd et al. (1994, p. 9), enforcing a trace constraint to bound the solution scale and discretizing the matrix inequality into m scalar linear constraints: 
+
+min  
+
+> P∈Sn
+> +
+
+⟨C, P ⟩
+
+s.t. Tr( P ) = 1 
+
+A(P ) = b.
+
+(54) where each constraint matrix Ak represents the projection of the Lyapunov operator onto a random direction vector vk:
+
+Ak = 12 (Asys vkv⊺ 
+
+> k
+
++ vkv⊺ 
+
+> k
+
+A⊺
+
+> sys
+
+).
+
+We employ an inverse strategy to generate feasible problem instances with known stability certificates. We first sample a random positive definite matrix Ptrue and normalize it such that Tr( Ptrue ) = 1 . Instead of sampling a random system Asys 
+
+(which might be unstable), we construct a stable system compatible with our certificate. We solve the inverse Lyapunov equation A⊺
+
+> sys
+
+Ptrue + Ptrue Asys = −ϵI to recover Asys . We sample m random sparse direction vectors vk. We compute the RHS scalars ⟨Ak, Ptrue = b⟩. This ensures that the ground truth Ptrue lies exactly on the boundary of the feasible region defined by the hyperplanes. 
+
+## E. Other architectures 
+
+E.1. Ablation of VC-2-FWL VC-2-FWL+ We define a 2-tuple based 2-FWL -like architecture, which we name VC -2-FWL +. The color initialization follows Equation (2), and the update is as defined below: 
+
+vtij := hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{( vt−1 
+
+> uj
+
+, vt−1
+
+> iu
+
+) | u ∈ [n]}}, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+ctk := hash 
+
+(
+
+ct−1 
+
+> k
+
+, {{( Ak,ij , vt−1
+
+> ij
+
+) | (i, j ) ∈ N (k)}})
+
+.
+
+(55) Similar to VC -2-WL , it requires symmetrization after the update ctji ← ctij , ∀i < j . See Proposition C.7 for the proof of the expressive power between VC -2-FWL and VC -2-FWL +.Besides, we discuss some interesting yet weaker versions of VC -2-FWL .36 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Multiset encoding across constraint We can encode the problem instance I := ( C, A, b) with an injective function on a multiset, in the form of 
+
+v0 
+
+> ij
+
+:= hash (Cij , {{(Ak,ij , b k) | k ∈ [m]}}) ,
+
+such that the constraint elements on entry (i, j ) are aggregated in an injective and permutation invariant way, then merged with the objective coefficient Cij . Then we execute the following multiset-based 2-FWL :
+
+vtij := hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{{{vt−1 
+
+> uj
+
+, vt−1 
+
+> iu
+
+}} | u ∈ [n]}})
+
+Unfortunately, this aggregation is not expressive enough; we can construct a problem: 
+
+C =
+
+
+
+1 0 00 1 00 0 1
+
+ , A1 =
+
+
+
+1 0 00 1 00 0 0
+
+ , A2 =
+
+
+
+0 0 00 0 00 0 1
+
+ , b = [1 1]
+
+whose optimal solution has the form X∗ =
+
+
+
+1 − λ 0 00 λ 00 0 1
+
+, where λ ∈ [0 , 1] . The solution with minimum Frobenius norm is 
+
+
+
+0.5 0 00 0.5 00 0 1
+
+.However, the encoding 
+
+v022 = hash (1, {{(1 , 1) , (0 , 1) }}) 
+
+v033 = hash (1, {{(0 , 1) , (1 , 1) }}) 
+
+are the same. Later, one can easily verify that the converged colors v∞ 
+
+> 22
+
+= v∞ 
+
+> 33
+
+.The failing of such a combination lies in that the encoding cannot distinguish some structural difference, for example, above, 
+
+b1 is related with 2 elements in A1, while b2 associates with only one in A2. The encoding with lack of expressivity will falsely encode variables with different structural roles as the same. 
+
+VC-WL then 2-FWL Another interesting ablation of Equation (4) is, can we run VC -WL on the V-C bipartite graph until convergence, then run multiset-based 2-FWL until convergence, and obtain the same expressivity as Equation (4)? Therefore, it effectively splits the aggregation of VC -2-FWL . The answer is no. We give a counterexample. 
+
+C = 15×5
+
+A1 =
+
+
+
+1 2 1 1 12 0 0 0 01 0 0 0 01 0 0 0 01 0 0 0 0
+
+ , A2 =
+
+
+
+0 0 0 0 00 1 1 1 00 1 0 0 00 1 0 0 00 0 0 0 0
+
+ , A3 =
+
+
+
+0 0 0 0 00 0 0 0 10 0 1 1 00 0 1 0 00 1 0 0 0
+
+
+
+A4 =
+
+
+
+0 0 0 0 00 0 0 0 00 0 0 0 10 0 0 1 10 0 1 1 0
+
+ , A5 =
+
+
+
+0 0 0 0 00 0 0 0 00 0 0 0 00 0 0 0 00 0 0 0 1
+
+
+
+b = [1 1 1 1 1] .
+
+(56) In this example, after the convergence of VC -WL , the converged colors v∞ 
+
+> ij
+
+will be 
+
+
+
+a b e e eb d c c ce c d c ce c c d ce c c c f
+
+, where {a, b, c, · · · } 
+
+are from an alphabet to represent colors. 37 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+After the convergence of multiset-based 2-FWL , the converged colors will be 
+
+
+
+a b c c db e f f gc f k h ic f h k id g i i j
+
+. The solution is approximately 
+
+
+
+4.682 1.821 −4.889 0.000 −0.594 1.821 4.327 −1.664 0.000 −2.060 
+
+−4.889 −1.664 5.121 0.000 0.500 0.000 0.000 0.000 0.000 0.000 
+
+−0.594 −2.060 0.500 0.000 1.000 
+
+. We can see the pair e.g., X13 and X14 have respectively different values in their solution, yet cannot be distinguished. The limitation of such a design lies in the message passing cannot distinguish some variables in different constraints, and these variables may have non-equivalent positions in the matrix and play different roles in the matrix. Therefore, one round of sequential execution of VC -WL and multiset-based 2-FWL does not suffice. Empirically, multiset-based 2-FWL might break the previous VC -WL symmetry. One has to execute both in turn until they both converge. However, this might introduce more steps until convergence. 
+
+E.2. Local VC-2-WL 
+
+In addition to our VC -2-WL stemmed from standard 2-WL , we evaluate a stronger variant named δ-VC -2-WL based on the 
+
+δ-k-WL framework of Morris et al. (2020), adapted here for k = 2 . The color initialization follows Equation (2), and the constraint node update follows Equation (3). But the refinement step of variable nodes is augmented to explicitly incorporate local connectivity: 
+
+vtij := hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{( vt−1 
+
+> uj
+
+, adj (Cui )) | u ∈ [n]}}, {{( vt−1 
+
+> iu
+
+, adj (Cuj )) | u ∈ [n]}}, {{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+where adj (Cij ) is an indicator function representing the sparsity pattern of the cost matrix C, i.e., taking the value 1 if 
+
+Cij ̸ = 0 , and 0 otherwise. In Morris et al. (2020), it is established that δ-k-WL is strictly more expressive than standard k-WL for graph isomorphism testing. In our SDP context, we prove the same result. 
+
+Proposition E.1. The δ-VC -2-WL algorithm strictly refines VC -2-WL , denoted as 
+
+δ-VC -2-WL ⊏ VC -2-WL .
+
+Proof. By definition, δ-VC -2-WL initialization and constraint node update are identical to VC -2-WL , therefore, we focus on variable node update. By observation, the information aggregated by δ-VC -2-WL is a superset of VC -2-WL . Therefore, we immediately have δ-VC -2-WL ⊑ VC -2-WL , because the variables indistinguishable to δ-VC -2-WL must also be the same under VC -2-WL .To show the strict refinement, we construct a sparse example where the adjacency information is non-trivial. Consider an SDP instance defined by 
+
+C =
+
+
+
+0 1 0 0 1 11 0 0 1 1 00 0 0 1 1 10 1 1 0 0 11 1 1 0 0 01 0 1 1 0 0
+
+
+
+, A1 = I6, b = [1] . (57) The C is constructed as the adjacency matrix of a regular graph. Because all the row and column multisets are identical, the 
+
+VC -2-WL converges to the color configuration 
+
+
+
+a b c c b bb a c b b cc c a b b bc b b a c bb b b c a cb c b b c a
+
+
+
+immediately after initialization, where {a, b, · · · } 
+
+38 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+are colors from an alphabet. Thus, the variables (1 , 6) and (2 , 5) are not distinguished by VC -2-WL .For the update of δ-VC -2-WL , we have at initialization v016 = v025 = b, while 
+
+v116 := hash 
+
+(
+
+v016 ,{{(v016 , adj (C11 )) , (v026 , adj (C12 )) , (v036 , adj (C13 )) , (v046 , adj (C14 )) , (v056 , adj (C15 ))( v066 , adj (C16 )) }},
+
+{{(v011 , adj (C16 )) , (v012 , adj (C26 )) , (v013 , adj (C36 )) , (v014 , adj (C46 )) , (v015 , adj (C56 ))( v016 , adj (C66 )) }}
+
+)
+
+=
+
+(
+
+b, {{(b, 0) , (c, 1) , (b, 0) , (b, 0) , (c, 1)( a, 1) }}, {{(a, 1) , (b, 0) , (c, 1) , (c, 1) , (b, 0)( b, 0) }}
+
+)
+
+and 
+
+v125 := hash 
+
+(
+
+v025 ,{{(v015 , adj (C21 )) , (v025 , adj (C22 )) , (v035 , adj (C23 )) , (v045 , adj (C24 )) , (v055 , adj (C25 ))( v065 , adj (C26 )) }},
+
+{{(v021 , adj (C15 )) , (v022 , adj (C25 )) , (v023 , adj (C35 )) , (v024 , adj (C45 )) , (v025 , adj (C55 ))( v026 , adj (C56 )) }}
+
+)
+
+=
+
+(
+
+b, {{(b, 1) , (b, 0) , (b, 0) , (c, 1) , (a, 1) , (c, 0) }}, {{(b, 1) , (a, 1) , (c, 1) , (b, 0) , (b, 0) , (c, 0) , }}
+
+)
+
+We notice that in the first multiset, v125 has a (b, 1) that v116 doesn’t, so (1 , 6) and (2 , 5) are distinguished by δ-VC -2-WL .Therefore, there are variables where δ-VC -2-WL can distinguish while VC -2-WL cannot. That completes the proof that 
+
+δ-VC -2-WL ⊏ VC -2-WL .However, we demonstrate that this increased expressivity remains insufficient for approximating SDP solutions. 
+
+Proposition E.2. The δ-VC -2-WL fails to represent linear SDPs. That is, there exist instances where the stable colors under 
+
+δ-VC -2-WL satisfy v∞ 
+
+> ij
+
+= v∞ 
+
+> pq
+
+for distinct indices (i, j ) and (p, q ), yet the unique optimal solution entries differ X∗
+
+> ij
+
+̸ = X∗ 
+
+> pq
+
+.Proof. We prove by construction with a counterexample. Consider the one established in the proof of Proposition 2.2. If the cost matrix C in that instance is fully dense, the indicator term adj outputs a constant value and provides no extra information. Consequently, the δ-VC -2-WL update rule degenerates to the standard VC -2-WL rule, showing the same inability to distinguish the optimal solution entries. Similar to the analysis between VC -2-FWL and VC -2-WL , we show that VC -2-FWL and δ-VC -2-WL are incomparable. 
+
+Proposition E.3. δ-VC -2-WL and VC -2-FWL are incomparable in expressive power, denoted as 
+
+δ-VC -2-WL ̸ ≡ VC -2-FWL .
+
+Proof. The proof is straightforward with the same logic as Proposition C.8. First, we can reuse the same instance in Proposition C.8, where VC -2-WL can distinguish a pair of variables and VC -2-FWL cannot. Since δ-VC -2-WL strictly refines VC -2-WL , it is also stronger than VC -2-FWL on that example. Second, we reuse the example in Proposition 2.2, where δ-VC -2-WL fails while VC -2-FWL can effectively distinguish all the variables except symmetric ones. Therefore, δ-VC -2-WL and VC -2-FWL are incomparable in expressive power. 39 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Similar to VC -2-MPNN , we can neuralize δ-VC -2-WL into δ-VC -2-MPNN :
+
+mtij, row := ∑
+
+> u∈[n]
+
+MSG t
+
+> row
+
+(ht−1 
+
+> iu
+
+, adj (Cuj ))
+
+mtij, col := ∑
+
+> u∈[n]
+
+MSG t
+
+> col
+
+(ht−1 
+
+> uj
+
+, adj (Ciu ))
+
+mtij, c→v := ∑ 
+
+> k∈N(ij )
+
+MSG t
+
+> c→v
+
+(Ak,ij , ht−1
+
+> k
+
+)
+
+mtk, v→c := ∑ 
+
+> (i,j )∈N(k)
+
+MSG t
+
+> v→c
+
+(Ak,ij , ht−1
+
+> ij
+
+)
+
+htij := UPD t
+
+> v
+
+(ht−1 
+
+> ij
+
+, mtij, col , mtij, row , mtij, c→v
+
+)
+
+htk := UPD t
+
+> c
+
+(ht−1 
+
+> k
+
+, mtk, v→c
+
+)
+
+which, similar to Proposition C.26, is not universal approximating. 
+
+E.3. VC -2-IGN 
+
+As an alternative instantiation of the variable update mechanism, we consider the 2-order Invariant Graph Network ( 2-IGN ), based on the theoretical characterization of permutation equivariant layers by Maron et al. (2019b). The 2-IGN operates on second-order tensors. For a general linear layer mapping Rn×n → Rn×n (feature dimension omitted for simplicity), the space of permutation equivariant operations is spanned by a basis of size b(2 + 2) = 15 , where b(·)
+
+denotes the Bell number. However, our application to SDPs imposes a strict geometric constraint: both the input feature matrix and the output updated features must lie in the symmetric space Sn. This symmetry constraint reduces the dimension of the equivariant basis from 15 to 9. The reduction occurs through two mechanisms: 1. Input symmetry : Since Xij = Xji , operations that distinguish rows from columns become redundant, e.g., summing over rows yields the same vector as summing over columns. 2. Output symmetry : To guarantee the output is symmetric, the corresponding basis operations must share weights. For instance, broadcasting a vector to rows must be paired with broadcasting to columns. Formally, let 1 ∈ Rn be the all-ones vector, I be the identity matrix, d = diag (X) ∈ Rn be the vector of diagonal entries, and s = X1 ∈ Rn be the vector of row sums. We identify the following 9 basis operations B = {Op 1, . . . , Op 9} that map a symmetric X to a symmetric output: 1. Op 1(X) = X. Identity. 2. Op 2(X) = Tr( X)11 ⊺. Global trace broadcast. 3. Op 3(X) = ( 1⊺X1)11 ⊺. Global sum broadcast. 4. Op 4(X) = diag (d). Copy diagonal. 5. Op 5(X) = diag (s). Row sums to diagonal. 6. Op 6(X) = Tr( X)I. Trace to diagonal. 7. Op 7(X) = ( 1⊺X1)I. Global sum to diagonal. 8. Op 8(X) = s1⊺ + 1s⊺. Row/Col sums broadcast. 9. Op 9(X) = d1⊺ + 1d⊺. Diagonal entries broadcast. In the context of deep learning, we extend these operations to multi-dimensional inputs X ∈ Rn×n×f . For each basis operation Op b ∈ B , we assign a learnable weight matrix Wb ∈ Rf ×f ′
+
+. The 2-IGN layer update is defined as the aggregation of these transformed bases: 
+
+X′ =
+
+> 9
+
+∑
+
+> b=1
+
+Op b(X)Wb ∈ Rn×n×f ′
+
+.
+
+40 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+This formulation ensures that the neural network remains strictly equivariant and preserves the symmetric matrix structure required by the SDP relaxation. We wrap this up as a neural network IGN and plug it into our V-C bipartite graph message passing, and we have the following form of VC -2-IGN :
+
+mtij, IGN := IGN t(Ht−1)ij 
+
+mtij, c→v := ∑ 
+
+> k∈N(ij )
+
+MSG t
+
+> c→v
+
+(Ak,ij , ht−1
+
+> k
+
+)
+
+mtk, v→c := ∑ 
+
+> (i,j )∈N(k)
+
+MSG t
+
+> v→c
+
+(Ak,ij , ht−1
+
+> ij
+
+)
+
+htij := UPD t
+
+> v
+
+(ht−1 
+
+> ij
+
+, mtij, IGN , mtij, c→v
+
+)
+
+htk := UPD t
+
+> c
+
+(ht−1 
+
+> k
+
+, mtk, v→c
+
+)
+
+where Ht−1 ∈ Rn×n×d is the tensor of variable features ht−1 
+
+> ij
+
+.
+
+Proposition E.4. VC -2-IGN is not a universal approximator for SDPs. Given ∀ϵ > 0, there always exists an SDP problem, such that for all VC -2-IGN , the error between the predicted solution X′ and the optimal solution X∗ satisfies 
+
+∥X∗ − X′∥∞ > ϵ. 
+
+We can easily prove in the same way as Proposition 2.2. VC -2-IGN fails on that example too, because the row and column multisets are identical {1, 2, 3, 4, 5, 6}, and the diagonal elements are the same. We omite the proof here. While the 2-IGN architecture is defined via continuous linear operations on tensors, comparing its expressivity directly to the discrete VC -2-WL requires a discrete analogue. To this end, we define the VC -2-IGNWL algorithm. This variant adapts some of the 2-IGN basis operations, specifically the row/column aggregations and diagonal broadcasting, because the other operations do not contribute to expressivity. 
+
+vtij := hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{vt−1 
+
+> uj
+
+| u ∈ [n]}}, {{vt−1 
+
+> iu
+
+| u ∈ [n]}},
+
+{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}, vtii , vtjj 
+
+)
+
+ctk := hash 
+
+(
+
+ct−1 
+
+> k
+
+, {{( Ak,ij , vt−1
+
+> ij
+
+) | (i, j ) ∈ N (k)}})
+
+.
+
+(58) Notably, we replace the sum over rows and columns with hash of the multisets {{vt−1 
+
+> uj
+
+| u ∈ [n]}}, {{vt−1 
+
+> iu
+
+| u ∈ [n]}},which boosts the expressivity because of the injectivity of hash function. The constraint update is the same as Equation (3). We now establish the expressivity hierarchy between this variant and the VC -2-WL .
+
+Proposition E.5. VC -2-WL has expressivity power equivalent to VC -2-IGNWL , denoted as 
+
+VC -2-WL ≡ VC -2-IGNWL .
+
+Proof. First, we show VC -2-IGNWL ⊑ VC -2-WL . For t = 0 , since their initialization is the same, VC -2-IGNWL trivially refines VC -2-WL . For any t > 0, if the coloring of VC -2-IGNWL cannot distinguish 2 variable, then neither can VC -2-WL ,because the color information used by VC -2-IGNWL includes that used by the VC -2-WL .Then, we show VC -2-WL ⊑ VC -2-IGNWL . For t = 0 , since their initialization is the same, it trivially holds. For t > 0, if 41 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+the color refinement under VC -2-WL cannot distinguish 2 variable (i, j ) and (p, q ), we have: 
+
+vtij = vtpq 
+
+=⇒ hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{vt−1 
+
+> uj
+
+| u ∈ [n]}}, {{vt−1 
+
+> iu
+
+| u ∈ [n]}},
+
+{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}})
+
+= hash 
+
+(
+
+vt−1 
+
+> pq
+
+, {{vt−1 
+
+> uq
+
+| u ∈ [n]}}, {{vt−1 
+
+> pu
+
+| u ∈ [n]}},
+
+{{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}})
+
+=⇒ vt−1 
+
+> ij
+
+= vt−1
+
+> pq
+
+∧{{vt−1 
+
+> uj
+
+| u ∈ [n]}} = {{vt−1 
+
+> uq
+
+| u ∈ [n]}}
+
+∧{{vt−1 
+
+> iu
+
+| u ∈ [n]}} = {{vt−1 
+
+> pu
+
+| u ∈ [n]}}
+
+∧{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}} = {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}}
+
+Recall in Equation (2) that diagonal elements are specially labeled, they receive unique labels that distinguish them from non-diagonal elements. That means the diagonal elements within e.g. {{vt−1 
+
+> uj
+
+| u ∈ [n]}} and {{vt−1 
+
+> uq
+
+| u ∈ [n]}} are unique, and they must be the same as well. So we can continue the implication above: 
+
+=⇒ vt−1 
+
+> ij
+
+= vt−1
+
+> pq
+
+∧{{vt−1 
+
+> uj
+
+| u ∈ [n]}} = {{vt−1 
+
+> uq
+
+| u ∈ [n]}} ∧ vt−1 
+
+> jj
+
+= vt−1
+
+> qq
+
+∧{{vt−1 
+
+> iu
+
+| u ∈ [n]}} = {{vt−1 
+
+> pu
+
+| u ∈ [n]}} ∧ vt−1 
+
+> ii
+
+= vt−1
+
+> pp
+
+∧{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}} = {{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}}
+
+=⇒ hash 
+
+(
+
+vt−1 
+
+> ij
+
+, {{vt−1 
+
+> uj
+
+| u ∈ [n]}}, {{vt−1 
+
+> iu
+
+| u ∈ [n]}},
+
+{{(Ak,ij , ct−1 
+
+> k
+
+) | k ∈ N (ij )}}, vt−1 
+
+> ii
+
+, vt−1
+
+> jj
+
+)
+
+= hash 
+
+(
+
+vt−1 
+
+> pq
+
+, {{vt−1 
+
+> uq
+
+| u ∈ [n]}}, {{vt−1 
+
+> pu
+
+| u ∈ [n]}},
+
+{{(Ak,pq , ct−1 
+
+> k
+
+) | k ∈ N (pq )}}, vt−1 
+
+> pp
+
+, vt−1
+
+> qq
+
+)
+
+the last step corresponds to the update of VC -2-IGNWL , showing VC -2-IGNWL also cannot distinguish them. Therefore, VC -2-WL and VC -2-IGNWL have the same expressive power. Following Proposition C.8, we also conclude that VC -2-IGNWL and VC -2-FWL are incomparable in expressive power. 
+
+E.4. Edge Transformer 
+
+We adapt the Edge Transformer (ET) module introduced by Müller et al. (2024). The ET architecture is structurally analogous to standard 2-FWL . While the original ET operates on graph node pairs, our framework operates on variables in a matrix, sharing the same pairwise form. Furthermore, the ET has been rigorously proven to possess the expressive power of the 2-FWL algorithm. These properties make it a perfect candidate to compare with our VC -2-FMPNN .The ET operates on a second-order tensor X ∈ Rn×n×d, where d is the embedding dimension and Xij denotes the feature vector of the variable indexed at (i, j ). Formally, the layer update is defined as: 
+
+Xtij := FFN t(Xt−1 
+
+> ij
+
++ TriAttn t(LN t(Xt−1
+
+> ij
+
+))) ,
+
+where FFN is a feed-forward neural network, LN denotes layer normalization (Ba et al., 2016) and TriAttn is defined as 
+
+TriAttn (Xij ) := 
+
+> n
+
+∑
+
+> l=1
+
+αilj Vilj . (59) 42 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+This operation computes a linear combination of a value vector Vilj , with weights given by scalar attention scores αilj ,over the summation index l. The attention scores are computed via a scaled dot-product mechanism: 
+
+αilj := softmax 
+
+> l∈[n]
+
+( 1
+
+√d Xil W Q(Xlj W K )⊺)
+
+∈ R (60) which captures the relevance of the triplet (i, l, j ), and the value vector is computed via the value fusion of the intermediate representations 
+
+Vilj := Xil W V1 ⊙ Xlj W V2 , (61) where ⊙ denotes element-wise multiplication, and W Q, W K , W V1 , W V2 ∈ Rd×d are learnable projection matrices. Integrating this module into our framework yields the VC -ET architecture. The initialization follows Equation (5). For the update step, we substitute the variable-to-variable message passing with the ET layer. Let Ht−1 ∈ Rn×n×d denote the tensor of variable features ht−1 
+
+> ij
+
+. The update rules are: 
+
+mtij, ET := ET t (Ht−1)
+
+> ij
+
+mtij, c→v := ∑ 
+
+> k∈N(ij )
+
+MSG t
+
+> c→v
+
+(Ak,ij , ht−1
+
+> k
+
+)
+
+mtk, v→c := ∑ 
+
+> (i,j )∈N(k)
+
+MSG t
+
+> v→c
+
+(Ak,ij , ht−1
+
+> ij
+
+)
+
+htij := UPD t
+
+> v
+
+(ht−1 
+
+> ij
+
+, mtij, ET , mtij, c→v
+
+)
+
+htk := UPD t
+
+> c
+
+(ht−1 
+
+> k
+
+, mtk, v→c
+
+) .
+
+(62) Thus, VC -ET effectively replaces the explicit 2-FWL -based aggregation with the learnable, triangular attention of the Edge Transformer. 
+
+## F. More experiment details 
+
+Neural architecture and hyperparameters For the VC -MPNN , the initialization follows Equation (5), implemented via two 2-layer MLPs with ReLU activation. The message passing MSG and update UPD functions, defined in Equation (27), are parameterized by a single linear layer followed by ReLU activation and GraphNorm (Cai et al., 2021). The final prediction head is a 3-layer MLP with ReLU activation, mapping the latent features to a scalar prediction per variable. Similarly, for VC -2-MPNN and VC -2-FMPNN , all intermediate neural functions are implemented as single-layer MLPs. For 
+
+VC -2-FMPNN , the aggregation function for MAP t (ht−1
+
+> uj
+
+) and MAP t (ht−1
+
+> iu
+
+) are be replaced by multiplication, therefore it can be implemented in a way similar to Maron et al. (2019a). The δ-VC -2-MPNN differs from the VC -2-MPNN 
+
+architecture, in that a matrix multiplication is performed between the embedding matrix and a matrix comprised by adj 
+
+indicators, effectively aggregating the neighborhood indicator. For VC -2-IGN , we employ the basis formulation described in Section E.3, parameterizing each basis operation with a single linear layer. For VC -ET , the feed-forward network FFN 
+
+consists of a single linear layer, and the TriAttn module of 1 attention head is implemented with learnable weight matrices. For all neural architectures, we insert a LayerNorm (Ba et al., 2016) between the GNN convolutional layers. To ensure fair comparison, we maintain consistent hidden dimensions and layer counts across models for each dataset. We fix the hidden dimension to 96 for all architectures and all datasets. Regarding number of GNN layers, we employ 6 layers for the Max Clique, MIS, and LMI datasets; and 10 layers for the max-cut (both ER and regular graphs, and S DP LIB ), Vertex Cover, and max 2-SAT datasets. 
+
+Results on LMI problems Since the optimal objective value for LMI problems is 0, we report the predicted objective values directly in Table 6. As shown, performance varies minimally across different neural architectures. This is likely because the LMI instance coefficients are randomly generated, lacking the complex structural symmetries found in graph-based problems that typically expose the limitations of weaker methods. 
+
+Compare to CO solution To directly illustrate the comparison regarding how well our predictions translate to discrete CO solutions, we evaluated relative objective gap for Max-Cut, MIS and Vertex Cover. 43 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Table 6. Loss and objective of LMI problems on test set, repeated with 5 seeds. The best results across all are highlighted. 
+
+Model Test loss Obj. Proj. obj. 
+
+VC -MPNN 4.520e-5 ±0.000 -0.091 ±0.275 0.124 ±0.126 
+
+VC -2-MPNN 4.516e-5 ±0.000 0.031 ±0.044 0.074 ±0.028 
+
+δ-VC -2-MPNN 4.563e-5 ±0.000 -0.163 ±0.066 0.021 ±0.001 
+
+VC -2-IGN 4.506e-5 ±0.000 0.017 ±0.103 0.090 ±0.053 
+
+VC -2-FMPNN 4.305e-5 ±0.000 -0.063 ±0.042 0.066 ±0.012 
+
+VC -ET 4.357e-5 ±0.000 -0.036 ±0.000 0.122 ±0.097 
+
+Table 7. The relative objective gap (%) between our predicted SDP solution and CO solution.           
+
+> Candidate Max-Cut MIS Vertex Cover SCS - CO 4.547 ±0.858 199.229 ±2.465 44.622 ±3.699
+> VC -2-FMPNN - CO 4.610 ±0.855 199.358 ±3.426 44.955 ±3.897
+
+As Table 7 shows, the downstream CO gaps produced by our neural solver perfectly mirror the inherent gaps of the exact SDP relaxations. For Max-Cut, the SDP solution of our GNN performs almost identically to exact SDP solver outputs, with a negligible 0.06% difference. The observations have validated our core claim: the neural approach successfully learns the underlying continuous SDP geometry, rather than directly learning the discrete integer solutions. However, the neural solver’s high quality solution and fast inference time enable massive potential for CO solvers. Modern exact branch-and-bound methods for Max-Cut (Hrga & Povh, 2021) require solving thousands of intermediate SDPs, which is the primary computational bottleneck. Replacing these expensive exact solvers with our cheap neural proxy to guide branching or pruning decisions, similar to the seminal work Gasse et al. (2019) for LPs, is a highly promising future direction. 
+
+Compare to OptGNN We adapted OptGNN (Yau et al., 2024) to our evaluation framework for comparison in relative objective gap on Max-Cut SDP, and the other datasets are incompatible due to formulation differences or unavailable source code. 
+
+Table 8. Comparison to OptGNN on Max-Cut problems. 
+
+Model Target Max-Cut ER Max-Cut Regular 
+
+OptGNN obj. gap 1.304 ±0.014 2.030 ±0.019 
+
+OptGNN cons. vio. 0.0 0.0
+
+VC -2-FMPNN obj. gap 0.111 ±0.017 0.092 ±0.004 
+
+VC -2-FMPNN cons. vio. 0.003 ±0.001 0.003 ±0.001 
+
+OptGNN achieves zero constraint violations because it optimizes a low-rank latent embedding where the Max-Cut constraint is trivially satisfied via row-normalization. While we could also adapt VC -2-FMPNN to predict the latent to achieve feasibility, we stick to our formulation in the paper to ensure consistency with general SDP. As shown in Table 8, our architecture achieves an obj. gap one order of magnitude tighter. However, we still highlight our different scopes: OptGNN targets discrete CO problems using SDP relaxations as a tool, whereas our framework serves as a continuous surrogate for solving the general linear SDP. 
+
+More S DP LIB results We exhibit the statistics of S DP LIB datasets in Table 9. We show the complete approximation performance of VC -MPNN , VC -2-MPNN and VC -2-FMPNN on S DP LIB , in Table 10. 
+
+Constraint violation As demonstrated in Table 11, our VC -2-FMPNN achieves remarkably low constraint violation residues consistently across all tasks, on the order of 10 −3 to 10 −5. While not perfectly feasible, these violations are very low and highly competitive for practical applications. 44 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Table 9. Statistics of selected S DP LIB problems. 
+
+Name #vars #cons. MCP100 10000 100 MCP124-{1-4} 15376 124 MCP250-{1-4} 62500 250 MCP500-{1-4} 250000 500 
+
+Table 10. Loss and objective gap (%) on S DP LIB instances, repeated with 5 seeds. The best results are highlighted. 
+
+Name Loss Obj gap (%) Proj. obj gap (%) 
+
+VC -MPNN VC -2-MPNN VC -2-FMPNN VC -MPNN VC -2-MPNN VC -2-FMPNN VC -MPNN VC -2-MPNN VC -2-FMPNN 
+
+MCP100 0.203 ±0.000 0.199 ±0.004 1.974e-4 ±0.000 0.132 ±0.083 0.145 ±0.052 0.002 ±0.000 15.336 ±0.030 16.332 ±0.438 1.839 ±0.050 
+
+MCP124-1 0.225 ±0.000 0.224 ±0.000 1.546e-4 ±0.000 0.298 ±0.199 0.377 ±0.023 0.039 ±0.001 12.255 ±0.157 12.770 ±0.162 1.802 ±0.605 
+
+MCP124-2 0.220 ±0.000 0.218 ±0.002 2.303e-4 ±0.000 0.166 ±0.105 0.267 ±0.023 0.047 ±0.005 15.184 ±0.213 15.998 ±0.324 1.976 ±0.785 
+
+MCP124-3 0.215 ±0.000 0.214 ±0.002 3.076e-4 ±0.000 0.019 ±0.012 0.325 ±0.176 0.053 ±0.017 17.424 ±0.094 17.959 ±0.542 2.092 ±0.452 
+
+MCP124-4 0.270 ±0.000 0.272 ±0.007 3.374e-4 ±0.000 0.139 ±0.067 0.174 ±0.012 0.069 ±0.005 20.246 ±0.013 20.966 ±0.828 2.967 ±0.881 
+
+MCP250-1 0.215 ±0.000 0.215 ±0.000 3.034e-4 ±0.000 0.284 ±0.022 0.232 ±0.032 0.018 ±0.001 13.171 ±0.188 12.794 ±0.045 2.393 ±1.103 
+
+MCP250-2 0.158 ±0.015 0.160 ±0.007 4.176e-4 ±0.000 0.113 ±0.017 0.274 ±0.134 0.013 ±0.008 15.320 ±0.129 15.269 ±0.533 2.525 ±0.778 
+
+MCP250-3 0.155 ±0.000 0.156 ±0.000 6.266e-4 ±0.000 0.111 ±0.049 0.523 ±0.176 0.391 ±0.076 18.913 ±0.087 17.242 ±0.129 2.892 ±0.948 
+
+MCP250-4 0.182 ±0.013 0.186 ±0.004 5.892e-4 ±0.000 0.137 ±0.017 0.166 ±0.088 0.041 ±0.008 20.134 ±0.144 20.405 ±0.592 3.428 ±1.321 
+
+MCP500-1 0.118 ±0.000 0.118 ±0.001 4.536e-4 ±0.000 0.310 ±0.022 0.237 ±0.020 0.247 ±0.011 13.054 ±0.176 12.842 ±0.175 3.265 ±0.912 
+
+MCP500-2 0.123 ±0.000 0.124 ±0.001 4.948e-4 ±0.000 0.337 ±0.103 0.431 ±0.027 0.345 ±0.117 16.303 ±0.121 16.307 ±0.671 3.240 ±0.431 
+
+MCP500-3 0.121 ±0.000 0.122 ±0.000 6.745e-4 ±0.000 0.060 ±0.059 0.157 ±0.011 0.322 ±0.034 18.428 ±0.114 18.136 ±0.090 4.143 ±1.323 
+
+MCP500-4 0.126 ±0.000 0.130 ±0.003 9.761e-4 ±0.000 0.437 ±0.032 0.074 ±0.058 0.407 ±0.010 21.048 ±0.154 20.610 ±0.051 4.505 ±1.201 
+
+Table 11. Mean absolute residuals on constraints of different CO problems on test set, repeated with 5 seeds. 
+
+Candidate Target Problems 
+
+Max-Cut Max-Cut (reg) Max-Clique MIS Vertex Cover Max 2-SAT SCS Time (sec.) 0.386 ±0.028 0.385 ±0.190 0.642 ±0.308 0.672 ±0.340 0.089 ±0.004 0.266 ±0.081 
+
+VC -2-FMPNN 
+
+Time (sec.) 0.010 ±0.000 0.010 ±0.000 0.019 ±0.001 0.019 ±0.001 0.019 ±0.001 0.011 ±0.001 
+
+Proj. Obj. gap (%) 0.111 ±0.017 0.092 ±0.004 0.436 ±0.035 0.411 ±0.025 0.469 ±0.051 0.862 ±0.211 
+
+Proj. cons. vio 0.003 ±0.001 0.003 ±0.001 3.082e-5 ±0.000 3.067e-5 ±0.000 0.009 ±0.001 0.008 ±0.001 
+
+SDPLR quality Burer-Monteiro method is not guaranteed to solve the SDP exactly. In Table 12, SDPLR yields near-zero objective gaps compared to SCS, except for 0.02% on Max-Clique/MIS, and almost zero constraint violation up to numerical precisions. While it is highly competitive on Max-Cut problems, it fails to converge on Vertex Cover, and scales poorly in runtime on MIS. 
+
+Table 12. Mean absolute residuals on constraints of different CO problems on test set, repeated with 5 seeds. 
+
+Candidate Target Problems 
+
+Max-Cut Max-Cut (reg) Max-Clique MIS Vertex Cover Max 2-SAT SCS Time (sec.) 0.386 ±0.028 0.385 ±0.190 0.642 ±0.308 0.672 ±0.340 0.089 ±0.004 0.266 ±0.081 
+
+SDPLR Time (sec.) 0.195 ±0.041 0.235 ±0.052 1.803 ±0.184 3.301 ±0.285 Not converging 0.391 ±0.145 
+
+Proj. Obj. gap (%) 3.672e-6 ±0.000 4.434e-6 ±0.000 0.020 ±0.001 0.022 ±0.002 – 2.341e-5 ±0.000 
+
+Proj. cons. vio 1.059e-6 ±0.000 1.193e-6 ±0.000 4.269e-7 ±0.000 2.696e-7 ±0.000 – 8.223e-7 ±0.000 
+
+Effect of depth To directly observe the effect of depth of VC -2-FMPNN , we conducted a sensitivity analysis on smaller Max-Cut SDPs (ER graphs, 50 nodes, p = 0 .1) with varying network depths. Remarkably, we observe no performance drop even at 30 layers. Performance consistently improves with depth, though the gains are marginal after 10 layers, which motivated our default setting with 10 layers in the paper. 45 On the Expressive Power of GNNs to Solve Linear SDPs 
+
+Table 13. The loss, relative objective gap and constraint violation on test set, with different number of layers. 
+
+Layers Loss Obj. gap Proj. obj. gap Cons. vio. Proj. cons. vio. 5 3.103e-3±0.000 0.276±0.001 0.254±0.001 0.004±0.001 0.039±0.002 10 1.088e-4±0.000 0.076±0.005 0.073±0.005 0.001±0.000 0.004±0.001 15 3.448e-5±0.000 0.054±0.002 0.077±0.005 0.001±0.000 0.002±0.001 20 2.594e-5±0.000 0.049±0.005 0.051+0.005 0.001±0.000 0.002±0.000 30 1.141e-5±0.000 0.047±0.005 0.054±0.017 0.001±0.000 0.001±0.000 
+
+46
