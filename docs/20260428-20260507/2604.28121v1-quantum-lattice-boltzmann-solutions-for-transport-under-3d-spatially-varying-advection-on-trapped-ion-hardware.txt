@@ -1,0 +1,814 @@
+Title: Quantum Lattice Boltzmann Solutions for Transport under 3D Spatially Varying Advection on Trapped Ion Hardware
+
+URL Source: https://arxiv.org/pdf/2604.28121v1
+
+Published Time: Fri, 01 May 2026 01:24:36 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Quantum Lattice Boltzmann Solutions for Transport under 3D Spatially Varying Advection on Trapped-Ion Hardware 
+
+Sayonee Ray ∗§, Jezer Jojo †§, Jason Iaconis ∗, Abeynaya Gnanasekaran ∗, Apurva Tiwari †
+
+Martin Roetteler ∗, Chris Hill †, Jay Pathak †∗IonQ Inc., 4505 Campus Dr., College Park, MD 20740, U.S.A. 
+
+†Synopsys Inc., U.S.A. 
+
+Abstract —The Quantum Lattice Boltzmann Method (QLBM) has emerged as one of the most promising quantum computing approaches for the numerical simulation of problems in com-putational fluid dynamics (CFD). The dynamics is formulated in terms of mesoscopic particle distribution functions governed by a discrete Boltzmann transport equation, comprising local streaming and collision operations. In this work, the resulting macroscopic behavior corresponds to the advection–diffusion equation, which we adopt as a canonical model problem for transport phenomena. Building upon recent progress in QLBM implementations, we advance towards more realistic problem settings that better reflect conventional CFD requirements. We address, for the first time, transport under the action of non-uniform velocity fields on quantum hardware. We implement our demonstration using IonQ’s trapped-ion systems including Forte generation systems and a 64-qubit Barium development system similar to the forthcoming IonQ Tempo line. We identify the density readout and subsequent reloading of the fluid density as a potential bottleneck of the current algorithm and discuss several approaches to mitigate this bottleneck. We identify the use of MPS shadow tomography as a promising method to efficiently scale the readout to large system with complex density distributions. Lastly, we introduce and simulate a novel method to implement wall boundaries for advection-diffusion in QLBM, and discuss the prospects of scaling to higher-complexity problems. 
+
+Index Terms —Quantum Lattice Boltzmann Method, Compu-tational Fluid Dynamics, 3D, NISQ hardware, trapped-ions. 
+
+I. I NTRODUCTION 
+
+Partial differential equations (PDEs) are among the most important industrial targets for quantum computing. Of the many engineering domains where PDEs are used to model physical phenomena, computational fluid dynamics (CFD) [1], in particular, constitutes a substantial fraction of the total high-performance computing workload, and accelerating CFD solvers remains an active and long-standing objective within the CFD community. This has motivated growing interest in quantum algorithms aimed at accelerating CFD simulations; either through the acceleration of fundamental algorithmic building blocks, such as large-scale ordinary differential equa-tion (ODE) solvers arising from semi-discretized PDEs, or through fundamentally new quantum formulations that seek to represent the PDE solution, and operate in ways enabled by the distinct primitives of quantum computation [2]. 
+
+> §
+
+Equal contribution 
+
+A wide variety of quantum approaches to linear and non-linear PDEs have been proposed, including quantum linear algebra solvers [3], [4], variational algorithms [5], [6], and Hamiltonian simulation techniques [7]. Within this landscape, methods inspired by the lattice Boltzmann method (LBM) [8] are particularly attractive for quantum implementation [9]– [13]. By formulating continuum dynamics through the evolu-tion of mesoscopic particle distribution functions on discrete lattices, the LBM yields local and highly structured update rules. This structure naturally supports quantum encodings of particle densities on large lattices, and implementation of the collision and streaming operations using modest resources which scale only logarithmically with the number of grid points, making LBM-based formulations a promising avenue for quantum CFD solvers. In QLBM, as in the classical LBM, the dynamics are decomposed into a linear streaming step, which propagates particle distributions along a discrete set of directions, and a local nonlinear collision step, which relaxes the distribu-tion toward equilibrium. Quantum implementations of these streaming and collision operators have been developed in prior work for fluid-flow simulations [11], [14]. Early formulations, however, faced several practical bottlenecks, including large compiled gate counts, costly state preparation and readout, and vanishing post-selection success probabilities in the collision step. Recent algorithmic advances have substantially reduced these limitations [10], providing a framework which was used to simulate advection-diffusion of a Gaussian wavepacket in two dimensions under a constant advection field. In this work, we build on that foundation in several ways. We demonstrate a QLBM simulation of three-dimensional advection-diffusion in a spatially varying swirl field on trapped-ion hardware, and in-troduce MPS-based readout methods, including shadow-MPS tomography, that make iterative readout and state reloading practical on current devices. We also show how more general spatially varying velocity fields can be implemented efficiently within the same framework. The readout stage presents a central challenge for near-term QLBM demonstrations. In principle, the full evolution of the particle distribution over T time steps could be executed within a single circuit. In practice, however, the resulting circuit     
+
+> arXiv:2604.28121v1 [quant-ph] 30 Apr 2026 Kernel Density Estimation
+> MPS Shadow Tomography
+> MPS Smoothing
+> QFT QFT †
+> State and Velocity Field Preparation
+> Quantum Circuit Evolution Efficient State Reconstruction Fig. 1. QLBM pipeline used in this work. We efficiently encode the initial density distribution and velocity field into quantum operators. The MPS state preparation, streaming and collision operations are then performed within the quantum circuit. An error detection gadget using ancilla qubits is also applied. The output density is reconstructed using three potential methods described in the text: kernel density estimation, MPS smoothing, and MPS shadow tomography.
+
+depth, combined with post-selection overhead due to hardware noise, makes this approach impractical on current devices. Periodic readout of the density distribution is also desirable for other reasons: in particular, it may enable intermediate-term implementations of nonlinear dynamics without requiring a fully dense Carleman-linearized collision operator [15]–[17]. For the complex three-dimensional, spatially varying dynamics studied here, simple parameterizations of the density like those used in Ref. [10], are no longer adequate. Instead, we develop new strategies for reconstructing the density distribution from a limited number of measurements. In particular, we show that matrix product states (MPS) offer an effective reconstruction and reload mechanism for the QLBM states considered here. To realize this idea in practice, we combine kernel density estimation (KDE) with fixed-bond-dimension MPS reconstruc-tion. KDE smooths statistical fluctuations in the measured histograms, while the MPS model provides a compact rep-resentation of the density distribution that is effective in our QPU experiments. To scale to larger system sizes, we further introduce a shadow-MPS tomography protocol, which uses randomized single-qubit measurements to learn the MPS representation directly from measurement data. We find that this shadow-based approach outperforms direct histogram-based reconstruction at larger system sizes, where standard readout methods become increasingly measurement-limited. In this work, we address many of the outstanding questions of how to properly scale the QLBM algorithm, with an imple-mentation on trapped-ion quantum hardware of significantly greater complexity than previous demonstrations. The key contributions of our paper are:  
+
+> •
+
+3D spatially varying QLBM on hardware: We demon-strate advection-diffusion under a three-dimensional swirl transporting field on a trapped-ion quantum computer.  
+
+> •
+
+Efficient readout and reloading: We show that KDE-assisted MPS reconstruction enables accurate iterative readout and re-preparation of QLBM states on hardware.  
+
+> •
+
+Scalable shadow-MPS tomography: We introduce a classical shadow-based MPS tomography method that improves reconstruction fidelity at larger system sizes and lower effective shot counts.  
+
+> •
+
+Extending to wall boundaries and more general flows: We further show in simulation the framework to implement nontrivial velocity fields and wall boundary conditions with improved efficiency over earlier methods. The rest of this paper is organized as follows. In Section I-A, we describe the model we will focus on in this work and outline how to construct quantum circuits to simulate the dynamics using the QLBM. In Section II, we describe the main experimental results demonstrated on the IonQ Tempo-line Barium system. We further discuss inherent noise re-silience and the application of different readout strategies on our results. In Section III, we apply a new approach based on classical shadows combined with MPS tomography and demonstrate superior readout as the system size scales with this method. In Section IV, we demonstrate how our methods can be applied to efficiently simulate general spatially varying velocity fields, and in Section V we implement wall boundaries, improving on prior implementations. We then present simulation results on these cases. 
+
+A. Circuit construction 
+
+For the scope of this work, we are interested in simulat-ing advection-diffusion under a divergence-free velocity field, using the Lattice Boltzmann Method with D2Q5 and D3Q7 models and with relaxation time τ = 1 .Given an initial scalar field Φ( ⃗r, t ), with lattice vector ⃗r, and a velocity field denoted by ⃗u(⃗r), then under the Bhatnagar-Gross-Krook (BGK) approximation [18], 
+
+Φ( ⃗r, t + ∆ t) = X
+
+> i
+
+ki(⃗r)Φ ( ⃗r −⃗c i∆t, t ) , (1) 
+
+ki(⃗r) = ω i
+
+
+
+1 + ⃗c i ·⃗u(⃗r)
+
+c2
+
+> s
+
+
+
+, (2) where ci = ( −1) i+1 ⃗e ⌊(i+1) /2⌋ and c0 =⃗ 0 with ⃗e i the ith basis vector. We take cs = 1 /√3, and ∆t = 1 . The lattice weights 
+
+{ωi}i depend on the Lattice Boltzmann model. We follow the quantum algorithm framework proposed in [11] and modified in [10]. The algorithm uses two main registers - the ‘grid’ register (denoted G) and the ‘direction’ register (denoted D) with n qubits for DmQn. We make use of the following operators. First we have the streaming operator 
+
+US := Y
+
+> i
+
+[1G ⊗ (1 − | iH ⟩⟨ iH |)D + Si ⊗ (|iH ⟩⟨ iH |)D ] ,
+
+(3) where Si|x⟩G = |x +⃗c i⟩G, and |iH ⟩ denotes the bitstring with a 1 at the i-th position from the right and 0 elsewhere. Then we have the PREP and UNPREP operators denoted 
+
+UP and UQ for the collision step. We define UP to be an operator that satisfies 
+
+UP |⃗r⟩ | 0⟩ = |⃗r⟩ X
+
+> i
+
+pki(⃗r) |i H ⟩D . (4) We define UQ to be an operator that satisfies 
+
+U † 
+
+> Q
+
+|⃗r⟩ | 0⟩ = X
+
+> i
+
+pki(⃗r −⃗c i) |iH ⟩) (5) We encode our initial state Φ( ⃗r, 0) as a statevector |Φ 0⟩G
+
+on the grid register. This is done using the MPS circuit con-struction of [19]–[22]. We then repeatedly apply the following circuit operations to get from |Φt⟩ to |Φt+1 ⟩: 
+
+> •
+
+Apply PREP as defined in Eq. (4) to get 
+
+1
+
+∥Φt∥
+
+X
+
+> x
+
+X
+
+> i
+
+pki(x)Φ( x, t )|x⟩G|i⟩D (6)  
+
+> •
+
+Apply the streaming operator US of Eq. (3). 
+
+1
+
+∥Φt∥
+
+X
+
+> x
+
+X
+
+> i
+
+pki(x)Φ( x, t )|x +⃗c i⟩G|iH ⟩D
+
+= 1
+
+∥Φt∥
+
+X
+
+> x,i
+
+pki(x −⃗c i)Φ( x −⃗c i, t )|x⟩G|iH ⟩D (7)  
+
+> •
+
+Apply the UNPREP operator in Eq. (5) to get 
+
+∥Φt+1 ∥∥Φt∥ |Φt+1 ⟩G|0⟩D + |ξ⟩ (8) where (1G ⊗ ⟨ 0|D )|ξ⟩ = 0 . 
+
+> •
+
+Measure the direction qubits and post-select for the |0⟩
+
+state to yield the desired state |Φt+1 ⟩G.The state preparation, collision and streaming operators are shown in Fig. 1 in red, green and blue blocks respectively. We further apply and error detection gadget (shown in the pink block) using ancilla qubits and a potential shadow tomography rotation on the grid qubits (purple block). Note that this algorithm can be applied according to the readout and reload protocol in every time step or after multiple time steps. Although the majority of the results we discuss in this paper follow the first strategy, we have also explored the multiple step strategy and its accuracy on the QPU. The advantage in the latter is that we reduce the error source from the approximate tomography methods and state reloading at every step. However, we also recover fewer shots on post-selection due to hardware noise with multiple LCU cycles in each circuit execution. II. H ARDWARE DEMONSTRATION OF A 3D SWIRL 
+
+A. Trapped Ion Hardware 
+
+We implemented the QLBM algorithm on IonQ’s trapped-ion hardware to simulate a three-dimensional swirl velocity field in the D3Q7 model. On a grid of N = 8 × 8 × 8 lattice sites, we ran the algorithm for six time steps, using 50 ,000 
+
+Z-basis measurement shots per step and reconstructing the state with kernel density estimation and matrix product state (MPS) fitting. This procedure reproduced the dynamics over all six time steps with fidelity relative to the exact density state, 
+
+|⟨ ϕ|ψ⟩| 2, exceeding 88% . As discussed below, scaling to larger grids rapidly increases the shot cost of direct reconstruction. To address this, we employ a classical-shadow-based MPS tomography protocol, which enables simulation on a grid of size N = 16 3 with similar fidelity using only 20 ,000 shots measured across multiple bases. We ran our quantum circuits on IonQ’s Forte-class sys-tems, based on Yb + ions, and on a larger IonQ-developed Barium prototype system analogous to the upcoming IonQ Tempo product line. The latter platform supports up to 64 Barium qubits arranged in a long-chain, steered-beam con-figuration [23]. On all of these devices, including the Forte platforms, ions are generated by laser ablation and selective ionization and are trapped in compact, integrated vacuum packages based on surface linear Paul traps. Two-photon Raman transitions driven by 355 nm laser pulses for the Ytterbium systems and 532 nm laser pulses for the Barium system provide universal gate control through arbitrary single-qubit rotations and entangling ZZ gates. These QPUs employ sophisticated optical control systems built around acousto-optic deflectors (AODs), which sub-stantially reduce beam alignment errors by enabling precise, independent beam steering to individual ions [24], [25]. The Barium development system additionally incorporates leakage checks to identify and discard samples in which the quantum state is affected by interactions with the surrounding environ-ment. Together, these architectural features sustain consistently high gate fidelities and make these systems particularly well suited to experiments involving deep circuits [26]. We now present hardware results on the IonQ Barium system, verify that state preparation and readout can be carried out using MPS representations of the density function, and discuss the intrinsic noise resilience of the implementation, which supports circuits with ∼ 300 two-qubit gates while achieving per-time-step fidelities of up to 97% .
+
+B. QPU Results on Barium System 
+
+We simulate the D3Q7 swirl dynamics using the full QLBM workflow on the Tempo-line Barium system, with KDE and t=1               
+
+> QPU
+> Error
+> t=3 0123456
+> Time step
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Fidelity
+> Simulation
+> QPU Fig. 2. Top: Reconstructed 3D density distribution from the QPU at t= 1 and
+> t= 3 , together with the absolute error relative to the exact solution. Bottom:
+> Fidelity, |⟨ ϕ|ψ⟩| 2, for the ideal simulation and QPU runs. The simulation includes only finite-shot error, whereas the QPU data also include hardware noise.
+
+MPS smoothing used for readout post-processing. The circuit uses ∼ 300 two-qubit gates on 21 qubits, including MPS state preparation, the streaming and LCU-based collision operators, and flag-qubit error detection. At each time step, the grid-register state |ψ⟩G is measured, post-processed, and reloaded via the MPS state-preparation circuit. Figure 2 shows the reconstructed three-dimensional density distribution and the absolute error relative to the exact simulation at t = 1 and 
+
+t = 3 . The fidelity, F = |⟨ ψ|ϕ⟩| 2, remains above 0.90 for most of the evolution and reaches F = 0 .88 after six time steps. After a single time step, the fidelity is ∼ 0.97 . To understand why the fidelity remains so high despite the circuit depth, we can examine the effect of the one-hot encoding and LCU post-selection structure. In this picture, the UNPREP operator acts as 
+
+|ψ⟩ = |0⟩ | ψ0⟩+ X
+
+> i∈H[1]
+
+|i⟩⊗| ψi⟩ UNPREP 
+
+−−−−−→ | 0⟩
+
+> Q
+
+X
+
+> i=0
+
+|ψi⟩
+
+!
+
++|G⟩ ,
+
+(9) where H[1] denotes the set of Hamming-weight-1 bitstrings. Bit-flip errors that move the direction register into the H[2] 
+
+sector are naturally mapped into the orthogonal subspace |G⟩,preventing them from corrupting the density dynamics on the grid register. Bit-flip errors on the grid qubits can still occur without being flagged, but the data indicates that these errors have a smaller effect on the final measured state. This is reflected in the QPU histograms: in the ideal simulation, 
+
+∼ 80% of shots lie in the target subspace with |0⟩D , whereas in the hardware data only 12 –15% do so and also pass the flag-qubit check. About 65% of shots are instead mapped into the |G⟩ subspace and discarded. This robustness is enabled by the one-hot encoding of the direction qubits introduced in Ref. [10]. 
+
+C. MPS approximation of the density distributions 
+
+While the principal advantage of QLBM is its ability to efficiently evolve density distributions on very large grids, extracting and reconstructing these distributions without re-sorting to exponentially costly full-state tomography remains a significant challenge. This difficulty is pronounced in our implementation, where the distribution must be measured and reconstructed at every time step. Even with 50 ,000 measure-ment shots, post-selection onto the target subspace leaves only about 7500 usable samples for reconstructing the state over an 
+
+N = 8 3 grid, leading to substantial statistical fluctuations. We mitigate this problem by exploiting the spatial smoothness of the density function throughout the evolution: measurements from neighboring grid points are combined to infer the most likely distribution across the full grid. To do so, we employ two complementary techniques, kernel density estimation (KDE) and MPS smoothing. Applied together, these methods improve the reconstructed-state fidelity on hardware by 2–4% , which is significant in this regime. Indeed, MPS representations are used both in the state preparation and readout portions of our workflow, as a complex parameterization of the density distribution which can be effi-ciently measured. In Fig. 3, we show that for the N = 32 3 grid, the infidelity of the fixed bond dimension MPS representation peaks at an intermediate time, implying that the full time evolution can be effectively captured with bond dimension χ.We further show that the maximum infidelity for each choice of χ collapses onto a single curve as we increase the grid size 
+
+N . Together these results show that the full advection-diffusion dynamics of the 3D swirl flow can be accurately represented with MPS of fixed bond dimension. Note that although the state encoded on the grid qubits is well described by an MPS, the full state also includes entanglement with the direction qubits. An efficient MPS parameterization need not exist for all fluid-dynamics problems, as fine spatial structure in the density field can produce highly entangled wavefunctions. Even so, we expect the present methods to remain useful in more complex settings. In particular, they can still be applied in the presence of an entanglement barrier [27], where the quantum circuit is used to evolve the state through a highly entangled regime, while MPS-based readout and reloading are performed on either side of the barrier. Fig. 3. (Top) Infidelity of MPS compression of ideal statevector during 3D swirl evolution for a 32 ×32 ×32 grid. (Bottom) Infidelity vs bond dimension at different grid sizes at times where the infidelity of the respective MPS approximation is highest during the evolution. Large grid density distributions were determined using exact classical simulations. 
+
+D. Tomography 
+
+As mentioned, we implement three classical postprocessing methods: 1) Kernel density estimation (KDE), which is a standardized method of kernel smoothing for estimating prob-ability density function from samples [28], [29], 2) smoothing based on MPS approximations of the state read out from the circuit histogram [10], [19], and 3) MPS shadow tomography, which uses random single qubit Pauli measurements to train a tensor network model to learn the state [30]. 
+
+1) KDE smoothing: If x = {x1, x 2, x 3, .., x s} are inde-pendent and identically distributed samples drawn from a distribution with an unknown density f, then the kernel density estimator is: fh(x) = 1
+
+> sh
+
+Psi=1 K   x−xi
+
+> h
+
+ where, K is the kernel and h is the bandwidth or the smoothing parameter. The choice of bandwidth depends on the samples available and the underlying distribution [31]. A small bandwidth leads to less smoothing in the density estimation and vice versa. We choose the kernel to be Gaussian and the bandwidth to be 0.5
+
+for 50 ,000 shots on the QPU. 
+
+2) MPS smoothing: Instead of reconstructing the state directly from the histogram, we fit an MPS representation of the state with fixed bond dimension. For an appropriate choice of bond dimension, this can give a improved state reconstruction. This method when integrated with KDE further gives a high fidelity tomography technique, especially, when implemented on the QPU output. In Fig. 4, we see that both KDE and MPS smoothing provide a noticeable improvement in the reconstructed state fidelity in simulation over the naive reconstruction. In Fig. 5, we show that applying both methods successively on the quantum hardware provides an additional improvement in fidelity, particularly improving the raw QPU (Tempo line) fidelity from 0.96 to 0.97 .         
+
+> Fig. 4. Fidelity |⟨ ψ|ϕ⟩| 2of ideal simulation with KDE (top) and MPS smoothing (bottom) techniques with statevector simulation on a 16 3grid.
+> Fig. 5. Effect of KDE and MPS smoothing techniques on a 83state after
+> 1time step on the Tempo class Barium system, visualized as a 1D function here. We plot only the first half for better visualization.
+
+When applying the readout-reload protocol after multiple steps, we noticed a decrease in fidelity in the raw QPU output as expected. The post-selection recovers < 2, 000 shots out of 50 ,000 shots. On Forte, reading out the 83 grid state after 
+
+2 time steps give a fidelity of ∼ 0.81 with raw QPU output and gets improved to ∼ 0.94 − 0.95 with the KDE and MPS smoothing methods. III. S CALING WITH MPS S HADOW TOMOGRAPHY 
+
+As shown in the previous section, the QLBM states con-sidered here are well approximated by fixed-bond-dimension MPS. Our initial readout strategy estimates the computational-basis distribution from measurement histograms and then fits a MPS to this state. While effective at small system sizes, this approach becomes increasingly sample-inefficient as the num-ber of grid qubits grows, since the histogram becomes sparse and the shot budget required to maintain fidelity rises rapidly. Instead we develop an alternative approach to directly learn the MPS representation from measurement data, sidestepping full state reconstruction. To aid in this, we utilize newly developed techniques based on classical shadows [32]. Shadow tomography provides an efficient framework for learning properties of quantum states from few randomized measurements. We build on the method of Kuzmin et al. [30], which learns tensor-network states from factorized single-qubit measurements, and adapt it with a few key changes to the QLBM setting. A set of M measurement settings is generated, each consisting of independent random SU(2) rotations for the 
+
+nG = log 2 N position qubits. In each setting, the single qubit unitaries are appended to the QLBM circuit in Fig. 1 before the resulting state is measured in the computational basis. A fixed number of shots K is used per setting to generate an empirical probability distribution ˆpm(b) =
+
+nm(b)/K over the bitstrings, with nm(b) the observed shots per bitstring. Given the M measurement settings and ob-served probability distributions, we fit a MPS |ψ⟩ with bond-dimension χ by minimizing the Hellinger loss function, 
+
+L = PMm=1 
+
+P
+
+> b
+
+pˆpm(b) − ppm(b)
+
+2
+
+. Here, pm(b) =
+
+|⟨ b|U (m)1 U (m)2 . . . U (m) 
+
+> nG
+
+|ψ⟩ | 2 is the predicted probability for bitstring b under the measurement setting m. The QTensor 
+
+library [33] is used to optimize the MPS parameters using stochastic gradient descent (SGD). We depart from Ref. [30] in three ways. First, we fit a pure-state MPS rather than a matrix product operator (MPO). This is appropriate because post-selection and flag-qubit filtering remove a substantial fraction of faulty shots, and because our target is the amplitude distribution rather than a full density matrix. It also reduces the number of variational parameters. Second, because many raw shots are discarded by post-selection, the one-shot-per-setting regime of Ref. [30] is inefficient in our case. We instead use fewer settings with more shots per setting, which produces better-conditioned empirical histograms and a more stable optimization signal. Third, we replace the mean-squared-error loss with Hellinger loss, which is better suited to sparse probability distributions and empirically yields higher reconstruction fidelity. Shadow tomography is often most useful when computational-basis measurements are insufficient to determine the target state. However, the QLBM setting considered here is special: the reconstructed state encodes a fluid density field and is therefore real and non-negative in the computational basis. In principle, computational-basis measurements alone are sufficient to reconstruct the target amplitudes. However, as shown by both our simulation and hardware results in Section III-A, we find that shadow-MPS tomography yields much higher-fidelity reconstructions. Here we provide intuition for this behavior.  
+
+> •
+
+Complementary projections of the same state. With a finite shot budget, computational-basis measurements produce a noisy histogram with poor statistics in the tails of the distribution, and low-probability bins may receive zero counts. Measuring in M randomly rotated bases provides complementary views of the same state. Outcomes that are poorly sampled in the computational basis can contribute more strongly in other bases, allow-ing the shadow-MPS procedure to aggregate information across multiple projections and reconstruct the state more accurately.  
+
+> •
+
+Separation of pure-state signal from incoherent noise. 
+
+A computational-basis histogram cannot distinguish be-tween a pure state and a mixed state that produce the same amplitudes in that basis. By contrast, rotated-basis mea-surements reveal information that is sensitive to incoher-ent noise. For example, the pure state |ψ⟩ = a |0⟩ + b |1⟩
+
+and the mixed state ρ = |a|2 |0⟩ ⟨ 0| + |b|2 |1⟩ ⟨ 1| have identical Z-basis statistics but differ in the X basis. When fitting a pure-state MPS to histograms collected across many rotated bases, the optimizer is forced to find a state that best explains all measurements simultaneously, which tends to suppress incoherent noise in the fitted model. Coherent errors, however, are generally more difficult to mitigate in this way.  
+
+> •
+
+Fitting a compact model to overconstrained data. We fit a low-bond-dimension MPS with a number of variational parameters scaling as 2 nGχ2. For typical parameters (nG ∼ 9, 18 and χ ∼ 3), this corresponds to only 
+
+∼ 162 –324 parameters, which are fit to thousands of ob-served probabilities across all measurement settings. The resulting overconstrained optimization favors a smooth, self-consistent solution and helps filter shot noise and hardware noise. In contrast, in the direct-histogram ap-proach the noise is already embedded in the reconstructed histogram before MPS compression is performed. 
+
+A. Results from Forte/simulator with MPS shadows 
+
+We first compare the performance of the shadow MPS to-mography with direct histogram based reconstruction followed by MPS smoothing in an ideal simulation corrupted only with shot noise. Given the same total shot budget (varying between 1,000 to 20 ,000 shots), Fig. 6 compares the fidelity of the reconstructed state over ten time steps on a 16 3 grid. We distribute the shots over M = 25 settings in the shadow method, while the entire shot budget is used for computational-basis measurement in the direct approach. In the early time steps, with a considerate shot budget of 20 ,000 , both methods perform similarly well. However, the performance with the direct approach with MPS smoothing decays rapidly to a fidelity of 0.64 at t = 10 while the shadow MPS is more robust and maintains a fidelity above 0.89 with 20 ,000 total shots. Moreover, the gap between the two techniques widens with decreasing shot budget, with the shadow MPS achieving a fidelity of 0.75 at t = 10 with 1, 000 shots while the direct approach degrades down to 0.1 with the same shot budget.     
+
+> 246810
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+
+Time step 
+
+> Fidelity
+
+shadow mps direct + mps 1K 10K 20K               
+
+> Fig. 6. Fidelity | ⟨ ψ|ϕ⟩| 2of ideal simulation with different number of shots with shadow MPS (solid lines) with M=25 settings and direct state tomography with MPS smoothing (dashed lines) on a 16 ×16 ×16 grid. Shadow MPS outperforms even with a limited budget of 1,000 shots.
+
+Next, we evaluate both approaches on the IonQ Forte-1 QPU with 20 ,000 total shots per time step, M = 25 settings and the results are shown in Fig. 7. While fidelity degrades for both techniques on actual hardware relative to the ideal simulation, shadow MPS tomography consistently outperforms the direct approach with a final fidelity of 0.83 at t = 10 as compared to 
+
+0.57 for direct tomography. KDE smoothing with bandwidth of 0.5 is additionally applied to both reconstructions providing a further modest improvement. Due to the LCU post selection step, only about 10% of the shots are actually used in the reconstruction. The robustness of shadow MPS tomography to both hardware noise and shot noise, together with its ability to capture more information about the state from a limited shot budget makes it well-suited for simulations on finer grids and longer time evolutions. To assess the scalability of the shadow MPS technique to finer grids, we evaluate both approaches on the IonQ noisy simulator with Forte-1 noise model on a 32 3 grid. The results are shown in Fig. 8 using a total shot budget of 50 ,000 per time step that is distributed across M = 50 measurement settings for shadow tomography. There is a significant gap between the two methods that only widens over the course of the simulation. This indicates that the state reconstruction errors compounds more aggressively with the direct approach since the learned state is re-encoded at each time step. While the shadow MPS approach is notably more robust, more work          
+
+> 12345678910
+> 1
+> 0.9
+> 0.8
+> 0.7
+> 0.6
+> 0.5
+
+Time step 
+
+> Fidelity
+
+shadow mps direct + mps w/o KDE w/ KDE              
+
+> Fig. 7. Fidelity | ⟨ ψ|ϕ⟩| 2on IonQ Forte-1 QPU with shadow MPS (solid lines) with M= 25 settings, 20K shots total vs. direct state tomography with MPS smoothing (dashed lines) on a 16 ×16 ×16 grid. Blue circle and purple squares show results without and with KDE smoothing respectively.
+
+is needed to lessen the impact of noise and avoid a steep degradation in the quality of reconstruction.      
+
+> 123456
+> 1
+> 0.9
+> 0.8
+> 0.7
+> 0.6
+> 0.5
+
+Time step 
+
+> Fidelity
+
+shadow mps direct+mps ideal noisy noisy, w/ KDE          
+
+> Fig. 8. Fidelity | ⟨ ψ|ϕ⟩| 2on the IonQ Forte-1 noisy simulator with shadow MPS (solid line) with M= 50 settings, 50K shots total vs. direct state tomography with MPS smoothing (dashed line) on a 32 ×32 ×32 grid. Results with noisy simulator with (green triangles) and without (purple squares) KDE smoothing are shown. Ideal simulation results (blue circles) with the same number of shots are also shown for reference.
+
+IV. G ENERAL IMPLEMENTATION OF NON -UNIFORM VELOCITY FIELDS 
+
+The hardware results described in this work depend on an efficient construction of quantum operators to implement our spatially varying swirl velocity field. We now show how operators implementing any divergence-free velocity field can be constructed. We will consider the D3Q7 model in this section, for which the lattice weights are ⃗ω = [1 /4, 1/8, 1/8, 1/8, 1/8, 1/8, 1/8] .We define the following functions: 
+
+gPi (⃗r) = arccos 
+
+r 1 + 3 ui(⃗r)2 , i ∈ { x, y, z }
+
+gQi (⃗r) = arccos 
+
+s
+
+1 + 3 ui(⃗r −⃗ ζi)2 + 3 ui(⃗r −⃗ ζi) − 3ui(⃗r +⃗ ζi) ,gQλ (⃗r) = arccos 
+
+r 2 + 3 ux(⃗r −⃗c 1) − 3ux(⃗r +⃗c 1)6 ,gQμ (⃗r) = arccos 
+
+s
+
+2 + 3 uy (⃗r −⃗c 3) − 3uy (⃗r −⃗c 3)4 − (3 ux(⃗r −⃗c 5) − 3ux(⃗r +⃗c 5)) 
+
+where ⃗ ζx =⃗c 1,⃗ ζy =⃗c 3, and ⃗ ζz =⃗c 5.
+
+Algorithm 1 Fast Walsh–Hadamard Transform 
+
+Require: Array a of length 2n, where n ∈ Z+
+
+Ensure: a has undergone a Walsh–Hadamard transform  
+
+> 1:
+
+N ← len( a) 
+
+> 2:
+
+for h ← 1; h < N ; h ← 2h do  
+
+> 3:
+
+for i ← 0; i < N ; i ← i + 2 h do  
+
+> 4:
+
+for j ← i; j < i + h; j ← j + 1 do  
+
+> 5:
+
+x ← a[j]; y ← a[j + h] 
+
+> 6:
+
+a[j] ← y; a[j + h] ← x 
+
+> 7:
+
+end for  
+
+> 8:
+
+end for  
+
+> 9:
+
+a ← a/ 2 
+
+> 10:
+
+end for 
+
+To implement the operator UP , we first prepare the state 
+
+|⃗r 0⟩G
+
+ 12 |0H ⟩D + 12 |1H ⟩D + 12 |3H ⟩D + 12 |5H ⟩D
+
+
+
+. (10) Here, we take the position register to be in a specific basis state |⃗r 0⟩, but it could be in any state when we apply UP .Following this, we then apply the operation P 
+
+> r
+
+|r⟩G⟨r|GRBS D4,D 5(gPx (r)) for the velocity along the x direction, using the so-called RBS gate defined in Ref. [34], along with corresponding operations for y and z,to get the state in Eq. (4). Similarly we implement U † 
+
+> Q
+
+by first preparing the state 
+
+|⃗r 0⟩G
+
+12 |0000001 ⟩D +
+
+√32 |0000011 ⟩D
+
+!
+
+. (11) After preparing this state, we apply the operation P 
+
+> r
+
+(|r⟩G⟨r|G)RBS D1,D 3(gQμ (r)) RBS D3,D 5(gQλ (r)) , followed by CNOTs on D0 from D1, D3, and D5, to retrieve 
+
+|⃗r 0⟩G
+
+X
+
+> i∈{ 0,1,3,5}
+
+p2 + 3 ux(⃗r −⃗c i) − 3ux(⃗r +⃗c i)2√2 |iH ⟩D .
+
+Finally, we apply 
+
+X
+
+> r
+
+|r⟩G⟨r|G ⊗
+
+> 3
+
+Y
+
+> i=0
+
+
+
+RBS D
+
+> 2i, 2i+1
+
+(gQi (r)) 
+
+
+
+with i = {0, 1, 2} = {z,y,x }, producing the state in Eq. (5). These operations can each be implemented with N multi-controlled RBS gates, or can alternatively use the QPIXL method of Ref. [35] to get a tamer circuit, with N CNOTs and 
+
+N RBS gates. These QPIXL circuits can be further reduced in size by discarding RBS gates with angles below a certain threshold. However, regardless of the reduction achieved this way, the clasical processing needed to create the initial QPIXL circuit, before discarding gates, is still O(N log( N )) . This scaling ruins our hopes for an end-to-end algorithmic speed-up. For this reason, we propose a faster approximated QPIXL that works for smooth velocity fields. 
+
+Algorithm 2 Interpolated 3D FWHT 
+
+Require: Field f , Size L, Coarsening R = 2 r , K = L/R 
+
+Ensure: Field values on the L3 grid flattened to a vector v
+
+of size N . Θ is a dictionary with index-value pairs of the non-zero elements of an approximation of H⊗nv. 
+
+> 1:
+
+B ← { (i, j, k ) · R | 0 ≤ i, j, k < K } ▷ Block base indices  
+
+> 2:
+
+M ← { 2m, L · 2m, L 2 · 2m | 0 ≤ m < r } ▷ Sparse detail offsets  
+
+> 3:
+
+for b ∈ B do  
+
+> 4:
+
+Θ[ b] ← f (midpoint of block b) 
+
+> 5:
+
+Compute slopes ⃗ ∆ = (∆ x, ∆y , ∆z ) via finite differ-ences with neighbor blocks  
+
+> 6:
+
+for m ∈ { 0 . . . r − 1} do  
+
+> 7:
+
+Θ[ b + 2 m] ← ∆x2m−1, Θ[ b + N 2m] ←
+
+∆y 2m−1, Θ[ b + N 22m] ← ∆z 2m−1 
+
+> 8:
+
+end for  
+
+> 9:
+
+end for  
+
+> 10:
+
+for stride ∈ { 1, L, L 2} do  
+
+> 11:
+
+h ← R · stride  
+
+> 12:
+
+while h < L · stride do  
+
+> 13:
+
+for i = 0 to N − 1 step 2h do  
+
+> 14:
+
+for j ∈ [i, i + h) where (j ∈ B or j −
+
+base (j) ∈ M ) do  
+
+> 15:
+
+x, y ← Θ[ j], Θ[ j + h] 
+
+> 16:
+
+Θ[ j], Θ[ j + h] ← (x + y)/2, (x − y)/2 
+
+> 17:
+
+end for  
+
+> 18:
+
+end for  
+
+> 19:
+
+h ← 2h 
+
+> 20:
+
+end while  
+
+> 21:
+
+end for  
+
+> 22:
+
+return Θ
+
+A. Linearly interpolated QPIXL encoding 
+
+To prepare the input angles for the QPIXL algorithm, we must compute the Walsh-Hadamard Transform (WHT) of a flattened 3D field F. While a standard Fast Walsh-Hadamard Transform (FWHT) requires O(N log N ) opera-tions, we introduce an approximation that reduces complexity to O(K3 log K log ( N/K )) , where K = 2 n−r < L = 2 l is the number of sampling points per dimension. This approach assumes the field F is smooth. Let us consider a 1-dimensional problem. The standard FWHT algorithm sketched in Algorithm 1 applies the operator 
+
+I⊗(n−1−i) ⊗H ⊗I⊗i (up to a scalar factor) at each iteration of the outer while loop. For our modified approach, we split our vector into K blocks each of size R = 2 r and approximate the Fig. 9. Relative error of the computed Hadamard transform of the flattened             
+
+> L×L×Ldiscretization of the field 1 + sin(2 πx ) sin(2 πy ) sin(2 πz )for different values of Kand L. We compare both the interpolated FWHT outlined in Algorithm 2 as well as a coarse version of the standard Hadamard transform that applies H⊗Ksince their asymptotic runtimes are comparable.
+
+values in each block as a linear function of their element index. The key here is that the Hadamard transform of such a linear block is sparse and easy to compute. The Hadamard transform of a vector [θ − 2r/ 2s, . . . , θ − s, θ + s, . . . , θ + 2 r/ 2s]T is (up to a constant) given by 
+
+θ|0⟩ − X
+
+> i<r
+
+s2i|2i⟩.
+
+Doing this for every block is equivalent to having run the first r iterations of the FWHT algorithm. And when running the remaining n − r iterations of the loop, we only need to consider the K log R non-zero indices. Thus the overall complexity is O(( n − r)Kr ) = O(K log K log( N/K )) . The 3-dimensional version of this algorithm is given explicitly in Algorithm 2. V. S IMULATION OF WALL BOUNDARIES 
+
+In this section we explain how we can include objects into the computational domain - whose surfaces are aligned with our lattice grid - such that the passive scalar is barred from diffusing into these objects. For advection-diffusion, we are already given a classical description of the underlying velocity field, and this velocity field can only be physically valid if the normal velocity at the surface of these walls is zero. To explain how we can amend our algorithm to block diffusion across walls, we’ll start by considering a D2Q5 problem on a square domain with walls on opposing edges. And then we’ll extend this for any general wall-boundary in D3Q7. 
+
+A. Square domain with opposing walls 
+
+Let’s consider a square domain of size 2l × 2l. Our position register will have 2l qubits and our direction register will have 
+
+5 qubits.                 
+
+> (a) T= 0 (b) T= 60
+> Fig. 10. Simulation of D2Q5 advection-diffusion on a 32 ×32 grid with velocity field ⃗u(x, y ) = (sin(2 πy/L )/3,0) , and walls at y= 0 and y= 31
+
+Let’s say we are to add a wall at y = 0 and y = 2 n − 1.What we want then is to make sure that at y = 1 , there’s no streaming in the negative y direction. Similarly, at y = 2 n − 2
+
+there should be no streaming in the positive y direction. We do this by changing the ki values at the boundary accordingly. If streaming in the i direction should be barred at a boundary, we will set the new ki value to be 0 and increase 
+
+k0 by the old ki value, ensuring still that P 
+
+> i
+
+ki = 1 .Consider an initial state spanning the y = 1 line. We start by applying the same UP operator from Eq. (4) to get -
+
+UP |rx⟩x|1⟩y |0⟩dir = |rx⟩x |1⟩y ⟨rx|x ⟨1|y
+
+> 4
+
+X
+
+> i=0
+
+ai |iH ⟩
+
+!
+
+,⃗ a =
+
+"
+
+1
+
+√3 ,
+
+r 1 + 3 ux
+
+6 ,
+
+r 1 − 3ux
+
+6 , 1
+
+√6 , 1
+
+√6
+
+#
+
+.
+
+Here, we will want to revise k4 associated with bitstring 
+
+10000 to be 0 and we want to increase k0 accordingly. This involves applying a gate that applies a rotation in the subspace of |00001 ⟩ and |10000 ⟩ such that the amplitude of the latter is made to be 0 while the amplitude of the former remains positive. To do so, we apply an RBS (arcsin 1√3 ) gate between the first and last direction qubits, controlled on the |1⟩y state (since we only want this change at the boundary). Applying this operator after UP gives: 
+
+U new  
+
+> P
+
+|rx⟩x|1⟩y |0⟩dir 
+
+=
+
+
+
+C|1⟩y RBS d0,d 4 (arcsin 1
+
+√3 )UP
+
+
+
+|x⟩x|1⟩y |0⟩dir 
+
+= |rx⟩ | 1⟩
+
+ 1
+
+√2 |0H ⟩ + v+ 
+
+> x
+
+|1H ⟩ + v− 
+
+> x
+
+|2H ⟩ + 1
+
+√6 |3H ⟩
+
+
+
+,
+
+where v± 
+
+> x
+
+= p(1 ± 3ux)/6 and, C |1⟩y RBS is an RBS gate controlled on the |1⟩y state. Similarly, we use an RBS gate before the UQ operator such that k3 is 0, i.e., 
+
+U new † 
+
+> Q
+
+|rx⟩Gx |1⟩Gy |0⟩D
+
+=
+
+
+
+C|1⟩y RBS D0,D 3 (arcsin 1
+
+√3 )U †
+
+> Q
+
+
+
+|rx⟩Gx |1⟩Gy |0⟩D(a) 3D view at T = 0 (b) 3D view at T = 24                          
+
+> (c) Cross section at y= 10 ,T= 0 (d) Cross section at y= 10 ,T= 24
+> Fig. 11. Simulation of species diffusing from the surface of a solid cube suspended in a pipe. The wall oracle OWdefines the pipe by adding walls at
+> z= 0 ,y= 0 , and the cube by adding walls at (x, y, z )∈[8 ,12] ×[7 ,11] ×
+> [7 ,11] . For the underlying flow, we classically produced a valid divergence-free velocity field such that ux(0 , y, z ) = 0 .1.
+
+= |rx⟩ | 1⟩
+
+ 1
+
+√2 |0H ⟩ + v+ 
+
+> x
+
+|1H ⟩ + v− 
+
+> x
+
+|2H ⟩ + 1
+
+√6 |4H ⟩
+
+
+
+.
+
+(12) Similar corrections will need to be applied at y = 2 n − 2.We run simulations on a 32 × 32 grid for 60 time steps with ⃗u = (sin(2 πy/L )/3, 0) . Results are shown in Fig. 10. 
+
+B. General wall boundaries for D3Q7 
+
+To design a workflow that works for general wall boundaries in D3Q7, we first need an input that specifies what parts of the domain are solid wall. To do this, we consider an oracle 
+
+OW that takes in a computational basis state in the position register and flips an auxiliary qubit if that position is a wall and should be inaccessible. In the last section we showed how to implement wall boundaries by making corrections to the UP and UQ operators. We also note that these corrections are not dependent on the velocity field, since they are revisions on ki and k0, and we know that ki(⃗r) = 1 /8 when there’s a boundary adjacent to ⃗r
+
+in the ith direction (since ui(⃗r) = 0 at such a boundary) and that k0 = 1 /4. Therefore, the operations needed to correct the 
+
+UP and UQ steps only depend on where walls are. Given some specific non-wall position, we only need to know whether there is a wall in each of the 6 adjacent directions to know what operation to apply to correct the UP and UQ operators. To store this information, we introduce a new wall register (denoted w) with 6 qubits, one for each direction we can move. Given a computational basis state in the position register, we can compute whether there are walls in the 6 adjacent cells by applying the following operator (with complexity O(log N +
+
+time (OW )) ): 
+
+UW = Y
+
+> i
+
+S†Gi OG,w i 
+
+> W
+
+SGi (13) When we apply this operator on a state |⃗r⟩ G|0⟩w, then the 
+
+ith qubit of the wall register will be 1 iff there is a wall adjacent to ⃗r in the i direction. Each LBM time step is now given by UQU † 
+
+> W
+
+VQUW US U † 
+
+> W
+
+VP UW UP , where the VP and 
+
+VQ operators apply appropriate RBS gates in the direction register controlled on the different qubits in the wall register. Since these operators do not involve the grid qubits, their time complexities do not scale with problem size. This means that the overall time complexity needed to take a state |Φ0⟩ to a state |ΦT ⟩ is 
+
+O
+
+ ∥ΦT ∥∥Φ0∥ (K3polylog (N ) + time (OW )) × T
+
+
+
+,
+
+where K is the number of points per dimension needed to resolve the velocity field. We use this workflow to run a simulation of species diffusing from the surface of a solid cube suspended in a pipe, depicted in Fig. 11. VI. C ONCLUSION AND OUTLOOK 
+
+This work advances the quantum lattice Boltzmann method through a hardware demonstration of three-dimensional scalar transport dynamics under spatially varying velocity fields. We addressed implementation issues of practical relevance, like efficient readout strategies for intermediate data reloading to carry out explicit time-stepping on near term devices. MPS representations combined with kernel density estimation and classical shadow-based MPS tomography, enable accurate reconstruction of the solution, with reduced measurement overhead and improved robustness to shot noise. We further introduced a scalable method for incorporating general veloc-ity fields and wall boundary conditions within the proposed QLBM formalism. Together this enables the full treatment of transport problems involving external and internal flows. Future work will focus on more comprehensive treatments of boundary conditions, and of bodies with increasingly re-alistic geometries to study flow fields of direct engineering interest. Beyond individual algorithmic components, we are also interested in addressing the full CFD workflow, which will require the design of cohesive hybrid quantum–classical routines and well-defined interfaces between them. Developing such end-to-end, workflow-aware strategies will be critical for evaluating how quantum algorithms may ultimately integrate into industrial-scale computational physics software. ACKNOWLEDGEMENT 
+
+The authors would like to thank Masako Yamada for facili-tating the logistics of this collaborative project. We also thank Mike Goldman, Ashay Patel, Shantanu Debnath, Ken Wright, and Neal Pisenti for their assistance in running circuits on the Barium experimental testbed. REFERENCES [1] Randall R.J. J LeVeque. Numerical Methods for Conservation Laws ,volume 54. 2002. [2] Ren´ e Steijl and George N. Barakos. Parallel evaluation of quantum algorithms for computational fluid dynamics. Computers & Fluids ,173:22–28, 2018. [3] Sarah K Leyton and Tobias J Osborne. A quantum algorithm to solve nonlinear differential equations. arXiv preprint arXiv:0812.4423 , 2008. [4] Juan Miguel Arrazola, Timjan Kalajdzievski, Christian Weedbrook, and Seth Lloyd. Quantum algorithm for nonhomogeneous linear partial differential equations. Physical Review A , 100(3):032306, 2019. [5] Michael Lubasch, Jaewoo Joo, Pierre Moinier, Martin Kiffner, and Dieter Jaksch. Variational quantum algorithms for nonlinear problems. Physical Review A , 101(1):010301, 2020. [6] Abhijat Sarma, Thomas W Watts, Mudassir Moosa, Yilian Liu, and Peter L McMahon. Quantum variational solving of nonlinear and multidimensional partial differential equations. Physical Review A ,109(6):062616, 2024. [7] Zhaoyuan Meng and Yue Yang. Quantum computing of fluid dynamics using the hydrodynamic schr¨ odinger equation. Physical Review Re-search , 5(3):033182, 2023. [8] A. A. Mohamad. Lattice Boltzmann Method: Fundamentals and Engi-neering Applications with Computer Codes . Springer London, London, 2019. [9] Budinski Ljubomir. Quantum algorithm for the navier–stokes equa-tions by using the streamfunction-vorticity formulation and the lattice boltzmann method. International Journal of Quantum Information ,20(02):2150039, 2022. [10] Apurva Tiwari, Jason Iaconis, Jezer Jojo, Sayonee Ray, Martin Roetteler, Chris Hill, and Jay Pathak. Algorithmic advances towards a realizable quantum lattice boltzmann method, 2025. [11] Ljubomir Budinski. Quantum algorithm for the advection–diffusion equation simulated with the lattice Boltzmann method. Quantum Information Processing , 20(2):57, February 2021. [12] Xiangyu Li, Xiaolong Yin, Nathan Wiebe, Jaehun Chun, Gregory K Schenter, Margaret S Cheung, and Johannes M¨ ulmenst¨ adt. Potential quantum advantage for simulation of fluid dynamics. Physical Review Research , 7(1):013036, 2025. [13] Boyuan Wang, Zhaoyuan Meng, Yaomin Zhao, and Yue Yang. Quantum lattice boltzmann method for simulating nonlinear fluid dynamics. npj Quantum Information , 2025. [14] E. Dinesh Kumar and Steven H. Frankel. Decomposition of nonlinear collision operator in quantum Lattice Boltzmann algorithm. Europhysics Letters , 148(3), November 2024. [15] Wael Itani and Sauro Succi. Analysis of carleman linearization of lattice boltzmann. Fluids , 7(1):24, 2022. [16] Claudio Sanavio, Riccardo Scatamacchia, Carlo De Falco, and Sauro Succi. Three carleman routes to the quantum simulation of classical fluids. Physics of Fluids , 36(5), 2024. [17] Claudio Sanavio, Enea Mauri, and Sauro Succi. Explicit quantum circuit for simulating the advection-diffusion-reaction dynamics. IEEE Transactions on Quantum Engineering , 2025. [18] P. L. Bhatnagar, E. P. Gross, and M. Krook. A model for collision processes in gases. i. small amplitude processes in charged and neutral one-component systems. Phys. Rev. , 94:511–525, May 1954. [19] Jason Iaconis and Sonika Johri. Tensor network based efficient quantum data loading of images, 2023. [20] Jason Iaconis, Sonika Johri, and Elton Yechao Zhu. Quantum state preparation of normal distributions using matrix product states. npj Quantum Information , 10(1):15, 2024. [21] Adam Holmes and Anne Y Matsuura. Efficient quantum circuits for accurate state preparation of smooth, differentiable functions. In 2020 IEEE international conference on quantum computing and engineering (QCE) , pages 169–179. IEEE, 2020. [22] Manuel S Rudolph, Jing Chen, Jacob Miller, Atithi Acharya, and Alejan-dro Perdomo-Ortiz. Decomposition of matrix product states into shallow quantum circuits. Quantum Science and Technology , 9(1):015012, 2024. [23] Alejandro Gomez Cadavid, Ananth Kaushik, Pranav Chandarana, Miguel Angel Lopez-Ruiz, Gaurav Dev, Willie Aboumrad, Qi Zhang, Claudio Girotto, Sebasti´ an V. Romero, Martin Roetteler, Enrique Solano, Marco Pistoia, and Narendra N. Hegade. Large-scale portfolio optimiza-tion on a trapped-ion quantum computer, 2026. [24] Sangtaek Kim, Robert R. Mcleod, M. Saffman, and Kelvin H. Wagner. Doppler-free, multiwavelength acousto-optic deflector for two-photon addressing arrays of rb atoms in a quantum information processor. Appl. Opt. , 47(11):1816–1831, Apr 2008. [25] I. Pogorelov, T. Feldker, Ch. D. Marciniak, L. Postler, G. Jacob, O. Krieglsteiner, V. Podlesnic, M. Meth, V. Negnevitsky, M. Stadler, B. H¨ ofer, C. W¨ achter, K. Lakhmanskiy, R. Blatt, P. Schindler, and T. Monz. Compact ion-trap quantum computing demonstrator. PRX Quantum , 2:020343, Jun 2021. [26] Jwo-Sy Chen, Erik Nielsen, Matthew Ebert, Volkan Inlek, Kenneth Wright, Vandiver Chaplin, Andrii Maksymov, Eduardo P´ aez, Amrit Poudel, Peter Maunz, and John Gamble. Benchmarking a trapped-ion quantum computer with 30 qubits. Quantum , 8:1516, November 2024. [27] Aniket Rath, Vittorio Vitale, Sara Murciano, Matteo Votto, J´ erˆ ome Dubail, Richard Kueng, Cyril Branciard, Pasquale Calabrese, and Benoˆ ıt Vermersch. Entanglement barrier and its symmetry resolution: Theory and experimental observation. PRX Quantum , 4(1):010318, 2023. [28] Murray Rosenblatt. Remarks on some nonparametric estimates of a density function. Ann. Math. Statist. , 27(3):832–837, 1956. [29] Emanuel Parzen. On estimation of a probability density function and mode. The Annals of Mathematical Statistics , 33(3):1065 – 1076, 1962. [30] Sergei Kuzmin, Varvara Mikhailova, Ivan Dyakonov, and Stanislav Straupe. Learning the tensor network model of a quantum state using a few single-qubit measurements. Physical Review A , 109(5):052616, 2024. [31] B. W. Silverman. Density estimation for statistics and data analysis .Chapman & Hall/CRC, 1998. [32] Hsin-Yuan Huang, Richard Kueng, and John Preskill. Predicting many properties of a quantum system from very few measurements. Nature Physics , 16(10):1050–1057, 2020. [33] Sergei Kuzmin and Varvara Mikhailova. Qtensor. [34] Sonika Johri, Shantanu Debnath, Avinash Mocherla, Alexandros Singk, Anupam Prakash, Jungsang Kim, and Iordanis Kerenidis. Nearest centroid classification on a trapped ion quantum computer. npj Quantum Information , 7(1):122, 2021. [35] Mercy G Amankwah, Daan Camps, E Wes Bethel, Roel Van Beeumen, and Talita Perciano. Quantum pixel representations and compression for n-dimensional images. Scientific reports , 12(1):7712, 2022.

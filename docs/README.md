@@ -7,108 +7,79 @@
 
 ## 每次日报
 - 最新运行日期：2026-04-28 ~ 2026-05-07
-- 运行时间：2026-05-07 18:04:26 UTC
+- 运行时间：2026-05-07 18:55:10 UTC
 - 运行状态：成功
-- 本次总论文数：29
-- 精读区：18
+- 本次总论文数：20
+- 精读区：9
 - 速读区：11
 
 ### 今日简报（AI）
-高强度阅读期聚焦智能体与优化方向，共完成 29 篇论文精读速览。  
-重点成果集中在“Agentic AI”在出行规划与运筹优化建模中的落地应用，显示出自动化决策与资源配置的潜力。  
-建议读者关注智能体在行业落地及能效优化领域的推动趋势，提前布局相关技能与应用思维。
+量子计算深入应用周：从电路设计到金融时间序列分析全面进展。重点关注量子逻辑结构与量子机器学习的并行突破。建议读者关注量子在实务模型与优化领域的加速潜力。
 - 详情：[/20260428-20260507/README](/20260428-20260507/README)
 
 ### 精读区论文标签
-1. [Agentic AI for Trip Planning Optimization Application](/20260428-20260507/2605.00276v1-agentic-ai-for-trip-planning-optimization-application)  
-   标签：评分：9.5/10、query:optai
-   evidence：用于行程规划优化应用的智能体AI
-2. [ORPilot: A Production-Oriented Agentic LLM-for-OR Tool for Optimization Modeling](/20260428-20260507/2605.02728v1-orpilot-a-production-oriented-agentic-llm-for-or-tool-for-optimization-modeling)  
-   标签：评分：9.5/10、query:optai
-   evidence：用于优化建模的智能体AI系统
-3. [SOAR: Real-Time Joint Optimization of Order Allocation and Robot Scheduling in Robotic Mobile Fulfillment Systems](/20260428-20260507/2605.03842v1-soar-real-time-joint-optimization-of-order-allocation-and-robot-scheduling-in-robotic-mobile-fulfillment-systems)  
-   标签：评分：9.5/10、query:optai
-   evidence：深度强化学习用于订单分配与机器人调度的联合优化
-4. [From Soliloquy to Agora: Memory-Enhanced LLM Agents with Decentralized Debate for Optimization Modeling](/20260428-20260507/2604.25847v1-from-soliloquy-to-agora-memory-enhanced-llm-agents-with-decentralized-debate-for-optimization-modeling)  
-   标签：评分：9.0/10、query:optai
-   evidence：使用大模型和求解器的优化建模智能体框架
-5. [Lightweight Quantum Agent for Edge Systems: Joint PQC and NOMA Resource Allocation](/20260428-20260507/2604.25980v1-lightweight-quantum-agent-for-edge-systems-joint-pqc-and-noma-resource-allocation)  
-   标签：评分：9.0/10、query:optai
-   evidence：边缘系统中使用MINLP和智能体AI的联合优化
-6. [RAG-Enhanced Kernel-Based Heuristic Synthesis (RKHS): A Structured Methodology Using Large Language Models for Hardware Design](/20260428-20260507/2604.26153v1-rag-enhanced-kernel-based-heuristic-synthesis-rkhs-a-structured-methodology-using-large-language-models-for-hardware-design)  
-   标签：评分：9.0/10、query:optai
-   evidence：大语言模型驱动的硬件设计可重用优化启发式算法合成
-7. [NLPOpt-Net: A Learning Method for Nonlinear Optimization with Feasibility Guarantees](/20260428-20260507/2605.00260v1-nlpopt-net-a-learning-method-for-nonlinear-optimization-with-feasibility-guarantees)  
-   标签：评分：9.0/10、query:optai
-   evidence：具有约束满足保证的非线性优化学习方法
-8. [Instance-Aware Parameter Configuration in Bilevel Late Acceptance Hill Climbing for the Electric Capacitated Vehicle Routing Problem](/20260428-20260507/2605.00572v1-instance-aware-parameter-configuration-in-bilevel-late-acceptance-hill-climbing-for-the-electric-capacitated-vehicle-routing-problem)  
-   标签：评分：9.0/10、query:optai
-   evidence：元启发式爬山算法的实例感知参数配置
-9. [Decision-Focused Learning via Tangent-Space Projection of Prediction Error](/20260428-20260507/2605.01361v1-decision-focused-learning-via-tangent-space-projection-of-prediction-error)  
-   标签：评分：9.0/10、query:optai
-   evidence：决策聚焦学习将预测器与下游优化求解器集成
-10. [CP-SynC: Multi-Agent Zero-Shot Constraint Modeling in MiniZinc with Synthesized Checkers](/20260428-20260507/2605.01675v1-cp-sync-multi-agent-zero-shot-constraint-modeling-in-minizinc-with-synthesized-checkers)  
-   标签：评分：9.0/10、query:optai
-   evidence：使用大语言模型在MiniZinc中进行多智能体零样本约束建模
-11. [Neural Decision-Propagation for Answer Set Programming](/20260428-20260507/2605.01797v1-neural-decision-propagation-for-answer-set-programming)  
-   标签：评分：9.0/10、query:optai
-   evidence：将回答集编程与神经网络集成用于决策启发式
-12. [Strategy-Aware Optimization Modeling with Reasoning LLMs](/20260428-20260507/2605.02545v1-strategy-aware-optimization-modeling-with-reasoning-llms)  
-   标签：评分：9.0/10、query:optai
-   evidence：利用大语言模型生成并优化经求解器验证的程序
-13. [Linear Decision Tree Policies for Integer Linear Programs](/20260428-20260507/2605.02582v1-linear-decision-tree-policies-for-integer-linear-programs)  
-   标签：评分：9.0/10、query:optai
-   evidence：用于更快求解整数线性规划的决策树策略
-14. [Relation Reasoning with LLMs in Expensive Optimization](/20260428-20260507/2605.02933v1-relation-reasoning-with-llms-in-expensive-optimization)  
-   标签：评分：9.0/10、query:optai
-   evidence：大语言模型代理辅助的昂贵优化演化算法
-15. [Carbon-Aware Compute--Power Scheduling for AI Data Centers with Microgrid Prosumer Operations](/20260428-20260507/2605.03751v1-carbon-aware-compute--power-scheduling-for-ai-data-centers-with-microgrid-prosumer-operations)  
-   标签：评分：9.0/10、query:optai
-   evidence：用于AI数据中心算力调度的混合整数线性规划
-16. [ARMATA: Auto-Regressive Multi-Agent Task Assignment](/20260428-20260507/2605.04225v1-armata-auto-regressive-multi-agent-task-assignment)  
-   标签：评分：9.0/10、query:optai
-   evidence：多智能体系统中联合分配与路径规划的端到端框架
-17. [QUIVER: Cost-Aware Adaptive Preference Querying in Surrogate-Assisted Evolutionary Multi-Objective Optimization](/20260428-20260507/2605.04267v1-quiver-cost-aware-adaptive-preference-querying-in-surrogate-assisted-evolutionary-multi-objective-optimization)  
-   标签：评分：9.0/10、query:optai
-   evidence：带有偏好查询的代理辅助进化多目标优化器
-18. [Joint Optimization of Trajectory Control, Resource Allocation, and Task Offloading for Multi-UAV-Assisted IoV](/20260428-20260507/2605.04436v1-joint-optimization-of-trajectory-control-resource-allocation-and-task-offloading-for-multi-uav-assisted-iov)  
-   标签：评分：9.0/10、query:optai
-   evidence：协同深度强化学习与大语言模型的车联网优化混合资源调度
+1. [Qvine: Vine Structured Quantum Circuits for Loading High Dimensional Distributions](/20260428-20260507/2604.26213v1-qvine-vine-structured-quantum-circuits-for-loading-high-dimensional-distributions)  
+   标签：评分：10.0/10、query:profile-1
+   evidence：用于机器学习和金融中加载分布的量子电路
+2. [Learning Temporal Patterns in Financial Time Series: A Comparative Study of Quantum LSTM and Quantum Reservoir Computing](/20260428-20260507/2605.02656v1-learning-temporal-patterns-in-financial-time-series-a-comparative-study-of-quantum-lstm-and-quantum-reservoir-computing)  
+   标签：评分：10.0/10、query:qmlco
+   evidence：用于金融时间序列预测的量子机器学习
+3. [Quantum Feature Selection with Higher-Order Binary Optimization on Trapped-Ion Hardware](/20260428-20260507/2604.26834v1-quantum-feature-selection-with-higher-order-binary-optimization-on-trapped-ion-hardware)  
+   标签：评分：9.0/10、query:profile-1
+   evidence：用于机器学习模型的量子特征选择
+4. [Formulating Subgroup Discovery as a Quantum Optimization Problem for Network Security](/20260428-20260507/2604.27153v1-formulating-subgroup-discovery-as-a-quantum-optimization-problem-for-network-security)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：使用QAOA将子群发现建模为量子优化问题
+5. [Provable and scalable quantum Gaussian processes for quantum learning](/20260428-20260507/2605.00099v1-provable-and-scalable-quantum-gaussian-processes-for-quantum-learning)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：用于贝叶斯优化和量子机器学习的量子高斯过程
+6. [Conformalized Quantum DeepONet Ensembles for Scalable Operator Learning with Distribution-Free Uncertainty](/20260428-20260507/2605.00330v1-conformalized-quantum-deeponet-ensembles-for-scalable-operator-learning-with-distribution-free-uncertainty)  
+   标签：评分：9.0/10、query:profile-1
+   evidence：用于可扩展算子学习的量子正交神经网络
+7. [Quantum Interval Bound Propagation for Certified Training of Quantum Neural Networks](/20260428-20260507/2605.00747v1-quantum-interval-bound-propagation-for-certified-training-of-quantum-neural-networks)  
+   标签：评分：9.0/10、query:profile-1
+   evidence：量子机器学习中量子神经网络的认证训练
+8. [Quantum Hierarchical Reinforcement Learning via Variational Quantum Circuits](/20260428-20260507/2605.03434v1-quantum-hierarchical-reinforcement-learning-via-variational-quantum-circuits)  
+   标签：评分：9.0/10、query:profile-1
+   evidence：基于变分量子电路的混合分层智能体
+9. [Stochastic Schrödinger Diffusion Models for Pure-State Ensemble Generation](/20260428-20260507/2605.03573v1-stochastic-schrdinger-diffusion-models-for-pure-state-ensemble-generation)  
+   标签：评分：9.0/10、query:profile-1
+   evidence：提出了一种用于量子机器学习（QML）的生成式框架，在量子态上使用扩散模型。
 
 ### 速读区论文标签
-1. [Agentic Architect: An Agentic AI Framework for Architecture Design Exploration and Optimization](/20260428-20260507/2604.25083v1-agentic-architect-an-agentic-ai-framework-for-architecture-design-exploration-and-optimization)  
-   标签：评分：8.5/10、query:optai
-   evidence：用于设计探索与优化的智能体AI框架
-2. [QAROO: AI-Driven Online Task Offloading for Energy-Efficient and Sustainable MEC Networks](/20260428-20260507/2604.25740v1-qaroo-ai-driven-online-task-offloading-for-energy-efficient-and-sustainable-mec-networks)  
+1. [Arbitrary parallel entangling gates with independent calibration on a trapped ion quantum computer](/20260428-20260507/2604.25993v1-arbitrary-parallel-entangling-gates-with-independent-calibration-on-a-trapped-ion-quantum-computer)  
+   标签：评分：8.5/10、query:gpu
+   evidence：并行纠缠门以加速量子计算
+2. [Energy-Aware Quantum-Enhanced Computing Continuum](/20260428-20260507/2604.28041v1-energy-aware-quantum-enhanced-computing-continuum)  
+   标签：评分：8.5/10、query:gpu
+   evidence：将量子处理单元集成到边缘-云-高性能计算架构中
+3. [Hybrid Quantum Reinforcement Learning with QAOA for Improved Vehicle Routing Optimization](/20260428-20260507/2605.01574v1-hybrid-quantum-reinforcement-learning-with-qaoa-for-improved-vehicle-routing-optimization)  
    标签：评分：8.5/10、query:qmlco
-   evidence：基于量子注意力的强化学习用于协同优化计算和能源资源
-3. [Machine Collective Intelligence for Explainable Scientific Discovery](/20260428-20260507/2604.27297v1-machine-collective-intelligence-for-explainable-scientific-discovery)  
-   标签：评分：8.5/10、query:optai
-   evidence：结合符号主义和启发式算法以自主发现控制方程
-4. [On the Expressive Power of GNNs to Solve Linear SDPs](/20260428-20260507/2604.27786v2-on-the-expressive-power-of-gnns-to-solve-linear-sdps)  
-   标签：评分：8.5/10、query:optai
-   evidence：GNN作为求解大型半正定规划（SDP）的快速计算代理
-5. [OMEGA: Optimizing Machine Learning by Evaluating Generated Algorithms](/20260428-20260507/2604.26211v1-omega-optimizing-machine-learning-by-evaluating-generated-algorithms)  
-   标签：评分：7.5/10、query:optai
-   evidence：通过评估生成的算法来优化机器学习
-6. [A High-Throughput Compute-Efficient POMDP Hide-And-Seek-Engine (HASE) for Multi-Agent Operations](/20260428-20260507/2604.27162v1-a-high-throughput-compute-efficient-pomdp-hide-and-seek-engine-hase-for-multi-agent-operations)  
-   标签：评分：7.5/10、query:optai
-   evidence：使用Dec-POMDP引擎优化人机协同作战的决策层
-7. [Over-Approximating Minimizer Sets of Constrained Convex Programs with Parametric Uncertainty via Reachability Analysis](/20260428-20260507/2604.27355v1-over-approximating-minimizer-sets-of-constrained-convex-programs-with-parametric-uncertainty-via-reachability-analysis)  
-   标签：评分：7.5/10、query:optai
-   evidence：近似受限凸规划的极小值集
-8. [Bayesian Optimization in Linear Time](/20260428-20260507/2605.00237v1-bayesian-optimization-in-linear-time)  
-   标签：评分：7.5/10、query:optai
-   evidence：针对昂贵目标函数的使用高斯过程模型的贝叶斯优化
-9. [Subspace Optimization for Efficient Federated Learning under Heterogeneous Data](/20260428-20260507/2604.25467v1-subspace-optimization-for-efficient-federated-learning-under-heterogeneous-data)  
-   标签：评分：6.5/10、query:optai
-   evidence：用于联邦学习的子空间优化方法
-10. [Trees to Flows and Back: Unifying Decision Trees and Diffusion Models](/20260428-20260507/2605.00414v1-trees-to-flows-and-back-unifying-decision-trees-and-diffusion-models)  
-   标签：评分：6.5/10、query:optai
-   evidence：决策树与扩散模型的共享优化原理
-11. [6G Needs Agents: Toward Agentic AI-Native Networks for Autonomous Intelligence](/20260428-20260507/2605.01546v1-6g-needs-agents-toward-agentic-ai-native-networks-for-autonomous-intelligence)  
-   标签：评分：6.5/10、query:optai
-   evidence：集成通信、计算与推理智能体的AI原生基础设施
+   evidence：用于组合优化的混合量子强化学习
+4. [Entanglement is Half the Story: Post-Selection vs. Partial Traces](/20260428-20260507/2605.02385v1-entanglement-is-half-the-story-post-selection-vs-partial-traces)  
+   标签：评分：8.5/10、query:profile-1
+   evidence：用于机器学习的张量网络量子约束
+5. [Hardware Realization of a Hamiltonian Simulation Algorithm for Time-Domain Maxwells Equations](/20260428-20260507/2604.25229v3-hardware-realization-of-a-hamiltonian-simulation-algorithm-for-time-domain-maxwells-equations)  
+   标签：评分：7.5/10、query:gpu
+   evidence：量子模拟算法的硬件实现
+6. [Pareto Frontier of Neural Quantum States: Scalable, Affordable, and Accurate Convolutional Backflow for Strongly Correlated Lattice Fermions](/20260428-20260507/2604.25775v1-pareto-frontier-of-neural-quantum-states-scalable-affordable-and-accurate-convolutional-backflow-for-strongly-correlated-lattice-fermions)  
+   标签：评分：7.5/10、query:profile-1
+   evidence：用于研究强相关多费米子系统的神经量子态
+7. [Quantum Lattice Boltzmann Solutions for Transport under 3D Spatially Varying Advection on Trapped Ion Hardware](/20260428-20260507/2604.28121v1-quantum-lattice-boltzmann-solutions-for-transport-under-3d-spatially-varying-advection-on-trapped-ion-hardware)  
+   标签：评分：7.5/10、query:gpu
+   evidence：用于数值模拟的量子计算方法
+8. [Hardware Realization of a Hamiltonian Simulation Algorithm for Time-Domain Maxwells Equations](/20260428-20260507/2604.25229v1-hardware-realization-of-a-hamiltonian-simulation-algorithm-for-time-domain-maxwells-equations)  
+   标签：评分：7.0/10、query:gpu
+   evidence：麦克斯韦方程组哈密顿模拟的量子硬件实现
+9. [Amplitude Encoding of Slater-Type Orbitals via Matrix Product States: Efficient State Preparation and Integral Evaluation on Quantum Hardware](/20260428-20260507/2604.26314v1-amplitude-encoding-of-slater-type-orbitals-via-matrix-product-states-efficient-state-preparation-and-integral-evaluation-on-quantum-hardware)  
+   标签：评分：6.5/10、query:gpu
+   evidence：量子态准备与模拟原理
+10. [Closed form logical error rate approximations for surface codes](/20260428-20260507/2605.03054v1-closed-form-logical-error-rate-approximations-for-surface-codes)  
+   标签：评分：6.5/10、query:gpu
+   evidence：计算表面码逻辑错误率的方法
+11. [Sign Embedding Quantum Algorithms for Matrix Equations and Matrix Functions](/20260428-20260507/2604.25333v1-sign-embedding-quantum-algorithms-for-matrix-equations-and-matrix-functions)  
+   标签：评分：6.0/10、query:gpu
+   evidence：用于矩阵方程和算子输出框架的量子算法
 
 
 <div class="dpr-home-promo-card">
