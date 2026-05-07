@@ -323,10 +323,11 @@ def update_sidebar(date_str: str, deep: List[dict], quick: List[dict]) -> None:
 def sync_home_readme(date_str: str, deep: List[dict], quick: List[dict]) -> None:
     home_path = os.path.join(DOCS_DIR, "README.md")
     label = format_date_str(date_str)
+
     if re.fullmatch(r"\d{8}-\d{8}", date_str):
-      day_href = build_docsify_id_href(f"{date_str}/README")
+        day_href = build_docsify_id_href(f"{date_str}/README")
     else:
-      day_href = build_docsify_id_href(f"{date_str[:6]}/{date_str[6:]}/README")
+        day_href = build_docsify_id_href(f"{date_str[:6]}/{date_str[6:]}/README")
 
     lines: List[str] = []
     lines.append("────────────────────────────────────────")
