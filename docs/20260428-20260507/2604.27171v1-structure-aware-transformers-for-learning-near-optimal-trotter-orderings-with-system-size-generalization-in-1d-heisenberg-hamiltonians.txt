@@ -1,0 +1,528 @@
+Title: Structure-Aware Transformers for Learning Near-Optimal Trotter Orderings with System-Size Generalization in 1D Heisenberg Hamiltonians
+
+URL Source: https://arxiv.org/pdf/2604.27171v1
+
+Published Time: Fri, 01 May 2026 00:11:51 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Structure-Aware Transformers for Learning Near-Optimal Trotter Orderings with System-Size Generalization in 1D Heisenberg Hamiltonians 
+
+## Shamminuj Aktar, Reuben Tate, Stephan Eidenbenz 
+
+Computing and Artificial Intelligence Division (CAI-3), Los Alamos National Laboratory, Los Alamos, New Mexico 87545, USA Email: saktar@lanl.gov, rtate@lanl.gov, eidenben@lanl.gov 
+
+Abstract 
+
+Trotterization is a standard approach for simulating quantum time evolution on quantum computers, where the Hamiltonian is split into local terms and each term is applied in sequence. The order of these terms affects the fidelity of the simulation when they do not commute, so the choice of ordering directly impacts the accuracy of the simulation. We study this problem for one-dimensional XXZ Heisenberg Hamiltonians using a structured set of 24 candidate orderings derived from colorings of the Hamiltonian’s commutation graph and their group permutations. Finding the best candidate for large systems becomes prohibitive because fidelity evaluation is computationally expensive. In this work, we train a transformer encoder on smaller systems to predict the best candidate ordering for larger systems directly from Hamiltonian and Trotter-configuration features, without computing candidate fidelities at inference time. The model is trained on in-range systems of 3 to 14 qubits with 15-qubit systems held out for validation. Experimental results show that the model reaches a mean test fidelity gap of 0 .00115 relative to the best of the 24 candidates on out-of-range systems of 16 to 20 qubits. A training-size sweep further shows that generalization emerges once training includes systems up to L = 8 qubits, with validation at L = 9, and the gap continues to decrease as the training range grows. To our knowledge, this is the first application of a learned model to Trotter ordering, and it motivates future work on AI-guided Trotter ordering with generalization across Hamiltonian families and system types. 
+
+Keywords: Quantum Time Evolution, Trotterization, Hamiltonian Dynamics, AI-Assisted Quantum Computing 
+
+# 1 Introduction 
+
+Time evolution of quantum many-body systems is a central workload for quantum computers, with applications in chemistry, materials science, and condensed matter physics [7, 9]. Because the full time-evolution operator is generally not native to quantum hardware, digital quantum simulation approximates it with a sequence of gates. The most widely used approach is the product formula, also called Trotterization [5, 12, 16, 20], in which the Hamiltonian is decomposed into Pauli terms and the exponential of each term is applied in sequence. When the terms do not commute, the order of application affects the resulting unitary and therefore the simulation fidelity. This makes Trotter ordering a natural target for a learned model that can infer good choices from Hamiltonian structure and select among the structured candidates without computing their fidelities at inference time. Although worst-case Trotter error bounds are well understood, they are often far looser than the errors observed in practice [3]. Prior work has shown that ordering can have a large practical effect. Simulation accuracy is commonly measured by state fidelity, the squared overlap between the exact state evolved under H and the approximate state produced by the Trotter formula. Simple ordering rules can differ in fidelity by an order of magnitude on realistic instances [17, 19], and the best ordering depends on both the Hamiltonian instance and the Trotter configuration [17]. Choosing a good ordering is therefore a combinatorial optimization problem: a Hamiltonian with k terms has k! possible orderings. In principle, one could search this space by repeated classical simulation, but that approach quickly becomes impractical as the number of terms grows. Figure 1 illustrates the challenge. Random orderings spread across a wide fidelity range, and that range widens with system size, while the structured candidates remain concentrated at substantially higher fidelity. The figure also suggests an important opportunity: although the full ordering space is enormous, a relatively small structured subset 1       
+
+> arXiv:2604.27171v1 [quant-ph] 29 Apr 2026 Hamiltonian index
+> (sorted by best random fidelity)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Fidelity (steps=5, 1st order)
+> L= 5
+> Hamiltonian index
+> (sorted by best random fidelity)
+> L= 10
+> Hamiltonian index
+> (sorted by best random fidelity)
+> L= 16
+> Random orderings Random best Random worst Random mean Structured (24)
+
+Figure 1: Fidelity of random and structured Trotter orderings across system sizes L = 5 , 10 , 16 for the N´ eel initial state, first-order product formula, and r = 5 Trotter steps. For each Hamiltonian instance, sorted by best random-ordering fidelity, we show 30 random orderings (amber dots), their best, worst, and mean fidelities (green, red, and orange), and all 24 structured candidates (blue squares). At L = 5, random and structured orderings are often comparable. By 
+
+L = 10, a clear gap emerges, and at L = 16 the structured candidates consistently occupy the high-fidelity region while random orderings are concentrated lower. This trend shows that structured orderings become increasingly advantageous as system size grows. already captures much of the high-fidelity region. Since fidelity evaluation itself scales exponentially with system size, neither random search nor exhaustive enumeration is practical at the scales of interest. This makes Trotter ordering a natural target for a learned model that can infer good choices from Hamiltonian structure without evaluating every candidate directly. We address this problem with, to our knowledge, the first learned approach to Trotter ordering. Machine learning has been applied to different stages of quantum compilation, including gate-level optimization [6], circuit transpilation [14], and fidelity prediction [22]. Trotter ordering has so far been approached using analytical and heuristic rules. Rather than search the full k! space, we restrict attention to a structured candidate set derived from commutation-graph colorings and permutations of the resulting groups [17]. This reduction yields 24 candidate orderings per instance in our setting. The resulting task is no longer open-ended search over all permutations, but supervised selection over a fixed set of strong candidates. Even within this reduced set, however, identifying the best candidate still requires expensive fidelity evaluation, motivating a learned selector that can generalize across system sizes. We instantiate the approach on one-dimensional XXZ Heisenberg Hamiltonians. A transformer encoder [21] trained on small systems takes the Hamiltonian terms together with the Trotter configuration and learns to predict the best candidate ordering for unseen system sizes. The input is size-invariant by construction: rather than encoding absolute system size, the model sees each Hamiltonian term individually along with a few global properties of the instance, allowing it to transfer directly to larger systems. This size-invariant formulation is central to our goal of replacing repeated per-instance simulation with a predictor that extrapolates beyond the system sizes seen during training. This paper makes the following contributions: 
+
+• We formulate Trotter ordering as a supervised classification problem over a structured candidate set, reducing the original k! search space to selection among 24 high-quality orderings. 
+
+• We introduce a transformer-based selector for this task and show that it generalizes beyond the system sizes seen during training. 
+
+• Trained on systems of 3 to 14 qubits, the model achieves a mean test fidelity gap of 0 .00115 on held-out systems of 16 to 20 qubits, more than a factor of five smaller than the strongest non-learned baseline. 21D XXZ   
+
+> Hamiltonian
+> Commutation
+> Graph
+> Transformer Encoder
+> Classification Head
+> softmax over
+> XYZ_GROUPS
+> GREEDY
+> GUROBI
+> HANDCRAFTED
+> Per-term Local
+> Features
+> Global Context
+> Fidelity of candidates
+> Selected Ordering
+> Dataset Generation Model Learning
+> Training
+> Only
+> Self-
+> attention
+> x4 layers
+> 4 heads
+> Attention
+> Pool
+> Candidate Space
+> Pauli Terms
+> &Coefficients
+> Input
+> Representation
+
+Figure 2: Overview of the coloring-aware Trotter ordering pipeline, divided into two stages. Dataset generation (left): 
+
+For a given 1D XXZ Hamiltonian ( L, ∆, g ), we construct the commutation graph C(H) from Pauli terms and apply four coloring methods ( xyz groups , greedy , gurobi , handcrafted ), producing C = 24 candidate orderings (4 ×3! = 24). For each candidate ordering, we compute the fidelity F (σ) = |⟨ ψexact |ψTrotter (σ)⟩| 2 between the exact and Trotter-evolved states. These fidelities are used during training only: the oracle fidelity, defined as the best fidelity among the 24 structured candidates, provides the supervision label. Model learning (right): Per-term local features and global context are fed into a transformer encoder with four self-attention layers, four heads, and attention pooling. A classification head maps the pooled representation to a softmax distribution over C = 24 classes; the argmax selects σ∗ at inference without evaluating candidate fidelities. 
+
+• We report a training-range sweep showing that generalization emerges when training includes systems up to L = 8 qubits and validation is performed at L = 9, with continued improvement as the training range grows. 
+
+• We position this work as a first step toward AI-assisted Trotter ordering with generalization across Hamiltonian families, Trotter regimes, and system types. The remainder of this paper is organized as follows. Section 2 reviews related work on Trotterization, term ordering, and machine learning for quantum circuits. Section 3 introduces the necessary background, and Section 4 presents the proposed coloring-aware transformer approach. Section 5 describes the experimental setup, while Section 6 reports the experimental results and analysis. Section 7 discusses the limitations of the approach and outlines directions for future work. Section 8 concludes the paper. 
+
+# 2 Related Work 
+
+## 2.1 Trotterization and Hamiltonian Simulation 
+
+Product-formula methods are a foundation of digital quantum simulation. Lloyd [12] established product formulas as a practical route to simulating local quantum systems on gate-based quantum computers, and Suzuki [16] developed the recursive constructions underlying higher-order formulas. More recent theory explains why product formulas often perform better in practice than loose worst-case bounds suggest. Childs et al. [5] derived commutator-scaling bounds that tie Trotter error to Hamiltonian structure, and Heyl et al. [10] showed that for local observables, localization can strongly suppress Trotter errors. Alternative simulation strategies have also been proposed. Campbell introduced qDRIFT [4], a randomized method that samples Hamiltonian terms according to coefficient magnitude and can outperform deterministic formulas in some regimes. Zhuk et al. [23] extended commutator-based analysis to multi-product formulas, showing how linear com-binations of shallow product-formula circuits can improve error scaling. These approaches broaden the Hamiltonian-simulation design space. 32.2 Term Ordering and Commutation Structure 
+
+The dependence of Trotter error on term ordering has been studied both analytically and empirically. Tranter et al. [19] compared several ordering rules for molecular Hamiltonians and showed that simple choices can differ substantially in accuracy. Tate et al. [17] reach a similar conclusion for Heisenberg-style Hamiltonians, showing that even within a restricted structured candidate set, the best ordering varies with the Hamiltonian instance and Trotter configuration. A common organizing principle in this literature is the commutation graph of the Hamiltonian. Gokhale et al. [8] used commuting-group structure to reduce measurement overhead in variational quantum algorithms, helping establish commutation-based partitioning as a useful way to organize Pauli terms. Tomesh et al. [18] combined commuting-term grouping with traveling-salesman-style heuristics to improve simulation quality while also enabling gate cancellation. Schmitz et al. [15] formulated low-depth Trotterization as a graph-optimization problem over Pauli-frame transitions, showing that graph-based search can reduce two-qubit gate counts. Our work is most directly connected to Tate et al. [17], who construct structured ordering candidates from commutation-graph colorings and permutations of the resulting color classes. We adopt this candidate space and learn to select the highest-fidelity candidate for each instance. 
+
+## 2.3 Machine Learning for Quantum Circuits 
+
+Machine learning has increasingly been used in quantum compilation and circuit optimization. F¨ osel et al. [6], Quetschlich et al. [14], and Moro et al. [13] applied reinforcement learning to problems including gate-level optimization, compiler-pass selection, and quantum compiling. Learned models have also been used to predict circuit properties without direct sim-ulation. Wang et al. [22] used a graph-transformer architecture to estimate the fidelity of noisy parameterized quantum circuits, replacing expensive simulation-based evaluation with a learned predictor. Aktar et al. [1] showed that graph neural networks can estimate expressibility-related properties of parameterized quantum circuits with generalization beyond the qubit counts seen during training. In this work, we learn to choose the ordering of Hamiltonian terms in a Trotterized time-evolution circuit to minimize approximation error. To our knowledge, this is the first learned method designed specifically for Trotter ordering, and the first to study generalization across system sizes using a size-invariant representation of Hamiltonian terms together with commutation-structure features. 
+
+# 3 Background 
+
+## 3.1 Trotterization and ordering error 
+
+Given a Hamiltonian H = Pkj=1 Hj written as a sum of k terms, the time-evolution operator U (t) = e−iHt is approx-imated by a product formula that divides t into r steps and applies single-term exponentials within each step. The first-order formula is 
+
+S1(t/r ) = 
+
+> k
+
+Y
+
+> j=1
+
+e−iH j t/r , (1) with U (t) ≈ S1(t/r )r . The second-order formula is 
+
+S2(t/r ) = 
+
+> k
+
+Y
+
+> j=1
+
+e−iH j t/ 2r
+
+> 1
+
+Y
+
+> j=k
+
+e−iH j t/ 2r , (2) with U (t) ≈ S2(t/r )r , where the reversed second pass cancels the leading first-order error term, and higher orders follow the Suzuki recursion [16]. For a p-th-order product formula, the approximation error typically scales as O(tp+1 /r p), with a prefactor controlled by nested commutators of the Hj [5]. Since [ Hi, H j ]̸ = 0 in general, the product in Eq. 1 depends on the order in which terms are applied, and different orderings yield different approximations. 
+
+## 3.2 1D XXZ Heisenberg Hamiltonian 
+
+We study the one-dimensional spin-1 /2 XXZ Heisenberg model with an external transverse field: 
+
+H =
+
+> L−1
+
+X
+
+> i=1
+
+(XiXi+1 + YiYi+1 + ∆ ZiZi+1 ) + g
+
+> L
+
+X
+
+> i=1
+
+Xi, (3) 4Table 1: Color-group assignments for the 13 Pauli terms of the L = 4 XXZ Hamiltonian under the four coloring methods 
+
+xyz groups , greedy , gurobi , and handcrafted , denoted by m1, m 2, m 3, m 4, respectively. Each method partitions the terms into three color classes such that terms within a class mutually commute. 
+
+Method Index Group 0 Group 1 Group 2 
+
+xyz groups m1 X1X2, X 2X3, X 3X4, X 1, X 2, X 3, X 4 Y1Y2, Y 2Y3, Y 3Y4 Z1Z2, Z 2Z3, Z 3Z4
+
+greedy m2 X2X3, Y 2Y3, Z 2Z3, X 1, X 4 X1X2, X 3X4, Y 1Y2, Y 3Y4, Z 1Z2, Z 3Z4X2, X 3
+
+gurobi m3 X1X2, X 3X4, Y 1Y2, Y 3Y4, Z 1Z2, Z 3Z4X2X3, Y 2Y3, Z 2Z3, X 1 X2, X 3, X 4
+
+handcrafted m4 X1X2, X 3X4, Y 1Y2, Y 3Y4, Z 1Z2, Z 3Z4X2X3, Y 2Y3, Z 2Z3 X1, X 2, X 3, X 4
+
+with open boundaries, L qubits, anisotropy ∆, and transverse field g [2]. The Hamiltonian contains 4 L − 3 Pauli terms. 
+
+## 3.3 Commutation-graph colorings 
+
+Following Tate et al. [17], we structure the ordering problem using the commutation graph of the Hamiltonian. The graph has one node for each term in H, and an edge connects two nodes when the corresponding terms do not commute. Finding commuting groups is then an instance of the classical graph-theory problem of vertex coloring: partitioning the vertices into independent sets, or color classes, such that no two vertices within the same class share an edge. By construction, each color class corresponds to a group of mutually commuting Hamiltonian terms, so terms within a class can be applied in any internal order. For a coloring with nc color classes, this reduces the structured search space from k! full term permutations to 
+
+nc! color-class permutations, where typically nc ≪ k. Different coloring methods can produce different partitions and therefore different candidate orderings. For the 1D XXZ Hamiltonian of Eq. 3, the colorings used in this work always produce three color classes, independent of system size L. Enumerating all 3! = 6 permutations of these classes for each of the four coloring methods from Tate et al. [17] gives 4 × 3! = 24 structured candidate orderings, which form the candidate space for the transformer encoder described in Section 4. 
+
+# 4 Method 
+
+We treat Trotter ordering as a multi-class classification problem over a structured set of 24 candidate orderings. This section defines the task, the candidate space, the input representation, and the model. Figure 2 shows the full pipeline. At a high level, the pipeline first constructs a structured set of 24 ordering candidates from commutation-graph colorings, then trains a transformer to select the best candidate from Hamiltonian features and Trotter configuration. Fidelity values are used only during dataset generation and training to define the supervision label; at inference, the model receives only the Hamiltonian features and Trotter configuration and outputs one of the 24 candidate classes directly. 
+
+## 4.1 Problem formulation 
+
+Let H = Pkj=1 cj Pj be a Hamiltonian written as a weighted sum of Pauli-string terms, with real coefficients cj and local Pauli strings Pj .For a given Trotter order p ∈ { 1, 2} and step count r ∈ { 3, 5}, a product formula approximates e−iHt by repeating an ordering-dependent single-step formula r times. For first-order Trotter, an ordering σ gives 
+
+S1,σ (t/r ) = 
+
+> k
+
+Y
+
+> j=1
+
+e−ic σ(j)Pσ(j)t/r . (4) For second-order Trotter, the corresponding step uses the same ordering followed by its reverse, as in Eq. 2. The approximation error depends on σ in both cases. We consider a fixed target time t = 5 and a fixed initial state |ψ0⟩ (the N´ eel state |0101 . . . ⟩ [2]). Simulation fidelity is measured as 
+
+F (σ) = |⟨ ψexact |ψTrotter (σ)⟩| 2 , (5) 5Table 2: Per-term feature encoding for the 13 Pauli-string terms of the L = 4 XXZ Hamiltonian in Table 1 (∆ = 0 .25, 
+
+g = 1 .8). The log |c| column uses file-stored coefficients under the spin- 12 convention ( Sα = 12 σα), so two-body terms carry a factor of 14 and single-site terms a factor of 12 relative to the bare Pauli operators. The Pauli column is a six-way one-hot ( X, Y , Z, XX , Y Y , ZZ ); body indicates whether the term is single-qubit (0) or two-body (1); dist is the inter-qubit distance; m1, m 2, m 3, m 4 are the color-group indices from Table 1. The global context shared across all terms is shown below the rule.                                                                                                                                                                                                    
+
+> Term log |c|Pauli body dist m1m2m3m4
+> X1X2−1.386 [0 ,0,0,1,0,0] 110100
+> Y1Y2−1.386 [0 ,0,0,0,1,0] 111100
+> Z1Z2−2.773 [0 ,0,0,0,0,1] 112100
+> X2X3−1.386 [0 ,0,0,1,0,0] 110011
+> Y2Y3−1.386 [0 ,0,0,0,1,0] 111011
+> Z2Z3−2.773 [0 ,0,0,0,0,1] 112011
+> X3X4−1.386 [0 ,0,0,1,0,0] 110100
+> Y3Y4−1.386 [0 ,0,0,0,1,0] 111100
+> Z3Z4−2.773 [0 ,0,0,0,0,1] 112100
+> X1−0.105 [1 ,0,0,0,0,0] 000012
+> X2−0.105 [1 ,0,0,0,0,0] 000222
+> X3−0.105 [1 ,0,0,0,0,0] 000222
+> X4−0.105 [1 ,0,0,0,0,0] 000022
+> Global context (shared across all terms)
+> prσ|c|/max |c|P|cZZ |/P|cX|Two-body fraction
+> ∈ { 1,2}∈ { 3,5}0.374 0.052 0.692 (9 /13)
+
+where |ψexact ⟩ = e−iHt |ψ0⟩ is the exact evolved state and |ψTrotter (σ)⟩ = UTrotter (σ)|ψ0⟩ is the approximate state produced by ordering σ [11]. Given an instance ( H, p, r ), our goal is to predict the candidate σ∗ that maximizes F , while avoiding any fidelity computation over the candidate set at inference time. Rather than predicting fidelity directly, the model treats the problem as selection among a finite set of C candidate orderings and is trained with cross-entropy loss over the C
+
+classes. Full training details are given in Section 5.4. 
+
+## 4.2 Candidate space 
+
+We use C = 24 candidate orderings per instance, following the group-evolve construction of Tate et al. [17]. For the 1D XXZ commutation graph we apply four coloring methods, namely Pauli-type grouping ( xyz groups ), a greedy heuristic ( greedy ), an exact minimum coloring via integer programming ( gurobi ), and a handcrafted bond-parity coloring ( handcrafted ). Under our 1D XXZ setup, each method produces three color classes for the Hamiltonian of Eq. 3. The xyz groups coloring yields three classes because all three Pauli types {X, Y, Z } are present. The other three methods also yield three classes because the bond-parity argument splits even-bond and odd-bond two-body terms into two classes, with the single-site Xi terms occupying the third. Enumerating the 3! = 6 permutations of the three classes for each of the four colorings gives 4 × 6 = 24 orderings. This set is small enough for supervised learning while still containing strong candidates for the instances we study. 
+
+## 4.3 Input representation 
+
+Each sample is encoded using the Pauli terms and coefficients of the Hamiltonian, represented as a set of per-term features together with a global context vector. This representation is size-invariant in the sense that it does not depend on absolute qubit indices or a fixed number of Hamiltonian terms, which enables evaluation at system sizes beyond those seen in training. 
+
+Per-term features. For each term j we encode: 6• the log-magnitude of the coefficient, log |cj |,
+
+• a one-hot encoding over a six-entry Pauli-type vocabulary ( X, Y , Z, XX , Y Y , ZZ ), of which four ( X, XX , Y Y ,
+
+ZZ ) are populated by the 1D XXZ Hamiltonian, 
+
+• the term body (0 for a single-qubit term, 1 for a two-body term), 
+
+• the inter-qubit distance of the term (0 for a single-qubit term, 1 for a nearest-neighbor two-body term), 
+
+• four color-group indices m1, m 2, m 3, m 4, one per method ( xyz groups , greedy , gurobi , handcrafted ), giving the integer color group of the term under that method. 
+
+Global context. The model also receives the Trotter order p, the step count r, and three scale-invariant global statistics of the Hamiltonian coefficients, namely (i) the standard deviation over the maximum coefficient, (ii) the 
+
+ZZ -to-X coefficient magnitude ratio (approximately ∆ /g for XXZ), and (iii) the fraction of two-body terms. We deliberately exclude absolute qubit indices from the input. The model has no way to tell whether a term acts on qubit 3 or qubit 17, which forces it to learn a decision rule based on term statistics and structure, and enables evaluation at larger system sizes. Table 1 illustrates how the four coloring methods differ on a concrete L = 4 XXZ instance. xyz groups separates by Pauli type, handcrafted separates by bond parity with single-X terms isolated, gurobi is similar but groups X1
+
+with the inner bond, and greedy produces a mixed partition. The four methods therefore offer four distinct structural views of the same Hamiltonian, and the model learns to weight them via the per-term color-group indices. Table 2 shows how the 13 Pauli terms of the L = 4 Hamiltonian are encoded as per-term feature vectors, along with the global context features shared across all terms. 
+
+## 4.4 Model architecture 
+
+We use a transformer encoder over the unordered set of term features [21]. Each term’s categorical features (operator type, term body, inter-qubit distance, and the four color-group indices) are mapped to learned embeddings, concatenated with the log coefficient log |cj |, and projected to dmodel = 128. A stack of four pre-norm transformer encoder blocks (4 heads, dff = 256, dropout 0 .1) applies multi-head self-attention across the term set. Because we omit positional encoding, self-attention is permutation-equivariant on the term set. The encoder output is pooled into a single summary vector by attention-based pooling, where a two-layer scoring network assigns a scalar score to each term. Scores are softmax-normalized over non-padded positions, and the term embeddings are combined as the resulting weighted sum. The pooled summary is concatenated with the global context (embedded Trotter order, step count, and the three scale-invariant statistics), passed through a projection head to a 128-dimensional hidden state, and mapped by a linear head to the C = 24 class logits. The full model has 662 ,421 trainable parameters, with the transformer stack accounting for roughly 80%. We chose this architecture because the input is an unordered set of term descriptors, which self-attention without positional encoding handles naturally. 
+
+# 5 Experimental Setup 
+
+## 5.1 Dataset 
+
+We generate a dataset of Trotter-simulation fidelities for the 1D XXZ Hamiltonian of Eq. 3. System size ranges from 
+
+L = 3 to L = 20 qubits. For each L we sweep two anisotropy values ∆ ∈ { 0.12 , 0.25 } and twenty-five transverse-field values g ∈ { 0.1, 0.2, . . . , 2.5}, giving 50 Hamiltonian instances per L and 900 instances across the full range. For each instance, during dataset generation, we evaluate all C = 24 structured candidate orderings and 30 random orderings at Trotter orders p ∈ { 1, 2} and step counts r ∈ { 3, 5}. The target time is fixed to t = 5 and the initial state is the N´ eel state |0101 . . . ⟩. For each structured candidate ordering, we compute the fidelity between the exact and Trotter-evolved states by exact classical simulation using matrix exponentiation. A sample is a single ( L, ∆, g, p, r ) configuration together with the fidelities of its 24 structured candidates, yielding 3 ,600 samples in total. These candidate fidelities are used to define the oracle class label and to evaluate test metrics, but they are not used by the model at inference time. For the main experiment, we split samples by system size to evaluate extrapolation to larger systems. The training set uses 7Table 3: Per-regime breakdown of the three evaluation metrics, averaged over five seeds and all held-out test sizes 
+
+L ∈ { 16 , . . . , 20 }. Gap : test fidelity gap f ∗ − f model , averaged over test instances (lower ↓ is better). Norm : normalized gain ( f model − f rand )/(f ∗ − f rand ) on instances where f ∗ > f rand (higher ↑ is better). Poor : fraction of instances with gap > 0.01 (lower ↓ is better). All model metrics are computed without evaluating candidate fidelities at inference time. The model performs near-oracle under first-order Trotter across both step counts. Errors concentrate in the second-order regime (poor-prediction rate up to 6 .0%); even so, the model achieves normalized gain close to 1 .0 and substantially improves over MajRegime in overall mean gap, with the largest improvement in the hardest second-order r=3 regime.                                                                                
+
+> 1st-order Trotter 2nd-order Trotter
+> r= 3 r= 5 r= 3 r= 5 Gap ↓Norm ↑Poor ↓Gap ↓Norm ↑Poor ↓Gap ↓Norm ↑Poor ↓Gap ↓Norm ↑Poor ↓
+> Random 0.1754 0.000 100 .0% 0.4441 0.000 100 .0% 0.1558 0.000 93 .0% 0.2272 0.000 88 .0%
+> MajTrain 0.0011 0.997 6.0% 0.0004 0.997 1.0% 0.0957 0.067 91 .0% 0.1534 0.268 86 .0%
+> MajRegime 0.0011 0.997 6.0% 0.0004 0.997 1.0% 0.0214 0.786 34 .0% 0.0011 0.959 4.0%
+> Model (ours) 0.00030 0.999 0.7%0.00052 0.996 1.8%0.00250 0.973 6.0%0.00127 0.986 6.0%
+
+L ∈ { 3, 4, . . . , 14 }, the validation set is L = 15, and the test set is L ∈ { 16 , 17 , 18 , 19 , 20 }, all strictly larger than any L
+
+seen during training. Within each L, no further splitting is applied, so the model sees every (∆ , g, p, r ) combination for 
+
+L in the training range. 
+
+## 5.2 Baselines 
+
+We compare the learned selector against three non-learned baselines of increasing sophistication. Random uses the mean fidelity over 30 random orderings per instance and represents the zero-information baseline. MajTrain picks the single candidate class that wins most often across the entire training set and applies it to every test instance unconditionally, giving the strongest fixed policy that does not condition on the input instance. MajRegime picks the class that wins most often in the training subset sharing the same Trotter order p and step count r as the test instance. It is the strongest non-learned policy because it conditions on the same regime variables ( p, r ) that the model sees, but ignores all per-instance Hamiltonian information. MajRegime is the key baseline to beat, since any improvement over it must come from per-instance information beyond the regime variables ( p, r ). 
+
+## 5.3 Metrics 
+
+Let f ∗ 
+
+> j
+
+be the oracle fidelity, defined as the best fidelity among the 24 structured candidates for test instance j, and let 
+
+f model  
+
+> j
+
+be the fidelity of the candidate selected by the model. We report three quantities. The test fidelity gap , defined as f ∗ 
+
+> j
+
+− f model  
+
+> j
+
+and averaged over test instances, is the headline metric and is zero when the model selects the oracle candidate. The normalized gain , defined per instance as (f model  
+
+> j
+
+− f rand  
+
+> j
+
+)/(f ∗ 
+
+> j
+
+− f rand  
+
+> j
+
+)and then averaged over valid test instances with f ∗ 
+
+> j
+
+> f rand  
+
+> j
+
+, measures how much of the random-to-oracle improvement the model captures, with values near 1 .0 indicating oracle-level performance. The poor-prediction rate , defined as the fraction of test instances with test fidelity gap above 0 .01, highlights tail behavior. Because the oracle f ∗ 
+
+> j
+
+is defined over the 24 structured candidates only, the random-ordering mean f rand  
+
+> j
+
+can occasionally exceed f ∗ 
+
+> j
+
+on individual instances. We exclude these cases from the normalized-gain average and interpret normalized gain as a relative baseline-improvement statistic rather than as a bounded accuracy metric. 
+
+## 5.4 Training 
+
+We train the model in Section 4.4 as a supervised 24-class classifier. Each training sample corresponds to one configu-ration ( H, p, r ). The target label is the candidate ordering with the highest simulated fidelity among the 24 structured candidates. We call this candidate the oracle class for that sample. The transformer produces one logit for each can-didate ordering, and the cross-entropy objective encourages the oracle class to receive the largest predicted probability. 8Training is performed with AdamW using an initial learning rate of 3 × 10 −4 and weight decay 10 −4. The learning rate is annealed with a cosine schedule over a 200-epoch budget, reaching 3 × 10 −6 at the end of training. Because some can-didate orderings win more often than others, the training labels are class-imbalanced. We therefore use class-weighted cross-entropy. Let mc be the number of training samples for which candidate class c is oracle. For every class that appears in the training set, we assign the weight 
+
+wc = m−1/2
+
+> c
+> 1
+> |A|
+
+P 
+
+> c′∈A
+
+m−1/2
+
+> c′
+
+, A = {c : mc > 0}. (6) This normalization keeps the average weight over observed classes equal to one, while giving larger weights to rarer oracle classes. In effect, mistakes on rare winning candidates contribute more to the loss than mistakes on candidates that win frequently. We also use label smoothing with parameter 0 .05, which reduces overconfidence in cases where several candidates have similar fidelities. Model selection is based on validation fidelity gap rather than validation cross-entropy. This choice reflects the goal of the task: a class prediction can be wrong but still select an ordering whose fidelity is nearly oracle-level, whereas another wrong prediction may incur a much larger fidelity loss. Therefore, validation gap is more directly aligned with the reported metric than classification loss alone. We begin checkpointing after a 20-epoch warmup and use early stopping with patience 50 based on validation loss. The main results are averaged over five random seeds. For the generalization sweep in Section 6.3 and the sample-efficiency sweep in Section 6.4, we use three seeds per configuration. All models are implemented in PyTorch and trained on an Apple M-series GPU. 
+
+# 6 Experimental Results 
+
+We present results in four parts. First, we report overall test performance of the learned selector against baselines (Section 6.1) and analyze the regimes in which errors occur (Section 6.2). We then study generalization across system sizes (Section 6.3) and sample efficiency under reduced numbers of Hamiltonians per system size (Section 6.4). 
+
+## 6.1 Main result 
+
+Table 3 provides a full per-regime breakdown of all three evaluation metrics from Section 5.3. Across five random seeds, the learned selector achieves a mean test fidelity gap of 0 .00115 ± 0.00030 relative to the best of the 24 structured candidates, compared to 0 .06328 for MajTrain and 0 .00613 for MajRegime . This is more than five times smaller than MajRegime , the strongest non-learned baseline, and more than fifty times smaller than MajTrain . In terms of normalized gain, computed on instances where the structured oracle exceeds the random baseline, the model remains close to oracle-level performance in every regime, with the lowest regime-level value equal to 0 .973. The poor-prediction rate remains below 2% in the first-order regimes and rises to at most 6% in the second-order regimes. Most of the remaining mean gap is driven by a small tail of harder second-order instances, which we analyze in Section 6.2. Figure 3 provides a complementary view of this improvement: overall, the learned selector tracks oracle fidelity much more closely than MajRegime , with the largest deviations concentrated in the more difficult low-fidelity region. 
+
+## 6.2 Error analysis 
+
+As seen in Table 3, errors concentrate in the second-order Trotter regime. Figure 4 makes the structure of these errors explicit by plotting the per-instance fidelity gap f ∗ − f model against the transverse field g for each of the four Trotter regimes. Under first-order Trotter (panels a and b), the poor-prediction rate remains low at 0 .7% for r = 3 and 1 .8% for 
+
+r = 5, and nearly all test instances sit at or near zero gap. Under second-order Trotter (panels c and d), failures emerge more visibly, with poor-prediction rates of 6 .0% for both r = 3 and r = 5. The largest gaps appear at g ≳ 2.0, where the Hamiltonian is dominated by the transverse field and oracle fidelity is already low (around 0 .1–0 .2). In this regime, relatively small differences between candidate orderings translate into visible fidelity gaps. The two anisotropy values show similar error patterns, indicating that the difficulty is driven primarily by g rather than by the ZZ coupling strength ∆. The training set covers all g values uniformly, so the elevated poor-prediction rate at large g under second-order Trotter reflects an intrinsic difficulty of the regime rather than a data imbalance. The worst per-sample gap across all 9five seeds is 0 .057, on an L = 16 instance with ∆ = 0 .25, g = 1 .9, second-order Trotter at r = 3, where the oracle fidelity is 0 .156 and the model-selected ordering reaches 0 .100. Even in this hardest case, the model retains most of the random-to-oracle improvement. Overall, the mean gap is driven by a small tail of difficult second-order instances, while the bulk of the test set remains at or near oracle fidelity. 
+
+## 6.3 Generalization across system sizes 
+
+To identify the minimum training range needed for generalization, we sweep Lmax ∈ { 5, 6, . . . , 15 }, training on L ∈{3, . . . , L max − 1} and validating on L = Lmax . For each sweep point, we evaluate on all larger system sizes L ∈{Lmax + 1 , . . . , 20 }. The shaded region in Figure 5 marks the final held-out test range L ∈ { 16 , 17 , 18 , 19 , 20 }.Figure 5 shows the mean fidelity gap as a function of system size for each value of Lmax . For Lmax ≤ 8, the model fails to generalize reliably, with gaps often remaining around 10 −2 and the selector underperforming MajRegime (0 .00613) on larger systems. Generalization emerges at Lmax = 9, corresponding to training on L ∈ { 3, . . . , 8} and validation on 
+
+L = 9, where the model begins to beat MajRegime across the larger evaluated sizes shown in Figure 5. For Lmax ≥ 13, the curves compress toward the bottom of the plot near 10 −3, and additional training range yields only marginal further improvement. These results show that once the training range is sufficiently broad, the gap remains stable as system size increases, including throughout the final held-out test region L ∈ { 16 , . . . , 20 }.
+
+## 6.4 Sample efficiency 
+
+The generalization sweep in Section 6.3 fixes the number of Hamiltonians per system size at 50 and varies the training range. A complementary question is how many Hamiltonians per system size are needed when the training range is 0.0 0.2 0.4 0.6 0.8 1.0 
+
+Oracle fidelity f *
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0              
+
+> Fidelity of selected ordering  fmodel
+> Model (gap=0.0011, poor=3.6%)
+> MajRegime (gap=0.0061, poor=11.9%)
+> y=x(oracle; best of 24 candidates)
+> Regime
+> 1st-order, r= 3
+> 1st-order, r= 5
+> 2nd-order, r= 3
+> 2nd-order, r= 5
+
+Figure 3: Selected-ordering fidelity versus oracle fidelity for the learned model and the strongest non-learned baseline, 
+
+MajRegime , across held-out test instances ( L ∈ { 16 , 17 , 18 , 19 , 20 }). Points are colored by method and shaped by Trotter regime ( p, r ), and the dashed line marks oracle-level performance y = x. The learned selector remains more tightly concentrated near the oracle line overall, while MajRegime shows substantially larger deviations, especially in the lower-fidelity regime. 10 0.000                           
+
+> 0.005
+> 0.010
+> 0.015
+> 0.020
+> 0.025
+> Fidelity gap ( f * fmodel ) Poor-prediction rate: 0.7%
+> (a) First-order, r= 3
+> 0.000
+> 0.005
+> 0.010
+> 0.015
+> 0.020
+> 0.025
+> Poor-prediction rate: 1.8%
+> (b) First-order, r= 5
+> 0.0 0.5 1.0 1.5 2.0 2.5
+> Transverse field g
+> 0.000
+> 0.005
+> 0.010
+> 0.015
+> 0.020
+> 0.025
+> Fidelity gap ( f * fmodel ) Poor-prediction rate: 6.0%
+> (c) Second-order, r= 3
+> 0.0 0.5 1.0 1.5 2.0 2.5
+> Transverse field g
+> 0.000
+> 0.005
+> 0.010
+> 0.015
+> 0.020
+> 0.025
+> Poor-prediction rate: 6.0%
+> (d) Second-order, r= 5
+> Fidelity gap vs transverse field gby Trotter regime
+> (test L= 16--20, mean over 5 seed(s))
+> = 0.12 = 0.25 Poor-prediction threshold (0.01)
+
+Figure 4: Error landscape: fidelity gap f ∗ − f model versus transverse field g for each Trotter regime, averaged over five seeds on test sizes L ∈ { 16 , 17 , 18 , 19 , 20 }. Color indicates anisotropy ∆, and the dashed line marks the poor-prediction threshold (gap = 0 .01). Under first-order Trotter (top row), the poor-prediction rate remains low at 0 .7% for r = 3 and 1 .8% for r = 5. Under second-order Trotter (bottom row), failures are more frequent, with poor-prediction rates of 6.0% for r = 3 and 6 .0% for r = 5. The largest gaps concentrate at g ≳ 2.0, where oracle fidelity is already low and differences between candidate orderings become more pronounced. fixed at L ∈ { 3, . . . , 14 }. We address this by subsampling nham ∈ { 10 , 20 , 30 , 40 , 50 } Hamiltonians per L during training while keeping the full validation and test sets unchanged, and running three seeds per configuration. Figure 6 shows the mean test fidelity gap for each held-out test size L ∈ { 16 , 17 , 18 , 19 , 20 } as a function of nham .At nham = 10, the model already outperforms MajRegime for the smaller test sizes, although variance across seeds remains high. By nham = 30, all five test sizes fall below the MajRegime reference of 0 .00613, and performance stabilizes thereafter with only marginal further improvement. The gap does not increase with test system size within any fixed nham , confirming that the size-invariant representation extrapolates uniformly across training-set densities. These results indicate that the method is reasonably data-efficient: roughly 30 Hamiltonians per system size over the range L ∈ { 3, . . . , 14 } suffice to reach near-oracle performance on out-of-range systems up to L = 20 qubits. 
+
+# 7 Discussion and Limitations 
+
+## 7.1 Discussion 
+
+The results demonstrate that a transformer trained entirely on small systems can reliably select high-fidelity Trotter orderings for larger systems it has never seen, without evaluating any candidate fidelity at inference time. The strongest non-learned baseline, MajRegime , encodes the rule of picking the per-regime majority class. Our model reduces the 11 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20             
+
+> System size L
+> 0.000
+> 0.005
+> 0.010
+> 0.015
+> 0.020
+> 0.025
+> 0.030
+> 0.035
+> Mean fidelity gap
+> Test region
+> Lmax = 5
+> Lmax = 6
+> Lmax = 7
+> Lmax = 8
+> Lmax = 9
+> Lmax = 10
+> Lmax = 11
+> Lmax = 12
+> Lmax = 13
+> Lmax = 14
+> Lmax = 15
+> MajRegime
+
+Figure 5: Generalization sweep. Mean fidelity gap versus system size L for each validation size Lmax ∈ { 5, . . . , 15 },where training uses L ∈ { 3, . . . , L max − 1} and evaluation is performed on larger sizes up to L = 20 (one line per 
+
+Lmax , mean over three seeds). The shaded region marks the final held-out test range L ∈ { 16 , . . . , 20 }, and the dashed horizontal line marks the MajRegime reference. Lines for Lmax ≤ 8 remain near 10 −2 on larger systems, indicating limited generalization. Generalization emerges at Lmax = 9, and lines for Lmax ≥ 13 compress toward 10 −3 with little growth across system size, confirming clean extrapolation to larger systems. mean fidelity gap by more than a factor of five relative to this baseline, which indicates that the improvement comes from per-instance information beyond ( p, r ). From the Hamiltonian terms and Trotter configuration alone, the model learns to select which candidate ordering will best approximate the time evolution for a given instance, a task that would otherwise require expensive fidelity evaluation over all 24 candidates. Whether this selection reflects physically meaningful structure, such as Trotter commutator norms or localization properties of the Hamiltonian, remains an open question that we plan to investigate in future work through feature attribution and ablation studies. Size extrapolation works because the input representation is size-invariant by construction. No absolute qubit index is passed to the model; all features are either per-term local descriptors or scale-invariant global statistics, and the transformer encoder pools over terms without reference to system size. This input design makes extrapolation possible, and the generalization sweep in Section 6.3 confirms that it works in practice. How the learned representations evolve with system size is a question we leave to future work. 
+
+## 7.2 Limitations and Future Directions 
+
+Our experiments focus on a single Hamiltonian family (1D XXZ with a transverse field), a single initial state (N´ eel), two Trotter orders, and two step counts, which allowed us to establish a clean proof of concept. The 24 structured candidates derived from commutation-graph colorings provide a well-suited candidate space for this setting and contain strong orderings across the instances we study. In this setting, many structured candidates are concentrated in a relatively high-fidelity region, so fidelity differences between candidates are often small. In settings where candidate fidelities are more widely separated, classification errors may carry a larger fidelity cost, and it will be important to study whether learned selection remains reliable. In future work, we plan to expand the candidate space by incorporating additional structured orderings from the literature [19] and by exploring Hamiltonian-dependent strategies such as symmetry-aware or coefficient-weighted colorings, which may yield better candidates for a broader range of systems. 12 10 20 30 40 50   
+
+> Hamiltonians per Lin training
+> 0.000
+> 0.001
+> 0.002
+> 0.003
+> 0.004
+> 0.005
+> 0.006
+> 0.007
+> 0.008
+> Mean test fidelity gap
+> Sample efficiency: fidelity gap vs training set size
+> MajRegime reference
+> 16
+> 17
+> 18
+> 19
+> 20
+> Test  L
+
+Figure 6: Sample efficiency: mean test fidelity gap versus the number of Hamiltonians per system size used in training. Colored lines show held-out test sizes L ∈ { 16 , 17 , 18 , 19 , 20 }, and the dashed line marks the average MajRegime 
+
+reference. By nham = 30, all plotted test sizes fall below the MajRegime reference and stabilize thereafter, indicating that 30 Hamiltonians per system size are sufficient for near-oracle generalization in this setting. Extending the approach to 2D lattices, molecular Hamiltonians, or other structured families is a natural next step. These settings introduce richer commutation structure, different term types, and larger term counts. Generalizing across Hamiltonian families will likely require re-architecting the input embedding and the model itself, for example by incorporating richer Pauli-string encodings, geometry-aware features, or family-specific coloring strategies, so that the learned representations transfer across fundamentally different Hamiltonian structures. Looking further ahead, the long-term goal is direct generation of orderings over the full k! space, allowing the model to propose orderings outside any fixed structured subspace. This would open the door to AI-guided Trotter ordering that is not tied to a predefined candidate set. Future work may explore autoregressive models or pointer networks that learn to directly generate or rank orderings, trained on paired ordering-fidelity data at scale and potentially capable of discovering orderings that no hand-crafted coloring strategy would produce. 
+
+# 8 Conclusion 
+
+We present a learned approach to Trotter ordering for one-dimensional XXZ Heisenberg Hamiltonians. The method combines a classical analysis of the commutation graph, which produces 24 structured candidate orderings per instance, with a transformer encoder trained to select among them. At inference time, the selector uses only Hamiltonian and Trotter-configuration features and does not evaluate candidate fidelities. Trained on systems of up to 14 qubits and evaluated on held-out systems of 16 to 20 qubits, the selector achieves a mean test fidelity gap of 0 .00115 relative to the best of the 24 structured candidates. We show that generalization begins at Lmax = 9, corresponding to training up to L = 8 qubits with validation at L = 9, and that larger training ranges bring performance near oracle with little degradation across larger evaluated sizes, including the final held-out range L ∈ { 16 , . . . , 20 }. The size-invariant input representation enables this extrapolation across system sizes. To our knowledge, this is the first learned approach targeted specifically at the Trotter ordering problem. These results provide a strong foundation for AI-guided Trotter ordering and motivate future work on generalization across Hamiltonian families, richer candidate spaces, and direct generation of orderings via autoregressive or pointer-network architectures. 13 Acknowledgements 
+
+The research presented in this article was supported by the NNSA’s Advanced Simulation and Computing Beyond Moore’s Law program at Los Alamos National Laboratory. This material is based upon work supported by the U.S. Department of Energy, Office of Science, National Quantum Information Science Research Centers, Quantum Science Center. This work has been assigned LANL technical report number LA-UR-26-23382. 
+
+# References 
+
+[1] Shamminuj Aktar, Andreas B¨ artschi, Diane Oyen, Stephan Eidenbenz, and Abdel-Hameed A. Badawy. Graph neu-ral networks for parameterized quantum circuits expressibility estimation. In 2024 IEEE International Conference on Quantum Computing and Engineering (QCE) , 2024. doi:10.1109/QCE60285.2024.10821280 .[2] Assa Auerbach. Interacting Electrons and Quantum Magnetism . Springer Science & Business Media, 2012. doi: 10.1007/978-1-4612-0869-3 .[3] Ryan Babbush, Jarrod McClean, Dave Wecker, Al´ an Aspuru-Guzik, and Nathan Wiebe. Chemical basis of Trotter-Suzuki errors in quantum chemistry simulation. Physical Review A , 91(2):022311, 2015. doi:10.1103/PhysRevA. 91.022311 .[4] Earl T. Campbell. Random compiler for fast Hamiltonian simulation. Physical Review Letters , 123:070503, 2019. 
+
+doi:10.1103/PhysRevLett.123.070503 .[5] Andrew M. Childs, Yuan Su, Minh C. Tran, Nathan Wiebe, and Shuchen Zhu. Theory of Trotter error with commutator scaling. Physical Review X , 11(1):011020, 2021. doi:10.1103/PhysRevX.11.011020 .[6] Thomas F¨ osel, Murphy Yuezhen Niu, Florian Marquardt, and Li Li. Quantum circuit optimization with deep reinforcement learning, 2021. arXiv:2103.07585 .[7] I. M. Georgescu, S. Ashhab, and Franco Nori. Quantum simulation. Reviews of Modern Physics , 86(1):153–185, 2014. doi:10.1103/RevModPhys.86.153 .[8] Pranav Gokhale, Olivia Angiuli, Yongshan Ding, Kaiwen Gui, Teague Tomesh, Martin Suchara, Margaret Martonosi, and Frederic T. Chong. O(N 3) measurement cost for variational quantum eigensolver on molecular Hamiltonians. IEEE Transactions on Quantum Engineering , 1:1–24, 2020. doi:10.1109/TQE.2020.3035814 .[9] Jeongwan Haah, Matthew B. Hastings, Robin Kothari, and Guang Hao Low. Quantum algorithm for simulating real time evolution of lattice Hamiltonians. SIAM Journal on Computing , 52(6):FOCS18–250–FOCS18–284, 2023. 
+
+doi:10.1137/18M1231511 .[10] Markus Heyl, Philipp Hauke, and Peter Zoller. Quantum localization bounds Trotter errors in digital quantum simulation. Science Advances , 5(4):eaau8342, 2019. doi:10.1126/sciadv.aau8342 .[11] Richard Jozsa. Fidelity for mixed quantum states. Journal of Modern Optics , 41(12):2315–2323, 1994. doi: 10.1080/09500349414552171 .[12] Seth Lloyd. Universal quantum simulators. Science , 273(5278):1073–1078, 1996. doi:10.1126/science.273.5278. 1073 .[13] Lorenzo Moro, Matteo G. A. Paris, Marcello Restelli, and Enrico Prati. Quantum compiling by deep reinforcement learning. Communications Physics , 4:178, 2021. doi:10.1038/s42005-021-00684-3 .[14] Nils Quetschlich, Lukas Burgholzer, and Robert Wille. Compiler optimization for quantum computing us-ing reinforcement learning. In 2023 60th ACM/IEEE Design Automation Conference (DAC) , pages 1–6, 2023. 
+
+doi:10.1109/DAC56929.2023.10248002 .[15] Albert T. Schmitz, Nicolas P. D. Sawaya, Sonika Johri, and A. Y. Matsuura. Graph optimization perspective for low-depth Trotter-Suzuki decomposition. Physical Review A , 109(4):042418, 2024. doi:10.1103/PhysRevA.109. 042418 .14 [16] Masuo Suzuki. General theory of fractal path integrals with applications to many-body theories and statistical physics. Journal of Mathematical Physics , 32(2):400–407, 1991. doi:10.1063/1.529425 .[17] Reuben Tate, Shamminuj Aktar, and Stephan Eidenbenz. An analysis of commutation-based Trotter ordering strategies on Heisenberg-style Hamiltonians, 2026. arXiv:2604.23138 .[18] Teague Tomesh, Kaiwen Gui, Pranav Gokhale, Yunong Shi, Frederic T. Chong, Margaret Martonosi, and Martin Suchara. Optimized quantum program execution ordering to mitigate errors in simulations of quantum systems. In 2021 International Conference on Rebooting Computing (ICRC) , pages 1–13, 2021. doi:10.1109/ICRC53822. 2021.00013 .[19] Andrew Tranter, Peter J. Love, Florian Mintert, Nathan Wiebe, and Peter V. Coveney. Ordering of Trotter-ization: Impact on errors in quantum simulation of electronic structure. Entropy , 21(12):1218, 2019. doi: 10.3390/e21121218 .[20] Hale F. Trotter. On the product of semi-groups of operators. Proceedings of the American Mathematical Society ,10(4):545–551, 1959. doi:10.2307/2033649 .[21] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In I. Guyon, U. Von Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett, editors, Advances in Neural Information Processing Systems , vol-ume 30. Curran Associates, Inc., 2017. URL: https://proceedings.neurips.cc/paper_files/paper/2017/ file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf .[22] Hanrui Wang, Zhiding Liang, Jiaqi Gu, Zirui Li, Yongshan Ding, Weiwen Jiang, Yiyu Shi, David Z. Pan, Frederic T. Chong, and Song Han. Torchquantum case study for robust quantum circuits. In Proceedings of the 41st IEEE/ACM International Conference on Computer-Aided Design , ICCAD ’22, New York, NY, USA, 2022. Association for Computing Machinery. doi:10.1145/3508352.3561118 .[23] Sergiy Zhuk, Niall F. Robertson, and Sergey Bravyi. Trotter error bounds and dynamic multi-product formulas for Hamiltonian simulation. Physical Review Research , 6:033309, 2024. doi:10.1103/PhysRevResearch.6.033309 .15

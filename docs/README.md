@@ -7,35 +7,81 @@
 
 ## 每次日报
 - 最新运行日期：2026-04-28 ~ 2026-05-07
-- 运行时间：2026-05-07 16:58:49 UTC
+- 运行时间：2026-05-07 17:13:15 UTC
 - 运行状态：成功
-- 本次总论文数：5
-- 精读区：0
-- 速读区：5
+- 本次总论文数：20
+- 精读区：9
+- 速读区：11
 
 ### 今日简报（AI）
-本期速读 5 篇论文，聚焦金融安全与 AI 在高能物理领域的结合。重点关注 LLM 在真实金融场景下的安全评估与长文档信息提取新方案。建议读者继续关注 AI 在行业合规与科研协作中的可靠性研究进展。
+探索量子算法与智能优化的前沿进展，聚焦金融时序与路径规划应用。  
+量子LSTM与量子优化展现出在复杂时间序列和旅行商问题上的突破潜力。  
+建议持续关注量子计算在实际场景中的落地性能与算力瓶颈对比研究。
 - 详情：[/20260428-20260507/README](/20260428-20260507/README)
 
 ### 精读区论文标签
-- 本次无精读推荐。
+1. [Learning Temporal Patterns in Financial Time Series: A Comparative Study of Quantum LSTM and Quantum Reservoir Computing](/20260428-20260507/2605.02656v1-learning-temporal-patterns-in-financial-time-series-a-comparative-study-of-quantum-lstm-and-quantum-reservoir-computing)  
+   标签：评分：10.0/10、query:profile-1
+   evidence：用于金融时间序列预测的量子机器学习
+2. [Quantum Optimization Methods for the Generalized Traveling Salesman Problem](/20260428-20260507/2604.25531v1-quantum-optimization-methods-for-the-generalized-traveling-salesman-problem)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：广义旅行商问题的量子优化
+3. [Towards interpretable AI with quantum annealing feature selection](/20260428-20260507/2604.25649v1-towards-interpretable-ai-with-quantum-annealing-feature-selection)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：利用量子退火解决深度学习中的组合特征选择问题
+4. [Qvine: Vine Structured Quantum Circuits for Loading High Dimensional Distributions](/20260428-20260507/2604.26213v1-qvine-vine-structured-quantum-circuits-for-loading-high-dimensional-distributions)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：为金融和机器学习加载高维分布
+5. [Solve Crude Oil Scheduling Problems by Using Quantum-Classical Hybrid Algorithms](/20260428-20260507/2604.26459v1-solve-crude-oil-scheduling-problems-by-using-quantum-classical-hybrid-algorithms)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：用于NP-hard调度优化的混合量子-经典算法
+6. [Defending Quantum Classifiers against Adversarial Perturbations through Quantum Autoencoders](/20260428-20260507/2604.28176v1-defending-quantum-classifiers-against-adversarial-perturbations-through-quantum-autoencoders)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：防御量子分类器和变分量子模型
+7. [Efficient Mutation Testing of Quantum Machine Learning Models](/20260428-20260507/2605.00107v1-efficient-mutation-testing-of-quantum-machine-learning-models)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：量子机器学习模型的验证与变异测试
+8. [Quantum Interval Bound Propagation for Certified Training of Quantum Neural Networks](/20260428-20260507/2605.00747v1-quantum-interval-bound-propagation-for-certified-training-of-quantum-neural-networks)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：量子神经网络的认证训练程序
+9. [Stochastic Schrödinger Diffusion Models for Pure-State Ensemble Generation](/20260428-20260507/2605.03573v1-stochastic-schrdinger-diffusion-models-for-pure-state-ensemble-generation)  
+   标签：评分：9.0/10、query:qmlco
+   evidence：量子机器学习的内在得分生成框架
 
 ### 速读区论文标签
-1. [FinSafetyBench: Evaluating LLM Safety in Real-World Financial Scenarios](/20260428-20260507/2605.00706v1-finsafetybench-evaluating-llm-safety-in-real-world-financial-scenarios)  
-   标签：评分：7.5/10、query:q6
-   evidence：评估真实金融场景和合规性中的大模型安全性
-2. [Toward a Community Roadmap for High Energy Physics and Artificial Intelligence in China and Beyond](/20260428-20260507/2605.03474v1-toward-a-community-roadmap-for-high-energy-physics-and-artificial-intelligence-in-china-and-beyond)  
-   标签：评分：7.0/10、query:profile-1
-   evidence：量子计算与机器学习研讨会的讨论
-3. [A Multistage Extraction Pipeline for Long Scanned Financial Documents: An Empirical Study in Industrial KYC Workflows](/20260428-20260507/2604.26462v1-a-multistage-extraction-pipeline-for-long-scanned-financial-documents-an-empirical-study-in-industrial-kyc-workflows)  
-   标签：评分：6.5/10、query:q4
-   evidence：针对KYC工作流的长篇扫描金融文档提取
-4. [Retrieval-Augmented Reasoning for Chartered Accountancy](/20260428-20260507/2605.00257v1-retrieval-augmented-reasoning-for-chartered-accountancy)  
-   标签：评分：6.0/10、query:q4
-   evidence：金融领域复杂任务的AI应用
-5. [Beyond Rules: LLM-Powered Linting for Quantum Programs](/20260428-20260507/2605.03943v1-beyond-rules-llm-powered-linting-for-quantum-programs)  
-   标签：评分：6.0/10、query:q1
-   evidence：基于大语言模型的量子程序静态分析与软件可靠性
+1. [Quantum Feature Selection with Higher-Order Binary Optimization on Trapped-Ion Hardware](/20260428-20260507/2604.26834v1-quantum-feature-selection-with-higher-order-binary-optimization-on-trapped-ion-hardware)  
+   标签：评分：8.5/10、query:qmlco
+   evidence：在硬件上使用高阶二进制优化进行量子特征选择
+2. [SBCA: Cross-Modal BERT-driven Actor-Critic for Multi-Asset Portfolio Optimization](/20260428-20260507/2605.01384v1-sbca-cross-modal-bert-driven-actor-critic-for-multi-asset-portfolio-optimization)  
+   标签：评分：8.5/10、query:qmlco
+   evidence：跨模态BERT驱动的Actor-Critic多资产投资组合优化
+3. [QAROO: AI-Driven Online Task Offloading for Energy-Efficient and Sustainable MEC Networks](/20260428-20260507/2604.25740v1-qaroo-ai-driven-online-task-offloading-for-energy-efficient-and-sustainable-mec-networks)  
+   标签：评分：8.0/10、query:qmlco
+   evidence：基于量子注意力的强化学习在线卸载
+4. [Explainable Artificial Intelligence for Financial Integral Equations: A Fixed-Point Neural Operator Approach](/20260428-20260507/2604.27127v1-explainable-artificial-intelligence-for-financial-integral-equations-a-fixed-point-neural-operator-approach)  
+   标签：评分：8.0/10、query:profile-1
+   evidence：使用神经算子解决Black-Scholes方程的金融市场量化分析与建模
+5. [HQ-UNet: A Hybrid Quantum-Classical U-Net with a Quantum Bottleneck for Remote Sensing Image Segmentation](/20260428-20260507/2604.27206v1-hq-unet-a-hybrid-quantum-classical-u-net-with-a-quantum-bottleneck-for-remote-sensing-image-segmentation)  
+   标签：评分：7.5/10、query:qmlco
+   evidence：带有量子瓶颈的混合量子-经典U-Net
+6. [Moira: Language-driven Hierarchical Reinforcement Learning for Pair Trading](/20260428-20260507/2605.01954v1-moira-language-driven-hierarchical-reinforcement-learning-for-pair-trading)  
+   标签：评分：7.5/10、query:profile-1
+   evidence：用于配对交易和资产选择的分层强化学习
+7. [Magic-Informed Quantum Architecture Search](/20260428-20260507/2605.03932v1-magic-informed-quantum-architecture-search)  
+   标签：评分：7.5/10、query:qmlco
+   evidence：使用图神经网络和蒙特卡洛树搜索进行量子架构搜索
+8. [Sign Embedding Quantum Algorithms for Matrix Equations and Matrix Functions](/20260428-20260507/2604.25333v1-sign-embedding-quantum-algorithms-for-matrix-equations-and-matrix-functions)  
+   标签：评分：7.0/10、query:qmlco
+   evidence：用于矩阵方程和矩阵函数的量子算法
+9. [Quantum Dynamics via Score Matching on Bohmian Trajectories](/20260428-20260507/2604.25137v1-quantum-dynamics-via-score-matching-on-bohmian-trajectories)  
+   标签：评分：6.5/10、query:qmlco
+   evidence：量子评分函数的神经网络参数化
+10. [Structure-Aware Transformers for Learning Near-Optimal Trotter Orderings with System-Size Generalization in 1D Heisenberg Hamiltonians](/20260428-20260507/2604.27171v1-structure-aware-transformers-for-learning-near-optimal-trotter-orderings-with-system-size-generalization-in-1d-heisenberg-hamiltonians)  
+   标签：评分：6.5/10、query:qmlco
+   evidence：使用Transformer学习近优Trotter排序
+11. [Quantum Software Architecture Framework (QSAF): A Component-Based Framework for Designing Hybrid Quantum-Classical Systems](/20260428-20260507/2605.01800v1-quantum-software-architecture-framework-qsaf-a-component-based-framework-for-designing-hybrid-quantum-classical-systems)  
+   标签：评分：6.5/10、query:qmlco
+   evidence：用于设计混合量子-经典系统的组件化框架
 
 
 <div class="dpr-home-promo-card">
