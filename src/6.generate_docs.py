@@ -2451,6 +2451,146 @@ def _parse_generated_md_to_meta(
     }
 
 
+def _paper_id_from_md_path(docs_dir: str, md_path: str) -> str:
+    rel = os.path.relpath(md_path, docs_dir).replace("\\", "/")
+    if rel.lower().endswith(".md"):
+        rel = rel[:-3]
+    return rel.strip("/")
+
+
+def _sidebar_tags_from_meta(meta: Dict[str, Any]) -> List[Tuple[str, str]]:
+    tags: List[Tuple[str, str]] = []
+
+    score = str(meta.get("score") or "").strip()
+    if score:
+        tags.append(("score", score))
+
+    raw_tags = str(meta.get("tags") or "").strip()
+    if raw_tags:
+        for item in re.split(r"\s*,\s*", raw_tags):
+            item = item.strip()
+            if not item:
+                continue
+            if ":" in item:
+                kind, label = item.split(":", 1)
+                kind = (kind or "other").strip()
+                label = (label or "").strip()
+            else:
+                kind, label = "other", item
+            if label:
+                tags.append((kind, label))
+
+    return tags
+
+
+def _merge_entry_lists(
+    old_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+    new_entries: List[Tuple[str, str, List[Tuple[str, str]]]],
+) -> List[Tuple[str, str, List[Tuple[str, str]]]]:
+    """
+    Merge same-day existing entries with current-run entries.
+
+    Current-run entries win when the same paper_id appears twice.
+    The output keeps current-run papers first, then older same-day papers.
+    """
+    out: List[Tuple[str, str, List[Tuple[str, str]]]] = []
+    seen = set()
+
+    for paper_id, title, tags in new_entries:
+        key = str(paper_id or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append((paper_id, title, tags))
+
+    for paper_id, title, tags in old_entries:
+        key = str(paper_id or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append((paper_id, title, tags))
+
+    return out
+
+
+def collect_existing_day_entries(
+    docs_dir: str,
+    date_str: str,
+) -> Tuple[
+    List[Tuple[str, str, List[Tuple[str, str]]]],
+    List[Tuple[str, str, List[Tuple[str, str]]]],
+    Dict[str, str],
+]:
+    """
+    Scan already-generated Markdown files under today's docs directory and
+    recover existing deep/quick entries.
+
+    This allows multiple runs on the same day to accumulate papers instead of
+    replacing the day report/sidebar with only the latest run.
+    """
+    if RANGE_DATE_RE.match(date_str):
+        day_dir = os.path.join(docs_dir, date_str)
+    else:
+        ym = date_str[:6]
+        day = date_str[6:]
+        day_dir = os.path.join(docs_dir, ym, day)
+
+    if not os.path.isdir(day_dir):
+        return [], [], {}
+
+    old_deep: List[Tuple[str, str, List[Tuple[str, str]]]] = []
+    old_quick: List[Tuple[str, str, List[Tuple[str, str]]]] = []
+    evidence_by_id: Dict[str, str] = {}
+
+    for fn in sorted(os.listdir(day_dir)):
+        if not fn.lower().endswith(".md"):
+            continue
+        if fn.upper() == "README.MD" or fn.startswith("_"):
+            continue
+
+        md_path = os.path.join(day_dir, fn)
+        paper_id = _paper_id_from_md_path(docs_dir, md_path)
+
+        try:
+            with open(md_path, "r", encoding="utf-8") as f:
+                text = f.read()
+        except Exception:
+            continue
+
+        # If a detailed summary exists, treat it as deep; otherwise quick.
+        section = "deep" if "## 论文详细总结（自动生成）" in text else "quick"
+
+        try:
+            meta = _parse_generated_md_to_meta(
+                md_path=md_path,
+                paper_id=paper_id,
+                section=section,
+                selection_source="",
+                paper_abstract="",
+            )
+        except Exception:
+            meta = {}
+
+        title = str(meta.get("title_en") or "").strip()
+        if not title:
+            title = re.sub(r"^[0-9]{4}\.[0-9]{5}v[0-9]-", "", fn[:-3]).replace("-", " ").strip()
+        if not title:
+            title = paper_id
+
+        tags = _sidebar_tags_from_meta(meta)
+        evidence = str(meta.get("evidence") or "").strip()
+        if evidence:
+            evidence_by_id[str(paper_id).strip()] = evidence
+
+        item = (paper_id, title, tags)
+        if section == "deep":
+            old_deep.append(item)
+        else:
+            old_quick.append(item)
+
+    return old_deep, old_quick, evidence_by_id
+
+
 def write_day_meta_index_json(
     docs_dir: str,
     date_str: str,
@@ -2750,6 +2890,25 @@ def main() -> None:
         log_substep("6.3", "生成速读区文章", "START")
         quick_entries = _process_section("quick", quick_list, sidebar_evidence_by_id)
         log_substep("6.3", "生成速读区文章", "END")
+
+     # Merge with papers already generated earlier on the same day.
+     # Without this, a second run on the same date replaces the sidebar/day report
+     # with only the latest recommend output.
+     old_deep_entries, old_quick_entries, old_evidence_by_id = collect_existing_day_entries(
+         docs_dir,
+         date_str,
+     )
+    if old_deep_entries or old_quick_entries:
+        deep_entries = _merge_entry_lists(old_deep_entries, deep_entries)
+        quick_entries = _merge_entry_lists(old_quick_entries, quick_entries)
+        merged_evidence = dict(old_evidence_by_id)
+        merged_evidence.update(sidebar_evidence_by_id)
+        sidebar_evidence_by_id = merged_evidence
+        log(
+            "[INFO] same-day merge: "
+            f"deep={len(deep_entries)} quick={len(quick_entries)} "
+            f"(old_deep={len(old_deep_entries)}, old_quick={len(old_quick_entries)})"
+        )
 
     log_substep("6.4", "生成当日日报并同步首页 README", "START")
     run_generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
