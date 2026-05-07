@@ -1,10 +1,13 @@
-────────────────────────────────────────
-（公告占位）欢迎使用 Daily Paper Reader。
-────────────────────────────────────────
+<div class="dpr-home-notice-card">
+  <h3 class="dpr-home-notice-title">🚀 Start Here</h3>
+  <ul class="dpr-home-notice-list">
+    <li><a href="#/tutorial/README">使用教程</a></li>
+  </ul>
+</div>
 
 ## 每次日报
 - 最新运行日期：2026-04-28 ~ 2026-05-07
-- 恢复时间：2026-05-07T20:38:19
+- 恢复时间：2026-05-07T20:47:02
 - 本次总论文数：67
 - 精读区：32
 - 速读区：35
@@ -81,6 +84,10 @@
 34. [Retrieval-Augmented Reasoning for Chartered Accountancy](/20260428-20260507/2605.00257v1-retrieval-augmented-reasoning-for-chartered-accountancy) （6.0/10）
 35. [Beyond Rules: LLM-Powered Linting for Quantum Programs](/20260428-20260507/2605.03943v1-beyond-rules-llm-powered-linting-for-quantum-programs) （6.0/10）
 
-════════════════════════════════════════
-（宣传占位）欢迎 Star / Fork 本项目。
-════════════════════════════════════════
+<div class="dpr-home-promo-card">
+  <h3 class="dpr-home-promo-title">💬 社区与支持</h3>
+  <ul class="dpr-home-promo-list">
+    <li>欢迎 Star / Fork / Issue / PR</li>
+    <li>QQ群：583867967（欢迎交流，已有：1151人）</li>
+  </ul>
+</div>
