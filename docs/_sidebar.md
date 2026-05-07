@@ -1,6 +1,7 @@
 * <a class="dpr-sidebar-root-link" href="#/">首页</a>
 * <a class="dpr-sidebar-root-link dpr-sidebar-noactive-link" href="javascript:void(0)" data-dpr-hash="#/tutorial/README">使用教程</a>
 * Daily Papers
+  * 2026-05-07 <!--dpr-date:20260507-->
   * 2026-04-28 ~ 2026-05-07 <!--dpr-date:20260428-20260507-->
     * 精读区
       * <a class="dpr-sidebar-item-link dpr-sidebar-item-structured" href="#/20260428-20260507/2604.26213v1-qvine-vine-structured-quantum-circuits-for-loading-high-dimensional-distributions" data-sidebar-item="{&quot;title&quot;: &quot;Qvine: Vine Structured Quantum Circuits for Loading High Dimensional Distributions&quot;, &quot;link&quot;: &quot;https://arxiv.org/abs/2604.26213v1-qvine-vine-structured-quantum-circuits-for-loading-high-dimensional-distributions&quot;, &quot;score&quot;: &quot;10.0&quot;, &quot;tags&quot;: [{&quot;kind&quot;: &quot;query&quot;, &quot;label&quot;: &quot;profile-1&quot;}], &quot;evidence&quot;: &quot;用于机器学习和金融中加载分布的量子电路&quot;}">Qvine: Vine Structured Quantum Circuits for Loading High Dimensional Distributions</a>

@@ -1,33 +1,21 @@
-<div class="dpr-home-notice-card">
-  <h3 class="dpr-home-notice-title">🚀 Start Here</h3>
-  <ul class="dpr-home-notice-list">
-    <li><a href="#/tutorial/README">使用教程</a></li>
-  </ul>
-</div>
+────────────────────────────────────────
+（公告占位）欢迎使用 Daily Paper Reader。
+────────────────────────────────────────
 
 ## 每次日报
 - 最新运行日期：2026-05-07
-- 运行时间：2026-05-07 20:16:11 UTC
-- 运行状态：成功
+- 恢复时间：2026-05-07T20:25:48
 - 本次总论文数：0
 - 精读区：0
 - 速读区：0
-
-### 今日简报（AI）
-> 今日无新推荐，系统未产出可展示论文。
 - 详情：[/202605/07/README](/202605/07/README)
 
-### 精读区论文标签
+### 精读区
 - 本次无精读推荐。
 
-### 速读区论文标签
+### 速读区
 - 本次无速读推荐。
 
-
-<div class="dpr-home-promo-card">
-  <h3 class="dpr-home-promo-title">💬 社区与支持</h3>
-  <ul class="dpr-home-promo-list">
-    <li>欢迎 Star / Fork / Issue / PR</li>
-    <li>QQ群：583867967（欢迎交流，已有：1151人）</li>
-  </ul>
-</div>
+════════════════════════════════════════
+（宣传占位）欢迎 Star / Fork 本项目。
+════════════════════════════════════════
