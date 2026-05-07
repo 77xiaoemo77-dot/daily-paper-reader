@@ -1551,13 +1551,14 @@ def process_paper(
     glance = ""
 
     if os.path.exists(md_path):
-        # 即使是 glance-only，也要确保生成/补齐 .txt（用于前端聊天上下文等）
-        if glance_only and pdf_url:
-            try:
-                ensure_text_content(pdf_url, txt_path)
-            except Exception:
-                # 不阻塞文档生成流程：txt 拉取失败时继续（避免因为网络/源站问题导致整批中断）
-                pass
+        # glance-only should stay metadata-only by default: no PDF/JINA fetch.
+        # Set DPR_GLANCE_ONLY_FETCH_TEXT=1 only if you explicitly need .txt for old pages.
+        if glance_only and os.getenv("DPR_GLANCE_ONLY_FETCH_TEXT", "0").strip().lower() in {"1", "true", "yes", "on"}:
+            if pdf_url:
+                try:
+                    ensure_text_content(pdf_url, txt_path)
+                except Exception:
+                    pass
 
         try:
             with open(md_path, "r", encoding="utf-8") as f:
@@ -1698,9 +1699,14 @@ def process_paper(
                     f.write(updated)
                 existing = updated
 
-        if glance_only:
-            # 只生成速览：不拉取 PDF、不做精读总结
-            return paper_id, title
+        # 新文件：如果只需要速览，则默认不拉取 PDF/Jina 文本，直接用元数据生成页面
+    if glance_only:
+        if os.getenv("DPR_GLANCE_ONLY_FETCH_TEXT", "0").strip().lower() in {"1", "true", "yes", "on"}:
+            if pdf_url:
+                try:
+                    ensure_text_content(pdf_url, txt_path)
+                except Exception:
+                    pass
 
         if section == "deep":
             # 精读区：检查是否已有详细总结
