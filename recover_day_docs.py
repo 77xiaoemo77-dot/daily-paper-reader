@@ -320,6 +320,17 @@ def update_sidebar(date_str: str, deep: List[dict], quick: List[dict]) -> None:
         f.writelines(lines)
 
 
+def read_optional_home_module(filename: str, fallback: str = "") -> str:
+    path = os.path.join(DOCS_DIR, filename)
+    if not os.path.exists(path):
+        return fallback
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return (f.read() or "").strip()
+    except Exception:
+        return fallback
+
+
 def sync_home_readme(date_str: str, deep: List[dict], quick: List[dict]) -> None:
     home_path = os.path.join(DOCS_DIR, "README.md")
     label = format_date_str(date_str)
@@ -329,11 +340,15 @@ def sync_home_readme(date_str: str, deep: List[dict], quick: List[dict]) -> None
     else:
         day_href = build_docsify_id_href(f"{date_str[:6]}/{date_str[6:]}/README")
 
+    notice_md = read_optional_home_module("_home_notice.md", "")
+    promo_md = read_optional_home_module("_home_promo.md", "")
+
     lines: List[str] = []
-    lines.append("────────────────────────────────────────")
-    lines.append("（公告占位）欢迎使用 Daily Paper Reader。")
-    lines.append("────────────────────────────────────────")
-    lines.append("")
+
+    if notice_md:
+        lines.append(notice_md)
+        lines.append("")
+
     lines.append("## 每次日报")
     lines.append(f"- 最新运行日期：{label}")
     lines.append(f"- 恢复时间：{datetime.now().isoformat(timespec='seconds')}")
@@ -342,24 +357,32 @@ def sync_home_readme(date_str: str, deep: List[dict], quick: List[dict]) -> None
     lines.append(f"- 速读区：{len(quick)}")
     lines.append(f"- 详情：[{day_href}]({day_href})")
     lines.append("")
+
     lines.append("### 精读区")
     if deep:
         for i, item in enumerate(deep, start=1):
-            lines.append(f"{i}. [{item['title']}]({build_docsify_id_href(item['paper_id'])}) {score_suffix(item['score'])}")
+            lines.append(
+                f"{i}. [{item['title']}]({build_docsify_id_href(item['paper_id'])}) "
+                f"{score_suffix(item['score'])}"
+            )
     else:
         lines.append("- 本次无精读推荐。")
     lines.append("")
+
     lines.append("### 速读区")
     if quick:
         for i, item in enumerate(quick, start=1):
-            lines.append(f"{i}. [{item['title']}]({build_docsify_id_href(item['paper_id'])}) {score_suffix(item['score'])}")
+            lines.append(
+                f"{i}. [{item['title']}]({build_docsify_id_href(item['paper_id'])}) "
+                f"{score_suffix(item['score'])}"
+            )
     else:
         lines.append("- 本次无速读推荐。")
     lines.append("")
-    lines.append("════════════════════════════════════════")
-    lines.append("（宣传占位）欢迎 Star / Fork 本项目。")
-    lines.append("════════════════════════════════════════")
-    lines.append("")
+
+    if promo_md:
+        lines.append(promo_md)
+        lines.append("")
 
     with open(home_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
