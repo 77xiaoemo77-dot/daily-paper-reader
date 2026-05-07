@@ -31,6 +31,10 @@ DOCS_DIR = os.path.join(ROOT_DIR, "docs")
 
 def format_date_str(date_str: str) -> str:
     s = str(date_str or "").strip()
+    m = re.fullmatch(r"(\d{8})-(\d{8})", s)
+    if m:
+        a, b = m.group(1), m.group(2)
+        return f"{a[:4]}-{a[4:6]}-{a[6:]} ~ {b[:4]}-{b[4:6]}-{b[6:]}"
     if len(s) == 8 and s.isdigit():
         return f"{s[:4]}-{s[4:6]}-{s[6:]}"
     return s
@@ -43,7 +47,10 @@ def build_docsify_id_href(path_no_ext: str) -> str:
 
 
 def get_day_dir(date_str: str) -> str:
-    return os.path.join(DOCS_DIR, date_str[:6], date_str[6:])
+    s = str(date_str or "").strip()
+    if re.fullmatch(r"\d{8}-\d{8}", s):
+        return os.path.join(DOCS_DIR, s)
+    return os.path.join(DOCS_DIR, s[:6], s[6:])
 
 
 def paper_id_from_md_path(md_path: str) -> str:
@@ -316,7 +323,10 @@ def update_sidebar(date_str: str, deep: List[dict], quick: List[dict]) -> None:
 def sync_home_readme(date_str: str, deep: List[dict], quick: List[dict]) -> None:
     home_path = os.path.join(DOCS_DIR, "README.md")
     label = format_date_str(date_str)
-    day_href = build_docsify_id_href(f"{date_str[:6]}/{date_str[6:]}/README")
+    if re.fullmatch(r"\d{8}-\d{8}", date_str):
+      day_href = build_docsify_id_href(f"{date_str}/README")
+    else:
+      day_href = build_docsify_id_href(f"{date_str[:6]}/{date_str[6:]}/README")
 
     lines: List[str] = []
     lines.append("────────────────────────────────────────")
