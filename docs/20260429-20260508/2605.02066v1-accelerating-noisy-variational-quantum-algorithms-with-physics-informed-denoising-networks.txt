@@ -1,0 +1,782 @@
+Title: Accelerating Noisy Variational Quantum Algorithms with Physics-Informed Denoising Networks
+
+URL Source: https://arxiv.org/pdf/2605.02066v1
+
+Published Time: Tue, 05 May 2026 01:39:53 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Accelerating Noisy Variational Quantum Algorithms with Physics-Informed Denoising Networks 
+
+Jie Liu 1, 2, 3 and Xin Wang 1, 2, ∗
+
+> 1
+
+Department of Physics, City University of Hong Kong, Tat Chee Avenue, Kowloon, Hong Kong SAR, China 
+
+> 2
+
+City University of Hong Kong Shenzhen Research Institute, Shenzhen, Guangdong 518057, China 
+
+> 3
+
+Quantum Science Center of Guangdong-Hong Kong-Macao Greater Bay Area, Shenzhen, Guangdong 518045, China 
+
+(Dated: May 5, 2026) Variational quantum algorithms are promising for near-term quantum computing, but are severely limited by hardware noise and the substantial circuit overhead required for error mitigation methods such as Zero-Noise Extrapolation (ZNE). We propose a Physics-Informed Denoising Network (PIDN) that reduces the cost of ZNE by learning a surrogate model of its optimization dynamics. By viewing the variational update as a trajectory in the parameter space, PIDN is trained to reproduce ZNE-mitigated expectation values and gradient directions while incorporating a physics-informed loss that preserves the gradient descent dynamics. Once trained, PIDN replaces repeated multi-noise evaluations with denoised expectation and gradient estimation directly from the current noisy observation and the historical trajectory, significantly reducing circuit executions. We benchmark the approach on the quantum approximate optimization algorithm for 3-regular graphs, Sherrington-Kirkpatrick, and transverse-field Ising models, as well as the variational quantum eigensolver for LiH, BeH 2 and H 2O. Across all tasks, PIDN attains performance comparable to ZNE, while reducing the number of circuit executions by a factor of approximately 4 to 6. Gradient cosine similarity with ZNE remains above 0.95 throughout training. Robustness analysis shows that PIDN fails only when ZNE itself becomes unreliable, and ablation studies confirm the necessity of the physics-informed loss for maintaining directional consistency. We further find that PIDN tracks optimization dynamics most accurately when the effective loss landscape retains strong low-frequency structure. These results establish PIDN as a scalable, resource-efficient strategy for noise-resilient variational optimization in the noisy intermediate-scale quantum regime. 
+
+I. INTRODUCTION 
+
+Variational Quantum Algorithms (VQAs) have emerged as a leading paradigm for exploiting near-term quantum hard-ware to tackle optimization and simulation problems that are beyond the reach of classical computation [1–5]. Operating within a hybrid quantum-classical framework, VQAs such as the Variational Quantum Eigensolver (VQE) for quan-tum chemistry and the Quantum Approximate Optimization Algorithm (QAOA) for combinatorial optimization employ Parameterized Quantum Circuits (PQCs) whose parameters are iteratively optimized by a classical optimizer to mini-mize a cost function C(θ), typically the expectation value 
+
+⟨H(θ)⟩ = ⟨ψ(θ)|H|ψ(θ)⟩, of a problem Hamiltonian or ob-jective observable H [6–9]. This flexible structure has enabled wide applications, positioning VQAs as flagship candidates for demonstrating quantum advantage on noisy intermediate-scale quantum (NISQ) devices [10, 11]. Despite their theoretical flexibility and inherent resilience to certain systematic biases, the practical deployment of VQAs on contemporary hardware faces a dual challenge that threatens their scalability: the high cost of quantum measure-ment and the fragility of the optimization landscape under hardware noise [12–14]. The primary obstacle to efficient VQA convergence is the corruption of the gradient signal. In practice, the cost function C(θ) is not measured exactly but is estimated through a finite number of measurement outcomes, or “shots”. This introduces stochastic shot noise, which scales as 1/√Nshots . To achieve the precision required for actual 
+
+> ∗Electronic address: x.wang@cityu.edu.hk
+
+applications, the sampling requirements become prohibitively expensive. Furthermore, hardware-intrinsic noise, including gate er-rors, T1/T2 decoherence, and crosstalk, shifts the global min-imum and flattens the landscape, often leading to the well-known phenomenon of barren plateaus [14–16]. In the pres-ence of such noise, the standard approach to gradient estima-tion, the parameter-shift rule, becomes highly unreliable. The parameter-shift rule requires evaluating the cost function at shifted coordinates, e.g., θ ± π/ 2. Since each evaluation is in-dependently perturbed by both shot noise and hardware bias, the resulting gradient vector ∇C(θ) often points in a subopti-mal or even divergent direction. Both shot and hardware noise sources can in principle be mitigated. Shot noise can be mitigated by increasing the num-ber of measurements and hardware noise can be mitigated through error mitigation techniques such as Zero-Noise Ex-trapolation (ZNE). However, these remedies significantly in-flate the “shot tax” on quantum hardware [17, 18], namely the additional sampling overhead required to obtain reliable error-mitigated estimates. In particular, methods such as ZNE require the same observable to be measured repeatedly un-der multiple amplified noise settings, after which the results are combined through extrapolation. Consequently, the total number of circuit repetitions can become significantly larger than that required for a single unmitigated evaluation. A key observation underpinning this work is that VQA opti-mization is inherently a dynamical process: parameters evolve along a correlated trajectory determined by the cost land-scape, optimizer, and noise characteristics. Standard train-ing protocols, however, treat each iteration independently, re-peatedly estimating noisy expectation values and gradients from scratch [19]. This ignores the strong temporal structure 
+
+> arXiv:2605.02066v1 [quant-ph] 3 May 2026
+
+2present in the optimization dynamics and leads to redundant measurements. Exploiting this structure offers an opportunity to reduce measurement overhead without compromising con-vergence. Motivated by this insight, we propose a Physics-Informed Denoising Network (PIDN) that simultaneously de-noises low-shot expectation values and predicts the next-step parameters along the VQA optimization trajectory. Rather than reducing iteration counts, our objective is to minimize the number of quantum measurements required per training step. The PIDN takes as input the previous circuit parameters 
+
+θ0, θ1, ..., θt and the current noisy, low-shot expectation value 
+
+Cnoisy (θt), and outputs (i) a denoised estimate ˆC(θt) and (ii) the predicted next-step parameters θt+1 . Crucially, once trained, the model enables the optimizer to advance along the trajectory without performing explicit parameter-shift gradi-ent evaluations at every step, relying instead on learned dy-namics. The unified workflow for the PIDN is illustrated in Fig. 1. It is worth emphasizing that PIDN does not perform autonomous future prediction in the conventional time-series sense. At each iteration, the current noisy expectation value is still obtained from the quantum circuit and supplied to the model. The task is therefore more accurately understood as re-constructing the underlying ideal optimization trajectory con-ditioned on the current noisy observation, rather than extrap-olating the future path solely from past data. This approach is closely related to surrogate modeling, where a computation-ally tractable classical model, often a neural network, is used to approximate an otherwise computationally expensive pro-cess, such as gradient descent with ZNE evaluations in our example. Surrogate models are widely employed to alleviate the burden of repeatedly evaluating costly objective functions, enabling faster optimization and more efficient exploration of the parameter space [20, 21]. By replacing expensive evalua-tions with a learned approximation, the iterative procedure is significantly accelerated while retaining the essential structure of the underlying problem. To ensure reliability and physical consistency, the PIDN is trained using a hybrid loss function that combines two com-plementary objectives. First, a data-driven denoising loss su-pervises the network using high-fidelity reference values ob-tained from ZNE, teaching the model to reconstruct accu-rate expectation values from low-shot measurements. Second, a physics-informed loss enforces consistency with gradient-based optimization dynamics, constraining the predicted pa-rameter updates to align with the expected descent direction dictated by ∇θ ⟨C(θ)⟩. By embedding the structure of VQA optimization directly into the learning process, the PIDN can maintain stable training trajectories while predicting reliable optimization directions. This approach enables a different training paradigm: costly explicit quantum evaluations are used only in the first few it-erations, while future steps are carried out using the learned surrogate dynamics with low cost quantum evaluations. As a result, the total shot cost scales mostly with the number of an-choring evaluations rather than the number of parameters or training steps, yielding substantial measurement shot savings. Our contributions are threefold: First, we propose aphysics-informed neural network architecture tailored to VQA training that integrates measurement denoising with pa-rameter prediction in a unified framework. Second, we formu-late a hybrid loss function that balances data fidelity (via ZNE-supervised denoising) with physical consistency (via gradi-ent descent constraints), enabling the model to act as a re-liable dynamics surrogate. Third, we validate our approach through extensive experiments on benchmark problems, in-cluding QAOA for different combinatorial problems and VQE for different molecules, demonstrating 80% reductions in the number of shots compared to standard training protocols while achieving comparable or superior convergence accu-racy. The remainder of this paper is organized as follows: Sec. II provides background on VQAs, noise sources, and physics-informed machine learning; Sec. III details our proposed PINN architecture and loss formulation; Sec. IV presents re-sults; and we conclude in Sec. V.   
+
+> II. PRELIMINARIES A. Variational Quantum Algorithms and Optimization Dynamics
+
+VQAs solve optimization and simulation problems by mini-mizing a parameterized quantum cost function within a hybrid quantum-classical loop. Given a PQC U (θ), a parameterized quantum state is prepared [22]: 
+
+|ψ(θ)⟩ = U (θ)|0⟩⊗n, (1) and the cost function is defined as the expectation value of a Hermitian observable H:
+
+⟨H(θ)⟩ = ⟨ψ(θ)|H|ψ(θ)⟩. (2) In practice, H is often expressed as a weighted sum of Pauli operators [23], 
+
+H =
+
+> M
+
+X
+
+> k=1
+
+hkPk, (3) so that the cost function C(θ) can be decomposed as: 
+
+C(θ) = 
+
+> M
+
+X
+
+> k=1
+
+hk⟨Pk(θ)⟩. (4) We use QAOA and VQE as two benchmarks in this study. In QAOA, the cost Hamiltonian encodes a classical opti-mization problem or spin model. Below we specify three rep-resentative Hamiltonians considered in this work. 
+
+MaxCut on 3-Regular Graphs. For a graph G = ( V, E )
+
+(where V and E denote the sets of vertices and edges, respec-tively), the MaxCut Hamiltonian is 
+
+HMaxCut = X
+
+> (i,j )∈E
+
+12 (I − ZiZj ), (5) 3𝐶 !"#$% (𝜽 )
+
+> 𝜽 𝟎 :𝒕
+> 𝐶 %(𝜽 )
+> 𝜽 )*+
+> ℱ
+
+## Stage II: PIDN Surrogate Training 
+
+Data Loss 
+
+Physics Loss 
+
+## ℒ!"#" 
+
+## ℒ$%&' 
+
+Surrogate Training 
+
+## Stage III: PIDN -Driven Optimization 
+
+> 𝐶 !"#$% (𝜽 )
+> 𝜽 𝟎 :𝒕
+> 𝐶 %(𝜽 )
+> 𝜽 )*+
+> ℱ
+
+Predict ∇𝜽 𝐶 #(𝜽 ) 𝜽 "#$ = 𝜽 " − 𝜂 𝜕 𝐶 #(𝜽 )
+
+𝜕 𝜽 
+
+> 𝑈 (𝜽 )
+> +
+> +
+> 𝑈 (𝜽 )
+> 𝑈 (𝜽 )
+
+# >
+
+# >
+
+# >
+
+Measure 𝐶 (𝜽 )
+
+Estimate ∇%𝐶 &'( (𝜽 )
+
+Update 𝜽 "#$ = 𝜽 𝒕 − 𝜂 ∇𝜽 𝐶 (𝜽 )
+
+> ZNE Training Data
+
+## Stage I: ZNE Data Acquisition noisy results 
+
+> Expectation Value
+> Noise Level
+> ZNE results
+
+FIG. 1: Unified three-stage workflow for physics-informed reconstruction of ZNE optimization. Stage I (ZNE Data Acquisition) performs noise-scaled circuit evaluations to evaluate the zero-noise-extrapolated cost CZNE (θ) and its gradient ∇θ CZNE (θ), generating training data along the optimization trajectory. Stage II (PIDN Surrogate Training) uses these samples to train a neural surrogate F by minimizing a com-posite objective consisting of value-matching loss and gradient-consistency loss, thereby reconstructing the effective ZNE-induced optimiza-tion vector field. Stage III (PIDN-Driven Optimization) replaces further ZNE evaluations with classical predictions of surrogate gradients, enabling continued optimization with substantially reduced quantum resource consumption while preserving the geometric structure of the ZNE-corrected landscape. 
+
+where each vertex is associated with a qubit, and ZiZj de-notes the tensor-product Pauli-Z operator acting on the qubits corresponding to vertices i and j. Maximizing ⟨HMaxCut ⟩
+
+corresponds to maximizing the number of edges crossing the cut [24]. The performance of QAOA is quantified using the Approx-imation Ratio (AR): 
+
+AR = ⟨HMaxCut ⟩
+
+Cmax 
+
+, (6) where Cmax is the optimal classical cut value. AR ∈ [0 , 1] 
+
+with value close to 1 indicating near-optimal performance. 
+
+Sherrington–Kirkpatrick (SK) Model. The SK model is an infinite-range spin glass defined as [25] 
+
+HSK = X
+
+> i<j
+
+Jij ZiZj , (7) where i and j are spin indices, and ZiZj denotes the tensor-product Pauli-Z operator acting on spins i and j. Here, Jij 
+
+is the coupling strength between the i-th and j-th spins, ran-domly drawn from a normal distribution: 
+
+Jij ∼ N (0 , 1) . (8) The objective is to minimize ⟨HSK ⟩, and performance is again measured via AR to the ground state energy: 
+
+AR = Egs 
+
+⟨HSK ⟩ , (9) where Egs is obtained via classical exact diagonalization for small systems. AR ∈ [0 , 1) with value close to 1 indicating near-optimal performance. 
+
+Transverse Field Ising Model (TFIM). The one-dimensional TFIM is defined as [26]: 
+
+HTFIM = −J
+
+> n−1
+
+X
+
+> i=1
+
+ZiZi+1 − h
+
+> n
+
+X
+
+> i=1
+
+Xi, (10) 4where i is the spin index, ZiZi+1 denotes the product of Pauli-
+
+Z operators acting on neighboring spins i and i + 1 , Xi is the Pauli-X operator acting on spin i, J is the interaction strength, and h is the transverse field strength. For TFIM, the objective is to minimize the energy 
+
+⟨HTFIM ⟩. Performance is evaluated using the approximation ratio relative to the exact ground state energy: 
+
+AR = Egs 
+
+⟨HTFIM ⟩ , (11) 
+
+AR ∈ [0 , 1) with value close to 1 indicating near-optimal per-formance. In this work, we use the quantum alternating operator ansatz for the QAOA problems, which uses a p-layer circuit with two alternating operators as PQCs. In the VQE, the Hamiltonian corresponds to a molecular electronic structure problem [27]: 
+
+Hmolecule = X
+
+> pq
+
+hpq a†
+
+> p
+
+aq + 12
+
+X
+
+> pqrs
+
+hpqrs a†
+
+> p
+
+a† 
+
+> q
+
+ar as, (12) where p, q, r, s index the spin-orbitals of a chosen single-particle basis. The coefficients hpq and hpqrs denote the one-electron and two-electron integrals, corresponding to the ki-netic energy and electron-nuclear interaction terms, and the electron-electron Coulomb interaction, respectively. The op-erators a† 
+
+> p
+
+and ap are fermionic creation and annihilation op-erators that create and remove an electron in spin-orbital p.After fermion-to-qubit transformation (e.g., Jordan-Wigner) [28], this Hamiltonian is mapped to a Pauli decomposition: 
+
+Hmolecule =
+
+> L
+
+X
+
+> ℓ=1
+
+wℓPℓ. (13) For example, the LiH molecule in a minimal basis may re-quire 4 qubits and hundreds of Pauli terms [29]. The VQE objective is to minimize the energy: 
+
+E(θ) = ⟨ψ(θ)|H|ψ(θ)⟩. (14) The performance of VQE is evaluated by the energy error: 
+
+∆E = E(θ) − EFCI , (15) where EFCI is the exact Full Configuration Interaction energy [30]. A solution is said to achieve chemical accuracy if 
+
+∆E ≤ 1.6 × 10 −3 Hartree , (16) corresponding to approximately 1 kcal/mol, which is suffi-cient for predicting reaction energetics in quantum chemistry [31]. In this work, the variational ansatz used for molecular sim-ulations is the Unitary Coupled Cluster with Singles and Dou-bles (UCCSD) ansatz, which is widely adopted in quantum chemistry due to its systematic improvability and chemical in-terpretability [32, 33]. VQA training proceeds iteratively by updating the param-eters according to a classical optimization rule. For gradient descent, this takes the form 
+
+θt+1 = θt − η∇θ C(θ), (17) where η is the learning rate and t indexes the optimization step. This recursion defines a discrete-time dynamical system in parameter space, with the optimization trajectory {θ}Tt=0 
+
+determined by both the cost landscape and the chosen opti-mizer. Gradients are commonly evaluated using the parameter-shift rule, which allows exact differentiation of expectation values for gates of the form e−iθ iGi with G2 
+
+> i
+
+= I:
+
+∂C (θ)
+
+∂θ i
+
+= 12
+
+ D
+
+H(θ + π
+
+2 ei)
+
+E
+
+−
+
+D
+
+H(θ − π
+
+2 ei)
+
+E 
+
+, (18) Consequently, evaluating the full gradient requires 2n addi-tional circuit executions to estimate the expectation value per optimization step for an ansatz with n parameters. Each of these evaluations must itself be estimated from repeated quan-tum measurements, making the overall training cost scale un-favorably with circuit size, number of parameters and training duration.  
+
+> B. Shot Noise, Hardware Noise, and Zero-Noise Extrapolation
+
+Expectation values on quantum hardware are estimated from a finite number of measurement shots Nshots . For a sin-gle observable Pk with outcomes mj ∈ {± 1}, the estimator 
+
+ˆPk = 1
+
+N
+
+> N
+
+X
+
+> j
+
+mj (19) has variance 
+
+Var( ˆPk) = 1 − ⟨ Pk⟩2
+
+N , (20) implying that the total variance of the cost function estimator scales as [34, 35]: 
+
+Var( ˆC) = X
+
+> k
+
+h2
+
+> k
+
+Var( ˆPk) ∼ O 
+
+ 1
+
+N
+
+
+
+. (21) Reducing shot noise thus requires increasing the number of measurements N , which directly increases experimental cost. It is also worth mentioning that the variance of the cost func-tion grows with the number of terms in the expansion of the Hamiltonian H as shown in Eq. (4), making accurate evalua-tion of larger systems even more demanding [36]. In addition to statistical fluctuations, hardware noise intro-duces systematic errors through decoherence, control imper-fections, and crosstalk. Let Eλ denote a noisy quantum chan-nel parameterized by an effective noise strength λ. The mea-5sured expectation value can be written as 
+
+Cλ(θ) = Tr( HEλ(ρ(θ))) , (22) which deviates from the ideal value C0(θ).ZNE mitigates this bias by deliberately amplifying noise and extrapolating to the zero-noise limit. In a typical ZNE workflow [37–40]: 1. The circuit is executed at multiple noise amplification factors {λ1, λ 2, ..., λ L}, often implemented via gate folding or pulse stretching [37, 41]. 2. Expectation values Cλl (θ) are measured at each noise level. 3. A model (e.g., linear or polynomial) is fit to the data and extrapolated to λ → 0,
+
+CZNE (θ) = lim  
+
+> λ→0
+
+Cλ(θ). (23) While ZNE can significantly reduce systematic bias, it in-creases the total shot cost by a factor proportional to the num-ber of noise levels L and must be repeated at each optimiza-tion step. When combined with gradient-based training, the overall measurement overhead becomes prohibitive for prac-tical VQA implementations. Recent advances in quantum error mitigation have increas-ingly explored deep-learning-based methods, and an impor-tant distinction among these methods lies in the assumptions they make about how noise depends on the hardware, the cir-cuit structure, and the variational parameters [42–44]. These assumptions directly determine how the training dataset is generated and, consequently, what aspect of the noisy quan-tum process the learned model is expected to capture. One broad class of approaches assumes that the dominant source of noise is primarily hardware dependent. In this case, the goal is to learn a correction model that reflects the response of a specific device, rather than the behavior of a particular ansatz [42, 43]. The dataset is therefore constructed by run-ning many circuits on the same hardware to obtain noisy out-puts, while classically simulating the same circuits to obtain the corresponding ideal outputs, or using traditional quantum error mitigation methods such as ZNE to get less noisy out-puts if the underlying circuits are hard to classically simulate. These noisy-clean pairs are then used to train a neural net-work that takes as input features such as the circuit structure, the circuit parameters, and the associated noisy measurement results, and outputs a corrected estimate. Because the model is trained to capture the characteristic noise behavior of the hard-ware itself, this type of method is relatively general and can, in principle, be applied to many different circuits executed on the same device. A second class of methods assumes that the noise depends not only on the hardware, but also strongly on the circuit struc-ture. Under this assumption, the training data must preserve structural similarity to the target circuit, since the learned model is intended to capture how noise acts on circuits of a particular form. One important example is the family of Clifford-based methods, inspired by Clifford data regression [45, 46]. The central idea is that circuits with similar struc-tures are expected to be affected by noise in similar ways, even if their detailed gate content is different. Based on this idea, one generates many classically simulable Clifford circuits that mimic the structure of the target circuit, executes them on the noisy hardware to obtain noisy outputs, and pairs these with their ideal outputs obtained from classical simulation. The resulting training set allows the model to learn a structure-dependent correction rule without requiring exact classical simulation of the original non-Clifford target circuit. A related but distinct situation arises in fixed-structure VQAs, where the ansatz architecture is held fixed and the circuit is evaluated over many different parameter settings. In this case, the noisy and ideal data pairs are generated by sweeping across param-eter space for the same variational circuit structure [44]. The objective here is typically to train a surrogate model that ap-proximates the parameter-to-observable map, or even a broad region of the variational loss surface itself [44, 47–49]. Be-cause the model must represent the behavior of the VQA over an extended region of parameter space, this type of approach generally requires training data that span a sufficiently broad portion of the landscape, and its data cost can therefore grow rapidly with the number of variational parameters. A third class of methods adopts a trajectory-based view-point. Rather than attempting to learn a correction model that is valid for arbitrary circuits on a device, or a surrogate that reconstructs the full loss surface of a fixed ansatz, trajectory-based methods restrict attention to the region of parameter space that is actually visited during optimization [50]. Ac-cordingly, the dataset is generated by collecting samples only along the optimization trajectory itself. In geometric terms, one may think of this as learning not the entire surface, but only a narrow “trajectory tube” surrounding the dynamically relevant path on that surface. This significantly reduces the amount of training data required, because the model is no longer asked to reconstruct the full global landscape. In-stead, it only needs to capture the local optimization behav-ior relevant to the variational dynamics. This strategy is par-ticularly attractive when the ultimate goal is not to predict arbitrary expectation values everywhere in parameter space, but to accelerate the optimization process itself. However, the trajectory-based approach in Ref. [50] focuses only on mitigating shot noise and does not address hardware-induced noise. In this sense, existing deep-learning-based mitigation methods differ not only in what they aim to correct, but also in the assumptions they make, the way their datasets are con-structed, and the aspect of the noisy quantum process that the model is trained to learn. In contrast, our method treats noisy VQA training itself as a dynamical system and uses physics-informed learning to reconstruct both denoised expectation values and the associated parameter evolution under the com-bined effect of shot noise and hardware noise. These three classes of learning-based mitigation methods reflect different tradeoffs between generality, structural speci-ficity, and data efficiency. Hardware-dependent approaches aim for broad applicability across circuits executed on the same device, but may require large and diverse training 6datasets in order to capture the device response over many circuit families. Structure-dependent approaches exploit the similarity between circuits of a given form, which can im-prove correction accuracy for a target ansatz or circuit class, but at the cost of reduced transferability beyond that struc-ture. Trajectory-based approaches are the most targeted in their data usage, since they restrict learning to the dynami-cally relevant region of parameter space explored during op-timization, thereby avoiding the need to reconstruct the full variational landscape. In this sense, the choice of method de-pends strongly on the ultimate objective: whether one seeks hardware-level generality, structure-aware correction, or data-efficient acceleration of a specific variational optimization process. In this work, we build on the trajectory-based perspective and further tailor it to the setting of noisy variational quan-tum algorithms under realistic hardware error sources. Our method treats VQA training itself as a dynamical system and uses physics-informed learning to jointly reconstruct denoised expectation values and the associated parameter evolution. In this way, the learned model is constrained not only to correct the observed cost values, but also to preserve the optimization dynamics induced by noise-mitigated training. This perspec-tive moves beyond point-wise correction of isolated observ-ables and instead learns the structured optimization flow in the dynamically relevant region of parameter space. As a result, our framework captures both local information in the energy landscape and the trajectory-level behavior of the variational update process, enabling efficient emulation of ZNE-assisted optimization with substantially reduced circuit executions.  
+
+> C. Physics-Informed Neural Network
+
+Physics-Informed Neural Networks (PINNs) incorporate known physical laws into neural network training by enforc-ing them as soft constraints in the loss function [51–54]. Given a differential equation of the form 
+
+D[u(x, t )] = 0 , (24) a PINN approximates the solution uw(x, t ) with a neural net-work parameterized by w and minimizes a composite loss 
+
+L = Ldata + λLphysics , Lphysics = D[uw(x, t )] 
+
+> 2
+
+, (25) which adds a penalty to the network when uw(x, t ) violates the differential equation while minimizing the discrepancy 
+
+Ldata between the collected data and the prediction. Beyond solving static differential equations, PINNs have been successfully applied to learning dynamical systems and time-stepping operators, where the network predicts the next-step solution u(x, t +∆ t) given the current state u(x, t ), while enforcing the underlying evolution law [55, 56]. This formu-lation has enabled PINN-based models to predict system dy-namics, infer unknown parameters, and reconstruct governing behavior even when the available data are sparse or noisy [56– 58].  
+
+> III. METHODS
+
+In this section, we present a unified workflow of PIDN that integrates VQAs, ZNE, and PINN, as introduced in Sec. II. The objective of PIDN is to reconstruct the effective noise-mitigated optimization dynamics using a learned surrogate model trained on partial ZNE data, thereby reducing quantum resource consumption while preserving optimization fidelity. PIDN accelerate the training of noisy VQAs by learning an effective, noise-mitigated optimization flow in the parameter space. It is worth noting that this method aims not to acceler-ate convergence and reduce the number of training iterations, but rather aims to reduce the number of evaluations of the un-derlying circuit within each iteration and accelerate the exper-imental process and alleviate the burden of data collection to make meaningful updates to the trainable parameters utilizing fewer shots. At its core, the PIDN treats the parameter update process of a VQA as a discrete-time dynamical system subject to both stochastic shot noise and systematic hardware noise. Motivated by this, PIDN formulates the parameter update as next-step prediction of a dynamical system while trying to de-noise the expectation value and minimize the effect of noise. The PIDN is trained together during the VQA optimization. In the early training iterations, ZNE is employed to provide high-fidelity reference data 
+
+
+
+θt, C noisy (θt), C ZNE (θt), θt+1 
+
+
+
+. (26) ZNE is employed throughout the first Tinit iterations, namely 
+
+t = 0 , 1, 2, ...T init . These reference data are then fed into the PIDN, which simultaneously performs (i) denoising of expec-tation values, i.e., Cnoisy (θt) → CZNE (θt) and (ii) prediction of the next-step variational parameters, i.e., θt → θt+1 . Be-sides minimizing the discrepancy between the output value and the reference value provided by ZNE, physics-informed constraints derived from gradient-based optimization are also incorporated to regularize the learned dynamics, the effect of which will be analyzed later. After training, the PIDN is used to predict future parame-ters update from the current noisy measurement, and then the parameters are fed into the circuit to provide the next noisy measurement under limited budget without employing ZNE. The PIDN and circuit are then alternately evaluated to opti-mize the parameters in the PQC until convergence. The work-flow of PIDN is presented in Fig. 2.  
+
+> A. Problem Formulation
+
+Consider a parameterized quantum circuit 
+
+|ψ(θ)⟩ = U (θ)|0⟩, (27) where θ ∈ Rd denotes the variational parameters. 7Quantum Circuit 
+
+# Physics -Informed 
+
+# Denoise Network 
+
+# 𝜽 !
+
+𝐶 !"#$% (𝜽 𝒕 )
+
+Noisy Input 
+
+# Zero Noise Extrapolation 
+
+# 𝐶 !→#(𝜽 𝒕 )
+
+Update 
+
+> Gradient Descent
+
+# Target 
+
+Denoised Output 
+
+# 𝐶 "#$ 𝜽 ! , 𝜽 !%&, 𝒈 "#$ 
+
+# 𝜽 %!%&
+
+𝐶 %(𝜽 𝒕 )
+
+Next -step prediction 
+
+Loss Function 
+
+# ℒ'()( + 𝛽 ℒ*+,-
+
+> 𝑡  ≤ 𝑇 #!#'
+
+𝑡 > 𝑇 #!#' 
+
+𝑡 ≤ 𝑇 #!#' 
+
+PIDN Surrogate Training 
+
+PIDN Surrogate Prediction 
+
+FIG. 2: Workflow and architecture of the physics-informed denoising network (PIDN). Schematic illustration of the PIDN-assisted optimiza-tion framework. At early iterations ( t ≤ Tinit ), ZNE is performed to generate denoised reference values and gradients, which serve as training targets. The PIDN takes two inputs: the noisy expectation value obtained from the quantum circuit and the historical parameter trajectory encoded via a GRU branch. These representations are fused to produce two outputs: a denoised expectation value approximating the ZNE-corrected cost and a prediction of the next-step parameters. The network is trained using a composite loss function combining supervised reconstruction and a physics-informed term. After the training phase ( t > T init ), PIDN replaces ZNE to provide denoised cost estimates and parameter updates, thereby reducing circuit-execution overhead while preserving optimization dynamics. 
+
+The ideal cost function is 
+
+C(θ) = ⟨ψ(θ)|H|ψ(θ)⟩, (28) while under hardware noise the measured objective becomes 
+
+Cnoisy (θ). Applying ZNE with noise scaling factors {λk}Lk=1 
+
+produces an estimate of the noise-mitigated cost CZNE (θ).Define the corresponding gradients: 
+
+gNoisy (θ) = ∇θ Cnoisy (θ), (29) 
+
+gZNE (θ) = ∇θ CZNE (θ). (30) Our goal is to learn a surrogate model 
+
+Fϕ :
+
+
+
+θ0: t, C noisy (θt)
+
+
+
+7→
+
+
+
+ˆC(θt), ˆθt+1 
+
+
+
+(31) parameterized by ϕ, such that its induced gradients ∇θt
+
+ˆC(θt)
+
+approximate gZNE (θ) in the region explored during optimiza-tion and at the same time minimize the difference between 
+
+( ˆC(θt), ˆθt+1 ) and (CZNE (θt), θt+1 ) .This surrogate aims to enable replacement of repeated ZNE evaluations by classical predictions in the future stage after sufficient training. 
+
+B. Physics-Informed Surrogate Training 
+
+First, we use ZNE to collect training data. During the ini-tial training phase, ZNE is applied by evaluating the circuit at multiple noise levels λ > 1 and extrapolating to the zero-noise limit to get the trajectory θ0: Tinit under gradient descent, the noisy expectation value Cnoisy (θ0: Tinit −1), the denoised ex-pectation value CZNE (θ0: Tinit −1) and the corresponding gra-dients gZNE (θ0: Tinit −1).Each optimization step using ZNE provides a supervised training pair 
+
+Cnoisy (θ0: t), θ0: t
+
+| {z }
+
+> input
+
+, C ZNE (θt), θ(0) 
+
+> t+1
+
+, gZNE (θt)
+
+| {z }
+
+> target
+
+ , (32) where θ(0)  
+
+> t+1
+
+denotes the next-step parameters obtained from a gradient descent using the extrapolated cost function. Following the PINN framework described in Sec. II.C, we construct a composite loss function that enforces both data fidelity and gradient consistency. 8Given a dataset 
+
+{Cnoisy (θ0: t), θ0: t, C ZNE (θt), θt+1 , gZNE (θt)}Tinit −1 
+
+> t=0
+
+,
+
+(33) which is collected from ZNE-corrected evaluations along an optimization trajectory, we define the supervised data loss 
+
+Ldata = 1
+
+Tinit 
+
+> Tinit −1
+
+X
+
+> t=0
+
+ˆC(θt) − CZNE (θt) 2
+
++ ˆθt+1 − θt+1 
+
+> 22
+
+,
+
+(34) and the physics-informed gradient consistency loss 
+
+Lphys = 1
+
+Tinit 
+
+> Tinit −1
+
+X
+
+> t=0
+
+∇θt
+
+ˆC(θt) − gZNE (θt) 22
+
+. (35) Here, ∥ · ∥ 22 denotes the squared Euclidean norm, i.e., the sum of the squared components of the vector. The total training objective is 
+
+L(ϕ) = Ldata + β Lphys , (36) where β controls the relative importance of enforcing gradient alignment. This formulation is a direct specialization of the general PINN objective to our problem formulation setting, where gradient consistency enforces reconstruction of the effective noise-mitigated optimization flow. The proposed PIDN adopts a dual-branch, dual-head ar-chitecture designed to jointly model observable correction and parameter dynamics. The input consists of two compo-nents: (i) a feedforward branch that takes the noisy expecta-tion value as input, capturing instantaneous measurement in-formation, and (ii) a recurrent branch implemented using a small GRU [59] that encodes the historical parameter trajec-tory (θ0: t, C noisy (θ0: t)) , thereby learning the temporal struc-ture of the optimization process. These two latent represen-tations are fused and mapped to two output heads: one pre-dicts the denoised expectation value approximating the ZNE-mitigated cost, and the other predicts the next-step variational parameters, effectively learning the underlying optimization vector field. This joint prediction enforces consistency be-tween cost reconstruction and parameter updates. The net-work is trained using the Adam optimizer to minimize a com-posite loss function combining supervised reconstruction and physics-informed constraints.  
+
+> C. Workflow
+
+The overall workflow consists of three stages:  
+
+> 1. Stage I: ZNE Data Collection
+
+Starting from an initial parameter θ0, we perform ZNE-corrected evaluations along the optimization trajectory. At it-eration t:1. Evaluate Cλk (θt) for all noise levels {λk}.2. Compute the extrapolated cost CZNE (θt).3. Estimate the gradient gZNE (θt) using the parameter-shift rule applied to each noise-scaled circuit. 4. Update parameters using gradient descent: 
+
+θt+1 = θt − η gZNE (θt). (37) The resulting trajectory provides training samples for the surrogate model.  
+
+> 2. Stage II: Surrogate Training
+
+Using dataset D, we minimize L(ϕ) to obtain trained pa-rameters ϕ∗. 
+
+> 3. Stage III: Surrogate-Driven Optimization
+
+After training, PIDN is embedded into the workflow of VQA training, subsequent optimization steps replace ZNE evaluations by surrogate predictions: 
+
+θt+1 = θt − η ∇θ Fϕ∗ (θ0: t, C noisy (θt)) , (38) and then θt+1 is fed into the ansatz to evaluate the noisy cost function C(θt+1 ). The ansatz and PIDN is alternately evalu-ated to optimize the circuit parameters. This significantly reduces the number of shots, as CZNE is approximated by the surrogate model and gradient computa-tions are performed classically.  
+
+> IV. RESULTS
+
+In this section, we benchmark the proposed PIDN across both combinatorial optimization and quantum chemistry tasks, focusing on its ability to reconstruct noise-mitigated optimization dynamics in ZNE-mitigated VQA and to reduce quantum measurement costs under realistic noise. We con-sider two representative classes of VQAs: the QAOA for com-binatorial optimization problems and the VQE for molecu-lar ground-state estimation. Throughout this section, perfor-mance is evaluated using task-appropriate metrics: for QAOA, we use AR, [see Eqs. (6), (9), (11)], with higher values indi-cating better performance; for VQE, we use the energy er-ror [see Eq. (15)], where lower values indicate better conver-gence. All results are obtained under gate-level depolarization or dephasing noise, and comparisons are made between noisy VQA (denoted as Noisy in all figures below), ZNE-assisted VQA (denoted as ZNE in all figures below), and the proposed PIDN-assisted VQA (denoted as PIDN in all figures below) under consistent measurement budgets unless otherwise spec-ified. 9𝜃 ! 𝜃 !𝜃 " 𝜃 " 𝜃 "
+
+→Hmaxcut ↑
+
+→Hmaxcut ↑
+
+𝜃 ! 𝜃 " 𝜃 ! 𝜃 " 𝜃 ! 𝜃 "
+
+𝜃 ! 𝜃 " 𝜃 ! 𝜃 " 𝜃 ! 𝜃 " 
+
+> FIG. 3: Noise-induced distortion of the optimization landscape. (a-c) Loss landscapes and optimization trajectories for (a) noiseless VQA, (b) noisy VQA, and (c) ZNE-assisted VQA under depolarizing noise. (d-f) Corresponding results under dephasing noise, arranged in the same order as (a-c). The optimization trajectories are shown as black and colored connected dots, with the blue dots being the starting points and red ones being ending points. Noise deforms the cost landscape and alters optimization trajectories relative to the noiseless case, while ZNE partially restores the landscape geometry, yielding trajectories that more closely follow the noiseless dynamics.
+> A. Reconstruction of Effective Optimization Flow under Noise
+
+We first investigate whether PIDN can faithfully reconstruct the effective optimization flow induced by ZNE, rather than merely reproducing final expectation values. This distinction is crucial: variational optimization depends not only on the loss landscape itself, but also on the local gradient directions that guide parameter updates. To investigate how noise modifies the optimization geom-etry, we consider the MaxCut problem of 3-regular graphs solved using a QAOA ansatz. To enable visualization, we randomly fix all variational parameters except two ( θ1 and 
+
+θ2) and evaluate the objective function ⟨HMaxCut ⟩ over a two-dimensional grid in this reduced parameter subspace. We compare three settings: Ideal (noiseless) VQA shown in Fig. 3(a) and (d), noisy VQA under depolarizing and dephas-ing noise shown in Fig. 3(b) and (e) and ZNE-assisted VQA under depolarizing and dephasing noise shown in Fig. 3(c) and (f). In the noiseless case, the cost landscape exhibits smooth curvature and coherent basin structure. The surface varies continuously across the parameter domain, with well-defined gradients directing the optimization trajectory toward a local minimum. The curvature is structured and globally informa-tive, indicating a well-conditioned optimization geometry. In contrast, the noisy landscape exhibits two distinct geo-metric distortions: • Global flattening: Across large regions of parame-ter space, the cost values concentrate within a narrow range, significantly reducing contrast between high-and low-energy regions. This suppresses large-scale curvature and diminishes the directional information encoded in the landscape. • Local roughness: At smaller scales, the surface be-comes irregular and highly fluctuating. The cost function displays sharp, localized variations that are not present in the ideal landscape, resulting in high-frequency perturbations superimposed on an otherwise flattened structure. Formally, this corresponds to a reduction in global gradi-ent norm combined with increased variance in local gradient direction. As a result, the optimization geometry becomes ill-conditioned: the large-scale structure is suppressed, while small-scale noise-induced perturbations dominate the gradient signal. 10 When ZNE is applied, we observe a partial restoration of the global landscape structure. The basin geometry and large-scale curvature become visibly closer to the noiseless case. The overall energy contrast across parameter space increases relative to the noisy case, indicating recovery of meaningful global features. However, residual artifacts remain: small regions exhibit sharp localized dips or irregular curvature not present in the ideal landscape. These features likely originate from extrapo-lation instability and amplified statistical fluctuations at higher noise scaling factors. Thus, while ZNE restores global geom-etry, it does not fully eliminate all distortions. To systematically compare the loss landscapes in the ideal, ZNE-assisted and noisy VQA, we introduce quantitative met-rics that separately capture global structure and local irregu-larity under dephasing noise. Let E(θ) denote the objective function ⟨HMaxCut ⟩ evaluated on a discrete parameter grid 
+
+θ = ( θ1, θ 2).
+
+Global structure (smoothed contrast). To isolate large-scale geometric features, we consider a Gaussian-smoothed surface 
+
+˜E(θ) = Gσ ∗ E(θ), (39) where Gσ denotes a Gaussian kernel with width σ. We then define: 
+
+∆Esmooth = max 
+
+> θ
+
+˜E(θ) − min 
+
+> θ
+
+˜E(θ), (40) 
+
+σsmooth =
+
+q
+
+Var  ˜E(θ). (41) These quantities measure the effective energy contrast and variability of the large-scale landscape, suppressing high-frequency noise. A reduction in these metrics indicates global flattening. 
+
+Spectral structure. To quantify the distribution of spatial frequencies, we compute the two-dimensional Fourier trans-form ˆE(k) and define the low-frequency power ratio: 
+
+RLF =
+
+P 
+
+> k∈K low
+
+| ˆE(k)|2
+
+P 
+
+> k
+
+| ˆE(k)|2 , (42) where Klow denotes a region near the origin in frequency space. This metric quantifies the fraction of energy contained in large-scale (low-frequency) structures. A decrease in RLF 
+
+indicates a transfer of energy toward high-frequency compo-nents, corresponding to increased local irregularity. Table I and Table II summarize the quantitative landscape metrics for the three VQA settings. The ideal case is identical VQA ∆Esmooth σsmooth RLF 
+
+Ideal 11.15 3.093 0.9798 noisy 10.28 2.768 0.8021 ZNE-assisted 11.12 3.086 0.9758 
+
+> TABLE I: Quantitative metrics of the loss landscape for three types of VQAs under depolarization noise.
+
+in both tables and serves as the common noiseless reference. In this limit, the landscape exhibits large values of ∆Esmooth 
+
+and σsmooth , together with a high low-frequency power ratio 
+
+RLF ≈ 0.98 , indicating that the loss landscape is dominated by coherent large-scale structure and possesses a well-defined global basin geometry. In the noisy VQA setting, all three metrics are significantly reduced for both depolarization and dephasing noise. Un-der depolarization noise, ∆Esmooth decreases from 11 .15 to 
+
+10 .28 , σsmooth decreases from 3.093 to 2.768 , and RLF drops from 0.9798 to 0.8021 . A similar but slightly stronger degra-dation is observed under dephasing noise, where ∆Esmooth 
+
+decreases to 10 .23 , σsmooth decreases to 2.752 , and RLF is further reduced to 0.7885 . These changes indicate suppres-sion of the global energy contrast, reduced large-scale varia-tion, and a substantial redistribution of spectral weight away from low-frequency components. Taken together, these re-sults show that noise degrades the global organization of the landscape and enhances local irregularity. By contrast, the ZNE-assisted results remain close to the ideal reference in both noise models. For depolarization noise, the recovered values ∆Esmooth = 11 .12 , σsmooth = 3 .086 ,and RLF = 0.9758 are nearly indistinguishable from the ideal case. Under dephasing noise, ZNE likewise restores the landscape metrics to near-ideal values, with only slightly larger residual deviations, particularly in ∆Esmooth . This demonstrates that ZNE effectively recovers the coherent low-frequency structure of the loss landscape and largely restores its global basin geometry. Overall, the two tables show a consistent picture: noise in-duces a structural degradation of the optimization landscape rather than a simple uniform rescaling, while ZNE substan-tially reverses this effect. The primary impact of noise is to weaken large-scale basin features and increase the relative contribution of higher-frequency fluctuations, thereby making the landscape less favorable for efficient variational optimiza-tion. ZNE mitigates this distortion and preserves the large-scale geometric structure that is important for successful opti-mization. To further analyze the effect of geometric distortion on op-timization dynamics, we perform gradient descent from iden-tical initial parameters in all three settings and plot the result-ing trajectories over the corresponding landscapes, shown as black and colored connected dots, with the blue dots being the starting points and red ones being ending points. In the noiseless case, the trajectory follows a smooth, monotonic descent path. The updates are coherent and pro-gressively approach a local minimum, consistent with a stable and informative gradient field. VQA ∆Esmooth σsmooth RLF 
+
+Ideal 11.15 3.093 0.9798 noisy 10.23 2.752 0.7885 ZNE-assisted 10.91 3.064 0.9757 
+
+> TABLE II: Quantitative metrics of the loss landscape for three types of VQAs under dephasing noise.
+
+11 For ZNE-assisted optimization, the trajectory closely re-sembles the noiseless case. The descent direction remains stable across iterations, and the path converges toward a sim-ilar local basin. Minor deviations occur due to residual local roughness, but the overall flow structure is preserved. In contrast, the noisy optimization trajectory exhibits quali-tatively different behavior. Successive updates show inconsis-tent directional movement, with the parameter vector chang-ing direction unpredictably between iterations. Rather than following a coherent descent path, the trajectory appears to wander irregularly across the surface. This behavior can be understood geometrically: due to global flattening, the gradient magnitude is reduced across most regions, while local roughness introduces stochastic di-rectional components. It can also be observed that the parame-ter update in the noisy VQA is much greater than those in both noiseless VQA and ZNE-assisted VQA, and must take a much smaller learning rate to make meaningful updates. This pro-vides further evidence that local roughness leads to a larger gradient norm. Consequently, the effective gradient vector at each point is dominated by local fluctuations rather than global basin structure. Optimization thus resembles a random walk over a nearly flat landscape, eventually stagnating in a region where gradients become negligible. To evaluate whether the proposed PIDN surrogate can faith-fully reconstruct the ZNE-induced optimization dynamics, we perform the following protocol. We first execute ZNE-assisted gradient descent for 45 iter-ations and collect the corresponding dataset 
+
+{Cnoisy (θt), θ0: t, C ZNE (θt), θt+1 , gZNE (θt)}45  
+
+> t=0
+
+. (43) This dataset is used to train the PIDN surrogate model as de-scribed in Sec. III. After training, subsequent parameter updates are performed using surrogate gradients ∇θ Fϕ(θ, C noisy (θ)) , thereby re-placing further ZNE evaluations. To quantify how well PIDN reconstructs the ZNE optimiza-tion flow, we compute the cosine similarity between gradients predicted by PIDN and gradients obtained from an indepen-dent ZNE optimization run: 
+
+CosSim( gPIDN , gZNE ) = gPIDN · gZNE 
+
+∥gPIDN || × || gZNE ∥ . (44) Importantly, the ZNE gradients used for comparison are generated from the 45 th iteration and are not part of the train-ing dataset, ensuring that the evaluation probes generalization rather than memorization. The result is shown in Fig. 4. We observe that during the initial 45 iterations, when up-dates are still performed using ZNE, the cosine similarity be-tween the PIDN-predicted gradients and ZNE gradients re-mains extremely high, approximately 0.995. This indicates that the surrogate has successfully learned the local structure of the ZNE-induced vector field within the explored region of parameter space. After iteration 45, when PIDN takes over as the optimiza-tion driver, the cosine similarity gradually decreases but re-Tinit  
+
+> FIG. 4: Cosine similarity between PIDN-predicted gradients and ZNE gradients as a function of the number of iterations.
+
+mains above 0.975 throughout subsequent iterations. We also observe that both the gradient magnitudes and denoised ex-pectation values predicted by PIDN closely match those ob-tained from ZNE throughout the optimization process. In other words, PIDN does not merely approximate cost values; it approximates the ZNE-induced parameter update dynam-ics. This supports the interpretation that PIDN functions as a physics-informed reconstruction of the effective optimization flow, enabling continuation of ZNE-like training with signifi-cantly reduced quantum evaluations.  
+
+> B. Shot and Evaluation Efficiency Across VQA Tasks
+
+In this subsection, we quantify the execution efficiency of PIDN-assisted VQA and compare it against both noisy VQA and ZNE-assisted VQA. The central question is not only whether PIDN reproduces ZNE-like performance, but whether it does so with substantially fewer circuit executions. We first consider QAOA applied to 3-regular graph in-stances. Performance is evaluated using the AR as a func-tion of the total number of circuit executions as shown in Fig. 5(a) under depolarization noise and Fig. 5(b) under de-phasing noise. The AR of noisy VQA initially increases most rapidly as a function of total executions. This behavior is ex-pected: noisy VQA does not allocate additional circuit execu-tions to noise extrapolation. All executions are used directly for parameter updates. Consequently, under a fixed execution budget, noisy VQA performs more optimization steps. How-ever, this rapid growth quickly saturates. The AR plateaus at a relatively low value and shows no significant improvement even as the number of circuit execution. This behavior is con-sistent with the landscape analysis in Sec. IV A: under depo-larizing noise, the cost landscape becomes globally flattened and locally irregular. The directions of gradients are diver-gent at local irregularities, leading to premature convergence around AR ≈ 0.75 under depolarization noise and around 
+
+AR ≈ 0.78 under dephasing noise. In contrast, ZNE-assisted VQA exhibits a slower initial in-12      
+
+> FIG. 5: AR as a function of total circuit executions for QAOA on 3-regular graph instances for noisy-VQA, ZNE-assisted VQA and PIDN-assisted VQA under depolarizing noise with strength 1×10 −3
+> in (a) and under dephasing noise with strength 1×10 −3in (b).
+
+crease in AR. This is due to the overhead of evaluating the circuit at multiple noise scaling factors in order to estimate the zero-noise expectation and its gradient. For the same total number of executions, fewer parameter updates are performed compared to noisy VQA. Nevertheless, ZNE achieves a significantly higher final AR. The reconstructed gradient field restores the global curvature of the loss landscape, enabling continued descent beyond the noisy plateau. PIDN-assisted VQA exhibits a two-phase behavior: • Phase I (Data Collection Phase): During the initial training period, PIDN relies on ZNE-generated data. Consequently, its AR growth closely follows that of ZNE. • Phase II (Surrogate Phase): After PIDN becomes the effective update model, the growth rate of AR increases dramatically. Since PIDN directly predicts the zero-noise update direction without requiring multi-noise evaluations, the execution overhead disappears. Each circuit evaluation contributes directly to optimization progress. It is worth noting that the AR growth rate in this phase be-comes even faster than the early stage of noisy VQA, be-cause the update direction retains ZNE-like global structure, but without the execution overhead. PIDN rapidly converges to AR ≈ 0.9, matching the final saturated performance of ZNE, while using substantially fewer total executions. To quantify efficiency more quantitatively, we measure the total number of circuit executions required for ZNE and PIDN to reach a target AR = 0 .9. This analysis is performed across three models: 3-regular graphs, SK model and TFIM. For multiple instances and parameter initializations, we compute the speedup: 
+
+Speedup = No . of Executions required by ZNE No . of Executions required by PIDN , (45) and we report mean and standard deviation across instances in TABLE III, with the observed average speedups being 5.6 for 3-regular graphs, 5.3 for SK model and 5.8 for TFIM. These results demonstrate that PIDN consistently reduces execution cost by approximately a factor of five across struc-turally different combinatorial optimization tasks. We next conduct a similar study for VQE simulations of molecular ground-state energy estimation using the UCCSD ansatz under depolarizing noise. For VQE, the AR-like metric used in QAOA is replaced by the variational energy, measured in Hartree (Ha). The qualita-tive trends are similar to those observed for QAOA, as shown in Fig. 6. Under both depolarization and dephasing noise, noisy VQE exhibits a rapid initial decrease in energy but sat-urates early, reaching only E(θ) ≈ − 15 .49 Ha in the de-polarization case and E(θ) ≈ − 15 .48 Ha in the dephasing case. In contrast, ZNE-assisted optimization converges more gradually but attains substantially lower energies, approach-ing −15 .55 Ha under both noise models. The PIDN-assisted approach initially follows a trajectory similar to that of ZNE and then accelerates after the transition to surrogate-based up-dates, ultimately reaching the lowest final energy of approxi-mately −15 .58 Ha .We measure the speedup required to reach a fixed energy accuracy threshold across three molecules as show in TA-BLE III, with values 4.4 for LiH , 5.2 for BeH 2 and 5.6 for Speedup Average Std. TFIM (QAOA) 5.8 0.7 SK-model (QAOA) 5.3 0.5 3-regular (QAOA) 5.6 0.6 LiH (VQE) 4.4 0.9 BeH 2 (VQE) 5.2 1.1 H2O (VQE) 5.6 1.4 
+
+> TABLE III: Impact of PIDN on QAOA and VQE speedup. Average and standard deviation of speedup for QAOA and VQE of PIDN rel-ative to ZNE on different problem instances under depolarization and dephasing noise.
+
+13         
+
+> FIG. 6: Ground-state energy convergence for BeH 2as a function of total circuit executions for noisy-VQA, ZNE-assisted VQA and PIDN-assisted VQA under depolarization noise with strength 1×
+> 10 −3in (a) and under dephasing noise with strength 1×10 −3in (b)
+
+H2O. Despite increases in ansatz complexity and system size, the observed speedup remains consistently in the range of 
+
+4.4 − 5.8, suggesting that PIDN’s efficiency gain scales fa-vorably with problem complexity. Overall, these results demonstrate that PIDN fundamentally reshapes the cost-accuracy tradeoff inherent to error-mitigated VQAs. While noisy optimization is execution-efficient but performance-limited, and ZNE restores performance at sub-stantial evaluation overhead, PIDN achieves the best of both regimes: it preserves the optimization geometry reconstructed by ZNE while eliminating the repeated multi-noise extrapola-tion cost during later stages of training. The consistently ob-served 4 ∼ 6 fold reduction in circuit executions across com-binatorial optimization problems and molecular VQE tasks indicates that the learned surrogate captures structure in the noise-induced deformation along the optimization flow. Im-portantly, the speedup remains stable across different prob-lem classes and system sizes, suggesting that PIDN does not merely accelerate a specific instance but provides a scalable mechanism for reducing the cost of error mitigation. These findings establish PIDN-assisted optimization as a practically viable pathway toward resource-efficient, noise-resilient vari-ational quantum algorithms.  
+
+> C. Robustness, Noise Scaling, and Ablation Studies
+
+In this subsection, we investigate two fundamental ques-tions: (i) Under what noise regimes does PIDN-assisted opti-mization fail? and (ii) Is the physics-informed loss essential to its performance? We first evaluate the performance of noisy VQE, ZNE-assisted VQE, and PIDN-assisted VQE for BeH 2 under depo-larizing and dephasing noise levels ranging from 10 −5 −10 −1.Performance is measured by the final ground-state energy de-viation relative to the ground-state energy calculated from full configuration interaction, and failure is declared when chemi-cal accuracy is exceeded. We observe the following regimes in Fig. 7(a) and (b): noisy VQE exceeds chemical accuracy at noise levels on the order of 10 −4. In contrast, ZNE-assisted VQE maintains chemical accuracy up to noise levels around 10 −2. PIDN-assisted VQE exhibits very similar behavior to ZNE, likewise failing to preserve chemical accuracy beyond approximately 
+
+10 −2.Importantly, the performance curve of PIDN closely tracks that of ZNE across the entire noise range, consistently remain-ing slightly above ZNE’s energy deviation. This behavior is expected, as PIDN is trained using ZNE-generated reference data and therefore approximates, but does not surpass ZNE performance. A key observation is that the noise level at which PIDN fails is very close to where ZNE fails. This raises a critical ques-tion: Does PIDN fail because it cannot accurately reproduce ZNE dynamics under high noise, or does it fail because ZNE itself becomes unreliable? To answer this question, we compute the average cosine similarity between PIDN-predicted gradients and ZNE gra-dients throughout training across varying noise levels. We find that the cosine similarity remains consistently above 0.95 across all noise regimes as shown in Fig. 7(c). This result indi-cates that PIDN continues to faithfully reproduce ZNE gradi-ent directions even at high noise levels. Also, a mild decreas-ing trend is observed as noise strength increases, which can be attributed to the increased statistical variance in ZNE gra-dients at higher noise strengths since extrapolation becomes more sensitive to shot noise and extrapolation model mis-match. This demonstrates that PIDN does not independently break down as a surrogate model. Instead, it faithfully tracks ZNE dynamics even when those dynamics themselves become less optimal. We therefore conclude that: PIDN fails when ZNE fails, not because it loses surrogate fidelity, but because it in-herits the fundamental limitations of ZNE under strong noise. We next investigate whether the physics-informed loss term is essential to PIDN’s performance by comparing two train-ing variants: Full PIDN with both supervised data loss and 14 
+
+FIG. 7: Final ground-state energy deviation for VQE on BeH 2 as a function of depolarizing and dephasing noise strength in (a) and (b) (c) Average cosine similarity between PIDN-predicted gradients and ZNE gradients over the full optimization trajectory across noise levels. 10 5 10 4 10 3 10 2
+
+Depolarization Noise Level   
+
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> CosSim( gPIDN , g ZNE )
+> With phys
+> Without phys
+
+FIG. 8: Average cosine similarity between PIDN-predicted gradients and ZNE gradients over the full optimization trajectory across noise levels, with models trained with and without the physics-informed loss. 
+
+Graph / Problem AR With Lphys AR Without Lphys 
+
+TFIM 0.95 0.80 SK-model 0.92 0.78 3-regular 0.94 0.71 
+
+TABLE IV: Impact of physics-informed loss on QAOA performance. Final AR for QAOA on different problem instances, evaluated using ZNE under the final optimized parameters of PIDN with and without 
+
+Lphys .
+
+physics loss and ablated model with supervised data loss only. We measure the cosine similarity between predicted and ZNE gradients under different noise levels as shown in Fig. 8, and find that with the physics loss, the cosine similarity is around 0.95 , whereas without the physics loss, it decreases to around 0.75 .This substantial degradation indicates that the physics loss plays a critical role in constraining the surrogate to respect the underlying optimization trajectory. Without it, the network fails to preserve the correct vector-field geometry along the trajectory, leading to distorted gradient directions. Since opti-mization dynamics depend primarily on descent direction, not merely function approximation accuracy, this loss component is essential for maintaining stable training trajectories. To further quantify the impact of the physics-informed loss, Molecule ∆E with Lphys ∆E without Lphys 
+
+LiH 0.85 28 BeH 2 0.73 40 H2O 1.24 160 
+
+TABLE V: Impact of physics-informed loss on VQE perfor-mance. Final energy deviation ∆E (in mHa) for VQE on different molecules, evaluated using ZNE under the final optimized parame-ters of PIDN with and without Lphys .15 we evaluate the final performance of PIDN-assisted optimiza-tion with and without Lphys . For QAOA, we measure the final AR using the ZNE-evaluated cost function under the param-eters obtained by PIDN with and without Lphys across three different problem instances: TFIM, SK model, and 3-regular graphs. As shown in TABLE IV, the inclusion of the physics loss consistently improves AR by a factor of 1.18 ∼ 1.32 ,confirming its positive effect. Similarly, for VQE tasks on molecular systems (LiH, BeH 2 and H 2O), we evaluate the fi-nal energy deviation relative to the noiseless reference using ZNE. Table V shows that the physics loss reduces the energy deviation by a factor of 33 ∼ 129 across all molecules, high-lighting its importance in preserving accurate gradient direc-tions and guiding the optimizer toward lower-energy configu-rations. To further understand why PIDN is able to track the opti-mization direction using data from the early stage of training, we examine the role of the underlying loss-landscape geome-try. The central hypothesis is that PIDN can effectively track the optimization dynamics when the local geometry of the loss landscape varies smoothly along the trajectory. In this case, the information contained in the early-stage optimization path, together with the currently measured noisy expectation value, is sufficient to infer a ZNE-like update direction in the nearby region of parameter space. By contrast, if the loss landscape changes rapidly, or equivalently if it contains substantial high-frequency structure, then the local optimization flow becomes much harder to extrapolate from the earlier trajectory. Under such conditions, even small displacements in parameter space can lead to substantial changes in gradient direction, which reduces the ability of PIDN to maintain accurate trajectory-level tracking. To test this idea, we perform a controlled study in which no error-mitigation method is applied and only noisy expectation values are used. The results are summarized in Tables VI and VII, and are visualized in Fig. 9, where panels (a) and (b) show the dependence of RLF (see Eq. (42)) and cosine similarity on noise strength, respectively, and panel (c) directly compares the average cosine similarity with RLF .Starting from the weak-noise regime at 10 −8 and gradually increasing the noise strength to 10 −3, we examine how the geometry of the noisy loss landscape changes and how this affects the trajectory-tracking ability of PIDN. As shown in Fig. 9(a), the low-frequency power ratio RLF decreases mono-tonically with increasing noise for all tasks, indicating that the smooth large-scale structure of the landscape is progressively weakened while higher-frequency distortion becomes more significant. For QAOA, this reduction is relatively gradual: in the 3-regular case, RLF decreases from 0.968 at 10 −8 to 
+
+0.642 at 10 −3. Similar behavior is observed for the SK model and TFIM, where RLF decreases from 0.971 to 0.645 , over the same noise range. For VQE, the degradation is slightly more pronounced: in LiH, RLF decreases from 0.971 at 10 −8
+
+to 0.608 at 10 −3; in BeH 2, the corresponding values are 0.966 
+
+and 0.562 ; and in H 2O they are 0.969 and 0.510 . These re-sults show that increasing noise progressively transfers spec-tral weight away from the low-frequency sector and renders      
+
+> FIG. 9: Dependence of PIDN trajectory-tracking accuracy on the spectral smoothness of the noisy loss landscape. (a) Average low-frequency power ratio RLF as a function of noise strength for dif-ferent QAOA and VQE tasks. (b) Average cosine similarity between PIDN-predicted update directions and the corresponding reference noisy gradients as a function of noise strength. (c) Average cosine similarity plotted against RLF .A clear positive correlation is ob-served across all tasks.
+
+the effective landscape increasingly rough and irregular. We then train PIDN on the first few iterations of the noisy optimization trajectory and evaluate its ability to continue the subsequent updates. The agreement between PIDN-predicted update directions and the corresponding noisy reference gra-dients is quantified by the cosine similarity defined in Eq. (44). As shown in Fig. 9(b), the average cosine similarity decreases 16 systematically as the noise strength increases, mirroring the behavior of RLF . For QAOA, PIDN retains strong direc-tional agreement throughout the weak- and intermediate-noise regimes: in the 3-regular case, the cosine similarity is 0.962 
+
+at 10 −8, remains as high as 0.918 at 10 −6, then decreases to 
+
+0.603 at 10 −4 and 0.152 at 10 −3. Similar trends are obtained for the SK model, where the cosine similarity decreases from 
+
+0.961 to 0.915 , 0.592 , and 0.138 , and for TFIM, where it de-creases from 0.963 to 0.920 , 0.611 , and 0.160 . For VQE, the deterioration is substantially faster. In LiH, the cosine similar-ity drops from 0.962 at 10 −8 to 0.802 at 10 −6, then to 0.247 
+
+at 10 −4 and only 0.012 at 10 −3. For BeH 2, it decreases from 
+
+0.961 to 0.853 , 0.163 , and 0.007 , while for H 2O it decreases from 0.960 to 0.805 , 0.084 , and 0.003 . The connection be-tween these two quantities is shown most directly in Fig. 9(c), where a clear positive correlation is observed between the av-erage cosine similarity and RLF across all tasks. These re-sults indicate that although PIDN can reliably track the lo-cal optimization flow when the landscape retains substantial low-frequency structure, its trajectory-continuation accuracy deteriorates once noise-induced high-frequency distortion be-comes dominant. These results support the interpretation that PIDN performs best when the effective loss landscape remains spectrally smooth, as in the case of ZNE-mitigated VQAs, and that the gradual loss of low-frequency structure directly limits the ability of early-stage trajectory information to determine later optimization directions.  
+
+> V. CONCLUSION AND OUTLOOK
+
+In this work, we have presented a PIDN framework to ac-celerate noisy VQAs, including QAOA and VQE, using ZNE as a reference. We formulated the optimization process as a dynamical trajectory in parameter space, where the net-work learns to predict both denoised expectation values and the next-step parameters. Our results demonstrate that PIDN can faithfully emulate the gradient dynamics of ZNE, effec-tively reducing the need for costly repeated circuit executions while preserving convergence toward high-quality solutions. Through landscape reconstruction and trajectory analysis, we have shown that PIDN captures the essential features of noise-less or ZNE-assisted surfaces, including both global trends and local curvature, thereby guiding the optimizer efficiently even under significant hardware noise. We further quantified the efficiency gains of PIDN across a range of VQA tasks. For QAOA on 3-regular graphs, SK models, and TFIM instances, PIDN achieved approximation ratios comparable to ZNE-assisted optimization while reduc-ing the total number of circuit executions by approximately a factor of five. For VQE tasks on LiH, BeH 2, and H 2Omolecules, similar speedups in the range of four- to six-fold were observed while maintaining chemical accuracy. These results underscore the generality and robustness of the ap-proach across both combinatorial optimization and molecular simulation problems. By systematically analyzing shot effi-ciency, evaluation trends, and final performance metrics, we provide strong evidence that PIDN offers a scalable strategy to mitigate noise-induced barren plateaus without compromis-ing solution quality. Our robustness, ablation, and landscape-geometry analy-ses clarify the mechanisms underlying PIDN’s performance. By examining energy deviations and gradient cosine similar-ity across different noise levels, we find that PIDN fails only when ZNE itself becomes unreliable, indicating that its lim-itations are inherited from the reference mitigation method rather than intrinsic to the surrogate model. The ablation study further shows that the physics-informed loss is essential for preserving high directional alignment between the predicted and ZNE gradients, leading to clear improvements in both fi-nal energy and approximation ratio, highlighting the impor-tance of incorporating physical priors into surrogate models to preserve optimization dynamics in the NISQ regime. In addition, our controlled analysis of noisy optimization with-out error mitigation shows that PIDN tracks the optimization flow most accurately when the effective loss landscape retains strong low-frequency structure. As the noise level increases, the low-frequency power ratio decreases, high-frequency dis-tortion becomes more pronounced, and the cosine similarity between PIDN-predicted and reference gradients deteriorates systematically. These results show that the success of PIDN relies on the persistence of sufficiently smooth landscape ge-ometry from accurate denoising. The PIDN framework offers several avenues for further re-search. Extending the method to multi-parameter extrapola-tion schemes, adaptive online retraining strategies, or more complex ansatz may further reduce resource overheads while improving robustness. Additionally, combining PIDN with other noise-mitigation or quantum error suppression tech-niques could enable near-term quantum devices to tackle larger combinatorial or chemical problems with reduced com-putational cost. Beyond VQA, the general principle of physics-informed surrogate modeling could find applications in hybrid quantum-classical control, quantum metrology, and variational simulations of time-dependent Hamiltonians, mak-ing PIDN a useful tool for the broader quantum computing community. 
+
+> ACKNOWLEDGEMENTS
+
+This work is supported by the National Natural Sci-ence Foundation of China (Grant No. 12474489), Shenzhen Fundamental Research Program (Grant No. JCYJ20240813153139050), and the Guangdong Provin-cial Quantum Science Strategic Initiative (Grant No. GDZX2203001, GDZX2403001). 
+
+> DATA AVAILABILITY
+
+The data that support the findings of this article are openly available [60]. 17 
+
+[1] M. Cerezo, A. Arrasmith, R. Babbush, S. C. Benjamin, S. Endo, K. Fujii, J. R. McClean, K. Mitarai, X. Yuan, L. Cincio, et al. ,Nat. Rev. Phys. 3, 625 (2021). [2] B. Bauer, S. Bravyi, M. Motta, and G. K.-L. Chan, Chem. Rev. 
+
+120 , 12685 (2020). [3] K. Bharti, A. Cervera-Lierta, T. H. Kyaw, T. Haug, S. Alperin-Lea, A. Anand, M. Degroote, H. Heimonen, J. S. Kottmann, T. Menke, et al. , Rev. Mod. Phys. 94 , 015004 (2022). [4] J. R. McClean, J. Romero, R. Babbush, and A. Aspuru-Guzik, New J. Phys. 18 , 023023 (2016). [5] A. Melnikov, M. Kordzanganeh, A. Alodjants, and R.-K. Lee, Adv. Phys. X 8, 2165452 (2023). [6] A. Peruzzo, J. McClean, P. Shadbolt, M.-H. Yung, X.-Q. Zhou, P. J. Love, A. Aspuru-Guzik, and J. L. O’brien, Nat. Commun. 
+
+5, 4213 (2014). [7] E. Farhi, J. Goldstone, and S. Gutmann, arXiv preprint arXiv:1411.4028 (2014). [8] J. Tilly, H. Chen, S. Cao, D. Picozzi, K. Setia, Y. Li, E. Grant, L. Wossnig, I. Rungger, G. H. Booth, et al. , Phys. Rep. 986 , 1 (2022). [9] A. Abbas, A. Ambainis, B. Augustino, A. B¨ artschi, H. Buhrman, C. Coffrin, G. Cortiana, V. Dunjko, D. J. Egger, B. G. Elmegreen, et al. , arXiv:2312.02279 (2023). [10] J. Preskill, Quantum 2, 79 (2018). [11] H. Benamer, Preprints (2025), 10.20944/preprints202508.1482.v1. [12] M. Larocca, S. Thanasilp, S. Wang, K. Sharma, J. Biamonte, P. J. Coles, L. Cincio, J. R. McClean, Z. Holmes, and M. Cerezo, Nat. Rev. Phys. , 1 (2025). [13] E. Fontana, N. Fitzpatrick, D. M. Ramo, R. Duncan, and I. Rungger, Phys. Rev. A 104 , 022403 (2021). [14] S. Wang, E. Fontana, M. Cerezo, K. Sharma, A. Sone, L. Cin-cio, and P. J. Coles, Nat. Commun. 12 , 6961 (2021). [15] E. Knill, Nature 434 , 39 (2005). [16] M. Schumann, F. K. Wilhelm, and A. Ciani, Quantum Sci. Technol. 9, 045019 (2024). [17] T. Giurgica-Tiron, Y. Hindy, R. LaRose, A. Mari, and W. J. Zeng, in 2020 IEEE Int. Conf. Quantum Comput. Eng. (QCE) 
+
+(2020) pp. 306–316. [18] A. He, B. Nachman, W. A. de Jong, and C. W. Bauer, Phys. Rev. A 102 , 012426 (2020). [19] R. Sweke, F. Wilde, J. Meyer, M. Schuld, P. K. F¨ ahrmann, B. Meynard-Piganeau, and J. Eisert, Quantum 4, 314 (2020). [20] K. Hirashima, K. Moriwaki, M. S. Fujii, Y. Hirai, T. R. Saitoh, J. Makino, and S. Ho, arXiv preprint arXiv:2311.08460 (2023). [21] L. Maga˜ na Zertuche, L. C. Stein, K. Mitman, S. E. Field, V. Varma, M. Boyle, N. Deppe, L. E. Kidder, J. Moxon, H. P. Pfeiffer, M. A. Scheel, K. C. Nelli, W. Throwe, and N. L. Vu, Phys. Rev. D 112 , 024077 (2025). [22] M. Benedetti, E. Lloyd, S. Sack, and M. Fiorentini, Quantum Sci. Technol. 4, 043001 (2019). [23] B. Reggio, N. Butt, A. Lytle, and P. Draper, Phys. Rev. A 110 ,022606 (2024). [24] G. G. Guerreschi and A. Y. Matsuura, Sci. Rep. 9, 6903 (2019). [25] M. Aizenman, R. Sims, and S. L. Starr, Phys. Rev. B 68 ,214403 (2003). [26] V. R. Arezzo, R. Wang, K. Thengil, G. Pecci, and G. E. San-toro, Phys. Rev. A 113 , 012610 (2026). [27] I. Loaiza, A. M. Khah, N. Wiebe, and A. F. Izmaylov, Quantum Sci. Technol. 8, 035019 (2023). [28] A. Tranter, P. J. Love, F. Mintert, and P. V. Coveney, J. Chem. Theory Comput. 14 , 5617 (2018). [29] Y. Shee, P.-K. Tsai, C.-L. Hong, H.-C. Cheng, and H.-S. Goan, Phys. Rev. Res. 4, 023154 (2022). [30] P. J. Knowles and N. C. Handy, Chem. Phys. Lett. 111 , 315 (1984). [31] K. Dalton, C. K. Long, Y. S. Yordanov, C. G. Smith, C. H. Barnes, N. Mertig, and D. R. Arvidsson-Shukur, npj Quantum Inf. 10 , 18 (2024). [32] H. R. Grimsley, D. Claudino, S. E. Economou, E. Barnes, and N. J. Mayhall, J. Chem. Theory Comput. 16 , 1 (2019). [33] Y. Fan, C. Cao, X. Xu, Z. Li, D. Lv, and M.-H. Yung, J. Phys. Chem. Lett. 14 , 9596 (2023). [34] A. Kandala, A. B. Mezzacapo, K. Temme, M. Takita, M. Brink, J. M. Chow, and J. M. Gambetta, Nature 549 , 242 (2017). [35] D. Wecker, M. B. Hastings, and M. Troyer, Phys. Rev. A 92 ,042303 (2015). [36] J. F. Gonthier, M. D. Radin, C. Buda, E. J. Doskocil, C. M. Abuan, and J. Romero, Phys. Rev. Res. 4, 033154 (2022). [37] K. Temme, S. Bravyi, and J. M. Gambetta, Physical review letters 119 , 180509 (2017). [38] R. Majumdar, P. Rivero, F. Metz, A. Hasan, and D. S. Wang, in 2023 IEEE Int. Conf. Quantum Comput. Eng. (QCE) , Vol. 1 (IEEE, 2023) pp. 881–887. [39] S. Anand, K. Temme, A. Kandala, and M. Zaletel, arXiv:2306.17839 (2023). [40] V. R. Pascuzzi, A. He, C. W. Bauer, W. A. De Jong, and B. Nachman, Phys. Rev. A 105 , 042406 (2022). [41] Y. Li and S. C. Benjamin, Physical Review X 7, 021050 (2017). [42] A. Zlokapa and A. Gheorghiu, arXiv:2005.10811 (2020). [43] H. Liao, D. S. Wang, I. Sitdikov, C. Salcedo, A. Seif, and Z. K. Minev, Nat. Mach. Intell. 6, 1478 (2024). [44] W.-Y. Liao, G. Yan, Y. Song, T.-C. Tian, W.-M. Zhu, D.-T. Jiang, Y. Du, and H.-L. Huang, arXiv:2511.07092 (2025). [45] P. Czarnik, A. Arrasmith, P. J. Coles, and L. Cincio, Quantum 
+
+5, 592 (2021). [46] A. Lowe, M. H. Gordon, P. Czarnik, A. Arrasmith, P. J. Coles, and L. Cincio, Phys. Rev. Res. 3, 033098 (2021). [47] R. Shaffer, L. Kocia, and M. Sarovar, Phys. Rev. A 107 , 032415 (2023). [48] Y. Du, M.-H. Hsieh, and D. Tao, Nat. Commun. 16 , 3790 (2025). [49] W.-Y. Liao, Y. Du, X. Wang, T.-C. Tian, Y. Luo, B. Du, D. Tao, and H.-L. Huang, arXiv:2507.17470 (2025). [50] Y. Huang, Y. Hao, J. Zhou, X. Yuan, X. Wang, and Y. Du, arXiv:2509.20733 (2025). [51] M. Raissi, P. Perdikaris, and G. E. Karniadakis, J. Comput. Phys. 378 , 686 (2019). [52] L. Lu, X. Meng, Z. Mao, and G. E. Karniadakis, SIAM Rev. 
+
+63 , 208 (2021). [53] T. De Ryck and S. Mishra, Adv. Comput. Math. 48 , 79 (2022). [54] G. E. Karniadakis, I. G. Kevrekidis, L. Lu, P. Perdikaris, S. Wang, and L. Yang, Nat. Rev. Phys. 3, 422 (2021). [55] S. Cai, Z. Mao, Z. Wang, M. Yin, and G. E. Karniadakis, Acta Mech. Sinica 37 , 1727 (2021). [56] K. Nath, X. Meng, D. J. Smith, and G. E. Karniadakis, Sci. Rep. 13 , 13683 (2023). [57] Z. Chen, Y. Liu, and H. Sun, Nat. Commun. 12 , 6136 (2021). [58] J. Liu and X. Wang, Phys. Rev. Res. 7, 043137 (2025). [59] K. Cho, B. Van Merri¨ enboer, C¸ . Gulc ¸ehre, D. Bahdanau, F. Bougares, H. Schwenk, and Y. Bengio, in Proc. 2014 Conf. 18 
+
+Empirical Methods Nat. Lang. Process. (2014) pp. 1724–1734. [60] J. Liu and X. Wang, “Data for the manuscript “acceler-ating noisy variational quantum algorithms with physics-informed denoising networks”,” https://github.com/ jliu-boat/PIDNVQA (2026). 19 Noise level QAOA VQE 3-regular SK model TFIM LiH BeH 2 H2O
+
+1 × 10 −8 0.968 0.971 0.970 0.971 0.966 0.969 
+
+5 × 10 −8 0.965 0.964 0.966 0.966 0.963 0.960 
+
+1 × 10 −7 0.957 0.956 0.958 0.958 0.952 0.945 
+
+5 × 10 −7 0.941 0.939 0.943 0.940 0.928 0.912 
+
+1 × 10 −6 0.923 0.920 0.925 0.918 0.898 0.875 
+
+5 × 10 −6 0.891 0.887 0.894 0.875 0.842 0.810 
+
+1 × 10 −5 0.856 0.851 0.859 0.825 0.780 0.740 
+
+5 × 10 −5 0.802 0.795 0.806 0.760 0.705 0.665 
+
+1 × 10 −4 0.751 0.743 0.755 0.702 0.648 0.602 
+
+5 × 10 −4 0.695 0.686 0.699 0.655 0.595 0.558 
+
+1 × 10 −3 0.642 0.638 0.645 0.608 0.562 0.510 
+
+TABLE VI: Average low-frequency power ratio RLF of the noisy loss landscape as a function of noise strength for different VQA tasks. For each case, all PQC parameters are randomly fixed except for eight selected parameters, and the reported value is averaged over multiple random parameter fixings and different choices of the eight active parameters. Larger RLF indicates that the landscape is more strongly dominated by smooth low-frequency structure, whereas smaller values reflect increasing high-frequency distortion. 
+
+Noise level QAOA VQE 3-regular SK model TFIM LiH BeH 2 H2O
+
+1 × 10 −8 0.962 0.961 0.963 0.962 0.961 0.960 
+
+5 × 10 −8 0.958 0.957 0.959 0.957 0.952 0.948 
+
+1 × 10 −7 0.951 0.950 0.952 0.949 0.938 0.926 
+
+5 × 10 −7 0.936 0.934 0.938 0.926 0.901 0.872 
+
+1 × 10 −6 0.918 0.915 0.920 0.895 0.853 0.805 
+
+5 × 10 −6 0.876 0.871 0.880 0.802 0.726 0.628 
+
+1 × 10 −5 0.832 0.825 0.837 0.694 0.598 0.471 
+
+5 × 10 −5 0.725 0.716 0.732 0.451 0.342 0.215 
+
+1 × 10 −4 0.603 0.592 0.611 0.247 0.163 0.084 
+
+5 × 10 −4 0.386 0.372 0.395 0.076 0.042 0.019 
+
+1 × 10 −3 0.152 0.138 0.160 0.012 0.007 0.003 
+
+TABLE VII: Average cosine similarity between PIDN-predicted update directions and reference noisy gradients at different noise levels for different VQA tasks. Here, PIDN is trained using the first few iterations of the noisy optimization trajectory and evaluated on the subsequent trajectory-continuation stage.

@@ -1,0 +1,3087 @@
+Title: Online Riemannian Gradient Descent for Quantum State Tomography with Matrix Product Operators
+
+URL Source: https://arxiv.org/pdf/2605.04533v1
+
+Published Time: Thu, 07 May 2026 00:38:55 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+> 1
+
+# Online Riemannian Gradient Descent for Quantum State Tomography with Matrix Product Operators 
+
+Jian-Feng Cai 1,2, Jingyang Li 3, Xiaoqun Zhang 4,5, Yuanwei Zhang 41Department of Mathematics, Hong Kong University of Science and Technology, Hong Kong 
+
+2IAS Center for AI for Scientific Discoveries, Hong Kong University of Science and Technology, Hong Kong 
+
+3 Department of Statistics and Data Science, Fudan University, Shanghai, China 
+
+4 School of Mathematical Sciences, Shanghai Jiao Tong University, Shanghai, China. 
+
+5 Institute of Natural Sciences, Shanghai Jiao Tong University, Shanghai, China. 
+
+Abstract 
+
+Matrix product operators (MPOs) provide a scalable approach for quantum state tomography (QST) by offering a compact representation of many-body mixed states with limited entanglement, using only a number of parameters that scales polynomially with the system size. In this paper, we study QST for quantum density matrices that can be represented by MPOs. We first derive an equivalent characterization of Hermiticity in terms of the MPO core tensors and show that the coefficient tensor of an MPO under the Pauli or generalized Gell-Mann basis admits a real-valued low tensor-train (TT) rank structure. This establishes an explicit connection between MPO-based QST and noisy low-rank tensor completion. Motivated by this formulation, we develop an online Riemannian gradient descent (oRGD) algorithm that sequentially incorporates measurement data during the reconstruction process. With a proper initialization, we prove that oRGD converges linearly to the target MPO and succeeds with a number of distinct measurement settings that scales quadratically with the system size. As a byproduct, our analysis also yields a significantly improved sample complexity bound for the low TT rank tensor completion task. Furthermore, we propose a tailored spectral initialization method and establish its theoretical guarantee. Numerical experiments on several classes of quantum states validate the effectiveness and scalability of the proposed method. 
+
+Index Terms 
+
+Quantum state tomography, matrix product operator, Riemannian manifold, online optimization, low rank tensor completion. 
+
+I. I NTRODUCTION 
+
+A. Background 
+
+Quantum State Tomography (QST) is a fundamental tool in quantum information science for characterizing and validating quantum states produced from experiments. By reconstructing the underlying density matrix from measurement outcomes, QST provides a complete mathematical description of a quantum system and plays a crucial role in the verification of quantum devices, the benchmarking of quantum simulators, and the validation of quantum algorithms [1]–[3]. Consider an n-partite d-level quantum system (where d = 2 corresponds to qubits). The state of such a system is fully described by a density matrix ρ ∈ Cdn×dn
+
+, which is a Hermitian, positive semi-definite matrix with unit trace. In practice, measurements on this system are mathematically represented by Hermitian observables, such as multi-qubit Pauli operators. Because quantum measurements are inherently probabilistic and destructive, a single measurement of an observable Ak on the state ρ yields only a discrete eigenvalue. For instance, a Pauli observable on a qubit system yields either +1 or −1. The theoretical expectation value of these discrete outcomes is given by the Hilbert-Schmidt inner product ⟨Ak, ρ⟩. To accurately estimate this expectation value, one must prepare many identical copies of ρ and compute the empirical average over repeated measurement shots. In recent years, the scale of quantum computers has increased rapidly [4], [5], making full tomography increasingly challenging as the size of ρ increases exponentially with system size n. This leads to two major bottlenecks: first, the experimental measurement overhead, which encompasses both the number of distinct observables required and the repeated physical shots needed per observable, grows exponentially; second, the computational complexity of reconstructing the state from measurement data becomes prohibitively large. To overcome the curse of dimensionality, a natural strategy is to exploit low-dimensional structures within the quantum state. A prevalent ansatz assumes the target density matrix has a low matrix rank r, effectively framing QST as a low-rank matrix recovery problem. Numerous methodologies have been developed under this framework, including maximum likelihood estimation [6], [7], least-squares estimators [8]–[10], and machine learning techniques [11], [12]. However, the number of physical state copies required by these methods for recovery guarantee inherently scales exponentially with the system size n. In 
+
+jfcai@ust.hk jjyyli.acad@gmail.com xqzhang@sjtu.edu.cn sjtuzyw@sjtu.edu.cn 
+
+> arXiv:2605.04533v1 [quant-ph] 6 May 2026 2
+
+particular, [13] shows that O(dnr2) physical state copies are necessary (and sufficient) to uniquely determine the target quantum state if the rank-1 measurements are allowed. This means that even for the pure state ( r = 1 ), both the sample complexity and computational cost of low-rank matrix approaches scale exponentially with n, rendering them impractical for large quantum systems. To overcome the limitations of matrix rank, an alternative effective ansatz leverages the entanglement properties of the quantum system via tensor networks. For one-dimensional quantum systems, states exhibiting low entanglement admit a highly compact parameterization: pure states can be efficiently represented as Matrix Product States (MPS) [14], [15], while mixed states are captured by Matrix Product Operators (MPO) [16], [17]. In computational mathematics, this representation is also known as the tensor train (TT) decomposition and has been extensively studied [18], [19] (see Section II-B for more details). An MPS or MPO with a bounded TT rank (referred to as bond dimension in physics) involves only poly( n) parameters, making it efficient for large systems. Various QST approaches have been proposed under the assumption that the target quantum state possesses such a low-dimensional structure [20]–[24]. For a pure state that can be represented by an injective MPS and possesses a local, gapped parent Hamiltonian, local information (measurements on adjacent qudits up to a fixed distance) is sufficient to reconstruct the entire state [20]. In this setting, the number of physical state copies of QST is generally understood to scale polynomially with n.However, for mixed states represented by MPOs, this local reconstructability generally breaks down, making global measurements necessary to guarantee unique and reliable recovery. Although numerous methods have been proposed for QST of MPOs [21], [25]–[27], theoretical guarantees regarding their convergence and sample complexity remain lacking. Recent work [28] has established the sample complexity of QST for MPOs using Haar random projective measurement, showing that only 
+
+O(n3d2r2max /ϵ 2) state copies suffice to uniquely determine the ϵ-precise state of target MPO via least squares minimization. However, this result establishes an information-theoretic bound. Finding such a global least-squares estimator is computationally intractable due to the highly non-convex nature of the low-rank tensor manifold, and no efficient algorithm was provided to compute it. Furthermore, implementing high-precision Haar random projective measurement is experimentally prohibitive in practice. Moreover, because Haar random projective measurements are entangled and require global rotations of the entire qudit system, the reconstruction process in QST algorithm incurs computational costs that scale exponentially with n. These limitations render such methods impractical for large quantum systems. 
+
+B. Main Results 
+
+In this paper, we consider Pauli measurements for qubits and generalized Gell-Mann measurements for qudits, which are popular choices for QST that are readily implementable in practical experiments [29], [30]. Since both n-qubit Pauli matrices and n-qudit generalized Gell-Mann matrices are constructed as Kronecker products of n local single-system matrices, the operation between these observable matrices and an MPO can be computed particularly efficiently. To further alleviate the computational burden of processing massive datasets simultaneously, we formulate the QST problem in an online setting, where measurement data arrive sequentially during the reconstruction procedure. This online framework is widely adopted in the literature [31]–[33] because it allows state reconstruction to proceed concurrently with data acquisition, eliminating the need to wait for the entire measurement dataset. Because the set of local tensor-product observables forms a complete orthonormal basis, reconstructing an MPO is mathematically equivalent to reconstructing its coefficient tensor in this measurement basis. As our first main contribution (Section III-A ), we prove that for any Hermitian matrix represented by a low-rank MPO, its corresponding coefficient tensor naturally inherits a real, low tensor-train rank structure. To establish this, we derive a necessary and sufficient condition for Hermiticity directly in terms of the MPO core tensors, and we provide an explicit algorithm to construct such a Hermitian decomposition. By leveraging this structural equivalence, we rigorously cast the QST problem as a noisy low-rank tensor completion task over a real TT manifold. Building upon this formulation, our second main contribution introduces an online Riemannian Gradient Descent (oRGD) algorithm tailored for the low TT-rank tensor manifold. This work marks the first rigorous development and convergence analysis of online Riemannian optimization for TT manifolds. Given a warm initialization, the oRGD algorithm generates iterates whose reconstruction error in the Frobenius norm converges linearly. An informal statement of the main result is as follows: 
+
+Theorem 1 (Informal version of Theorem 3) . Let ρ∗ be an MPO state with bond dimension rmax and let ϵ > 0. Suppose an initial estimate ρ0 satisfies ∥ρ0 − ρ∗∥F ≤ C · λmin /(n2r2max ) for some constant C > 0. Then, given Ω( n2r2max log 1 
+
+> ϵ
+
+)
+
+tensor-product measurements (entries of the coefficient tensor in the measurement basis), the oRGD algorithm outputs a reconstructed density matrix ρrec such that ∥ρrec − ρ∗∥F ≤ ϵ.
+
+This theorem demonstrates that oRGD achieves linear convergence with a measurement setting complexity bound of 
+
+O(n2r2max ). We emphasize that this bound refers specifically to the number of distinct measurement settings (i.e., the unique tensor-product observables selected). This quadratic scaling represents a substantial reduction compared to standard low-rank matrix QST methods [10], [29], [33], [34] and offline RGD algorithms for TT completion [35], [36], both of which inherently 3
+
+require an exponentially growing number of observed entries even with a warm initialization. By drastically reducing the required measurement configurations, oRGD significantly alleviates the experimental calibration overhead and entirely avoids the exponential classical processing costs that typically limit exact MPO tomography. Furthermore, because the local convergence of oRGD relies on a warm start, we propose a tailored spectral initialization algorithm equipped with rigorous theoretical guarantees. This approach considerably tightens the theoretical measurement setting bounds compared to direct applications of existing tensor completion initialization schemes to the QST setting [35]. 
+
+C. Notation 
+
+Throughout this manuscript, we adopt the following notations: calligraphic bold letters (e.g., T ) denote tensors, bold capital letters (e.g., X) denote matrices, bold lowercase letters (e.g., y) denote vectors, blackboard bold letters (e.g., M, C) denote sets and calligraphic letters (e.g., P, F) denote linear maps. For a positive integer n, let [n] denote the set {1, 2, . . . , n }. We use 
+
+Tr( M ) to represent the trace of a square matrix M . For two matrices A, B, A ⊗ B is the Kronecker (tensor) product. In the quantum context, a pure state is written in Dirac notation as |ψ⟩ (with ⟨ψ| its conjugate transpose), and a mixed state is denoted by ρ. For a complex number a, a denotes its complex conjugate. The superscripts (·)⊤ and (·)† denote the transpose and conjugate transpose, respectively. Norms are defined as follows: ∥ · ∥ F is the Frobenius norm for tensors and matrices. For 0 < p ≤ ∞ , ∥ · ∥ ℓp is the ℓp-norm of tensors. Specifically, ∥T ∥∞ is the largest absolute entry of T . For a matrix X, ∥X∥ℓ2,∞ := max k ∥X(k, :) ∥2 is the ℓ2,∞-norm. Given positive integers r1, · · · , r n−1, we use rmax := max k rk and rmin = min k rk. For two positive quantities a, b ∈ R, we write b = O(a) if b ≤ ca for an absolute constant c > 0, and use b = Ω( a) to represent b ≥ ca for an absolute constant c > 0.II. P RELIMINARIES 
+
+In this section, we begin by reviewing basic concepts related to quantum states, density matrices, and tensor-product measurement schemes (e.g., Pauli and generalized Gell-Mann measurements). Then we introduce the matrix product operators, their connection with tensor-train decomposition and corresponding operations related to tensors. For further background, we refer the reader to [37] for quantum information and to [18] for tensor-train decomposition. 
+
+A. Quantum State and Measurement. Quantum state and density matrix. Quantum states can be divided into two types: the pure state and the mixed state. In a 
+
+d-level n-body quantum system, the pure state can be represented by a unit-length vector |ψ⟩ ∈ Cdn
+
+(using the Dirac notation). A mixed state, on the other hand, is described by a statistical ensemble of pure states {(pi, |ψi⟩)}, where 0 ≤ pi ≤ 1 represents the classical probability of the system being in state |ψi⟩, and P 
+
+> i
+
+pi = 1 . Thus, the mixed state is usually described by a density matrix, which can be written as 
+
+ρ = X
+
+> i
+
+pi|ψi⟩⟨ ψi| ∈ Cdn×dn
+
+A density matrix represents a pure state if and only if its rank is exactly one, otherwise it is a mixed state. And a Hermitian matrix ρ in Cdn×dn
+
+corresponds to a mixed state as long as it is positive semi-definite and has a unit trace Tr( ρ) = 1 .
+
+Pauli matrix. For qubit systems ( d = 2 ), let {SX , SY , SZ } be the single-qubit Pauli matrices, and we write {P 1, P 2, P 3, P 4} =
+
+{ √22 I, √22 SX , √22 SY , √22 SZ } which forms a complete orthonormal basis in C2×2 under the Hilbert-Schmidt inner product. 
+
+Generalized Gell-Mann matrix. The generalized Gell-Mann matrices (GGMs) extend the Pauli matrices (for qubit d = 2 ), and the Gell-Mann matrices (for qutrits d = 3 ) to arbitrary dimension d [38], [39]. For a single qudit, there are d2 such matrices, comprising the identity, (d − 1) diagonal GGM, d(d − 1) /2 symmetric GGM and d(d − 1) /2 antisymmetric GGM; explicit constructions can be found in [40]. These matrices are Hermitian and we denote those scaled GGM matrices as 
+
+{P 1, P 2, . . . , P d2 }, which form a complete orthonormal basis in Cd×d under the Hilbert-Schmidt inner product. 
+
+Practical quantum state tomography and statistical noise. Consequently, for a general n-qudit system ( d ≥ 2), any tensor-product observable is defined as the Kronecker product of n single-qudit matrices. We denote the complete orthonormal set of these observables as W := {As = P s1 ⊗ P s2 ⊗ · · · ⊗ P sn | sk ∈ { 1, . . . , d 2}, k = 1 , . . . , n }. Any n-qudit density matrix can be expanded in this measurement basis. In practical QST, measuring a chosen observable As ∈ W on a single copy of ρ yields a discrete eigenvalue outcome. To reliably estimate the theoretical expectation value ⟨As, ρ⟩, one must prepare M identical physical state copies of ρ and compute the empirical average of the M independent measurement outcomes. This empirical average serves as our practical measurement ys, which is inevitably corrupted by quantum statistical fluctuations: 
+
+ys = ⟨As, ρ⟩ + zs,
+
+where zs ∈ R represents the statistical noise. Because ys is the average of bounded independent random variables, zs satisfies standard concentration bounds. Specifically, when focusing on the n-qubit case ( d = 2 ), the scaling factor ensures the spectral norm of each scaled Pauli observable is exactly 2−n/ 2, leading to the following precise bound: 4
+
+Lemma 1. For a scaled Pauli observable As, the statistical noise zs is a mean-zero random variable with |zs| ≤ 21− n 
+
+> 2
+
+,satisfying 
+
+Var( zs) ≤ 12nM , and P(|zs| ≥ ξ) ≤ 2e−ξ2M 2n−1
+
+, ξ ≥ 0
+
+where M is the number of physical state copies of ρ used to measure As.
+
+The goal of quantum state tomography is to reconstruct the density matrix ρ from the collected measurements {(As, y s)},and to determine the number of distinct measurement settings required for provably accurate reconstruction. 
+
+B. Matrix Product Operator and Related Tensor Operations. 
+
+The dimension of the general quantum state represented by its density matrix ρ grows exponentially with particle numbers n,leading to the curse of dimensionality in both computational cost and sample requirements in QST [29], [41]. The MPO ansatz offers a tractable representation for breaking this barrier for large-scale quantum systems [42]. Concretely, a density matrix is called an MPO with bond dimension r = ( r1, . . . , r n−1), if it admits a matrix product form of each entry: 
+
+ρ (( i1, . . . , i n), (j1, . . . , j n)) = X
+
+> l1,...,l n−1
+
+U1(i1, j 1, l 1)U2(l1, i 2, j 2, l 2) · · · Un(ln−1, i n, j n) (1) where Ui ∈ Cri−1×d×d×ri , i = 1 , . . . , n are called core tensors (with the convention r0 = rn = 1 ). For brevity, such a decomposition is denoted by ρ = [ U1, U2, . . . , Un]. In the MPO format (1) , the variable dimension of ρ is O(nd 2r2max ), which only scales linearly with n. This concise representation enables efficient computations. For example, computing the inner product of an MPO of d = 2 with a Pauli observable reduces to contracting each 2 × 2 Pauli matrix with core tensor, followed by a sequence of small matrix multiplications. Recent studies demonstrate that density matrix with an MPO structure can be uniquely determined with O(poly n) random Haar measurements [28], showing the efficiency of the MPO ansatz in reducing the measurement cost of QST. 
+
+Connection with tensor train decomposition . The form in (1) is equivalent to a tensor train decomposition [18] if we reshape the ρ into an n-th order tensor T with size d2 × · · · × d2 by combining the (ik, j k) index pair into a single index 
+
+sk = ik + d(jk − 1) , k = 1 , . . . , n .
+
+T (s1, . . . , s n) = X
+
+> l1,...,l n−1
+
+T 1(s1, l 1)T 2(l1, s 2, l 2) · · · T n(ln−1, s n) (2) where T k(lk−1, s k, l k) = Uk(lk−1, i k, j k, l k), k = 1 , . . . , n are the reshaped core tensors. We use T = [ T 1, . . . , T n] to denote a tensor in tensor train format. Here we slightly abuse the notation by writing the core tensors with a capital letter T k, in order to distinguish them from tensors Uk used in the MPO representation. 
+
+Separation and condition number. For a given tensor train T , the k-th separation of T is an d2k × d2( n−k) matrix T ⟨k⟩
+
+defined by 
+
+T ⟨k⟩(( s1, . . . , s k), (sk+1 , . . . , s n)) = T (s1, . . . , s n).
+
+We define the k-th left part as the matrix T ≤k of size (d2k × rk) with entries 
+
+T ≤k(( s1, . . . , s k), l k) = X
+
+> l1,...,l k−1
+
+T 1(s1, l 1)T 2(l1, s 2, l 2) · · · T k(lk−1, s k, l k).
+
+Similarly, the k+1 -th right part is the matrix T ≥k+1 of size rk ×(d2( n−k)). Then, the k-th separation of T admits the factorization 
+
+T ⟨k⟩ = T ≤kT ≥k+1 and the TT rank rk is the rank of separation matrix T ⟨k⟩. Furthermore, the smallest singular value of T
+
+is defined as λmin (T ) = min 1≤k≤n−1 λrk (T ⟨k⟩), while the largest singular value is λmax (T ) = max 1≤k≤n−1 λ1(T ⟨k⟩). The condition number is defined as κ(T ) = λmax (T )/λ min (T ).
+
+Left and right unfoldings. It is well known that TT decomposition in (2) for a given tensor is not unique. For identifiability, we first introduce left and right unfoldings of 3rd order tensor. For any A ∈ Cd1×d2×d3 , the left unfolding operator L :
+
+Cd1×d2×d3 −→ Cd1d2×d3 is defined by L(A)( s1 + d1(s2 − 1) , s 3) = A(s1, s 2, s 3), which amounts to a suitable reshaping of the entries. Analogously, the right unfolding R(A) ∈ Cd1×d2d3 can be defined similarly. We say the core tensor T k is 
+
+left-orthogonal if L(T k)†L(T k) is an identity matrix. For identifiability of the TT-format core tensors, we shall always assume that T 1, . . . , T n−1 in (2) are all left-orthogonal. Such a decomposition is called a left-orthogonal decomposition of T .
+
+Tensor train singular value decomposition (TTSVD). A left-orthogonal decomposition of T can be obtained via the TTSVD procedure (Algorithm 1), originally proposed by [18]. Here we adopt the restated formulation given in [35]. It should be noted that the output low rank tensor from Algorithm 1 is generally not the best low TT rank r approximation of T . Indeed, finding the best low-rank approximation of an arbitrary tensor is generally NP-hard. Nevertheless, TTSVD remains a widely used method for low-rank TT approximation because it provides a quasi-optimal approximation whose error is controllable. 5
+
+Algorithm 1 TTSVD 
+
+Input: Arbitrary T ∈ Cd1×···× dn and target TT rank r = ( r1, . . . , r n−1).Set bT ≤0
+
+= 1 .
+
+for k = 1 , . . . , n − 1 do 
+
+Let L( bT k) be the leading rk left singular vector of the matrix ( bT ≤k−1
+
+⊗ Idk )†T ⟨k⟩
+
+Set bT ≤k
+
+= ( bT ≤k−1
+
+⊗ Idk )L( bT k).
+
+end for 
+
+bT n = ( bT ≤n−1
+
+)†T ⟨n−1⟩.
+
+Output: TTSVD r (T ) = [ bT 1, bT 2, . . . , bT n].III. B RIDGING QUANTUM STATE TOMOGRAPHY AND TENSOR COMPLETION 
+
+For a density matrix with low-rank prior, the Pauli sensing map has been shown to satisfy the restricted isometry property (RIP) [43] with high probability when m = O(rn 62n) distinct measurement settings are sampled, where r denotes the rank of target density matrix. Leveraging the RIP, extensive literature has formulated QST as a low-rank matrix recovery problem from the compressed-sensing perspective, establishing efficient algorithms and theoretical guarantees [8], [10], [13], [29], [33], [44]. However, under the MPO structure, this property no longer holds. In this section, we first discuss how physical constraints can be incorporated within the MPO structure, and then model the QST problem under tensor-product measurements as a low-rank tensor completion problem endowed with a real tensor-train structure. 
+
+A. Equivalent Condition of Hermitian Property 
+
+A matrix product operator ρ is called physical if it satisfies three conditions: Hermiticity, positive semidefiniteness, and unit trace. Among these, the Hermitian condition plays the most essential role from the perspective of parameter counting, since it effectively halves the number of real degrees of freedom. Therefore, we primarily focus on how the Hermitian property can be enforced directly within the MPO structure. The following Theorem 2 gives a necessary and sufficient condition for an MPO to be Hermitian, expressed directly in terms of its core tensors. 
+
+Theorem 2 (Equivalence of Hermitian Property) . A matrix product operator ρ ∈ Cdn×dn
+
+with bond dimensions r =(r1, . . . , r n−1) is Hermitian if and only if it can be represented in the form ρ = [ U1, U2, . . . , Un], and the core tensors 
+
+Uk ∈ Crk−1×d×d×rk satisfy the following condition 
+
+Uk(lk−1, i k, j k, l k) = Uk(lk−1, j k, i k, l k), k = 1 , . . . , n, (3) 
+
+where ik, j k = 1 , . . . , d and lk = 1 , . . . , r k.Remark 1. It is important to note that the condition in (3) is nontrivial. For example, if one multiplies Uk by the imaginary unit and U k+1 by negative imaginary unit, the overall operator ρ remains unchanged. However, the resulting tensors U k and 
+
+Uk+1 will generally not satisfy (3) . In addition, the condition (3) implies a reduction by half in the number of real parameters needed for each core tensor, which is consistent with the reduction of degrees of freedom imposed by the Hermitian constraint. The proof of Theorem 2 is provided in Section VI. Since the MPO (tensor train) decomposition is not unique, we present an explicit algorithm for obtaining such a decomposition for each Hermitian MPO in Algorithm 4. Moreover, the conditions in (3) remain invariant under real invertible gauge transformations inserted between adjacent core tensors. 
+
+Proposition 1. Let ρ = [ U 1, . . . , Un] be a Hermitian MPO decomposition satisfying (3) . For any sequence of real invertible matrices Gk ∈ Rrk ×rk , k = 0 , 1, . . . , n with G0 = Gn = 1 , define a new decomposition ρ = [ bU1, . . . , bUn] by 
+
+bUk(lk−1, i k, j k, l k) = X
+
+> sk−1,s k
+
+G−1
+
+> k−1
+
+(lk−1, s k−1)Uk(sk−1, i k, j k, s k)Gk(sk, l k),
+
+then the transformed core tensors bU1, . . . , bUn also satisfy (3) .
+
+Regarding the unit trace property, the trace of ρ equals the inner product ⟨ρ, I⟩, which can be computed efficiently by contracting the core tensors with identity matrices. In contrast, enforcing the PSD constraint directly on the core tensors is more challenging. Although [42] imposed additional structures on the core tensors to ensure ρ is PSD, this condition is only sufficient and not necessary. Moreover, incorporating both trace and PSD constraints does not substantially reduce the number of degrees of freedom in the MPO representation. Hence, their impact on improving the required measurement setting complexity is likely marginal. For these reasons, similar to other related work [28], [45], we primarily focus on the Hermitian property and the low-rank MPO structure, leaving the full characterization of PSD constraints to future investigation. 6
+
+Fig. 1. Tensor network diagram connecting the matrix product operator representation of a density matrix to its corresponding Pauli coefficient tensor. The transformation between the computational basis and Pauli basis only involves the contraction of the Pauli matrices with core tensors. 
+
+B. Low Rank Tensor Completion Modelling 
+
+Since the set of tensor-product observables W forms a complete orthonormal basis for Cdn×dn
+
+, any density matrix can be uniquely represented by its coefficients in this basis. This leads to the following definition. 
+
+Definition 1 (Coefficient Tensor) . For an n-partite density matrix ρ, its coefficient tensor is an n-th order real tensor 
+
+T ∈ Rd2×···× d2
+
+defined by 
+
+T (s1, . . . , s n) = ⟨As, ρ⟩, (4) where As = P s1 ⊗ · · · ⊗ P sn ∈ W and each index sk ∈ { 1, . . . , d 2}.The coefficient tensor is a real tensor due to the Hermiticity of both ρ and the basis matrices. Furthermore, if the target state is a Hermitian MPO ρ∗ = [ U ∗
+
+> 1
+
+, U∗
+
+> 2
+
+, . . . , U∗
+
+> n
+
+] satisfying condition (3) , then the corresponding coefficient tensor admits a real 
+
+tensor train decomposition of the form 
+
+T ∗(s1, . . . , s n) = X
+
+> i1,...,i n
+
+X
+
+> j1,...,j n
+
+ρ∗(( i1, . . . , i n), (j1, . . . , j n)) P s1 (i1, j 1) · · · P sn (in, j n)= X
+
+> l1,...,l n−1
+
+X
+
+> i1,j 1
+
+U∗
+
+> 1
+
+(i1, j 1, l 1)P s1 (i1, j 1)
+
+X
+
+> i2,j 2
+
+U∗
+
+> 2
+
+(l1, i 2, j 2, l 2)P s2 (i2, j 2)
+
+ · · · 
+
+ X
+
+> in,j n
+
+U∗
+
+> n
+
+(ln−1, i n, j n)P sn (in, j n)
+
+
+
+=: X
+
+> l1,...,l n−1
+
+T ∗
+
+> 1
+
+(s1, l 1)T ∗
+
+> 2
+
+(l1, s 2, l 2) · · · T ∗
+
+> n
+
+(ln−1, s n).
+
+(5) Here, each T ∗ 
+
+> k
+
+∈ Rrk−1×d2×rk is a real tensor due to Theorem 2 and the Hermiticity of the basis matrices. Moreover, the resulting coefficient tensor T ∗ itself inherits a real tensor-train structure whose TT - rank coincides with the original bond dimension r due to the following proposition. 
+
+Proposition 2. If U∗
+
+> 1
+
+, . . . , U∗ 
+
+> n−1
+
+are left orthogonal, then the corresponding tensors T ∗
+
+> 1
+
+, . . . , T ∗ 
+
+> n−1
+
+obtained via (5) are also left orthogonal. Proof. We can check the orthogonality by direct derivation as follows: 
+
+X 
+
+> sk,l k−1
+
+T k(lk−1, s k, l k)T k(lk−1, s k, ˆlk)= X 
+
+> sk,l k−1
+
+X 
+
+> ik,j k
+
+U∗
+
+> k
+
+(lk−1, i k, j k, l k)P sk (ik, j k) X 
+
+> ˆik,ˆjk
+
+U∗
+
+> k
+
+(lk−1,ˆik, ˆjk, ˆlk)P sk (ˆ ik, ˆjk)= X
+
+> lk−1
+
+X 
+
+> ik,j k
+
+X 
+
+> ˆik,ˆjk
+
+U∗
+
+> k
+
+(lk−1, i k, j k, l k)U∗
+
+> k
+
+(lk−1,ˆik, ˆjk, ˆlk) X
+
+> sk
+
+P sk (ik, j k)P sk (ˆ ik, ˆjk)
+
+!
+
+= X
+
+> lk−1
+
+X 
+
+> ik,j k
+
+X 
+
+> ˆik,ˆjk
+
+U∗
+
+> k
+
+(lk−1, i k, j k, l k)U∗
+
+> k
+
+(lk−1,ˆik, ˆjk, ˆlk)δ(ik ,j k ),(ˆ ik ,ˆjk )
+
+= X
+
+> lk−1
+
+X 
+
+> ik,j k
+
+U∗
+
+> k
+
+(lk−1, i k, j k, l k)U∗
+
+> k
+
+(lk−1, i k, j k, ˆlk) = δlk ,ˆlk ,7
+
+where the third equality holds due to the orthogonality of basis matrices and the last equality follows directly from the left-orthogonality of U∗
+
+> k
+
+.Based on this mathematical equivalence, suppose we sample m distinct measurement settings corresponding to the local observables {Aω1 , . . . , Aωm } ⊂ W. The practical observations obtained from the physical experiment can be written directly as noisy sampled entries of the coefficient tensor. Recalling the measurement model from Section II-A , for each i = 1 , . . . , m ,we have: 
+
+yωi = ⟨Aωi , ρ∗⟩ + zωi = T ∗(ωi) + zωi .
+
+Consequently, the QST problem under our local measurement scheme is mathematically equivalent to completing the real coefficient tensor T ∗ from its noisy, partially observed entries, subject to a low TT-rank constraint. As illustrated in Figure 1, once an estimate T rec is obtained, the corresponding density matrix ρrec can be recovered via the inverse transformation in (5) . Finally, because the chosen measurement basis W is complete and orthonormal, Parseval’s identity guarantees that the reconstruction error in the coefficient tensor space exactly equals the error in the density matrix state space: 
+
+∥ρrec − ρ∗∥F = ∥T rec − T ∗∥F .
+
+C. Incoherence Condition in Tensor Completion. 
+
+For the completion problem to be well-posed, it is essential to assume that the information in T ∗ is not concentrated in a few entries but is instead fairly distributed. This property is commonly quantified by the following two notions [46], [47]. 
+
+Definition 2 (Incoherence and Spikiness) . For a tensor T ∗ ∈ Rd2×···× d2
+
+, the spikiness of T ∗ is defined as 
+
+Spiki( T ∗) = dn · ∥ T ∗∥∞
+
+∥T ∗∥F
+
+.
+
+Let the k-th separation of T ∗ be given by the factorization T ∗⟨ k⟩ = T ∗≤ kΛ∗
+
+> k+1
+
+V ∗⊤ 
+
+> k+1
+
+, where Λ∗ 
+
+> k+1
+
+is an rk × rk invertible matrix and the factors are both orthogonal T ∗≤ k⊤T ∗≤ k = V ∗⊤ 
+
+> k+1
+
+V ∗ 
+
+> k+1
+
+= Irk . The incoherence of tensor T ∗ is defined as 
+
+Incoh( T ∗) := max  
+
+> k
+
+{Incoh( T ∗⟨ k⟩)} := max  
+
+> k
+
+{(d2k/r k)1/2∥T ∗≤ k∥2,∞, (d2( n−k)/r k)1/2∥V ∗
+
+> k+1
+
+∥2,∞}
+
+As established by Lemma 4 and Lemma 5, the incoherence and spikiness of a tensor can be mutually bounded. In this work, we formulate the following assumption concerning the spikiness of T ∗. This condition ensures that the entries of the tensor are sufficiently evenly distributed, enabling a small subset of entries to effectively capture and reveal the structure of the entire tensor. 
+
+Assumption 1. Let T ∗ be a real tensor with exact TT-rank r. There exists a ν ≥ 0 such that Spiki( T ∗) ≤ ν.By Lemma 4, the assumption above directly implies that the incoherence of T ∗ is also bounded by Incoh( T ∗) ≤ κ0ν := √μ,where κ0 is the condition number of T ∗. This assumption is mild and commonly adopted in the tensor completion literature [35], [48]–[51]. IV. O NLINE RIEMANNIAN GRADIENT DESCENT FOR QUANTUM STATE TOMOGRAPHY 
+
+The tensor completion problem has been extensively studied for various tensor structures—such as Tucker, CP, and TT—with considerable work devoted to algorithm design and sample complexity analysis [35], [46], [51]–[55]. Before proceeding, we make a crucial terminology clarification: in the standard tensor completion literature, a sample refers to a revealed entry of the underlying tensor. Because observing a tensor entry in our QST formulation is mathematically equivalent to performing a specific local measurement, we will use the terms sample and distinct measurement setting interchangeably in the algorithmic and theoretical discussions that follow. This concept must be strictly distinguished from the physical state copies (shots) required to compute the empirical average of each measurement. In particular, [35] investigates the Riemannian gradient descent (RGD) method in the offline setting and establishes its convergence theory as well as sample requirements. Nevertheless, directly applying RGD (as well as other existing TT-format completion algorithms) to our problem faces two major limitations. First, the sample complexity required by RGD both for initialization and for local convergence grows exponentially with the tensor order n. This fails to fully exploit the low -dimensional nature of the MPO representation and offers no advantage over low - rank matrix QST approaches. Second, the per - iteration computational cost of RGD also scales exponentially in n, because the algorithm processes the entire set of measurement data simultaneously to compute each gradient update. We therefore consider the online measurement setting in which a batch of measurements—or even a single measurement—is performed sequentially, and only the data from the current batch is used to update the estimate in each round. This reduces the algorithmic per -iteration computational cost to a polynomial in n by fully exploiting the low -rank TT structure. In this section, we first review the geometry of the fixed-TT-rank manifold and its corresponding tangent space projection. Then, we present the online Riemannian gradient descent (oRGD) algorithm for the QST problem formulated as a low TT - rank tensor completion task and establish its convergence theory. Notably, in the noiseless case, oRGD requires only a polynomial number of distinct measurement settings to guarantee local linear convergence. 8
+
+A. Fixed TT Rank Tensor Manifold. 
+
+For TT rank r = ( r1, . . . , r n−1), we define Mr = {T ∈ Rd2×···× d2
+
+, T = [ T 1, . . . , T n], T k ∈ Rrk−1×d2×rk } as the set of n-th order real tensors with TT rank equal to r. It has been proven that Mr is a smooth manifold with dimension 
+
+dof = d2 · Pnk=1 rk−1rk − Pn−1 
+
+> k=1
+
+r2 
+
+> k
+
+[19]. For any tensor T = [ T 1, . . . , T n] ∈ Mr , we denote T as the tangent space of T .As demonstrated in [19], for any X ∈ T, there exists a sequence of core tensors X1, . . . , Xn with Xk ∈ Rrk−1×d2×rk such that X can be parametrized as 
+
+X =
+
+> n
+
+X
+
+> k=1
+
+δX k, δX k = [ T 1, . . . , T k−1, Xk, T k+1 , . . . , T n].
+
+Moreover, the core tensors Xk satisfy that L(Xk)⊤L(T k) = 0rk for k = 1 , . . . , n − 1. There is no constraint on the last component Xn. Such parameterization can be directly used for tangent space projection computation. As indicated in [35], for any n-th order tensor A ∈ Rd2×···× d2
+
+, the projection PT(A) can also be expressed as PT(A) = Pnk=1 δAk, where 
+
+δAk = [ T 1, . . . , T k−1, Ak, T k+1 , . . . , T n]. And the sequence of core tensors A1, . . . An has the following explicit form 
+
+L(Ak) = 
+
+ (Id2rk−1 − L(T k)L(T k)⊤)( T ≤k−1 ⊗ Id2 )⊤A⟨k⟩(T ≥k+1 )⊤(T ≥k+1 (T ≥k+1 )⊤)−1, k = 1 , . . . , n − 1(T ≤n−1 ⊗ Id2 )⊤A⟨n⟩, k = n (6) The Riemannian gradient is obtained by projecting the Euclidean gradient onto the tangent space, (6) provides a practical way to compute it. Although the formula in (6) involves large matrices such as A⟨k⟩ whose dimension scales exponentially in n, the actual computational cost in the completion setting remains low. This is because the Euclidean gradient is sparse, stemming from only a small batch (or even a single) observed entries, and the projection can be carried out efficiently, requiring a computational cost that scales only polynomially with n.
+
+B. Online RGD Algorithm 
+
+We consider an online setting where, at each iteration t, exactly one distinct basis observable is measured. Equivalently, a single entry of the coefficient tensor at index ωt ∈ [d2] × · · · × [d2] is uniformly sampled and observed. Let yωt = T ∗(ωt) + zωt
+
+be the raw physical measurement defined in Section II-A . To formulate an unbiased stochastic gradient for the tensor completion task, we introduce the scaled indicator tensor Et := dneωt , where eωt is the canonical tensor with 1 at position ωt and zeros elsewhere. Accordingly, we define the scaled algorithmic observation Yt := dnyωt = ⟨Et, T ∗⟩ + ϵt, where ϵt = dnzωt is the scaled statistical noise with a proxy variance σ2. The stochastic loss function at iteration t is then formulated as: 
+
+ℓt(T ) := 12 (⟨Et, T ⟩ − Yt)2 , t = 0 , 1, . . . , T. (7) To update the estimate T at round t while preserving the low TT-rank structure, we perform a Riemannian gradient descent step on the previous estimate T t to decrease the loss ℓt(T ). Each iteration consists of three steps: 1) Riemannian gradient computation. Compute the Euclidean gradient Gt := ∇ℓt(T t) and project it onto T t’s tangent space via PTt .2) Descent in tangent space. Conduct a descent along the Riemannian gradient in the tangent space Tt with step size η as 
+
+Wt = T t − η · P Tt Gt.3) Retraction . The updated estimate Wt generally has TT rank larger than the target rank r. A retraction step projects Wt
+
+back to the manifold Mr . This can be implemented by the TTSVD Algorithm 1. The complete online RGD algorithm is summarized in Algorithm 2. 
+
+Algorithm 2 online RGD (oRGD) 
+
+Initialization: T 0 ∈ Mr and spikiness parameter ν
+
+for t = 0 , 1, . . . , T max do 
+
+Gt = ( ⟨Et, T t⟩ − Yt)Et.
+
+T + 
+
+> t
+
+= T t − η · P Tt Gt.
+
+Wt = Trim ξt (T + 
+
+> t
+
+), ξ t = 10 ∥T +  
+
+> t∥F
+> 9dn
+
+ν.
+
+T t+1 = TTSVD r (Wt).
+
+end for 
+
+Note that in Algorithm 2, we add an additional procedure before the retraction, termed trimming. This is an element-wise operation, for arbitrary n-th order tensor Z ∈ Rd2×···× d2
+
+and index s = ( s1, . . . , s n):
+
+Trim ξ (Z)( s) = 
+
+ ξ · sign( Z(s)) , if |Z(s)| ≥ ξ, 
+
+Z(s), otherwise .9
+
+The trimming operation clips large entries of Z and is introduced to ensure that the estimate T t+1 retains a bounded incoherence. It should be emphasized that this trimming step is employed solely for the convenience of the theoretical analysis. In our numerical experiments, we observe that the standard online RGD algorithm without trimming performs nearly identically to the trimmed version. Therefore, in practice, one can completely skip the trimming step when implementing the oRGD algorithm. We now state the local convergence property of oRGD. In a small neighborhood of the target tensor T ∗ and under practical conditions, including a suitable signal-to-noise ratio condition (sufficiently precise measurements) and appropriately chosen learning rate, the algorithm exhibits linear convergence with high probability. Recall from Section II-B , we denote λmin as the smallest singular value of T ∗.
+
+Theorem 3 (Local convergence of online RGD) . Suppose that the initialization T 0 ∈ Mr satisfies that ∥T 0 − T ∗∥F ≤ cηλ min 
+
+for some small constant c, Incoh( T 0) ≤ 2κ0
+
+√μ, the step size satisfies C0η · n2μ2κ40r2max d2 log d ≤ 1 and the signal to noise ratio satisfies (λmin /σ )2 ≥ C1n2η−1dof , where C0, C 1 are absolute constants. Then with probability exceeding 1 − 3T d −20 ,for all t ≤ T , the iterates from Algorithm 2 guarantee 
+
+∥T t − T ∗∥2 
+
+> F
+
+≤ 2
+
+
+
+1 − 14 η
+
+t
+
+∥T 0 − T ∗∥2 
+
+> F
+
++ C2η · dof σ2
+
+where C2 is an absolute constant. 
+
+The proof of Theorem 3 is provided in Section VI. It implies that oRGD produces an ϵ-accurate estimate in the noiseless case after T = O(η−1 log ϵ−1) iterations. Since Theorem 3 only requires η−1 = O(n2), the total number of iterations, and consequently the total sample number, is merely O(n2 · log ϵ−1). This improves the previous results for TT format tensor completion [35], where the offline RGD still needs a sample size that scales exponentially with n, even when a warm initialization is provided. In the noisy case, besides the conditions on the step size and the signal-to-noise ratio, the reconstruction error is also affected by the noise level. In particular, the error cannot vanish asymptotically and is instead dominated by a noise-dependent order O(ηdof σ2). Consequently, to strictly guarantee a final reconstruction error within a desired ϵ-accuracy, this error naturally imposes a stringent upper bound on the tolerable noise magnitude σ. In the context of quantum measurements, this mathematical requirement translates directly into the physical cost of the experiment. 
+
+Remark 2 (Measurement settings vs. physical copies) . As clarified earlier, the polynomial sample complexity T = O(n2 log ϵ−1)
+
+achieved by oRGD refers strictly to the number of distinct measurement settings (i.e., unique local observables) queried by the algorithm. To rigorously satisfy the signal-to-noise ratio (SNR) requirement of Theorem 3, the statistical noise variance σ2 must be sufficiently small. From Lemma 1, suppressing this intrinsic quantum fluctuation inherently demands an exponential number of physical state copies. While the total number of physical state copies remains exponential, oRGD effectively decouples the measurement setting complexity from this physical constraint. By drastically reducing the required number of distinct experimental configurations to a mere polynomial in n, our method significantly simplifies experimental calibration and control. 
+
+C. Initialization by Sequential Second-Order Spectral Method 
+
+In this section, we propose a second-order spectral method to obtain an initial estimate sufficiently close to the target coefficient tensor T ∗. Such second-order spectral approaches are widely used in tensor learning tasks [35], [56], where sample data are used to construct a Gram matrix, and the resulting eigenvectors provide an approximation of the tensor components for initialization. In particular, [35] developed an analysis for the tensor train completion problem. However, the required sample size in [35] grows far more rapidly than the desired O(dn) and can even exceed the total number of entries in the tensor. To address this issue, we introduce a refined initialization scheme tailored to the QST problem that achieves a significantly improved sample complexity.       
+
+> Fig. 2. Reshape the n-th order tensor Tinto a 3-rd order tensor Z.
+
+Let m1 = ⌈n/ 3⌉, m 2 = ⌊n/ 3⌋ and m3 = n − m1 − m2. The target tensor T ∗ can be viewed as a third-order tensor of dimension (d2m1 , d 2m2 , d 2m3 ) with TT rank (rm1 , r m1+m2 ), as illustrated in Figure 2. We first apply the initialization method from [35] using online data to obtain a third-order tensor bZ = [ bZ1, bZ2, bZ3] that is sufficiently close to T ∗. Then we use the rank-r approximation of bZ as the desired initial estimate. The complete procedure is summarized in Algorithm 3, and its theoretical guarantee is stated in Proposition 3. 10 
+
+Algorithm 3 online initialization 
+
+Input: Spikiness parameter ν and incoherence parameter μ
+
+Collect data {Et, Y t}2K1 
+
+> t=1
+
+and compute 
+
+N 1 = 12K21
+
+> K1
+
+X
+
+> k=1 2K1
+
+X
+
+> l=K1+1
+
+YkYl
+
+
+
+E⟨m1⟩ 
+
+> k
+
+E⟨m1⟩⊤ 
+
+> l
+
++ E⟨m1⟩ 
+
+> l
+
+E⟨m1⟩⊤
+
+> k
+
+
+
+.
+
+Set eZ1 be the top rm1 left singular vectors of N 1.Truncation: ¯Zi 
+
+> 1
+
+= eZi 
+
+> 1
+> ∥eZi
+> 1∥2
+
+· min {∥ eZi
+
+> 1
+
+∥2, √μr m1 /d m1 }
+
+Re-normalization: bZ1 = ¯Z1( ¯Z⊤ 
+
+> 1
+
+¯Z1)−1/2.Collect data {Et, Y t}2K2 
+
+> t=1
+
+and compute 
+
+N 2 = 12K22
+
+> K2
+
+X
+
+> k=1 2K2
+
+X
+
+> l=K2+1
+
+YkYl
+
+
+
+E⟨m1+m2⟩ 
+
+> k
+
+E⟨m1+m2⟩⊤ 
+
+> l
+
++ E⟨m1+m2⟩ 
+
+> l
+
+E⟨m1+m2⟩⊤
+
+> k
+
+
+
+.
+
+Set L( eZ2) be the top rm1+m2 left singular vectors of ( bZ1 ⊗ I)⊤N 2( bZ1 ⊗ I).Truncation: L( ¯Z2)i = L( eZ2)i 
+
+> L(∥eZ2)i∥2
+
+· min {∥ L( eZ2)i∥2, √μr m1+m2 /d m2 }
+
+Re-normalization: L( bZ2) = L( ¯Z2)  L( ¯Z2)⊤L( ¯Z2)−1/2.Collect {Et, Y t}K3 
+
+> t=1
+
+and compute bZ3 = 1
+
+> K3
+
+ bZ≤2⊤ PK3 
+
+> k=1
+
+YkE⟨m1+m2⟩
+
+> k
+
+
+
+Reconstruction bZ = [ bZ1, bZ2, bZ3].
+
+Output: T 0 = TTSVD r (Trim ξ ( bZ)) with ξ = 10 ∥ bZ∥F 
+
+> 9dn
+
+ν
+
+Proposition 3. Suppose K is the desired upper bound, then if the sample number K1, K 2 and K3 in Algorithm 3 have a lower bound K satisfying 
+
+K ≥ Cn 5dnr 12
+
+> min
+
+r2max · K −1 + Cnd n log( d)rmin r4max · K −2,
+
+and the signal-to-noise ratio condition satisfies that 
+
+λmin 
+
+σ ≥ bC nd nr2max 
+
+K · K −1 + bC
+
+ n3dnrmax 
+
+K
+
+ 12
+
+· K − 12 ,
+
+for some C, bC > 0 depending on κ0, μ, ν . Then with probability at least 1 − nd −n, the output of Algorithm 3 satisfies 
+
+∥T 0 − T ∗∥F ≤ K and Incoh( T 0) ≤ 2κ20ν. (8) The proof of Proposition 3 is provided in Section VI. Consequently, to satisfy the initialization condition required by Theorem 3, the sample number K required by Algorithm 3 is Ω( dn) if we retain only the terms that scale exponentially in n.In contrast, the result in [35] requires Ω( dnr5n/ 2max κ4n 
+
+> 0
+
+νn). Since the parameters d, r, κ 0, ν are typically assumed to be O(1) , the bound established in Proposition 3 shows a significant improvement over the result in [35]. V. N UMERICAL EXPERIMENTS 
+
+In this section, we perform numerical experiments on QST for MPOs of n-qubits ( d = 2 ) to test the proposed oRGD algorithm. We consider the pure state case and choose three types of matrix product states. As the pure states are matrix product states, the corresponding density matrices are matrix product operators, which we use as our targets for QST. The following matrix product states are taken into consideration. (1) Randomly generated matrix product states with each core tensor’s real and imaginary parts are independently sampled from the uniform distribution on [0 , 1] . We set rk = min(4 k, 4n−k, r ), k = 1 , . . . , n − 1 as the TT rank of target MPO for any r by default. (2) Greenberger-Horne-Zeilinger (GHZ) state (|0⟩⊗n + |1⟩⊗n)/√2, whose density matrix is an MPO with rank rk = 4 , k = 1 , . . . , n − 1. (3) Ground state of 1D quantum Ising model. The Hamiltonian is given by 
+
+H = −
+
+> n−1
+
+X
+
+> i=1
+
+SZi SZi+1 + g
+
+> n
+
+X
+
+> i=1
+
+SXi ,
+
+with g = 1 , where SZi is the Pauli-Z matrix only acting on qubit i. We use the DMRG implementation from the ITensor library [57] to obtain an approximate matrix product state representation of the ground state |ψ⟩, using a maximum bond dimension 
+
+D = 16 .11 
+
+We employ two standard metrics to assess the reconstruction results ρrec : the relative error of Frobenius norm D(ρ∗, ρrec ) = 
+
+∥ρ∗ − ρrec ∥F /∥ρ∗∥F and the fidelity f (|ψ⟩, ρrec ) = |⟨ ψ|ρrec |ψ⟩| or f (|ψ⟩, |ψrec ⟩) = |⟨ ψ|ψrec ⟩| 2.Random state: n = 16 ; r = 4                                                      
+
+> 012345678
+> Iteration #10 4
+> 10 -4
+> 10 -3
+> 10 -2
+> 10 -1
+> D(;$; ;rec )
+> B= 1
+> B= 10
+> B= 50
+> B= 100 Random state: n= 32 ; r = 4
+> 012345678
+> Iteration #10 4
+> 0.04 0.05 0.06 0.07 0.08 0.09
+> D(;$; ;rec )
+> B= 1
+> B= 10
+> B= 100
+> B= 1000 1D Ising model: n= 16
+> 012345678
+> Iteration #10 4
+> 10 -2
+> 10 -1
+> D(;$; ;rec )
+> B= 1
+> B= 50
+> B= 100
+> B= 200
+
+Fig. 3. (Left-Top) Random state with n = 16 , r = 4 , δ = 0 .1. (Right-Top) Random state with n = 32 , r = 4 , δ = 0 .1. (Left-Bottom) The ground state of 1D Ising model with n = 16 , δ = 0 .1. (Right-Bottom) The phase transition behaviour of the reconstruction fidelity as a function of n (from 7 to 16 ) for a fixed rank r = 4 . The initial error δ = 0 .7 corresponds to a fidelity around 0.82 . Dashed lines represent quadratic fits to data points with the same fidelity. 
+
+Exact Pauli measurement data and local initialization. We first examine the noiseless setting to validate the local linear convergence of the online RGD algorithm. The initial point is constructed as T 0 = TTSVD r (T ∗ + δ · E 
+
+> ∥E∥F
+
+), where E is a random tensor with TT rank r and parameter δ controls the initialization error. To enhance the efficiency of the update, we perform each oRGD update using a minibatch of observations {Y t, 1, . . . , Y t,B } sampled uniformly with replacement. The step size is set to η = αBn 2 where α is a tunable parameter. The results for quantum states with different numbers of qubits n
+
+or different TT-ranks are displayed in Figure 3. In the bottom-right panel of Figure 3, we vary the number of qubits while keeping the batch size fixed at B = 20 and the step-size parameter α = 4 × 10 −3. For each setting, five independent random trials were performed and the average result is reported. As shown in Figure 3, oRGD exhibits linear convergence for all tested quantum states, which aligns with our theoretical analysis. Furthermore, when a larger batch size B is used, a larger α can be adopted, leading to a faster convergence rate. We also observe that the convergence becomes slower when the system size n increases or when the TT - rank is higher. In particular, the bottom -right panel illustrates that, for different qubit numbers n, the number of iterations (and hence the total sample complexity) required to reach a fixed reconstruction error scales quadratically with n. This is consistent with our theoretical results. 
+
+Noisy Pauli measurement data and random initialization. The initial tensor T0 is taken as the Pauli coefficient tensor of a randomly generated matrix product operator with rank r. For each observation (Pauli basis), we perform M = 4000 or 8000 
+
+measurement shots to estimate the expectation value. 12 0 0.5 1 1.5 2                             
+
+> Iteration #10 5
+> 10 -2
+> 10 -1
+> 10 0
+> D(;$; ;rec )
+> ,= 0 :020
+> ,= 0 :015
+> ,= 0 :010 00.5 11.5 2
+> Iteration #10 5
+> 10 -2
+> 10 -1
+> 10 0
+> D(;$; ;rec )
+> n= 12 ; M = 4000
+> n= 12 ; M = 8000
+> n= 14 ; M = 4000
+> n= 14 ; M = 8000
+> n= 16 ; M = 4000
+> n= 16 ; M = 8000
+
+Fig. 4. (Left) Random state with n = 12 , r = 4 , using noisy measurements with M = 4000 shots per observable. We set B = 50 and vary the step size parameter α in oRGD. (Right) Random state with r = 4 and different n, we set B = 100 , α = 10 −2 in oRGD. 
+
+The left figure of Figure 4 illustrates that online RGD initially converges at a linear rate, after which the relative error plateaus due to the measurement noise. Moreover, a smaller step size leads to slower convergence but achieves a lower final error, which is consistent with our theoretical results in Theorem 3. As shown in the right figure of Figure 4, increasing the number of shots reduces the noise level and thus the final relative error. In general, reconstructing a quantum state with a larger qubit number requires both more samples and a higher number of measurement shots. 
+
+Comparison of oRGD with RGD. We compare the performance of the proposed online RGD method with the RGD algorithm [35] in the exact Pauli measurement setting. Since RGD is an offline method, we first collect the measurement data offline and then use the full dataset to implement the RGD in each iteration. In contrast, online RGD still processes a batch of samples per iteration. To meet the sample complexity requirement of RGD, the total sample budget is set to 100 · 2n for each qubit number n, and the rank is fixed at r = 4 . Both algorithms start from the same random initialization, and we report the total runtime required to reach the stopping criteria D(ρ∗, ρrec ) ≤ 10 −3 in left panel of Figure 5. The per-iteration runtime of RGD and online RGD (with batch size B = 500 ) is shown in the middle panel of Figure 5. As shown in Figure 5, the total computational cost for convergence is substantially higher for RGD than oRGD, especially when n is moderately large. Additionally, the per-iteration runtime of RGD scales exponentially with n, while oRGD scales only linearly and remains below or around 10 −2 seconds across the tested range of n.10 11 12 13 14 15 16                                    
+
+> Qubit number n
+> 0100 200 300 400 500 600 700 800 900
+> CPU time (s)
+> RGD oRGD 10 11 12 13 14 15 16
+> Qubit number n
+> 10 -3
+> 10 -2
+> 10 -1
+> 10 0
+> 10 1
+> 10 2
+> CPU time (s)
+> RGD oRGD 10 12 14 16 18
+> Qubit number
+> 10 -5
+> 10 -4
+> 10 -3
+> 10 -2
+> 10 -1
+> D(;$; ;rec )
+> Random state r= 4 ;50 epoch Random state r= 9 ;50 epoch GHZ state, 50 epoch Random state r= 4 ;1 epoch Random state r= 9 ;1 epoch GHZ state, 1 epoch
+
+Fig. 5. (Left) Total runtime required for RGD and oRGD to achieve D(ρ∗, ρrec ) ≤ 10 −3. (Middle) Per-iteration runtime of RGD and oRGD with batch size 
+
+B = 500 . (Right) Reconstruction error of different quantum states using the RSGD algorithm. 
+
+Riemannian stochastic gradient descent method. We employ the RSGD algorithm with a total budget of 3 × 10 5 exact Pauli measurement samples. The initial error δ = 0 .1 and the step size decays epoch-wise as αk = α0 × (0 .9) k−1, where k
+
+denotes the epoch index. We test on three target states: random states with r = 4 , 9 and the GHZ state. For these states, the batch sizes are set to B = 3 × n2, 5 × n2, 6 × n2 and initial step-size parameters are α0 = 0 .2, 0.2, 0.13 , respectively. The reconstruction results are shown in the right panel of Figure 5. The results demonstrate that reusing the measurement data can further reduce the reconstruction error. In practice, this indicates that when experimental copies of the state are constrained, reusing the measurement data can considerably enhance the reconstruction result. 13 
+
+VI. T ECHNICAL LEMMAS 
+
+In this section, we provide several technical lemmas that will be frequently used in the following theoretical analysis. We first present the proof of the Lemma 1 below. 
+
+Proof of Lemma 1. Denote bAs = 2 n 
+
+> 2
+
+As and we first consider the estimation of the expectation ⟨ bAs, ρ⟩ and let ˆzs be the corresponding statistical error. Then ⟨ bAs, ρ⟩ = 2 n 
+
+> 2
+
+⟨As, ρ⟩ and ˆzs = 2 n 
+
+> 2
+
+zs.The expectation ⟨ bAs, ρ⟩ is estimated by the 2-outcome measurement { I+ bAs 
+
+> 2
+
+, I− bAs 
+
+> 2
+
+}. For a single measurement, the outcome 
+
+Xs is a random variable with 
+
+P(Xs = 1) = Tr I + bAs
+
+2 ρ
+
+!
+
+, P(Xs = −1 = Tr I − bAs
+
+2 ρ
+
+!
+
+.
+
+Let Xis, i = 1 , . . . , M be the outcomes of M independent measurements. The statistical noise is defined as ˆzs = 1
+
+> M
+
+PMi=1 Xis −⟨ bAs, ρ⟩. Its expectation is 
+
+E [ˆ zs] = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+
+
+E[Xis] − Tr( bAsρ)
+
+
+
+= 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+Tr I + bAs
+
+2 ρ
+
+!
+
+− Tr I − bAs
+
+2 ρ
+
+!
+
+− Tr( bAsρ)
+
+!
+
+= 0 
+
+As each Xis takes values ±1, we have |ˆzs| ≤ 2. And the variance of ˆzs is 
+
+Var(ˆ zs) = 1
+
+M 2
+
+> M
+
+X
+
+> i=1
+
+Var( Xis)
+
+≤ 1
+
+M Tr I + bAs
+
+2 ρ
+
+!
+
++ Tr I − bAs
+
+2 ρ
+
+!
+
+− ⟨ bAs, ρ⟩2
+
+!
+
+≤ 1
+
+M
+
+
+
+1 − ⟨ bAs, ρ⟩2
+
+≤ 1
+
+M
+
+Finally, since ˆzs is a sum of independent bounded random variables, Hoeffding’s inequality gives 
+
+P(|ˆzs| ≥ ξ) ≤ 2e−ξ2M/ 2, ξ ≥ 0.
+
+Then we have 
+
+Var( zs) ≤ 12nM , and P(|zs| ≥ ξ) ≤ 2e−ξ2M 2n−1
+
+, ξ ≥ 0.
+
+Lemma 2. For a Hermitian matrix X ∈ Crd 2K ×rd 2K
+
+satisfies that, each entry of X is the complex conjugate of another one if the indices in {it, j t}Kt=1 are swapped: 
+
+X  (l, {it, j t}Kt=1 ), (l′, {pt, q t}Kt=1 ) = X  (l, {jt, i t}Kt=1 ), (l′, {pt, q t}Kt=1 ) (9) 
+
+for all l, l ′ ∈ [r], and it, j t, p t, q t ∈ [d]. Then there exists an eigenvector matrix U of X such that each eigenvector u ∈ Crd 2K
+
+in U satisfies that 
+
+u(l, {it, j t}Kt=1 ) = u(l, {jt, i t}Kt=1 ) (10) 
+
+for all l ∈ [r] and it, j t ∈ [d].Proof. We define the following conjugate linear operator F : Crd 2K
+
+−→ Crd 2K
+
+:
+
+F (u)( l, {it, j t}Kt=1 ) = u(l, {jt, i t}Kt=1 ), l ∈ [r], i t, j t ∈ [d].
+
+The operator F satisfies that for any v ∈ Crd K
+
+, F 2(v) = v and F (Xv ) = XF (v). The condition in (10) is equivalent to be F (u) = u. We will prove that there exist such eigenvectors for each eigenvalue of X.Let λ ∈ R be an eigenvalue of X, Dλ is the multiplicity and Eλ is the corresponding eigenvector space. For any v ∈ Eλ
+
+XF (v) = F (Xv ) = F (λv) = λF v,
+
+thus, F maps Eλ to itself. Let ERλ := {u ∈ Eλ : F (u) = u}, then for any v ∈ Eλ,
+
+v1 = v + F (v)2 , v2 = v − F (v)2√−1 ,14 
+
+it is easy to verify that v1, v2 ∈ ERλ and v = v1 + √−1v2. Thus ERλ forms Eλ with complex coefficients. And there exists a collection of vectors {w1, . . . , wDλ } in ERλ that constructs a basis of Eλ. We define {u1, . . . , uDλ } as the orthogonalization and normalization of {w1, . . . , wDλ } via Gram-Schmidt process. As the inner product between any vectors in ERλ is a real number, each uk can be expressed as 
+
+uk =
+
+> Dλ
+
+X
+
+> i=1
+
+ck,i · wi, ck,i ∈ R.
+
+Thus, {u1, . . . , uDλ } ⊂ ERλ are the eigenvectors of λ satisfies (3) . By combining all those eigenvectors with different eigenvalues, we construct the target matrix U .
+
+Theorem 4 (Martingale Concentration Inequality) . Suppose Xn, n ≥ 1 is a martingale such that X0 = 0 and |Xi − Xi−1| ≤ 
+
+di, 1 ≤ i ≤ n almost surely for some constant di, 1 ≤ i ≤ n. Then for every t ≥ 0,
+
+P(|Xn| ≥ t) ≤ 2 exp( − t2
+
+2 Pni=1 d2
+
+> i
+
+).
+
+Lemma 3 (Lemma 26 in [35]) . Let T , T ∗ ∈ Mr be two TT-rank r tensors. Suppose we have 8∥T − T ∗∥F ≤ λmin , then we have 
+
+∥P ⊥ 
+
+> T
+
+(T ∗)∥F ≤ 12 √2n∥T − T ∗∥2
+
+> F
+
+λmin 
+
+,
+
+where T is the tangent space at point T .
+
+Lemma 4 (Spikiness implies incoherence, Lemma 2 in [35]) . Let T ∈ Mr satisfies Spiki( T ) ≤ ν. Then we have 
+
+Incoh( T ) ≤ νκ 0,
+
+where Incoh( T ) is the incoherence parameter of T and κ0 is the condition number of T defined by κ0 = λmax (T )/λ min (T ).
+
+Lemma 5 (Incoherence implies Spikiness) . Let T ∗ ∈ Mr satisfies Incoh( T ) ≤ √μ, then we have 
+
+Spiki( T ) ≤ √rmax κ0μ, 
+
+where rmax is the largest rank. Proof. Notice that T ⟨i⟩ = T ≤iΛiV ⊤
+
+> i+1
+
+,
+
+∥T ∥∞ ≤ λmax (Λi) · ∥ T ≤i∥2,∞ · ∥ V i+1 ∥2,∞ ≤ λmax (T ) · ri
+
+dn · μ. 
+
+On the other hand, ∥T ∥F ≥ √ri · λmin (T ). Therefore 
+
+Spiki( T ) = dn∥T ∥∞
+
+∥T ∥F
+
+≤ √rmax κ0μ. 
+
+Lemma 6 (Lemma 29 in [35]) . Let T ∗ ∈ Mr and satisfies that Spiki( T ∗) ≤ ν. Suppose that W satisfies ∥W − T ∗∥F ≤ 
+
+> λmin
+> 600 m√rmax κ0
+
+, if we choose ξ = 10 ∥W∥F 
+
+> 9√d∗
+
+ν then the incoherence of TTSVD r (Trim ξ (W)) is less than 2κ20ν. Furthermore, 
+
+∥ TTSVD r (Trim ξ (W)) − T ∗∥F ≤ √2∥W − T ∗∥F
+
+Lemma 7 (Lemma 26 in [35]) . Let T ∗ ∈ Mr and we denote T = T ∗ + D. Then suppose ∥D∥F ≲n λmin where λmin is the smallest singular value of T ∗, we have 
+
+∥ TTSVD r (T ) − T ∗∥2 
+
+> F
+
+≤ ∥ D∥2 
+
+> F
+
++ 600 n∥D∥3
+
+> F
+
+λmin 
+
+Lemma 8 (Theorem 2 in [56]) . Let M ∈ Rp1×p2 and Xi = p1p2Pωi M , Y j = p1p2Pω′ 
+
+> j
+
+M , where ωi ∈ Ω1, ω ′ 
+
+> j
+
+∈ Ω2 are independently and uniformly sampled from [p1]×[p2] and |Ω1| = |Ω2| = K. Denote N = M M ⊤ and fN = 12K2
+
+P 
+
+> i,j
+
+(XiY ⊤ 
+
+> j
+
++
+
+Y j X⊤ 
+
+> i
+
+), then with high probability exceeding 1 − p−α with p = max {p1, p 2}, we have 
+
+∥fN − N ∥ ≤ Cα 2 p3/21 p3/22 log( p)
+
+K
+
+"
+
+1 + p1
+
+p2
+
+1/2
+
++ p1/21 p1/22
+
+K +
+
+ Kp2 log( p)
+
+1/2#
+
+· ∥ M ∥2
+
+> ∞
+
+.
+
+Lemma 9 (Lemma 18 in [35]) . Let M ∈ Rp1×p2 and Xi = p1p2 (M ωi + ξi) Eωi , Y j = p1p2
+
+
+
+M ω′ 
+
+> j
+
++ ξ′
+
+> j
+
+
+
+Eω′ 
+
+> j
+
+, where 
+
+ωi ∈ Ω1, ω ′ 
+
+> j
+
+∈ Ω2 are independently and uniformly sampled from [p1] × [p2] and |Ω1| = |Ω2| = K with K ≤ p1p2, and 
+
+{Eω }ω∈[p1]×[p2] is the standard basis for Rp1×p2 and ξ, {ξi}Ki=1 , ξ′ 
+
+> j
+> Kj=1
+
+are i.i.d. ˆσ subgaussian random variables with 15 
+
+variance Var ξ2 ≤ C1 ˆσ2 for some absolute constant C1 > 0. Let U ∈ Rp1×r be the orthogonal matrix such that Incoh 
+
+(U ) ≤ √μ. Then for any α ≥ 1, with probability exceeding 1 − 9p−α where p = max {p1, p 2}, we have for some absolute constant C2 > 0,
+
+12K2
+
+X
+
+> i,j
+
+
+
+U T XiY Tj U + U T Y j XTi U
+
+
+
+− U T M M T U
+
+≤Cα∥M ∥∞ ˆσ
+
+
+
+μr p1p2
+
+K log( p) + μr p1p22
+
+K2 log 2(p) + p1p2
+
+√K
+
+pμr log( p)
+
+
+
++Cα ˆσ2 p1p2
+
+K
+
+
+
+μr log 3/2(p) + μr log 5/2(p)
+
+√p2
+
+√p2 ∨ rK
+
+
+
++Cα log 2(p) p1p2∥M ∥2
+
+> ∞
+
+K μrp 1/22 + μrp 2
+
+K +
+
+ μrK 
+
+log 3(p)
+
+1/2!
+
+.
+
+Let W = p1p2
+
+> K
+
+PKi=1 ξiU ⊤Eωi and W ′ = p1p2
+
+> K
+
+PKj=1 ξ′ 
+
+> j
+
+U ⊤Eω′ 
+
+> j
+
+, then with probability exceeding 1 − 2p−α
+
+max {∥ W ∥, ∥W ′∥} ≤ Cα 
+
+r p1p2 max( p2, r )
+
+K log( p) + p1p2
+
+K μr log( p)
+
+!
+
+ˆσ
+
+Lemma 10 (Lemma 36 in [35]) . Let M ∈ Rp1×p2 and Xi = p1p2Pωi (M ), where ωi ∈ Ω is independently and uniformly sampled in [p1] × [p2] and |Ω| = K. Let U ∈ Rp1×r be the orthogonal matrix such that Incoh( U ) ≤ √μ. Then with probability exceeding 1 − p−α, we have 
+
+∥U ⊤( p1p2
+
+K PΩ(M ) − M )∥ ≤ Cα 
+
+√p1p2
+
+√μr ∥M ∥∞ log( p)
+
+K +
+
+r p1p2∥M ∥2 
+
+> ∞
+
+max( μr, p 2) log( p)
+
+K
+
+!
+
+Lemma 11 (Remark 6.2 in [58]) . Let U , X ∈ Rp×r be orthogonal and Incoh( U ) ≤ √μ and dp(U , X) ≤ δ ≤ 116 π . Then cX
+
+satisfies Incoh( cX) ≤ √3μ and dp(cX, U ) ≤ 4πδ , where 
+
+¯Xi = Xi
+
+∥Xi∥2
+
+· min {∥ Xi∥2,
+
+r μr p }, cX = ¯X( ¯X⊤ ¯X)−1/2.
+
+PROOF OF THEOREM 2If there exists a decomposition ρ = [ U1, U2, . . . , Un] satisfying (3) , then ρ is a Hermitian matrix due to the definition in (1) .On the other hand, the decomposition in (1) is not unique, we introduce the following algorithm to construct the decomposition satisfying (3) for the Hermitian matrix ρ with bond dimension r.
+
+Algorithm 4 Hermitian Matrix Product Operator Decomposition 
+
+Require: A Hermitian matrix ρ ∈ Cdn×dn
+
+and target bond dimension r0 = rn = 1 , r =(r1, r 2, · · · , r n−1).Obtain the reshaped n-order tensor Y ∈ Cd2×···× d2
+
+satisfies: 
+
+Y (( i1, j 1), . . . , (in, j n)) = ρ (( i1, . . . , i n), (j1, . . . , j n)) .
+
+for k = 1 , · · · , n − 1 do 
+
+Set M k = Reshape  Y, [rk−1d2, d 2n−2k].
+
+V k ←− top left-rk eigenvectors of M kM †
+
+> k
+
+.Compute bV k:
+
+bV k (( lk−1, i k, j k), l k) = V k (( lk−1, j k, i k), l k), l k ∈ [rk], i k, j k ∈ [d].
+
+Set U k, 1 = ( V k + bV k)/2, U k, 2 = ( V k − bV k)/(2 √−1) .
+
+U k ←− rk orthogonal basis of [U k, 1, U k, 2] via Gram-Schmidt Process. Set Uk = Reshape ( U k, [rk−1, d, d, r k]) .Set Y = Reshape 
+
+
+
+U †
+
+> k
+
+M k, [rk, d 2, . . . , d 2]
+
+
+
+as a n − k + 1 -order tensor. 
+
+end for 
+
+Un = Reshape ( Y, [rn−1, d, d ]) 
+
+Ensure: U1, U2, . . . , Un satisfying (3). 16 
+
+We will prove that each U k in Algorithm 4 is an eigenvector matrix of M kM † 
+
+> k
+
+and satisfies (3) , thus the Algorithm 4 is a special Tensor-Train SVD algorithm combined with specific singular vector selection. Then, if we set the input r of Algorithm 4 is the bond dimension of ρ, ρ = [ U 1, U2, . . . , Un] is the target Hermitian decomposition. By the definition of Y, M 1 ∈ Cd2×d2n−2
+
+satisfies: 
+
+M 1 (( i1, j 1), ({it, j t}nt=2 )) = M 1 (( j1, i 1), ({jt, i t}nt=2 )) , it, j t ∈ [d]
+
+For 1 ≤ k ≤ n − 1. We assume that M k ∈ Crk−1d2×d2n−2k
+
+satisfies that 
+
+M k
+
+ (lk−1, i k, j k), ({it, j t}nt=k+1 ) = M k
+
+ (lk−1, j k, i k), ({jt, i t}nt=k+1 ), it, j t ∈ [d], l k−1 ∈ [rk−1]
+
+Then, it is straightforward to verify that M kM † 
+
+> k
+
+∈ Crk−1d2×rk−1d2
+
+satisfies 
+
+M kM †
+
+> k
+
+ (lk−1, i k, j k), (l′
+
+> k−1
+
+, p k, q k)
+
+= X
+
+> {it,j t}nt=k+1
+
+M k
+
+ (lk−1, i k, j k), ({it, j t}nt=k+1 ) M k
+
+ (l′
+
+> k−1
+
+, p k, q k), ({it, j t}nt=k+1 )
+
+= X
+
+> {it,j t}nt=k+1
+
+M k
+
+ (l′
+
+> k−1
+
+, q k, p k), ({jt, i t}nt=k+1 ) M k
+
+ (lk−1, j k, i k), ({jt, i t}nt=k+1 )
+
+= M kM †
+
+> k
+
+ (l′
+
+> k−1
+
+, q k, p k), (lk−1, j k, i k) = M kM †
+
+> k
+
+ (lk−1, j k, i k), (l′
+
+> k−1
+
+, q k, p k)
+
+Thus, by Lemma 2, U k is an eigenvector matrix of M kM † 
+
+> k
+
+and 
+
+Uk(lk−1, i k, j k, l k) = U k (( lk−1, i k, j k), l k) = U k (( lk−1, j k, i k), l k) = Uk(lk−1, j k, i k, l k)
+
+for all ik, j k ∈ [d]. Thus, by definition M k+1 ∈ Crk d2×d2n−2k−2
+
+satisfies: 
+
+M k+1 
+
+ (lk, i k+1 , j k+1 ), ({it, j t}nt=k+2 ) = X  
+
+> ik,j k,l k−1
+
+U k (( lk−1, i k, j k), l k)M k
+
+ (lk−1, i k, j k), ({it, j t}nt=k+1 )
+
+= X  
+
+> ik,j k,l k−1
+
+U k (( lk−1, j k, i k), l k) M k
+
+ (lk−1, j k, i k), ({jt, i t}nt=k+1 )
+
+= M k+1 
+
+ (lk, j k+1 , i k+1 ), ({jt, i t}nt=k+2 )
+
+Recursively, the core tensors U1, · · · , Un−1 satisfies (3) by Lemma 2. For core tensor Un we have 
+
+Un (ln−1, i n, j n) = M n(ln−1, (in, j n)) = M n(ln−1, (jn, i n)) = Un (ln−1, j n, i n)
+
+Thus, we have completed the proof. PROOF OF THEOREM 3We first define the following event: 
+
+Et =
+
+n
+
+∀ 0 ≤ l ≤ t, ∥T l − T ∗∥2 
+
+> F
+
+≤ 2(1 − 14 η)l∥T 0 − T ∗∥2 
+
+> F
+
++ 10 η · dof σ2,
+
+|ϵl| ≲ σplog d, Incoh( T l) ≤ √μ0
+
+o
+
+where μ0 = 4 κ20μ. It is easy to verify that the P(E0) = P(|ϵ0| ≲ σ√log d) ≥ 1 − d−20 . Also, we have the initialization requirement as ∥T 0 − T ∗∥F ≲ n−1η · λmin . Here we recall that λmin = σmin (T ∗), λmax = σmax (T ∗) and κ0 = λmax /λ min .We first analyse the singular value of T t. From ∥T t − T ∥2 
+
+> F
+
+≤ 2∥T 0 − T ∗∥2 
+
+> F
+
++ 10 η · dof σ2. We have 
+
+λmax (T t) ≤ λmax + ∥T t − T ∗∥F ≤ 32 λmax , λmin (T t) ≥ λmin − ∥ T t − T ∗∥F ≥ 12 λmin 
+
+as long as η · dof σ2 ≲ λ2min . Then we estimate the spikiness of T t. By Lemma 5 we have Spiki( T t) ≤ √rmax κ0μ0 =: ν0.We now derive the following bounds, which will be used frequently. 
+
+Estimation of ∥P Tt Eω ∥F and ∥P Tt X t∥F . We write T t = [ T 1, T 2, . . . , T n] where T t is μ0 incoherent under Et. Then for any ω ∈ [d2] × [d2] × · · · × [d2],
+
+PTt Eω =
+
+> n
+
+X
+
+> i=1
+
+δEiω , where δEiω = [ T 1, . . . , T i−1, Eiω , T i+1 , . . . , T n].17 
+
+And each Eiω has the same formulation as in (6). For i = 2 , . . . , n − 1, using the incoherence of T t we have 
+
+∥δEiω ∥F = ∥(T ≤i−1 ⊗ Idi )L(Eiω )T ≥i+1 ∥F
+
+= ∥(T ≤i−1 ⊗ Idi )( Idiri − L(T i)L(T i)⊤)( T ≤i−1 ⊗ Idi )⊤E⟨i⟩
+
+ω (T ≥i+1 )⊤(T ≥i+1 (T ≥i+1 )⊤)−1T ≥i+1 ∥F
+
+≤ ∥ (T ≤i−1 ⊗ Idi )⊤E⟨i⟩
+
+ω V i+1 ∥F
+
+≤ ∥ T ≤i−1∥2,∞ · ∥ V i+1 ∥2,∞
+
+≤ μ0
+
+√ri−1ri
+
+dn−1 .
+
+For i = 1 or i = n.
+
+∥δEnω ∥F = ∥(T ≤n−1 ⊗ Idn )⊤E⟨n⟩
+
+ω ∥F ≤ ∥ T ≤n−1∥2,∞ ≤ √μ0
+
+√rn−1
+
+dn−1 , ∥δE1
+
+ω ∥F ≤ √μ0
+
+√r1
+
+dn−1 .
+
+Thus, 
+
+∥P Tt Eω ∥2
+
+F =
+
+nX
+
+i=1 
+
+∥δEiω ∥2
+
+F ≤ dof · μ20
+
+d2n .
+
+Meanwhile ∥P Tt X t∥2
+
+F ≤ dof μ20. And 
+
+Et∥P Tt X t∥2
+
+F = X
+
+ωnX
+
+i=1 
+
+∥δEiω ∥2
+
+F
+
+≤ X
+
+ω
+
+n−1X
+
+i=1 
+
+∥(T ≤i−1 ⊗ Idi )E⟨i⟩
+
+ω V i+1 ∥2
+
+F + ∥(T ≤n−1 ⊗ Idn )⊤E⟨n⟩
+
+ω ∥2
+
+F
+
+!
+
+= r1d2 +
+
+n−2X
+
+i=1 
+
+rid2ri+1 + d2rn−1 = dof .
+
+(11) 
+
+Estimation of ∥T t − T ∗∥∞. We first define the projection operator PT ≤i as: 
+
+(PT ≤i (Z)) ⟨i⟩ = ( T ≤iT ≤i⊤)( Z⟨i⟩)
+
+Then we have 
+
+T t − T ∗ = PT ∗≤ n−1 (T t − T ∗) + 
+
+n−1X
+
+i=1 
+
+(PT ∗≤ i−1 − P T ∗≤ i )( T t − T ∗)
+
+where 
+
+(( PT ∗≤ i−1 − P T ∗≤ i )( T t − T ∗)) ⟨i⟩ = (( PT ∗≤ i−1 − P T ∗≤ i )( T t)) ⟨i⟩ V i+1 V ⊤
+
+i+1 
+
+= (( PT ∗≤ i−1 − P T ∗≤ i )( T t − T ∗)) ⟨i⟩ V i+1 V ⊤
+
+i+1 
+
+here the first equality holds since (PT ∗≤ i−1 − P T ∗≤ i )( T ∗) = 0 and (T t)⟨i⟩V i+1 V ⊤
+
+i+1 = ( T t)⟨i⟩.Thus, we have: |⟨P T ∗≤ n−1 (T t − T ∗), Eω ⟩| = |⟨ T t − T ∗, PT ∗≤ n−1 (Eω )⟩| ≤ ∥ T t − T ∗∥F · ∥ T ∗≤ n−1∥2,∞
+
+≤ ∥ T t − T ∗∥F ·√μ0rn−1
+
+dn−1 .
+
+and 
+
+|⟨ (PT ∗≤ i−1 − P T ∗≤ i )( T t − T ∗), Eω ⟩| = |⟨ T t − T ∗, (( PT ∗≤ i−1 − P T ∗≤ i )( Eω )) ⟨i⟩ V i+1 V ⊤
+
+i+1 ⟩| ≤ ∥ T t − T ∗∥F · ∥ (T ∗≤ i−1 ⊗ Idi )( I − L(T ∗
+
+i )L(T ∗
+
+i )⊤)( T ∗≤ i−1 ⊗ Idi )⊤E⟨i⟩
+
+ω V i+1 V ⊤
+
+i+1 ∥F
+
+≤ ∥ T t − T ∗∥F · ∥ T ∗≤ i−1∥2,∞ · ∥ V i+1 ∥2,∞
+
+≤
+
+(
+
+∥T t − T ∗∥F · μ0
+
+√ri−1ri
+
+dn−1 , i = 2 , . . . , n − 1
+
+∥T t − T ∗∥F · √μ0r1
+
+dn−1 , i = 1 
+
+Thus 
+
+∥T t − T ∗∥∞ ≤ ∥ T t − T ∗∥F ·√μ0
+
+dn−1 (√r1 + √rn +
+
+n−1X
+
+i=2 
+
+√μ0ri−1ri)
+
+≤ ∥ T t − T ∗∥F · nμ 0rmax 
+
+dn−1 .
+
+(12) 
+
+Estimation of ∥P Tt Gt∥F . Recall that Gt = ( ⟨X t, T t − T ∗⟩ − ϵt)X t.18 
+
+∥P Tt Gt∥2 
+
+> F
+
+≤ 2( ⟨X t, T t − T ∗⟩2 + |ϵt|2)∥P Tt X t∥2
+
+> F
+
+≤ 2( dn · ∥ T t − T ∗∥2 
+
+> ∞
+
++ |ϵt|2)∥P Tt X t∥2
+
+> F
+
+≤ 2( dn · (∥T t∥∞ + ∥T ∗∥∞)2 + |ϵt|2) · dof · μ20
+
+≤ Cn(ν20 rmin λ2max + |ϵt|2) · dof · μ20.
+
+(13) Meanwhile Et∥P Tt Gt∥2 
+
+> F
+
+= Et⟨X t, T t − T ∗⟩2∥P Tt X t∥2 
+
+> F
+
++ σ2Et∥P Tt X t∥2
+
+> F
+
+≤ 1
+
+d2n
+
+X
+
+> ω
+
+d2n⟨E ω , T t − T ∗⟩2d2n∥P Tt Eω ∥2 
+
+> F
+
++ dof · σ2
+
+≤ d2n max  
+
+> ω
+
+∥P Tt Eω ∥2 
+
+> F
+
+· ∥ T t − T ∗∥2 
+
+> F
+
++ dof · σ2
+
+≤ μ20 · dof · ∥ T t − T ∗∥2 
+
+> F
+
++ dof · σ2.
+
+(14) 
+
+Bounding ∥T t+1 − T ∗∥2 
+
+> F
+
+. We first estimate ∥T + 
+
+> t
+
+− T ∗∥F . With the event Et and the initialization condition, we have 
+
+∥T t − T ∗∥2 
+
+> F
+
+≤ 2 · ∥ T 0 − T ∗∥2 
+
+> F
+
++ 10 ηdof σ2 ≲ n−2η2λ2min 
+
+as long as (λmin /σ )2 ≳ n2η−1dof . And we have 
+
+∥P Tt Gt∥2 
+
+> F
+
+≤ 2( d2n · ∥ T t − T ∗∥2 
+
+> ∞
+
++ |ϵt|2) · dof · μ20
+
+≤ 2( n2μ20r2max d2∥T t − T ∗∥2 
+
+> F
+
++ |ϵt|2) · dof · μ20
+
+≲ (η2λ2min · μ20r2max d2 + σ2 log d)dof · μ20
+
+≲ n−2λ2min 
+
+as long as (λmin /σ )2 ≳ n2dof μ20 log d and η · nμ 20rmax d(dof) 12 ≲ 1, and the second equality follows by (12) and (13) . Thus we have ∥T + 
+
+> t
+
+− T ∗∥F ≤ ∥ T t − T ∗∥F + η∥P Tt Gt∥F ≤ 11200 n ηλ min . Also we have ∥T ∗∥∞ ≤ νdn ∥T ∗∥F ≤ νdn (∥T + 
+
+> t
+
+∥F +
+
+∥T + 
+
+> t
+
+− T ∗∥F ) ≤ νdn (∥T + 
+
+> t
+
+∥F + 110 ∥T ∗∥F ). So we have ∥T ∗∥∞ ≤ 10 ∥T +  
+
+> t∥F
+> 9dn
+
+ν = ξt thus ∥W t − T ∗∥F ≤ ∥ T + 
+
+> t
+
+− T ∗∥F . By Lemma 7, we have 
+
+∥T t+1 − T ∗∥2 
+
+> F
+
+≤ ∥ Wt − T ∗∥2 
+
+> F
+
++ 600 nλmin 
+
+∥Wt − T ∗∥3
+
+> F
+
+≤ ∥ T + 
+
+> t
+
+− T ∗∥2
+
+> F
+
+
+
+1 + 600 nλmin 
+
+∥T + 
+
+> t
+
+− T ∗∥F
+
+
+
+≤ (1 + η
+
+2 )∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+.
+
+Now we consider Et∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+:
+
+Et∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+= Et
+
+ ∥T t − T ∗∥2 
+
+> F
+
+− 2η⟨T t − T ∗, PTt Gt⟩ + η2∥P Tt Gt∥2
+
+> F
+
+ .
+
+Since Et[⟨T t − T ∗, PTt Gt⟩] = Et[⟨P Tt (T t − T ∗), Gt⟩]= Et[( ⟨T t − T ∗, X t⟩ − ϵt)⟨P Tt (T t − T ∗), X t⟩]= 1
+
+d2n
+
+X
+
+> ω
+
+dn[T t − T ∗]ω dn[PTt (T t − T ∗)] ω
+
+= ⟨P Tt (T t − T ∗), T t − T ∗⟩
+
+= ∥P Tt (T t − T ∗)∥2 
+
+> F
+
+.
+
+where in the second equality we use Et(ϵtX t) = 1
+
+> d2n
+
+P 
+
+> ω
+
+Et[ϵω |Eω ]Eω = 0 . Then we have 
+
+Et∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+= ∥T t − T ∗∥2 
+
+> F
+
+− 2η∥P Tt (T t − T ∗)∥2 
+
+> F
+
++ η2Et∥P Tt Gt∥2
+
+> F
+
+= (1 − 2η)∥T t − T ∗∥2 
+
+> F
+
++ 2 η∥P ⊥ 
+
+> Tt
+
+(T t − T ∗)∥2 
+
+> F
+
++ η2Et∥P Tt Gt∥2
+
+> F
+
+≤ (1 − 32 η)∥T t − T ∗∥2 
+
+> F
+
++ η2Et∥P Tt Gt∥2 
+
+> F
+
+.
+
+(15) 19 
+
+where in the last inequality we use Lemma 3. From (14) and (15), we have 
+
+∥T t+1 − T ∗∥2 
+
+> F
+
+≤ (1 + η
+
+2 )Et[∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+] + (1 + η
+
+2 )  ∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+− Et∥T + 
+
+> t
+
+− T ∗∥2
+
+> F
+
+
+
+≤ (1 + η
+
+2 )(1 − 3η
+
+2 )∥T t − T ∗∥2 
+
+> F
+
++ (1 + η
+
+2 )η2Et∥P Tt Gt∥2
+
+> F
+
++ (1 + η
+
+2 )  ∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+− Et∥T + 
+
+> t
+
+− T ∗∥2
+
+> F
+
+
+
+≤ (1 − η)∥T t − T ∗∥2 
+
+> F
+
++ 2 η2dof · σ2 + η
+
+2 ∥T t − T ∗∥2
+
+> F
+
++ (1 + η
+
+2 )  ∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+− Et∥T + 
+
+> t
+
+− T ∗∥2
+
+> F
+
+
+
+≤ (1 − η
+
+2 )∥T t − T ∗∥2 
+
+> F
+
++ 2 η2dof · σ2 + (1 + η
+
+2 )  ∥T + 
+
+> t
+
+− T ∗∥2 
+
+> F
+
+− Et∥T + 
+
+> t
+
+− T ∗∥2
+
+> F
+
+
+
+where the second inequality follows from (15) and the third inequality follows from (14) holds as long as η · μ20dof ≲ 1.Telescoping this inequality and we get 
+
+∥T t+1 − T ∗∥2 
+
+> F
+
+≤ (1 − η
+
+2 )t+1 ∥T 0 − T ∗∥2 
+
+> F
+
++ 4 ηdof σ2
+
++
+
+> t
+
+X
+
+> l=0
+
+(1 − η
+
+2 )t−l(1 + η
+
+2 )[ ∥T + 
+
+> l
+
+− T ∗∥2 
+
+> F
+
+− El∥T + 
+
+> l
+
+− T ∗∥2 
+
+> F
+
+]
+
+| {z }
+
+> =: Dl
+
+(16) 
+
+Estimation of Dl. We first get the uniform bound of ∥P Tl Gl∥2
+
+> F
+
+∥P Tl Gl∥2 
+
+> F
+
+≤ 2( ⟨X l, T l − T ∗⟩2 + |ϵl|2)∥P Tl X l∥2
+
+> F
+
+≤ (2 d2n∥T l − T ∗∥2 
+
+> ∞
+
++ 2 |ϵl|2)d2n max  
+
+> ω
+
+∥P Tl Eω ∥2
+
+> F
+
+≤ 2( n2μ20r2max d2∥T t − T ∗∥2 
+
+> F
+
++ |ϵt|2) · dof · μ20.
+
+(17) Meanwhile, 
+
+∥T + 
+
+> l
+
+− T ∗∥2 
+
+> F
+
+− El∥T + 
+
+> l
+
+− T ∗∥2 
+
+> F
+
+≤ 2η |⟨ T l − T ∗, PTl Gl⟩ − El⟨T l − T ∗, PTl Gl⟩| 
+
++ η2 ∥P Tl Gl∥2 
+
+> F
+
+− El∥P Tl Gl∥2
+
+> F
+
+We now consider the uniform bound for |⟨ T l − T ∗, PTl Gl⟩| . Using the Cauchy-Schwarz inequality and (17), 
+
+|⟨ T l − T ∗, PTl Gl⟩| ≤ ∥ T l − T ∗∥F ∥P Tl Gl∥F
+
+≲ nμ 20rmax d(dof) 1/2∥T l − T ∗∥2 
+
+> F
+
++ μ0(dof) 1/2|ϵl| · ∥ T l − T ∗∥F
+
+Thus, we have the uniform bound for Dl
+
+|Dl| ≲ (1 − η
+
+2 )t−l · η(|⟨ T l − T ∗, PTl Gl⟩ − El⟨T l − T ∗, PTl Gl⟩| )+ (1 − η
+
+2 )t−lη2(|∥P Tl Gl∥2 
+
+> F
+
+− El∥P Tl Gl∥2 
+
+> F
+
+|)
+
+≲ (1 − η
+
+2 )t−l · η
+
+
+
+nμ 20rmax d(dof) 1/2∥T l − T ∗∥2 
+
+> F
+
++ μ0(dof) 1/2|ϵl| · ∥ T l − T ∗∥F
+
+
+
++ (1 − η
+
+2 )t−lη2  n2μ20r2max d2∥T t − T ∗∥2 
+
+> F
+
++ |ϵt|2 · dof · μ20
+
+≲ (1 − η
+
+2 )t−lη · nμ 20d2r2max ∥T l − T ∗∥2 
+
+> F
+
++ ησ 2 log d
+
+≤ 12 (1 − η
+
+4 )t+1 ∥T 0 − T ∗∥2 
+
+> F
+
+(log d)−1 + ηdof · σ2(log d)−1
+
+(18) where the third inequality uses 2ab ≤ a2 + b2 and η · nμ 20dof ≲ 1, and the last inequality is from the event Et that 
+
+∥T l − T ∗∥2 
+
+> F
+
+≤ 2(1 − η 
+
+> 4
+
+)l∥T 0 − T ∗∥2 
+
+> F
+
++ 10 ηdof σ2 and η · nμ 20r2max d2 log d ≲ 1.We now consider the variance bound for Dl. Firstly, we consider El∥P Tl Gl∥4 
+
+> F
+
+. By (12) and (11), we have 
+
+El∥P Tl Gl∥4 
+
+> F
+
+≤ 8 · El
+
+⟨X l, T l − T ∗⟩4∥P Tl X l∥4
+
+> F
+
+ + 8 · El
+
+ϵ4 
+
+> l
+
+∥P Tl X l∥4
+
+> F
+
+
+
+≤ El[⟨T l − T ∗, X l⟩2]∥T l − T ∗∥2
+
+> ∞
+
+d2n∥P Tl X l∥4 
+
+> F
+
++ σ4 log 2(d)∥P Tl X l∥2 
+
+> F
+
+El∥P Tl X l∥2
+
+> F
+
+≲ n2 · μ60r2max d2(dof) 2∥T l − T ∗∥4 
+
+> F
+
++ σ4 log 2(d)(dof) 2μ20.
+
+On the other hand, 
+
+El |⟨ T l − T ∗, PTl Gl⟩| 2 = El |⟨ T l − T ∗, PTl X l⟩| 2 (ϵ2 
+
+> l
+
++ |⟨ T l − T ∗, X l⟩| 2)
+
+≤ 2σ2 log( d) · El|⟨ T l − T ∗, PTl X l⟩| 2 + d2n∥T l − T ∗∥2
+
+> ∞
+
+El|⟨ T l − T ∗, PTl X l⟩| 2
+
+≲ σ2 log( d)∥T l − T ∗∥2 
+
+> F
+
++ n2μ20r2max d2∥T l − T ∗∥4 
+
+> F
+
+.20 
+
+So as long as η · μ0dof ≲ 1, we have 
+
+Var l Dl ≲ (1 − η
+
+2 )2t−2lη4El∥P Tl Gl∥4 
+
+> F
+
++ (1 − η
+
+2 )2t−2lη2El|⟨ T l − T ∗, PTl Gl⟩| 2
+
+≲ (1 − η
+
+2 )2t−2lη2n2μ20r2max d2∥T l − T ∗∥4 
+
+> F
+
++ (1 − η
+
+2 )2t−2lη2σ2 log( d)∥T l − T ∗∥2
+
+> F
+
++ (1 − η
+
+2 )2t−2lη4σ4 log 2(d)μ20(dof) 2.
+
+Together with 2(1 − 14 η)l∥T 0 − T ∗∥2 
+
+> F
+
++ 10 η · dof σ2, we obtain the bound of summation 
+
+> t
+
+X
+
+> l=0
+
+Var l Dl ≲ (1 − η
+
+4 )2t+2 ηn 2μ20r2max d2∥T 0 − T ∗∥2 
+
+> F
+
++ η3μ20r2max d2(dof) 2σ4 + η3μ20(dof) 2σ4 log 2(d)+ (1 − η
+
+4 )t+1 ησ 2 log( d)∥T 0 − T ∗∥2 
+
+> F
+
++ η2dof σ4
+
+≤ 14 (1 − η
+
+4 )2t+2 ∥T 0 − T ∗∥4 
+
+> F
+
+log −1( d) +η2(dof) 2σ4 log −1(d),
+
+where the inequality holds as long as log d ≲ dof and η · n2μ20r2max d2 log d ≲ 1. Using the variance bound and martingale inequality in Theorem 4, we see that with probability exceeding 1 − d−20 ,
+
+> t
+
+X
+
+> l=0
+
+Dl ≤ (1 − η
+
+4 )t+1 ∥T 0 − T ∗∥2 
+
+> F
+
++ 2 ηdof σ2.
+
+Plug this into (16), we have 
+
+∥T t+1 − T ∗∥2 
+
+> F
+
+≤ 2(1 − η
+
+4 )t+1 ∥T 0 − T ∗∥2 
+
+> F
+
++ 6 ηdof σ2. (19) By Lemma 6 and Lemma 4 we have the incoherence of T t+1 is bounded by 2κ20ν = 2 κ0
+
+√μ, thus we conclude the proof. PROOF OF PROPOSITION 3. We define the following projection distance and the chordal distance between two orthogonal matrices U , V ∈ Rp×r as 
+
+dp(U , V ) := ∥U U ⊤ − V V ⊤∥F , dc(U , V ) := min 
+
+> Q∈Qr
+
+∥U Q − V ∥F
+
+we have the property that 1√2 dc(U , V ) ≤ dp(U , V ) ≤ dc(U , V ).We denote T ∗ = [ Z∗
+
+> 1
+
+, Z∗
+
+> 2
+
+, Z∗
+
+> 3
+
+] be the rank-(rm1 , r m1+m2 ) decomposition of T ∗. Also, we denote the following matrix 
+
+R1 = argmin R∈Orm 1
+
+∥ bZ≤i
+
+− Z∗≤ iR∥F (similarly for R2). For ease of exposition, we first consider the result for the noiseless case. 
+
+The noiseless case: Consider ∥N 1 − N ∗
+
+> 1
+
+∥, by Lemma 8, 
+
+∥N 1 − N ∗
+
+> 1
+
+∥ ≤ C dnn log( d)
+
+K1
+
+rmin λ2max ν2
+
+"
+
+1 + d− 2n
+
+> 3
+
+1/2
+
++ dn
+
+K1
+
++
+
+ K1
+
+dnn log( d)
+
+1/2#
+
+≤ H 1 · λ2max , (20) as long as K1 ≥ Cnd n log( d)rmin ν2 · H −11 + Cnd n log( d)r2min ν4 · H −21 . Additionally, 
+
+dp( eZ1, Z∗
+
+> 1
+
+) ≤ 2√rm1
+
+λ2min 
+
+∥N 1 − N ∗
+
+> 1
+
+∥ ≤ C√rm1 κ20H1.
+
+By Lemma 11, we have Incoh( bZ1) ≤ √3μ and dc( bZ1, Z∗
+
+> 1
+
+) ≤ C√rm1 κ20H1. Consider eZ2, by Lemma 9 without noise we estimate that 
+
+∥( bZ1 ⊗ I)⊤(N 2 − N ∗
+
+> 2
+
+)( bZ1 ⊗ I)∥ ≤ Cn 2 log 2(d) ν2rmin λ2max 
+
+K2
+
+μr m1 d n 
+
+> 3
+
++ μr m1 d 2n
+
+> 3
+
+K2
+
++ (μr m1 K2) 12
+
+n3/2 log 3/2(d)
+
+!
+
+≤ H 2 · λ2max ,
+
+(21) as long as K2 ≥ Cn 2ν2rmin μr max d n 
+
+> 3
+
+log 2 d · H −12 + C2n log( d)ν4r2min μr max · H −22 . On the other hand, we see that 
+
+dp(L( eZ2), (R1 ⊗ I)⊤L(Z∗
+
+> 1
+
+)) ≤ 2√rm1 λ−2min ∥( bZ1 ⊗ I)⊤(N 2 − N ∗
+
+> 2
+
+)( bZ1 ⊗ I)∥ + 4 √rm1 κ20dc( bZ1, Z∗
+
+> 1
+
+).
+
+Thus we have 
+
+dc( bZ≤2
+
+, Z∗≤ 2) ≤ √rm1 dc( bZ1, Z∗
+
+> 1
+
+) + √2dp(L( bZ2), (R1 ⊗ I)⊤L(Z∗
+
+> 2
+
+)) 
+
+≤ √rm1 (1 + 16 πκ 20)dc( bZ1, Z∗
+
+> 1
+
+) + 8 √2π√rmin λ−2min ∥( bZ1 ⊗ I)⊤(N 2 − N ∗
+
+> 2
+
+)( bZ1 ⊗ I)∥≤ Cr m1 (1 + 16 πκ 20)κ20 · H 1 + 8 √2π√rmin κ20 · H 2.21 
+
+Consider ∥T ∗ − bZ∥F . We first notice that Incoh( bZ≤2
+
+) ≤ 3μr 32 
+
+> max
+
+and by Lemma 10 
+
+bZ≤2⊤
+
+T ∗⟨ m1+m2⟩ − bZ3 ≤ C
+
+ d n 
+
+> 3
+
+nμr 2max 
+
+√rmin λmax ν log( d)
+
+K3
+
++ rmin λ2max ν2(μ2r4max ∨ d 2n 
+
+> 3
+
+)n log( d)
+
+K3
+
+! 12
+
+
+
+≤ H 3 · λmax 
+
+(22) as long as K3 ≥ d n 
+
+> 3
+
+nνμr 2max 
+
+√rmin log( d) · H −13 + rmin ν2(μ2r4max ∨ d 2n 
+
+> 3
+
+)n log( d) · H −23 . On the other hand 
+
+∥R⊤ 
+
+> 2
+
+Z∗ 
+
+> 3
+
+− bZ3∥F = ∥(Z∗≤ 2R2)⊤T ∗⟨ m1+m2⟩ − bZ3∥F
+
+≤ ∥ bZ≤2⊤
+
+T ∗⟨ m1+m2⟩ − bZ3∥F + ∥(Z∗≤ 2R2 − bZ≤2
+
+)⊤T ∗⟨ m1+m2⟩∥F
+
+≤ ∥ bZ≤2⊤
+
+T ∗⟨ m1+m2⟩ − bZ3∥F + dc( bZ≤2
+
+, Z∗≤ 2) · λmax ,
+
+thus we have the estimation of ∥T ∗ − bZ∥F
+
+∥T ∗ − bZ∥F ≤ ∥ Z∗≤ 2R2R⊤ 
+
+> 2
+
+Z∗ 
+
+> 3
+
+− bZ≤2 bZ3∥F
+
+≤ ∥ (Z∗≤ 2R2 − bZ≤2
+
+)R⊤ 
+
+> 2
+
+Z∗
+
+> 3
+
+∥F + ∥R⊤ 
+
+> 2
+
+Z∗ 
+
+> 3
+
+− bZ3∥F
+
+≤ 2λmax dc( bZ≤2
+
+, Z∗≤ 2) + H3 · λmax 
+
+≤ C(rmax κ40 · H 1 + √rmin κ20 · H 2 + H3) · λmax .
+
+Thus, if the requirements on the sample number K1, K 2, K 3 satisfies that 
+
+K1 ≥ Cnd n log( d)rmin rmax ν2κ40λmax K −1 + Cnd n log( d)r2min r2max ν4κ80λ2max K −2
+
+K2 ≥ Cn 2d n 
+
+> 3
+
+log 2(d)r 32
+
+> min
+
+rmax μν 2κ20λmax K −1 + Cn log( d)r3min rmax μν 4κ40λ2max K −2
+
+K3 ≥ Cnd n 
+
+> 3
+
+log( d)r 12
+
+> min
+
+r2max μνλ max K −1 + Cn log( d)( d 2n 
+
+> 3
+
+∨ μ2r4max )rmin ν2λ2max K −2.
+
+Then with Lemma 6 we can conclude that 
+
+∥T 0 − T ∗∥F ≤ Kn,d,r,ν,μ,κ 0 and Incoh( T 0) ≤ 2κ20ν. 
+
+The noisy case: The procedure is similar to the noiseless case, and we need to obtain the results in (20) , (21) and (22) considering the noise. For the ∥N 1 − N ∗
+
+> 1
+
+∥ we use the following lemma: 
+
+Lemma 12 (Theorem 2 [50]) . There exists absolute constant C1, C 2 such that for any α ≥ 1, if 
+
+K1 ≥ C1αd nn2 log( d)
+
+then with probability exceeding 1 − d−2α
+
+∥N 1 − N ∗
+
+> 1
+
+∥ ≤ C2
+
+( σdn + ∥T ∗∥∞)∥T ∗∥F
+
+s
+
+αnd 8n 
+
+> 3
+
+log( d)
+
+K1
+
++α3
+
+ σ2
+
+d2n + ∥T ∗∥2
+
+> ∞
+
+n2 log 2(d)
+
+ n3d3n log 3(d)
+
+K1
+
+ 1 + d− n
+
+> 3
+
+
+
+The noisy term in Lemma 12 differs slightly from that in Theorem 2 of [50]. In [50], each noisy observation is modeled as T ∗(ωt) + ξt, so that the standard deviation satisfies σ(ξt) = 1 
+
+> dn
+
+σ(ϵt) = 1 
+
+> dn
+
+σ. Thus the (20) still holds with probability exceeding 1 − d−200 as long as the sample size K1 satisfies 
+
+K1 ≥ Cn 5dn log 5(d)rmin ν2 · H −11 + Cnd 2n 
+
+> 3
+
+log( d)r2min ν2 · H −21 ,
+
+and the signal-to-noise-ratio (SNR) condition satisfies 
+
+λmin 
+
+σ ≥ bC rmin nd 2n 
+
+> 3
+
+log( d)
+
+K1
+
+! 12
+
+· H −11 + bC
+
+ n3dn log 3(d)
+
+K1
+
+ 12
+
+· H − 12 
+
+> 1
+
+.
+
+for some constant C, bC > 0. While for (21) , we use the Lemma 9. The (21) holds under the sample size condition and the SNR condition 
+
+λmin 
+
+σ ≥ bC√rmin ν
+
+ μr max n log( d)
+
+K2
+
++ μr max d 2n 
+
+> 3
+
+n2 log 2(d)
+
+K22
+
++
+
+s
+
+μr max n log( d)
+
+K2
+
+ · H −12
+
++ bC μr max n 32 log 32 (d)
+
+K2
+
++ μr max n 52 log 52 (d)d 2n
+
+> 3
+
+K22
+
+! 12
+
+· H − 12 
+
+> 2
+
+.22 
+
+Then we need to bound the last term bZ≤2⊤
+
+T ∗⟨ m1+m2⟩ − bZ3 , by Lemma 9, the (22) still holds under the SNR condition, 
+
+λmin 
+
+σ ≥ bC
+
+s
+
+d 2n 
+
+> 3
+
+n log( d)
+
+K3
+
++ dnμr max n log( d)
+
+K3
+
+ · H −13
+
+Thus, as long as the sample number K1, K 2 and K3 have a lower bound K satisfies 
+
+K ≥ Cn 5dn log 5(d)r 12
+
+> min
+
+r2max μν 2κ40λmax · H −1 + Cnd n log( d)rmin r4max ν4μκ 80λ2max · H −2
+
+and the SNR condition satisfies that 
+
+λmin 
+
+σ ≥ bC nd n log( d)μr 2max κ40λmax 
+
+K · H −1 + bC
+
+ n3dn log 3(d)rmax κ40λmax 
+
+K
+
+ 12
+
+· H − 12
+
+(8) holds and we conclude the proof of Proposition 3. VII. C ONCLUSION AND DISCUSSION 
+
+In this paper, we developed a provably convergent online Riemannian gradient descent algorithm for quantum state tomography of matrix product density operators. By characterizing the Hermitian property within the MPO representation, we showed that QST under Pauli or generalized Gell-Mann measurements can be reformulated as a noisy low TT-rank tensor completion problem over a real tensor manifold. Based on this formulation, we established the local linear convergence of the proposed oRGD algorithm with a measurement setting complexity that scales quadratically with the system size, up to rank-dependent and logarithmic factors. To meet the initialization requirement, we also proposed a tailored spectral initialization algorithm and provided its theoretical guarantee. Numerical experiments on several representative quantum states further demonstrate the efficiency and scalability of the proposed method. Several directions remain for future investigation. One important extension is to incorporate the positive semidefinite and trace-one constraints of density matrices more explicitly into the optimization procedure. Another promising direction is to study adaptive or active measurement strategies that select informative tensor-product observables during the online reconstruction process. It would also be interesting to extend the present framework to more general tensor-network representations beyond one-dimensional MPOs, thereby enabling provable and scalable tomography for a broader class of many-body quantum systems. ACKNOWLEDGMENTS 
+
+We thank the SJTU supercomputer center for providing the computing services. This work was supported by the National Natural Science Foundation of China (Grant No. 125B2026). This work was supported by Hong Kong Research Grant Council (HKRGC) GRF grants 16307023, 16306124, and 16307325. REFERENCES [1] M. Steffen, M. Ansmann, R. C. Bialczak, N. Katz, E. Lucero, R. McDermott, M. Neeley, E. M. Weig, A. N. Cleland, and J. M. Martinis, “Measurement of the entanglement of two superconducting qubits via state tomography,” Science , vol. 313, no. 5792, pp. 1423–1425, 2006. [2] M. Baur, A. Fedorov, L. Steffen, S. Filipp, M. Da Silva, and A. Wallraff, “Benchmarking a quantum teleportation protocol in superconducting circuits using tomography and an entanglement witness,” Physical Review Letters , vol. 108, no. 4, p. 040502, 2012. [3] Y.-T. Huang, J.-D. Lin, H.-Y. Ku, and Y.-N. Chen, “Benchmarking quantum state transfer on quantum devices,” Physical Review Research , vol. 3, no. 2, p. 023038, 2021. [4] F. Arute, K. Arya, R. Babbush, D. Bacon, J. C. Bardin, R. Barends, R. Biswas, S. Boixo, F. G. Brandao, D. A. Buell et al. , “Quantum supremacy using a programmable superconducting processor,” Nature , vol. 574, no. 7779, pp. 505–510, 2019. [5] J. Chow, O. Dial, and J. Gambetta, “Ibm quantum breaks the 100-qubit processor barrier,” IBM Research Blog , vol. 2, 2021. [6] Z. Hradil, “Quantum-state estimation,” Physical Review A , vol. 55, no. 3, p. R1561, 1997. [7] J. ˇ Reh´ aˇ cek, Z. Hradil, and M. Jeˇ zek, “Iterative algorithm for reconstruction of entangled states,” Physical Review A , vol. 63, no. 4, p. 040303, 2001. [8] A. Kyrillidis, A. Kalev, D. Park, S. Bhojanapalli, C. Caramanis, and S. Sanghavi, “Provable compressed sensing quantum state tomography via non-convex methods,” npj Quantum Information , vol. 4, no. 1, p. 36, 2018. [9] D. S. Fran c¸ a, F. G. Brand ˜ao, and R. Kueng, “Fast and robust quantum state tomography from few basis measurements,” in 16th Conference on the Theory of Quantum Computation, Communication and Cryptography (TQC 2021) . Schloss Dagstuhl–Leibniz-Zentrum f¨ ur Informatik, 2021, pp. 7–1. [10] M.-C. Hsu, E.-J. Kuo, W.-H. Yu, J.-F. Cai, and M.-H. Hsieh, “Quantum state tomography via nonconvex riemannian gradient descent,” Physical Review Letters , vol. 132, no. 24, p. 240804, 2024. [11] G. Torlai, G. Mazzola, J. Carrasquilla, M. Troyer, R. Melko, and G. Carleo, “Neural-network quantum state tomography,” Nature Physics , vol. 14, no. 5, pp. 447–450, 2018. [12] G. Carleo, I. Cirac, K. Cranmer, L. Daudet, M. Schuld, N. Tishby, L. Vogt-Maranto, and L. Zdeborov ´a, “Machine learning and the physical sciences,” 
+
+Reviews of Modern Physics , vol. 91, no. 4, p. 045002, 2019. [13] R. Kueng, H. Rauhut, and U. Terstiege, “Low rank matrix recovery from rank one measurements,” Applied and Computational Harmonic Analysis ,vol. 42, no. 1, pp. 88–116, 2017. [14] F. Verstraete and J. I. Cirac, “Matrix product states represent ground states faithfully,” Physical Review B—Condensed Matter and Materials Physics ,vol. 73, no. 9, p. 094423, 2006. [15] D. Perez-Garc ´ıa, F. Verstraete, M. M. Wolf, and J. I. Cirac, “Matrix product state representations,” Quantum Information and Computation , vol. 7, no. 5-6, pp. 401–430, 2007. [16] B. Pirvu, V. Murg, J. I. Cirac, and F. Verstraete, “Matrix product operator representations,” New Journal of Physics , vol. 12, no. 2, p. 025012, 2010. 23 
+
+[17] J. Guth Jarkovsk `y, A. Moln ´ar, N. Schuch, and J. I. Cirac, “Efficient description of many-body systems with matrix product density operators,” PRX Quantum , vol. 1, no. 1, p. 010304, 2020. [18] I. V. Oseledets, “Tensor-train decomposition,” SIAM Journal on Scientific Computing , vol. 33, no. 5, pp. 2295–2317, 2011. [19] S. Holtz, T. Rohwedder, and R. Schneider, “On manifolds of tensors of fixed tt-rank,” Numerische Mathematik , vol. 120, no. 4, pp. 701–731, 2012. [20] M. Cramer, M. B. Plenio, S. T. Flammia, R. Somma, D. Gross, S. D. Bartlett, O. Landon-Cardinal, D. Poulin, and Y.-K. Liu, “Efficient quantum state tomography,” Nature Communications , vol. 1, no. 1, p. 149, 2010. [21] T. Baumgratz, A. N ¨ußeler, M. Cramer, and M. B. Plenio, “A scalable maximum likelihood method for quantum state tomography,” New Journal of Physics , vol. 15, no. 12, p. 125004, 2013. [22] B. P. Lanyon, C. Maier, M. Holz ¨apfel, T. Baumgratz, C. Hempel, P. Jurcevic, I. Dhand, A. Buyskikh, A. J. Daley, M. Cramer et al. , “Efficient tomography of a quantum many-body system,” Nature Physics , vol. 13, no. 12, pp. 1158–1162, 2017. [23] Y. Guo and S. Yang, “Quantum state tomography with locally purified density operators and local measurements,” Communications Physics , vol. 7, no. 1, p. 322, 2024. [24] X. Tang, H. Chen, Y. Khoo, and L. Ying, “Sketch tomography: Hybridizing classical shadow and matrix product state,” arXiv preprint arXiv:2512.03333 ,2025. [25] D. Han, C. Guo, and X. Wang, “Density matrix reconstruction using non-negative matrix product states,” Physical Review A , vol. 106, no. 4, p. 042435, 2022. [26] G. Torlai, C. J. Wood, A. Acharya, G. Carleo, J. Carrasquilla, and L. Aolita, “Quantum process tomography with unsupervised learning and tensor networks,” Nature Communications , vol. 14, no. 1, p. 2858, 2023. [27] S. Kuzmin, V. Mikhailova, I. Dyakonov, and S. Straupe, “Learning the tensor network model of a quantum state using a few single-qubit measurements,” 
+
+Physical Review A , vol. 109, no. 5, p. 052616, 2024. [28] Z. Qin, C. Jameson, Z. Gong, M. B. Wakin, and Z. Zhu, “Quantum state tomography for matrix product density operators,” IEEE Transactions on Information Theory , vol. 70, no. 7, pp. 5030–5056, 2024. [29] D. Gross, Y.-K. Liu, S. T. Flammia, S. Becker, and J. Eisert, “Quantum state tomography via compressed sensing,” Physical Review Letters , vol. 105, no. 15, p. 150401, 2010. [30] C. A. Riofrio, D. Gross, S. T. Flammia, T. Monz, D. Nigg, R. Blatt, and J. Eisert, “Experimental quantum compressed sensing for a seven-qubit system,” 
+
+Nature Communications , vol. 8, no. 1, p. 15305, 2017. [31] K. Zhang, S. Cong, K. Li, and T. Wang, “An online optimization algorithm for the real-time quantum state tomography: K. zhang et al.” Quantum Information Processing , vol. 19, no. 10, p. 361, 2020. [32] X. Chen, E. Hazan, T. Li, Z. Lu, X. Wang, and R. Yang, “Adaptive online learning of quantum states,” Quantum , vol. 8, p. 1471, 2024. [33] J.-F. Cai, Y. Jiao, Y. Li, X. Lu, J. Z. Yang, and J. You, “Online quantum state tomography via stochastic gradient descent,” arXiv preprint arXiv:2507.07601 ,2025. [34] J. L. Kim, G. Kollias, A. Kalev, K. X. Wei, and A. Kyrillidis, “Fast quantum state reconstruction via accelerated non-convex programming,” in Photonics ,vol. 10, no. 2. MDPI, 2023, p. 116. [35] J.-F. Cai, J. Li, and D. Xia, “Provable tensor-train format tensor completion by riemannian optimization,” Journal of Machine Learning Research , vol. 23, no. 123, pp. 1–77, 2022. [36] F. Bian, J.-F. Cai, X. Zhang, and Y. Zhang, “Fast and provable tensor-train format tensor completion via precondtioned riemannian gradient descent,” 
+
+arXiv preprint arXiv:2501.13385 , 2025. [37] M. A. Nielsen and I. L. Chuang, Quantum computation and quantum information . Cambridge university press, 2010. [38] G. Kimura, “The bloch vector for n-level systems,” Physics Letters A , vol. 314, no. 5-6, pp. 339–349, 2003. [39] R. A. Bertlmann, K. Durstberger, B. C. Hiesmayr, and P. Krammer, “Optimal entanglement witnesses for qubits and qutrits,” Physical Review A—Atomic, Molecular, and Optical Physics , vol. 72, no. 5, p. 052331, 2005. [40] R. A. Bertlmann and P. Krammer, “Bloch vectors for qudits,” Journal of Physics A: Mathematical and Theoretical , vol. 41, no. 23, p. 235303, 2008. [41] M. Gu t¸˘ a, J. Kahn, R. Kueng, and J. A. Tropp, “Fast state tomography with optimal error bounds,” Journal of Physics A: Mathematical and Theoretical ,vol. 53, no. 20, p. 204001, 2020. [42] F. Verstraete, J. J. Garcia-Ripoll, and J. I. Cirac, “Matrix product density operators: Simulation of finite-temperature and dissipative systems,” Physical Review Letters , vol. 93, no. 20, p. 207204, 2004. [43] Y.-K. Liu, “Universal low-rank matrix recovery from pauli measurements,” Advances in Neural Information Processing Systems , vol. 24, 2011. [44] J. Haah, A. W. Harrow, Z. Ji, X. Wu, and N. Yu, “Sample-optimal tomography of quantum states,” in Proceedings of the forty-eighth annual ACM symposium on Theory of Computing , 2016, pp. 913–925. [45] Z. Qin, C. Jameson, A. Goldar, M. B. Wakin, Z. Gong, and Z. Zhu, “Sample-efficient quantum state tomography for structured quantum states in one dimension,” arXiv preprint arXiv:2410.02583 , 2024. [46] M. Yuan and C.-H. Zhang, “On tensor completion via nuclear norm minimization,” Foundations of Computational Mathematics , vol. 16, no. 4, pp. 1031–1068, 2016. [47] J.-F. Cai, J. Li, and D. Xia, “Generalized low-rank plus sparse tensor estimation by fast riemannian optimization,” Journal of the American Statistical Association , vol. 118, no. 544, pp. 2588–2604, 2023. [48] P. Jain and S. Oh, “Provable tensor factorization with missing data,” Advances in Neural Information Processing Systems , vol. 27, 2014. [49] C. Cai, G. Li, H. V. Poor, and Y. Chen, “Nonconvex low-rank tensor completion from noisy data,” Advances in Neural Information Processing Systems ,vol. 32, 2019. [50] D. Xia, M. Yuan, and C.-H. Zhang, “Statistically optimal and computationally efficient low rank tensor completion from noisy entries,” The Annals of Statistics , vol. 49, no. 1, pp. 76–99, 2021. [51] Y. Zhang, F. Bian, X. Zhang, and J.-F. Cai, “Preconditioned riemannian gradient descent algorithm for low-multilinear-rank tensor completion,” in 
+
+Forty-second International Conference on Machine Learning , 2025. [52] C. Cai, G. Li, H. V. Poor, and Y. Chen, “Nonconvex low-rank tensor completion from noisy data,” Operations Research , 2021. [53] T. Tong, C. Ma, A. Prater-Bennette, E. Tripp, and Y. Chi, “Scaling and scalability: Provable nonconvex low-rank tensor estimation from incomplete measurements,” Journal of Machine Learning Research , vol. 23, no. 163, pp. 1–77, 2022. [54] J. Li, J.-F. Cai, Y. Chen, and D. Xia, “Online tensor learning: Computational and statistical trade-offs, adaptivity and optimal regret,” arXiv preprint arXiv:2306.03372 , 2023. [55] Y. Zhang, Y.-N. Zhu, and X. Zhang, “A single-mode quasi riemannian gradient descent algorithm for low-multilinear-rank tensor recovery,” Journal of Scientific Computing , vol. 106, no. 1, p. 23, 2026. [56] D. Xia and M. Yuan, “On polynomial time methods for exact low-rank tensor completion,” Foundations of Computational Mathematics , vol. 19, no. 6, pp. 1265–1313, 2019. [57] M. Fishman, S. White, and E. M. Stoudenmire, “The itensor software library for tensor network calculations,” SciPost Physics Codebases , p. 004, 2022. [58] R. H. Keshavan, A. Montanari, and S. Oh, “Matrix completion from a few entries,” IEEE Transactions on Information Theory , vol. 56, no. 6, pp. 2980–2998, 2010.
