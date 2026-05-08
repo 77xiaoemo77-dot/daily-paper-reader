@@ -34,9 +34,24 @@ CONFIG_FILE = os.path.join(ROOT_DIR, "config.yaml")
 TODAY_STR = str(os.getenv("DPR_RUN_DATE") or "").strip() or datetime.now(timezone.utc).strftime("%Y%m%d")
 RANGE_DATE_RE = re.compile(r"^(\d{8})-(\d{8})$")
 
-# LLM 配置（使用 llm.py 内的 BLT 客户端）
-BLT_API_KEY = os.getenv("BLT_API_KEY")
-BLT_MODEL = os.getenv("BLT_SUMMARY_MODEL", "gemini-3-flash-preview")
+# Step 6 LLM config.
+# Prefer dedicated SUMMARY_* config if available; otherwise fall back to BLT_*.
+SUMMARY_BASE_URL = str(os.getenv("SUMMARY_BASE_URL") or "").strip()
+if SUMMARY_BASE_URL:
+    os.environ["BLT_PRIMARY_BASE_URL"] = SUMMARY_BASE_URL
+    os.environ["BLT_API_BASE"] = SUMMARY_BASE_URL
+
+BLT_API_KEY = (
+    os.getenv("SUMMARY_API_KEY")
+    or os.getenv("BLT_API_KEY")
+)
+
+BLT_MODEL = (
+    os.getenv("BLT_SUMMARY_MODEL")
+    or os.getenv("SUMMARY_MODEL")
+    or "deepseek-chat"
+)
+
 LLM_CLIENT = None
 if BLT_API_KEY:
     LLM_CLIENT = BltClient(api_key=BLT_API_KEY, model=BLT_MODEL)
