@@ -116,29 +116,121 @@ window.SubscriptionsManager = (function () {
     'emnlp',
     'aaai',
   ];
-  const VISIBLE_PAPER_SOURCES = ['arxiv', 'biorxiv'];
+  const VISIBLE_PAPER_SOURCES = [
+    'arxiv',
+    'biorxiv',
+    'medrxiv',
+    'chemrxiv',
+    'neurips',
+    'iclr',
+    'icml',
+    'acl',
+    'emnlp',
+    'aaai',
+  ];
   const SOURCE_BACKEND_DEFAULTS = {
-    arxiv: {
-      papers_table: 'arxiv_papers',
-      use_vector_rpc: true,
-      vector_rpc: 'match_arxiv_papers_exact',
-      vector_rpc_exact: 'match_arxiv_papers_exact',
-      use_bm25_rpc: true,
-      bm25_rpc: 'match_arxiv_papers_bm25',
-      sync_table: 'arxiv_sync_status',
-      sync_success_value: 'success',
-      schema: 'public',
-    },
-    biorxiv: {
-      papers_table: 'biorxiv_papers',
-      use_vector_rpc: true,
-      vector_rpc: 'match_biorxiv_papers_exact',
-      vector_rpc_exact: 'match_biorxiv_papers_exact',
-      use_bm25_rpc: true,
-      bm25_rpc: 'match_biorxiv_papers_bm25',
-      schema: 'public',
-    },
-  };
+  arxiv: {
+    papers_table: 'arxiv_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_arxiv_papers_exact',
+    vector_rpc_exact: 'match_arxiv_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_arxiv_papers_bm25',
+    sync_table: 'arxiv_sync_status',
+    sync_success_value: 'success',
+    schema: 'public',
+  },
+
+  biorxiv: {
+    papers_table: 'biorxiv_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_biorxiv_papers_exact',
+    vector_rpc_exact: 'match_biorxiv_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_biorxiv_papers_bm25',
+    schema: 'public',
+  },
+
+  medrxiv: {
+    papers_table: 'medrxiv_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_medrxiv_papers_exact',
+    vector_rpc_exact: 'match_medrxiv_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_medrxiv_papers_bm25',
+    schema: 'public',
+  },
+
+  chemrxiv: {
+    papers_table: 'chemrxiv_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_chemrxiv_papers_exact',
+    vector_rpc_exact: 'match_chemrxiv_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_chemrxiv_papers_bm25',
+    schema: 'public',
+  },
+
+  neurips: {
+    papers_table: 'neurips_openreview_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_neurips_openreview_papers_exact',
+    vector_rpc_exact: 'match_neurips_openreview_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_neurips_openreview_papers_bm25',
+    schema: 'public',
+  },
+
+  iclr: {
+    papers_table: 'iclr_openreview_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_iclr_openreview_papers_exact',
+    vector_rpc_exact: 'match_iclr_openreview_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_iclr_openreview_papers_bm25',
+    schema: 'public',
+  },
+
+  icml: {
+    papers_table: 'icml_openreview_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_icml_openreview_papers_exact',
+    vector_rpc_exact: 'match_icml_openreview_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_icml_openreview_papers_bm25',
+    schema: 'public',
+  },
+
+  acl: {
+    papers_table: 'acl_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_acl_papers_exact',
+    vector_rpc_exact: 'match_acl_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_acl_papers_bm25',
+    schema: 'public',
+  },
+
+  emnlp: {
+    papers_table: 'emnlp_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_emnlp_papers_exact',
+    vector_rpc_exact: 'match_emnlp_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_emnlp_papers_bm25',
+    schema: 'public',
+  },
+
+  aaai: {
+    papers_table: 'aaai_papers',
+    use_vector_rpc: true,
+    vector_rpc: 'match_aaai_papers_exact',
+    vector_rpc_exact: 'match_aaai_papers_exact',
+    use_bm25_rpc: true,
+    bm25_rpc: 'match_aaai_papers_bm25',
+    schema: 'public',
+  },
+};
 
   const filterVisiblePaperSources = (values) => {
     const visible = new Set(VISIBLE_PAPER_SOURCES);
