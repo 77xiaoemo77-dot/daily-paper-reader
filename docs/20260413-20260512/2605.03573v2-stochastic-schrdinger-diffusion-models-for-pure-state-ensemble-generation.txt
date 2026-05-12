@@ -1,0 +1,1784 @@
+Title: Stochastic Schrödinger Diffusion Models for Pure-State Ensemble Generation
+
+URL Source: https://arxiv.org/pdf/2605.03573v2
+
+Published Time: Tue, 12 May 2026 02:49:32 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Jian Xu 1 2 Wei Chen 3 Chao Li 2 Shigui Li 3 Jingyuan Zheng 4 Delu Zeng 3 John Paisley 5 Qibin Zhao 1
+
+## Abstract 
+
+In quantum machine learning (QML), classical data are often encoded as quantum pure states and processed directly as quantum representa-tions, motivating representation-level generative modeling that samples new quantum states from an underlying pure-state ensemble rather than re-preparing them from perturbed classical inputs. However, extending score-based diffusion models with well-defined reverse-time samplers to quan-tum pure-state ensembles remains challenging, due to the non-Euclidean geometry of the com-plex projective space CP d−1 and the intractabil-ity of transition densities. We propose Stochastic Schr ¨odinger Diffusion Models (SSDMs), an intrin-sic score-based generative framework on CP d−1
+
+endowed with the Fubini–Study (FS) metric. SS-DMs formulate a forward Riemannian diffusion with a stochastic Schr ¨odinger equation (SSE) real-ization, and derive reverse-time dynamics driven by the Riemannian score ∇FS log pt. To enable training without analytic transition densities, we introduce a local-time objective based on a lo-cal Euclidean Ornstein–Uhlenbeck approximation in FS normal coordinates, yielding an analytic teacher score mapped back to the manifold. Ex-periments show that SSDMs faithfully capture target pure-state ensemble statistics, including ob-servable moments, overlap-kernel MMD, and en-tanglement measures, and that SSDM-generated quantum representations improve downstream QML generalization via representation-level data augmentation. 
+
+## 1. Introduction 
+
+Diffusion and score-based generative models have recently emerged as a dominant paradigm for learning complex data 
+
+> 1
+
+RIKEN iTHEMS 2RIKEN AIP 3South China University of Technology 4Stanford University 5Columbia University. Corre-spondence to: Qibin Zhao <qibin.zhao@riken.jp >, Delu Zeng 
+
+<dlzeng@scut.edu.cn >.
+
+Preprint. May 12, 2026. 
+
+distributions (Yang et al., 2022; Chen et al., 2025), achiev-ing state-of-the-art performance in domains ranging from images (Song et al., 2021; Li et al., 2025) and audio (Chen et al., 2021; Kong et al., 2021) to molecules (Hoogeboom et al., 2022; Xu et al., 2022) and protein structures (Watson et al., 2023; Trippe et al., 2023; Wu et al., 2024). These methods rely on a simple idea: define a tractable stochastic 
+
+forward process that gradually destroys structure, then learn to reverse this process by estimating the score function, i.e., the gradient of the log-density along the diffusion trajectory (Song et al., 2021; Ho et al., 2020). The resulting reverse-time dynamics (Anderson, 1982; Haussmann & Pardoux, 1986; Song et al., 2021) enables sampling from an otherwise intractable data distribution. Motivated by the increasing role of quantum representations in quantum machine learning (QML) (Biamonte et al., 2017; Preskill, 2018), a natural question arises: can score-based diffusion be extended into a practical generative modeling framework for quantum representations ?
+
+In many QML settings, classical inputs are encoded as quan-tum pure states —via amplitude/phase embeddings, varia-tionally prepared feature maps, or as intermediate states of quantum algorithms—and downstream models operate directly on these state representations (Schuld & Killoran, 2019; Havl ´ı ˇcek et al., 2019). When available quantum data are scarce (a common scenario in near-term experiments) (Preskill, 2018), one would like to augment or simulate such quantum representations by sampling additional states from the underlying ensemble. However, na ¨ıvely perturbing the classical input space and re-encoding can easily produces pathological quantum states: small changes in x can lead to nearly orthogonal feature states, collapsed entanglement structure, or samples that concentrate on measure-zero regions of the state space, ultimately harming training stability and generalization (Havl ´ı ˇcek et al., 2019; Huang et al., 2021). This moti-vates generative modeling directly in the space of pure states : learning an implicit distribution p0(|ψ⟩) from ob-served quantum representations and sampling new pure states from the resulting ensemble distribution could en-able representation-level data augmentation, distributional modeling, and efficient simulation of quantum feature en-sembles. 1
+
+> arXiv:2605.03573v2 [stat.ML] 11 May 2026 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation
+
+Yet extending diffusion models to this setting is nontriv-ial. Quantum pure states do not form an unconstrained Euclidean space: they live on the complex projective mani-fold CP d−1 modulo global phase and are endowed with the Fubini–Study metric (Mielnik, 1968). Consequently, the design of forward diffusions, the definition of the score, and the construction of reverse-time samplers require careful geometric and physical considerations. Recent work has begun exploring “quantum diffusion” from multiple perspectives. Some approaches define forward dif-fusion as a noisy quantum channel and train a parameterized inverse process for state recovery or state preparation (Chen et al., 2024; Parigi et al., 2025; Zhang et al., 2023; Zhu et al., 2025). Others relate measurement-induced stochas-tic trajectories to diffusion-like dynamics and characterize corresponding reverse processes from a physical recovery viewpoint (Dalibard et al., 1992; Gisin & Percival, 1992; Kiefer, 2010). While these studies provide valuable connec-tions between stochastic quantum dynamics and diffusion, a 
+
+practical score-based generative modeling framework with 
+
+well-defined reverse-time sampling dynamics for quantum pure-state ensembles remains underdeveloped. In particular, existing formulations often emphasize recovery of a spe-cific state or trajectory, or focus on density-matrix evolution, whereas QML applications frequently require sampling new pure-state instances from an implicit ensemble distribution. In this work, we propose Stochastic Schr ¨odinger Diffu-sion Models (SSDMs), a score-based generative framework for distributions over quantum pure states. Our central idea is to construct an intrinsic diffusion directly on the pure-state manifold CP d−1 endowed with the Fubini–Study (FS) metric, building on recent advances in score-based diffusion beyond Euclidean spaces (Bortoli et al., 2022; Huang et al., 2022). Concretely, we design a Riemannian Ornstein–Uhlenbeck (OU) forward diffusion that is stable and tractable, and we provide a stochastic Schr ¨odinger (Bouten et al., 2004) realization whose projective dynamics induces the same manifold process (Gisin & Percival, 1992; Kiefer, 2010). In FS normal coordinates, this diffusion re-duces to a first-order OU/VP (variance-preserving, (Song et al., 2021)) process with curvature corrections, establish-ing a rigorous bridge to Euclidean score-based diffusion (Hsu, 2002). Building on the theory of time reversal for (manifold) diffu-sions, we derive the corresponding reverse-time dynamics on CP d−1 and show that it involves a Riemannian score 
+
+term defined with respect to the FS geometry (Anderson, 1982; Haussmann & Pardoux, 1986; Bortoli et al., 2022; Huang et al., 2022). This yields a principled generalization of Euclidean score-based generative modeling to quantum pure-state ensembles. A key technical challenge is that the transition density of the forward diffusion on CP d−1 is generally not available in closed form, which prevents direct evaluation of the score (Huang et al., 2022; Lou et al., 2023b). To address this, we develop a local-time learning objective that exploits a funda-mental geometric fact: in Fubini–Study normal coordinates, the intrinsic manifold diffusion admits a local Euclidean OU/VP approximation to first order, with curvature effects entering only at higher order (Hsu, 2002). This yields a closed-form Gaussian surrogate for short-time transitions in the tangent space, from which we obtain an analytic teacher score. This local construction is essential because global transition densities and scores on CP d−1 are intractable, whereas short-time behavior is governed by universal ge-ometric structure that can be exploited for stable learning. We then map the teacher score back to the manifold via the differential of the logarithm map and distill these local conditional score signals into a global score model (Bortoli et al., 2022; Huang et al., 2022). In practice, we train a score network (classical or quantum) to approximate the Rieman-nian score field, and we sample new quantum pure states by integrating the learned reverse-time dynamics from a simple prior distribution. For the prior, we consider hardware-friendly choices such as Clifford t-design ensembles, which provide efficient approximations to Haar-random sampling (Dankert et al., 2009; Zhu, 2017). We evaluate SSDMs on generative modeling tasks over quan-tum pure-state ensembles, including ensembles induced by quantum feature embeddings of classical data and varia-tional state families (Schuld & Killoran, 2019; Havl ´ı ˇcek et al., 2019). We assess distribution matching via observ-able statistics, kernel MMD (Gretton et al., 2012), and entanglement-related measures (Mielnik, 1968), and we demonstrate that generated quantum encodings can serve as effective data augmentation to improve downstream QML generalization. Our main contributions are: • We introduce Stochastic Schr ¨odinger Diffusion Models 
+
+(SSDMs), a score-based generative modeling frame-work for sampling ensemble distributions over quan-tum pure states on CP d−1.• We design an intrinsic Riemannian OU forward dif-fusion on CP d−1 and provide an SSE realization ; we derive the associated reverse-time dynamics involving a Riemannian score under the FS metric. • We propose a practical local-time learning objective that leverages the local Euclidean OU limit in FS nor-mal coordinates to obtain an analytic Gaussian teacher score for short-time transitions, which is mapped back to the manifold via the logarithm map and enables Rie-mannian denoising score matching without requiring analytic transition densities. 2Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+• We demonstrate empirically that SSDMs generate high-quality samples matching target ensemble statistics and provide measurable benefits for QML applications such as quantum data augmentation. 
+
+## 2. Background 
+
+2.1. Score-Based Diffusion Models in Euclidean Space 
+
+Score-based diffusion models construct a family of distribu-tions {pt}t∈[0 ,T ] by running a simple forward noising SDE that transports data to a tractable prior (Song et al., 2021): 
+
+dx t = f (xt, t ) dt + g(t) dw t, (1) where wt is standard Brownian motion. A key result is that the reverse-time dynamics is also an SDE whose drift involves the score ∇x log pt(x) (Song et al., 2021): 
+
+dx t =  f (xt, t ) − g(t)2∇x log pt(xt) dt + g(t) d ¯wt. (2) In practice, a neural network sθ (x, t ) ≈ ∇ x log pt(x) is learned via denoising score matching, and sampling is per-formed by integrating (2) from the prior pT back to t = 0 .A common choice of forward process is the OU/VP dif-fusion, which yields a stable Gaussian prior and supports efficient discretizations. Our goal is to develop an analogous framework for quantum pure states, where the state space is the curved manifold CP d−1 rather than Rd.
+
+2.2. Quantum Pure States and the Fubini–Study Geometry 
+
+Let H ∼= Cd be a d-dimensional Hilbert space. A quantum pure state is represented by a unit vector |ψ⟩ ∈ H with 
+
+⟨ψ, ψ ⟩ = 1 . Physical states are invariant under global phase, i.e., |ψ⟩ ∼ eiϕ |ψ⟩. The space of pure states is therefore the complex projective space 
+
+M := CP d−1. (3) The natural Riemannian metric on M is the Fubini–Study (FS) metric, which induces the geodesic distance 
+
+dFS (ψ, ϕ ) = arccos ⟨ψ, ϕ ⟩ . (4) This geometry plays a central role in our construction: diffu-sion takes place on the manifold M and the relevant score is a Riemannian score defined with respect to the FS metric. 
+
+2.3. Stochastic Schr¨ odinger Equations and Quantum Trajectories 
+
+Open quantum systems are often modeled by Lindblad mas-ter equations (Manzano, 2020) for density matrices ρt,
+
+ddt ρt = −i[H, ρ t]+ X
+
+> k
+
+γk
+
+
+
+LkρtL† 
+
+> k
+
+− 12 {L†
+
+> k
+
+Lk, ρ t}
+
+
+
+, (5) where H is the system Hamiltonian and {Lk} are Lindblad operators. A key concept is unraveling : the mixed-state 
+
+ρt evolution in (5) can be represented as an ensemble av-erage over stochastic pure-state trajectories |ψt⟩ governed by a Stochastic Schr ¨odinger Equations (SSE) (Bouten et al., 2004). A generic Itˆ o-form SSE can be written as 
+
+d |ψt⟩ = A(|ψt⟩ , t ) dt + X
+
+> k
+
+Bk(|ψt⟩ , t ) dw (k) 
+
+> t
+
+, (6) where {w(k) 
+
+> t
+
+} are independent Wiener processes and the drift/diffusion terms are chosen such that E |ψt⟩ ⟨ ψt|  =
+
+ρt. In this work, we use SSEs not only as a physical mo-tivation but as a design principle for defining a tractable forward diffusion over pure states. 
+
+2.4. Diffusions on Manifolds and Riemannian Scores 
+
+Let (M, g ) be a Riemannian manifold and let pt denote the time-marginal density with respect to the Riemannian volume measure. The natural analog of the Euclidean score is the Riemannian score 
+
+∇g log pt(ψ) ∈ Tψ M, (7) where ∇g is the Riemannian gradient. For manifold diffu-sions, time reversal admits an intrinsic formulation in which the reverse drift contains the Riemannian score, mirroring the Euclidean case (Huang et al., 2022; De Bortoli et al., 2022). In general, transition densities on M are intractable (Lou et al., 2023a). We therefore leverage a local approximation: in normal coordinates, an isotropic manifold diffusion is Euclidean to first order, so over a small time step it behaves like an OU/VP update in the tangent space, with curvature effects entering at higher order. This yields a Gaussian sur-rogate for the short-time conditional density and an analytic teacher score, which we map back to the manifold via the differential of the logarithm map and use to train a global score model for reverse-time sampling. 
+
+## 3. Stochastic Schr¨ odinger Diffusion Models 
+
+We propose Stochastic Schr ¨odinger Diffusion Models (SS-DMs), a score-based generative framework for learning and sampling distributions over quantum pure states . A pure state |ψ⟩ ∈ H ∼= Cd is physically represented by its equiv-alence class [ψ] ∈ M := CP d−1, the complex projective space endowed with the Fubini–Study (FS) metric gFS . SS-DMs perform diffusion modeling intrinsically on (M, g FS ):we define a tractable forward noising diffusion that maps an unknown data ensemble p0 to a simple base distribution 
+
+pT , and learn a reverse-time diffusion whose drift is driven by the Riemannian score ∇FS log pt. The main technical obstacle is that transition densities on CP d−1 are generally 3Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+unavailable in closed form, so we introduce a local-time 
+
+training objective that uses a short-time Gaussian approx-imation in FS normal coordinates to provide an analytic teacher score. 
+
+3.1. Forward Diffusion on CP d−1 with an SSE Realization Intrinsic manifold diffusion. We construct a continuous-time forward diffusion {ψt}t∈[0 ,T ] on M whose marginals gradually transform p0 into a tractable base distribution pT .We model the forward process as a time-inhomogeneous diffusion on (M, g FS ):
+
+dψ t = a(ψt, t ) dt + σ(t) dW (M) 
+
+> t
+
+, (8) where W (M) 
+
+> t
+
+denotes Brownian motion on M under the FS metric and a(ψ, t ) is a (possibly zero) drift. Throughout, we choose a and σ so that the noising is approximately isotropic under gFS and progressively destroys the structure of p0. When a ≡ 0, Eq. (8) reduces to FS-Brownian motion (heat flow), whose long-time limit is the unitarily-invariant base measure on M.
+
+OU-style discretization and tangent projection. For im-plementation, it is convenient to express the diffusion us-ing tangent vector fields and a projection that enforces the projective-state constraint. We consider the Stratonovich-form update 
+
+dψ t = Pψt
+
+
+
+b(ψt, t ) dt + σ(t)
+
+> K
+
+X
+
+> k=1
+
+Vk(ψt) ◦ dw (k)
+
+> t
+
+
+
+, (9) where {w(k) 
+
+> t
+
+}Kk=1 are independent Wiener processes, Vk(ψ)
+
+are tangent vector fields, and Pψ projects ambient incre-ments onto Tψ M, ensuring invariance to global phase. With an appropriate choice of {Vk} (e.g., an orthonormal frame under gFS ) and drift b, Eq. (9) induces the intrinsic diffusion (8) up to higher-order curvature effects. See Appendix A for a formal statement. 
+
+SSE realization (stochastic unitary evolution). To con-nect the manifold diffusion with physics-motivated dynam-ics, we provide an SSE realization on the Hilbert sphere whose induced process on CP d−1 is approximately isotropic. Let {Gk}d2−1 
+
+> k=1
+
+be an orthonormal basis of su (d) (e.g., gener-alized Gell–Mann matrices (Loubenets, 2020)). We consider the Stratonovich SDE (Kurtz et al., 1995) 
+
+d |ψt⟩ = − iH (t) |ψt⟩ dt − 12 η(t) X
+
+> k
+
+G2 
+
+> k
+
+|ψt⟩ dt 
+
+− ipη(t) X
+
+> k
+
+Gk |ψt⟩ ◦ dW (k) 
+
+> t
+
+,
+
+(10) whose stochastic unitary term generates diffusion along Lie-algebra directions. After quotienting out the global phase, the induced dynamics on CP d−1 matches the generator of (8) up to curvature-dependent terms; details are given in Appendix B. 
+
+Prior distribution. We initialize reverse-time sampling from a tractable base distribution pT on M, with the isotropic FS/Haar measure as the ideal choice. In prac-tice, we approximate it using ensembles such as Clifford 
+
+t-designs or other tractable alternatives. 
+
+3.2. Reverse-Time Dynamics and the Riemannian Score 
+
+Given the forward diffusion on the pure-state manifold 
+
+(M, g FS ) defined in Eq. (8) , let pt(ψ) denote its time-marginal density with respect to the Riemannian volume measure induced by the FS metric. For the Riemannian OU forward process, 
+
+dψ t =b(ψt, t ) dt + σ(t) dW (M) 
+
+> t
+
+,b(ψ, t ) := − λ(t) Log ψ (ψ⋆), (11) the associated (time-inhomogeneous) generator takes the form 
+
+Ltf (ψ) = ⟨b(ψ, t ), ∇FS f (ψ)⟩FS + σ(t)2
+
+2 ∆FS f (ψ), (12) where ∆FS is the Laplace–Beltrami operator on CP d−1. See Proposition C.1 in Appendix C. 
+
+Reverse-time diffusion on M. A standard result on time reversal of diffusions on Riemannian manifolds implies that the reverse-time process is again a diffusion on M with the same diffusion coefficient but a modified drift. In intrinsic Stratonovich form, the reverse-time dynamics can be written as 
+
+dψ t =˜b(ψt, t ) dt + σ(t) d ¯W (M) 
+
+> t
+
+,
+
+˜b(ψ, t ) = b(ψ, t ) − σ(t)2 ∇FS log pt(ψ). (13) A precise statement and proof are provided in Proposi-tion C.2 in Appendix C; see Fig. 1 for an illustration of the forward and reverse diffusion processes. 
+
+Connection to our SSE realization. Since our forward diffusion admits an SSE realization in Stratonovich form (Eq. (10) ), Eq. (13) provides a principled reverse-time sam-pler for Schr ¨odinger-type diffusions on CP d−1. In practice, we approximate the score s⋆(ψ, t ) with a parameterized model sθ (ψ, t ) and integrate the learned reverse dynamics from ψT ∼ pT to obtain samples at t = 0 .
+
+Remark (coordinate corrections). Eq. (13) is stated in-trinsically in Stratonovich form. When rewritten in local 4Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation Stochastic Schrödinger Di ff usion Models (SSDMs)     
+
+> Data
+> Forward SDE
+> t: 0 →T
+> Prior
+> Reverse SDE
+> t: T →0
+> Data ̄
+
+Figure 1. Illustration of the forward diffusion on the quantum pure-state manifold and its reverse-time generative process driven by a learned Riemannian score. 
+
+coordinates or converted to It ˆo form, additional geometry-dependent correction terms appear (e.g., Levi-Civita con-nection and divergence terms associated with the Rieman-nian volume measure). In our implementation, we perform updates in local orthonormal frames on Tψ M and map tangent increments back to M via Exp (or a retraction), which avoids the need to explicitly write these coordinate corrections; we provide the coordinate-form expressions in Appendix D. 
+
+3.3. Local-Time Teacher Scores via FS Normal Coordinates 
+
+A central challenge is that the marginal density pt(ψ) is not available in closed form, which prevents direct evalua-tion of the Riemannian score ∇FS log pt(ψ). We therefore construct a local-time teacher score based on the fact that the forward diffusion admits a local Euclidean OU limit in Fubini–Study (FS) normal coordinates. 
+
+Local analytic teacher score via FS normal coordinates. 
+
+Fix a short step size δt > 0. Given a local-time pair 
+
+(ϕ, ψ ) := ( ψt−δt , ψ t) from the forward process (11) , de-fine the FS normal coordinates centered at ϕ by 
+
+z := log ϕ(ψ) ∈ TϕM. (14) Here, log ϕ(ψ) denotes the Riemannian logarithm map that expresses ψ as a tangent vector at the base point ϕ, i.e., the initial velocity of the unique geodesic starting from ϕ and reaching ψ. As discussed in Sec. 3.2, in these coordinates the forward manifold diffusion is well-approximated, for sufficiently small δt , by an Euclidean OU/VP step, 
+
+zt ≈ α(t, δt ) zt−δt + β(t, δt ) ξ, ξ ∼ N (0 , I ), (15) where α, β are determined by the diffusion schedule and cur-vature effects enter only at higher order in ∥z∥ (equivalently, higher order in δt in the small-step regime). For the local-time construction we take zt−δt = 0 (since log ϕ(ϕ) = 0 ), so the induced local conditional density q(z | 0) is Gaus-sian with covariance Σ( t, δt ) = β(t, δt )2I in the isotropic OU/VP case. This yields a closed-form teacher score in normal coordinates: 
+
+s(teach)  
+
+> z
+
+(z, t, δt ) := ∇z log q(z | 0) = −Σ( t, δt )−1z. 
+
+(16) We then map this teacher score back to the manifold using the adjoint of the differential of the logarithm map: 
+
+s(teach) (ψ, ϕ, t, δt ) := ( d log ϕ)∗ 
+
+> ψ
+
+s(teach)  
+
+> z
+
+(z, t, δt ),z = log ϕ(ψ), (17) Here (d log ϕ)∗ 
+
+> ψ
+
+denotes the adjoint of the differential of the logarithm map with respect to the Riemannian metric, map-ping cotangent vectors back to Tψ M. This adjoint naturally arises since the score is a gradient and therefore transforms via the adjoint of the Jacobian under coordinate changes. In FS normal coordinates, this construction approximates the intrinsic local conditional score ∇FS log p(ψ | ϕ) up to cur-vature and volume-element corrections of order O(∥z∥2);see Proposition E.1 in Appendix E. 
+
+3.4. Riemannian Denoising Score Matching Objective 
+
+We train a parameterized score model sθ (ψ, t ) to approx-imate the Riemannian score s⋆(ψ, t ) = ∇FS log pt(ψ) on 
+
+M = CP d−1. Given data samples ψ0 ∼ p0, we simulate the forward diffusion and sample a random time t ∼ U (0 , T ).For a small local step δt , we form the local-time pair 
+
+(ϕ, ψ ) := ( ψt−δt , ψ t), (18) and compute the teacher score s(teach) (ψ, ϕ, t, δt ) via the analytic local OU approximation in FS normal coordinates (Eqs. (16)–(17)). 5Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+We then minimize a Riemannian denoising score matching objective: 
+
+L(θ) = Eψ0∼p0, t ∼U (δt,T ), (ϕ,ψ )∼p(ψt−δt ,ψ t|ψ0)
+
+h
+
+λ(t, δt )
+
+Pψ
+
+ sθ (ψ, t ) − s(teach) (ψ, ϕ, t, δt ) 2FS 
+
+i
+
+.
+
+(19) where ∥ · ∥ FS denotes the norm induced by the FS metric on the tangent space and Pψ projects a vector onto Tψ M.Unless stated otherwise, we use λ(t, δt ) = β(t, δt )2, which mirrors the variance-weighting commonly used in denoising score matching for VP diffusions. This objective distills local short-time conditional score in-formation into a global score estimator that can be used for reverse-time sampling over the full diffusion horizon. At the population level, minimizing the above objective recovers the marginal Riemannian score s⋆(ψ, t ) = ∇FS log pt(ψ);see Proposition F.1. Moreover, using the local-time teacher score is consistent in the small-step limit δt → 0; see Propo-sition F.2 in Appendix F. 
+
+3.5. Sampling Algorithm 
+
+After training the score model sθ (ψ, t ) ≈ ∇ FS log pt(ψ),we generate samples by drawing ψT ∼ pT from a tractable prior (e.g., a Clifford t-design ensemble) and integrating the learned reverse-time dynamics on M = CP d−1.
+
+Reverse-time sampling SDE. Using Eq. (13) , we simu-late the reverse diffusion 
+
+dψ t =  b(ψt, t ) − σ(t)2sθ (ψt, t ) dt + σ(t) d ¯W (M) 
+
+> t
+
+, (20) where b(ψ, t ) = −λ(t)Log ψ (ψ⋆) for the Riemannian OU forward process and ¯W (M) 
+
+> t
+
+denotes reverse-time Brownian motion on (M, g FS ).
+
+Manifold discretization. Let tk be a discretization of 
+
+[0 , T ] with step ∆t = tk − tk−1 (integrated backward from 
+
+T to 0), and define τk := R tk 
+
+> tk−1
+
+σ(s)2ds ≈ σ(tk)2∆t. We update the state using an Euler–Maruyama step in the tan-gent space followed by a retraction onto M:
+
+ξk ∼ N (0 , I ) (in a local orthonormal basis of Tψtk M),vk =  b(ψtk , t k) − σ(tk)2 sθ (ψtk , t k) ∆t + √τk ξk,ψtk−1 = Exp ψtk
+
+(vk),
+
+(21) where Exp ψ (·) is the FS exponential map. In practice, we may replace Exp with a first-order retraction (followed by normalization and phase quotient) for efficiency; both yield similar results at sufficiently small step sizes. 
+
+Algorithm 1 Stochastic Schr¨ odinger Diffusion Models 
+
+Require: Data samples {ψ(i)0 }, diffusion horizon T , step sizes ∆t, δt , schedules σ(t), λ (t), prior sampler pT
+
+Ensure: Trained score model sθ and generated sample ψ0 
+
+> 1:
+
+Training  
+
+> 2:
+
+for each minibatch do  
+
+> 3:
+
+Sample ψ0 ∼ p0 and t ∼ U (δt, T ) 
+
+> 4:
+
+Simulate the forward Riemannian OU diffusion in Eq. (11) to obtain (ψt−δt , ψ t) 
+
+> 5:
+
+Compute normal coordinates z ← log ψt−δt (ψt) 
+
+> 6:
+
+Compute teacher score steach (ψt, ψ t−δt , t, δt ) using Eqs. (16)–(17)  
+
+> 7:
+
+Update θ by minimizing L(θ) in Eq. (19)  
+
+> 8:
+
+end for  
+
+> 9:
+
+Sampling  
+
+> 10:
+
+Sample ψT ∼ pT 
+
+> 11:
+
+for k = K, K − 1, . . . , 1 do  
+
+> 12:
+
+Set τk ← σ(tk)2∆t 
+
+> 13:
+
+Draw ξk ∼ N (0 , I ) in Tψtk M 
+
+> 14:
+
+Set 
+
+vk ←  b(ψtk , t k) − σ(tk)2sθ (ψtk , t k)∆t + √τkξk 
+
+> 15:
+
+Set ψtk−1 ← Exp ψtk
+
+(vk) {or a retraction } 
+
+> 16:
+
+end for  
+
+> 17:
+
+return ψ0
+
+## 4. Related Works 
+
+Score-based diffusion models. Diffusion and score-based generative models learn to sample by reversing a gradual noising process, typically via a learned score ∇ log pt and reverse-time SDE/ODE integration (Ho et al., 2020; Song et al., 2021). Extensions beyond Euclidean spaces, including manifolds and other structured domains, replace Euclidean gradients and noise with Riemannian counterparts, often by performing score matching in local normal coordinates us-ing tangent-space perturbations (Bortoli et al., 2022; Huang et al., 2022). Our work follows this geometric line but goes beyond a direct instantiation of Riemannian score-based models on CP d−1. In particular, the strong curvature of the pure-state manifold and the absence of tractable transi-tion densities make standard local score-matching construc-tions insufficient, motivating a principled local-time training objective and a carefully designed forward diffusion that control geometric bias. 
+
+Quantum generative modeling and diffusion. Existing quantum generative models, including Born machines (Liu & Wang, 2018; Benedetti et al., 2019; Coyle et al., 2020), quantum Boltzmann machines (Kieferov ´a & Wiebe, 2016; Amin et al., 2018; Zoufal et al., 2020), and quantum GANs 6Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+(Lloyd & Weedbrook, 2018a; Dallaire-Demers & Killoran, 2018; Zoufal et al., 2019), typically rely on variational cir-cuits trained with adversarial or likelihood-based objectives, focusing on parameterizing families of quantum circuits. More recent “quantum diffusion” approaches define forward noising via completely positive trace-preserving channels (Chen et al., 2024; Zhu et al., 2025) and learn reverse maps for state recovery or preparation, often using non-unitary circuit constructions such as ancillas and partial trace (Parigi et al., 2025). In contrast, SSDMs adopt a diffusion-based perspective that directly models distributions over quantum pure states on the projective manifold and perform reverse-time sampling via a learned (Riemannian) score field, rather than learning explicit inverse channels or circuit parameteri-zations. Prior works (Zhang et al., 2023; Kwun et al., 2025) also study generating ensembles of pure states via iterative denoising procedures based on randomization and measure-ment operations. SSDMs complement these approaches by formulating an intrinsic manifold diffusion with a princi-pled reverse-time sampler and a local-time training signal derived from FS normal-coordinate approximations. 
+
+Stochastic quantum trajectories and unravelings. 
+
+Diffusion-like dynamics also appear in measurement-induced trajectories (Dalibard et al., 1992; Gisin & Percival, 1992) and Lindblad unravelings (Kleinekath ¨ofer et al., 2002; Caiaffa et al., 2017; Chen & Kuo, 2025), where stochastic Schr ¨odinger equations describe pure-state paths and moti-vate recovery/control viewpoints (Kiefer, 2010). SSDMs leverage this connection through an SSE realization, but target a generative modeling objective: learning a score field on CP d−1 and using reverse-time integration to sample from a target ensemble. 
+
+Hybrid pipelines with quantum denoisers. A separate direction inserts quantum neural components into otherwise classical diffusion models, e.g., quantum neural network (QNN) denoisers (K ¨olle et al., 2024) for image/latent diffu-sion (Falco et al., 2024; 2025) and scientific data generation, such as quark and gluon jet synthesis (Baidachna et al., 2025). Our setting differs in that the diffusion itself evolves 
+
+quantum states and the score is defined intrinsically on 
+
+CP d−1.
+
+## 5. Experiments 
+
+We evaluate SSDMs on generative modeling tasks over quan-tum pure-state ensembles. Our experiments are designed to answer the following questions: • RQ1 (Generative Quality). Can SSDMs generate samples that match the target pure-state ensemble dis-tribution? • RQ2 (Geometry Matters). Does modeling diffusion and scores intrinsically on CP d−1 with the Fubini– Study (FS) geometry improve performance over Eu-clidean baselines? • RQ3 (Local-Time Supervision). Are local-time an-alytic teacher scores derived from the FS normal-coordinate OU approximation sufficient for learning a global score field that supports high-quality reverse-time sampling? • RQ4 (QML Utility). Do SSDM-generated quantum encodings improve downstream QML performance via representation-level data augmentation? Experimental details can be found in Appendix G. 
+
+5.1. Main Results: Generative Modeling of Pure-State Ensembles 
+
+We first evaluate SSDMs on pure-state ensemble genera-tion for n = 2 , 4, and 6 qubits. For the main generative experiments (RQ1–RQ3), target ensembles are synthetic pure-state datasets constructed directly in Hilbert space by perturbing and normalizing reference statevectors. For the QML augmentation experiments (RQ4), target ensembles are induced by encoding raw inputs into quantum feature states. For each setting, we sample N generated states and evaluate distributional similarity using the metrics described in Section G.1. Table 1 summarizes the main generative performance across different system sizes, while Table 2 reports training-time comparisons, where QDDPM incurs substantially higher cost due to its endpoint-alignment train-ing that requires traversing the full diffusion time horizon during optimization. 
+
+Distribution and fidelity matching. As shown in Table 1, SSDMs consistently outperform competing baselines across all qubit sizes. In particular, SSDMs achieve the highest fi-delity F0 while simultaneously attaining substantially lower MMD and observable mismatch ∆obs , indicating accurate reproduction of both global and observable-level ensemble statistics. Compared to Euclidean VP-SDE and Rieman-nian score-based generative models (RSGM), the improve-ment becomes more pronounced as the system dimension increases, highlighting the benefit of modeling diffusion intrinsically on the pure-state manifold. SSDMs also yield improved entanglement Wasserstein distance, suggesting that the learned Riemannian score captures nonlocal cor-relations present in the target ensembles rather than only marginal statistics. 
+
+5.2. Does Geometry Matter? 
+
+To isolate the role of geometry (RQ2), we compare intrinsic SSDMs with Euclidean score baselines on n = 2 , 4, 6 qubits. Table 1 and summarizes the effect of FS geometry. 7Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation         
+
+> Table 1. Main results on n= 2 ,4,6qubits . Higher is better for fidelity F0, while lower is better for MMD, ∆obs , and entanglement Wasserstein distance.
+
+n = 2 F0 ↑ MMD ↓ ∆obs ↓ Ent. W 1 ↓
+
+QDDPM (Zhang et al., 2024) 0.8991 1.3092 × 10 −2 1.0294 × 10 −1 6.9427 × 10 −2
+
+QGAN (Lloyd & Weedbrook, 2018b) 0.5261 4.3099 × 10 −1 6.0502 × 10 −1 3.4518 × 10 −1
+
+Euclidean VP-SDE (Song et al., 2021) 0.2487 7.1676 × 10 −1 9.7489 × 10 −1 2.8790 × 10 −1
+
+RSGM (Bortoli et al., 2022) 0.2889 6.3424 × 10 −1 9.1988 × 10 −1 3.0743 × 10 −1
+
+SSDM (ours) 0.9582 2.0351 × 10 −3 2.8584 × 10 −2 2.6872 × 10 −2
+
+n = 4 F0 ↑ MMD ↓ ∆obs ↓ Ent. W 1 ↓
+
+QDDPM (Zhang et al., 2024) 0.5062 2.2183 × 10 −1 4.4425 × 10 −1 4.6388 × 10 −1
+
+QGAN (Lloyd & Weedbrook, 2018b) 0.0969 7.5063 × 10 −1 8.6419 × 10 −1 6.8635 × 10 −1
+
+Euclidean VP-SDE (Song et al., 2021) 0.0539 7.7408 × 10 −1 9.0754 × 10 −1 6.6624 × 10 −1
+
+RSGM (Bortoli et al., 2022) 0.0859 7.0681 × 10 −1 8.6678 × 10 −1 6.6605 × 10 −1
+
+SSDM (ours) 0.8144 1.4391 × 10 −2 9.7529 × 10 −2 1.6561 × 10 −1
+
+n = 6 F0 ↑ MMD ↓ ∆obs ↓ Ent. W 1 ↓
+
+QDDPM (Zhang et al., 2024) 0.1435 3.9985 × 10 −1 5.0898 × 10 −1 1.9413 × 10 −1
+
+QGAN (Lloyd & Weedbrook, 2018b) 0.0246 4.7364 × 10 −1 6.7442 × 10 −1 6.8376 × 10 −1
+
+Euclidean VP-SDE (Song et al., 2021) 0.0143 4.6681 × 10 −1 6.8395 × 10 −1 6.8180 × 10 −1
+
+RSGM (Bortoli et al., 2022) 0.0603 4.0124 × 10 −1 6.3683 × 10 −1 6.8753 × 10 −1
+
+SSDM (ours) 0.3922 9.6945 × 10 −2 3.0519 × 10 −1 4.6613 × 10 −1    
+
+> Table 2. Training time comparison on n= 6 qubits. Lower is better.
+
+Method Train time (s) ↓ Speedup QDDPM 21150.52 1.0×
+
+QGAN 198.64 106 .4×
+
+SSDM (ours) 240.91 87 .8×
+
+Respecting FS geometry yields consistent improvements in both distribution matching and entanglement statistics, con-firming that learning tangent scores intrinsically on CP d−1
+
+is crucial for stable and accurate sampling. 
+
+5.3. Local-Time Teacher Ablations 
+
+We evaluate the importance of local-time analytic teacher supervision (RQ3) on n = 2 , 4, 6 qubits. Table 3 and Fig-ure 2 in Appendix G reports the main ablations. Analytic local-time OU teacher scores provide stable and effective supervision. Compared to finite-difference approximations, the analytic teacher reduces estimation noise and improves reverse-time sampling quality. 
+
+5.4. QML Application: Representation-Level Data Augmentation 
+
+We evaluate SSDMs for representation-level augmentation in quantum feature space (RQ4). Given a labeled dataset 
+
+{(xi, y i)}, we encode inputs into quantum feature states 
+
+|ψ(xi)⟩ and train a downstream model using either: (i) the original training set, or (ii) an augmented set that in-cludes additional SSDM-generated states. We train ker-nel SVM (or ridge regression) using the overlap kernel 
+
+k(x, x ′) = | ⟨ ψ(x)⟩ ψ(x′)|2. We report test accuracy and kernel alignment. Here, SSDM is applied after the encod-ing step: it generates additional quantum feature states in representation space, not additional raw inputs x.We also evaluate a variational classifier trained on measured features of |ψ(x)⟩, and test whether SSDM augmentation improves generalization under limited labeled data. Ta-ble 4 in Appendix G summarizes downstream performance. SSDM-generated states improve downstream performance under limited labeled data, supporting the usefulness of generative modeling for representation-level augmentation. 
+
+## 6. Conclusion 
+
+We proposed Stochastic Schr ¨odinger Diffusion Models (SS-DMs), a score-based generative framework for pure-state ensembles that formulates diffusion and reverse-time sam-pling intrinsically on CP d−1 with the Fubini–Study ge-ometry. Experiments show that SSDMs accurately match target quantum-state ensembles and improve downstream QML performance through representation-level augmenta-tion, highlighting intrinsic manifold diffusion as a practical route for quantum generative modeling. 8Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+## References 
+
+Amin, M. H., Andriyash, E., Rolfe, J., Kulchytskyy, B., and Melko, R. Quantum boltzmann machine. Physical Review X , 8(2):021050, 2018. Anderson, B. D. Reverse-time diffusion equation models. 
+
+Stochastic Processes and their Applications , 12(3):313– 326, 1982. Baidachna, M., Guadarrama, R., Dahale, G. R., Magorsch, T., Pedraza, I., Matchev, K. T., Matcheva, K., Kong, K., and Gleyzer, S. Quantum diffusion model for quark and gluon jet generation. In Proceedings of the AAAI Symposium Series , volume 7, pp. 323–329, 2025. Benedetti, M., Garcia-Pintos, D., Perdomo, O., Leyton-Ortega, V., Nam, Y., and Perdomo-Ortiz, A. A generative modeling approach for benchmarking and training shal-low quantum circuits. npj Quantum information , 5(1):45, 2019. Biamonte, J., Wittek, P., Pancotti, N., Rebentrost, P., Wiebe, N., and Lloyd, S. Quantum machine learning. Nature ,549(7671):195–202, 2017. Bortoli, V. D., Mathieu, E., Hutchinson, M. J., Thorn-ton, J., Teh, Y. W., and Doucet, A. Riemannian score-based generative modelling. In Oh, A. H., Agarwal, A., Belgrave, D., and Cho, K. (eds.), Advances in Neural Information Processing Systems , 2022. URL https: //openreview.net/forum?id=oDRQGo8I7P .Bouten, L., Guta, M., and Maassen, H. Stochastic schr ¨odinger equations. Journal of Physics A: Mathe-matical and General , 37(9):3189, 2004. Caiaffa, M., Smirne, A., and Bassi, A. Stochastic unraveling of positive quantum dynamics. Physical Review A , 95(6): 062101, 2017. Chen, C., Zhao, Q., Zhou, M., He, Z., Sun, Z., and Situ, H. Quantum generative diffusion model: a fully quantum-mechanical model for generating quantum state ensemble. 
+
+arXiv preprint arXiv:2401.07039 , 2024. Chen, C.-S. and Kuo, E.-J. Unraveling quantum environ-ments: Transformer-assisted learning in lindblad dynam-ics. Physical Review A , 112(4):042227, 2025. Chen, N., Zhang, Y., Zen, H., Weiss, R. J., Norouzi, M., and Chan, W. Wavegrad: Estimating gradients for waveform generation. In International Conference on Learning Representations , 2021. URL https://openreview. net/forum?id=NsMLjcFaO8O .Chen, W., Li, S., Li, J., Yang, J., Paisley, J., and Zeng, D. Dequantified diffusion-schr ¨odinger bridge for density ratio estimation. In International Conference on Machine Learning , 2025. URL https://openreview.net/ forum?id=zvyHCOcwsw .Coyle, B., Mills, D., Danos, V., and Kashefi, E. The born supremacy: quantum advantage and training of an ising born machine. npj Quantum Information , 6(1):60, 2020. Dalibard, J., Castin, Y., and Mølmer, K. Wave-function approach to dissipative processes in quan-tum optics. Physical review letters , 68 5:580–583, 1992. URL https://api.semanticscholar. org/CorpusID:37860243 .Dallaire-Demers, P.-L. and Killoran, N. Quantum generative adversarial networks. arXiv preprint arXiv:1804.08641 ,2018. Dankert, C., Cleve, R., Emerson, J., and Livine, E. Exact and approximate unitary 2-designs and their application to fidelity estimation. Physical Review A—Atomic, Molec-ular, and Optical Physics , 80(1):012304, 2009. De Bortoli, V., Mathieu, E., Hutchinson, M., Thornton, J., Teh, Y. W., and Doucet, A. Riemannian score-based generative modelling. Advances in neural information processing systems , 35:2406–2422, 2022. Falco, F. D., Ceschini, A., Sebastianelli, A., Saux, B. L., and Panella, M. Quantum latent diffu-sion models. Quantum Machine Intelligence , 6, 2024. URL https://api.semanticscholar. org/CorpusID:274349576 .Falco, F. D., Mauro, F., Ceschini, A., Sebastianelli, A., Gamba, P., Ullo, S. L., and Panella, M. Leveraging quantum latent diffusion models for data augmen-tation on the eurosat dataset. IGARSS 2025 - 2025 IEEE International Geoscience and Remote Sensing Symposium , pp. 1342–1346, 2025. URL https: //api.semanticscholar.org/CorpusID: 283269892 .Gisin, N. and Percival, I. C. The quantum-state dif-fusion model applied to open systems. Journal of Physics A , 25:5677–5691, 1992. URL https: //api.semanticscholar.org/CorpusID: 123712546 .9Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Gretton, A., Borgwardt, K. M., Rasch, M. J., Sch ¨olkopf, B., and Smola, A. A kernel two-sample test. The journal of machine learning research , 13(1):723–773, 2012. Haussmann, U. G. and Pardoux, E. Time reversal of diffu-sions. The Annals of Probability , pp. 1188–1205, 1986. Havl ´ı ˇcek, V., C ´orcoles, A. D., Temme, K., Harrow, A. W., Kandala, A., Chow, J. M., and Gambetta, J. M. Super-vised learning with quantum-enhanced feature spaces. 
+
+Nature , 567(7747):209–212, 2019. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion prob-abilistic models. In Advances in Neural Information Processing Systems , volume 33, pp. 6840–6851, 2020. Hoogeboom, E., Satorras, V. G., Vignac, C., and Welling, M. Equivariant diffusion for molecule generation in 3d. In International Conference on Machine Learning , pp. 8867–8887. PMLR, 2022. Hsu, E. P. Stochastic analysis on manifolds . Number 38. American Mathematical Soc., 2002. Huang, C.-W., Aghajohari, M., Bose, J., Panangaden, P., and Courville, A. Riemannian diffusion models. In Oh, A. H., Agarwal, A., Belgrave, D., and Cho, K. (eds.), 
+
+Advances in Neural Information Processing Systems ,2022. URL https://openreview.net/forum? id=ecevn9kPm4 .Huang, H.-Y., Broughton, M., Mohseni, M., Babbush, R., Boixo, S., Neven, H., and McClean, J. R. Power of data in quantum machine learning. Nature communications ,12(1):2631, 2021. Kiefer, C. Quantum measurement and control. Classical and Quantum Gravity , 27:249002, 2010. URL https: //api.semanticscholar.org/CorpusID: 120835470 .Kieferov ´a, M. and Wiebe, N. Tomography and generative training with quantum boltzmann machines. Physical Review A , 96:1–13, 2016. Kleinekath ¨ofer, U., Kondov, I., and Schreiber, M. Stochastic unraveling of time-local quantum master equations be-yond the lindblad class. Physical Review E , 66(3):037701, 2002. K ¨olle, M., Stenzel, G., Stein, J., Zielinski, S., Ommer, B., and Linnhoff-Popien, C. Quantum denoising diffusion models. In 2024 IEEE International Conference on Quan-tum Software (QSW) , pp. 88–98. IEEE, 2024. Kong, Z., Ping, W., Huang, J., Zhao, K., and Catanzaro, B. Diffwave: A versatile diffusion model for audio synthesis. In International Conference on Learning Representations ,2021. URL https://openreview.net/forum? id=a-xFK8Ymz5J .Kurtz, T. G., Pardoux, ´E., and Protter, P. Stratonovich stochastic differential equations driven by general semi-martingales. In Annales de l’IHP Probabilit ´es et statis-tiques , volume 31, pp. 351–377, 1995. Kwun, G., Zhang, B., and Zhuang, Q. Mixed-state quantum denoising diffusion probabilistic model. Physical Review A, 111(3):032610, 2025. Li, S., Chen, W., and Zeng, D. EVODiff: Entropy-aware variance optimized diffusion inference. In The Thirty-ninth Annual Conference on Neural Information Pro-cessing Systems , 2025. URL https://openreview. net/forum?id=rKASv92Myl .Liu, J.-G. and Wang, L. Differentiable learning of quantum circuit born machines. Physical Review A , 98(6):062324, 2018. Lloyd, S. and Weedbrook, C. Quantum generative adver-sarial learning. Physical review letters , 121 4:040502, 2018a. Lloyd, S. and Weedbrook, C. Quantum generative adver-sarial learning. Physical review letters , 121(4):040502, 2018b. Lou, A., Xu, M., Farris, A., and Ermon, S. Scaling rieman-nian diffusion models. Advances in Neural Information Processing Systems , 36:80291–80305, 2023a. Lou, A., Xu, M., Farris, A., and Ermon, S. Scal-ing riemannian diffusion models. In Thirty-seventh Conference on Neural Information Processing Systems ,2023b. URL https://openreview.net/forum? id=FLTg8uA5xI .Loubenets, E. R. The generalized gell–mann representation and violation of the chsh inequality by a general two-qudit state. Journal of Physics A: Mathematical and Theoretical , 53(4):045303, 2020. Manzano, D. A short introduction to the lindblad master equation. Aip advances , 10(2), 2020. Mielnik, B. Geometry of quantum states. Communications in Mathematical Physics , 9(1):55–80, 1968. Parigi, M., Martina, S., and Caruso, F. Quantum-noise-driven generative diffusion models. Advanced Quantum Technologies , 8(12):2300401, 2025. Preskill, J. Quantum computing in the nisq era and beyond. 
+
+Quantum , 2:79, 2018. 10 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Schuld, M. and Killoran, N. Quantum machine learning in feature hilbert spaces. Physical review letters , 122(4): 040504, 2019. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Ermon, S., and Poole, B. Score-based generative mod-eling through stochastic differential equations. In In-ternational Conference on Learning Representations ,2021. URL https://openreview.net/forum? id=PxTIG12RRHS .Trippe, B. L., Yim, J., Tischer, D., Baker, D., Broder-ick, T., Barzilay, R., and Jaakkola, T. S. Diffusion probabilistic modeling of protein backbones in 3d for the motif-scaffolding problem. In The Eleventh In-ternational Conference on Learning Representations ,2023. URL https://openreview.net/forum? id=6TxBxqNME1Y .Watson, J. L., Juergens, D., Bennett, N. R., Trippe, B. L., Yim, J., Eisenach, H. E., Ahern, W., Borst, A. J., Ragotte, R. J., Milles, L. F., et al. De novo design of protein struc-ture and function with rfdiffusion. Nature , 620(7976): 1089–1100, 2023. Wu, K. E., Yang, K. K., van den Berg, R., Alamdari, S., Zou, J. Y., Lu, A. X., and Amini, A. P. Protein structure generation via folding diffusion. Nature communications ,15(1):1059, 2024. Xu, M., Yu, L., Song, Y., Shi, C., Ermon, S., and Tang, J. Geodiff: A geometric diffusion model for molecular conformation generation. In International Conference on Learning Representations , 2022. URL https:// openreview.net/forum?id=PzcvxEMzvQC .Yang, L., Zhang, Z., Hong, S., Xu, R., Zhao, Y., Shao, Y., Zhang, W., Yang, M.-H., and Cui, B. Diffusion models: A comprehensive survey of methods and applications. 
+
+ACM Computing Surveys , 56:1 – 39, 2022. Zhang, B., Xu, P., Chen, X., and Zhuang, Q. Generative quantum machine learning via denoising diffusion proba-bilistic models. Physical Review Letters , 132(10):100602, 2024. Zhang, B.-Q., Xu, P., Chen, X., and Zhuang, Q. Generative quantum machine learning via denoising diffusion proba-bilistic models. Physical review letters , 132 10:100602, 2023. URL https://api.semanticscholar. org/CorpusID:263829507 .Zhu, H. Multiqubit clifford groups are unitary 3-designs. 
+
+Physical Review A , 96(6):062336, 2017. Zhu, Q.-S., Chen, G., Yu, L.-H., Xing, X., and Li, X.-Y. Channel-constrained markovian quantum diffusion model from open system perspective. arXiv preprint arXiv:2511.12221 , 2025. Zoufal, C., Lucchi, A., and Woerner, S. Quantum generative adversarial networks for learning and loading random distributions. npj Quantum Information , 5, 2019. Zoufal, C., Lucchi, A., and Woerner, S. Variational quantum boltzmann machines. Quantum Machine Intelligence , 3, 2020. 11 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+## A. Induced Manifold Diffusion from Tangent-Projected Stratonovich Dynamics 
+
+We formalize the statement that a tangent-projected Stratonovich dynamics on the Hilbert sphere induces a diffusion on 
+
+CP d−1 whose generator matches the intrinsic FS diffusion up to explicit connection terms. 
+
+Proposition A.1 (Induced diffusion and generator on CP d−1). Let π : S2d−1 → CP d−1 be the quotient map under the 
+
+U (1) action, and let Hψ = {u ∈ Tψ S2d−1 : ⟨ψ, u ⟩ = 0 } be the horizontal distribution (FS connection), so that π is a Riemannian submersion and π∗ : Hψ → T[ψ]CP d−1 is an isomorphism. Consider the Stratonovich SDE on S2d−1:
+
+dψ t = b(ψt, t ) dt + σ(t)
+
+> K
+
+X
+
+> k=1
+
+Vk(ψt) ◦ dW (k) 
+
+> t
+
+, (22) 
+
+where for each (ψ, t ) we have b(ψ, t ) ∈ H ψ and Vk(ψ) ∈ H ψ , and each Vk is U (1) -equivariant so that ek([ ψ]) := π∗Vk(ψ)
+
+is well-defined on CP d−1.Define xt := [ ψt] ∈ CP d−1 and set 
+
+a(x, t ) := π∗b(ψ, t ), ek(x) := π∗Vk(ψ), x = [ ψ]. (23) 
+
+Then xt satisfies the induced Stratonovich SDE on CP d−1:
+
+dx t = a(xt, t ) dt + σ(t)
+
+> K
+
+X
+
+> k=1
+
+ek(xt) ◦ dW (k) 
+
+> t
+
+. (24) 
+
+Moreover, for any f ∈ C∞(CP d−1), the generator of xt is 
+
+Ltf = ⟨a(·, t ), ∇FS f ⟩FS + σ(t)2
+
+2
+
+> K
+
+X
+
+> k=1
+
+∇ek ∇ek f, (25) 
+
+where ∇ is the Levi–Civita connection of gFS . If in addition {ek(x)}Kk=1 is an orthonormal frame of TxCP d−1 (so 
+
+K = dim CP d−1 = 2 d − 2 locally), then 
+
+Ltf = ⟨a(·, t ), ∇FS f ⟩FS + σ(t)2
+
+2 ∆FS f + Rtf, (26) 
+
+with an explicit remainder term 
+
+Rtf := σ(t)2
+
+2
+
+> K
+
+X
+
+> k=1
+
+⟨∇ FS f, ∇ek ek⟩FS . (27) 
+
+In particular, Rtf ≡ 0 at any point x where the chosen orthonormal frame is geodesic (i.e., ∇ek ek(x) = 0 for all k). Proof. Step 1 (Well-defined induced process and induced SDE). Since b(ψ, t ) and Vk(ψ) are horizontal and U (1) -equivariant, their pushforwards a(x, t ) and ek(x) in (23) are well-defined on CP d−1. Let f ∈ C∞(CP d−1) and define its lift ¯f := f ◦ π on S2d−1. By the Stratonovich chain rule, 
+
+d(f (xt)) = d( ¯f (ψt)) = ⟨∇ ¯f (ψt), dψ t⟩ = ( b ¯f )( ψt, t ) dt + σ(t) X
+
+> k
+
+(Vk ¯f )( ψt) ◦ dW (k) 
+
+> t
+
+. (28) Using ¯f = f ◦ π and the definition of pushforward, for any horizontal vector field V we have 
+
+(V ¯f )( ψ) = ( π∗V f )([ ψ]) . (29) Applying this to b and Vk turns (28) into 
+
+d(f (xt)) = ( af )( xt, t ) dt + σ(t) X
+
+> k
+
+(ekf )( xt) ◦ dW (k) 
+
+> t
+
+.
+
+12 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Since this holds for all smooth test functions f , it identifies the induced Stratonovich SDE (24). 
+
+Step 2 (Generator in a chosen frame). For a Stratonovich SDE on a manifold dx t = a dt + P 
+
+> k
+
+σe k ◦ dW (k) 
+
+> t
+
+, the generator acting on f is (standard) 
+
+Ltf = af + σ(t)2
+
+2
+
+> K
+
+X
+
+> k=1
+
+ek(ekf ). (30) Using the Levi–Civita connection, ek(ekf ) = ∇ek ∇ek f for scalar f , which gives (25). 
+
+Step 3 (Relation to the Laplace–Beltrami operator and the explicit remainder). If {ek} is an orthonormal frame, the FS Laplace–Beltrami operator satisfies the local identity 
+
+∆FS f =
+
+> K
+
+X
+
+> k=1
+
+
+
+∇ek ∇ek f − ∇ ∇ek ek f
+
+
+
+. (31) Rearranging (31) yields KX
+
+> k=1
+
+∇ek ∇ek f = ∆ FS f +
+
+> K
+
+X
+
+> k=1
+
+∇∇ek ek f. 
+
+Since ∇v f = ⟨∇ FS f, v ⟩FS for any vector field v, we obtain 
+
+> K
+
+X
+
+> k=1
+
+∇∇ek ek f =
+
+> K
+
+X
+
+> k=1
+
+⟨∇ FS f, ∇ek ek⟩FS .
+
+Substituting into (25) gives (26) and the explicit remainder (27) . Finally, if the orthonormal frame is geodesic at x (so 
+
+∇ek ek(x) = 0 ), then Rtf (x) = 0 .
+
+## B. SSE Realization and the Induced Diffusion on CP d−1
+
+This appendix explains how the Stratonovich stochastic Schr ¨odinger dynamics on the unit Hilbert sphere induces an (approximately) isotropic diffusion on the projective manifold CP d−1 after quotienting out the global phase. We also clarify in what sense the induced generator matches the intrinsic manifold diffusion in Eq. (8) up to curvature/connection terms. 
+
+B.1. From the Hilbert Sphere to the Projective Manifold 
+
+Let S2d−1 = {ψ ∈ Cd : ⟨ψ, ψ ⟩ = 1 } be the unit sphere in Cd equipped with the standard (real) Riemannian structure. The complex projective space CP d−1 is obtained as the quotient S2d−1/U (1) under the global phase action ψ ∼ eiθ ψ, with the canonical projection 
+
+π : S2d−1 → CP d−1, π(ψ) = [ ψ]. (32) The vertical space at ψ is spanned by the infinitesimal phase direction v(ψ) = iψ . We use the horizontal distribution 
+
+Hψ := {u ∈ Tψ S2d−1 : ⟨ψ, u ⟩ = 0 }, (33) which removes the phase component and is compatible with the Fubini–Study geometry. 
+
+Lemma B.1 (Quotient structure and horizontal lift) . With the horizontal distribution (33) , π is a Riemannian submersion onto (CP d−1, g FS ). Moreover, for each ψ ∈ S2d−1, the differential π∗ restricts to an isomorphism Hψ ∼= T[ψ]CP d−1.
+
+Lemma B.2 (Frame independence under phase) . Let V (ψ) ∈ H ψ be a horizontal vector field on S2d−1 satisfying U (1) -equivariance: V (eiθ ψ) = eiθ V (ψ). Then the pushforward e([ ψ]) := π∗V (ψ) is well-defined on CP d−1 (independent of the representative of [ψ]). 
+
+B.2. Horizontal Projection of SSE Vector Fields 
+
+Consider the Stratonovich SSE on S2d−1 (Eq. (10) in the main text): 
+
+d |ψt⟩ = − iH (t) |ψt⟩ dt − 12 η(t) X
+
+> k
+
+G2 
+
+> k
+
+|ψt⟩ dt − ipη(t) X
+
+> k
+
+Gk |ψt⟩ ◦ dW (k) 
+
+> t
+
+. (34) 13 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+The stochastic term is generated by vector fields Xk(ψ) := −i G kψ on S2d−1.In general, Xk(ψ) contains a vertical (phase) component. We define its horizontal projection by removing the component along ψ: eXk(ψ) := Xk(ψ) − ⟨ ψ, X k(ψ)⟩ ψ. (35) 
+
+Lemma B.3 (Horizontal projection removes the global phase component) . For any X(ψ) ∈ Tψ S2d−1, define eX(ψ) := 
+
+X(ψ) − ⟨ ψ, X (ψ)⟩ ψ. Then eX(ψ) ∈ H ψ . In particular, for Xk(ψ) = −iG kψ, the induced fields on CP d−1 defined by 
+
+ek([ ψ]) := π∗ eXk(ψ) ∈ T[ψ]CP d−1 (36) 
+
+are well-defined. 
+
+B.3. Induced Generator on CP d−1
+
+Proposition B.4 (Induced generator on CP d−1). Consider a Stratonovich SDE on S2d−1 driven by horizontal vector fields: 
+
+dψ t = V0(ψt, t ) dt +
+
+> K
+
+X
+
+> k=1
+
+Vk(ψt, t ) ◦ dW (k) 
+
+> t
+
+, (37) 
+
+where Vk(ψ, t ) ∈ H ψ and the induced fields ek([ ψ], t ) := π∗Vk(ψ, t ) are well-defined on CP d−1. Then the quotient process 
+
+xt := [ ψt] ∈ CP d−1 is a diffusion whose generator satisfies, for all f ∈ C∞(CP d−1),
+
+LCP  
+
+> t
+
+f = e0f + 12
+
+> K
+
+X
+
+> k=1
+
+ek(ekf ), (38) 
+
+where e0 is the pushforward of the horizontal component of V0.If, in addition, the diffusion directions are (approximately) isotropic under the FS metric, in the sense that 
+
+> K
+
+X
+
+> k=1
+
+⟨u, e k(x, t )⟩2FS = ∥u∥2FS for all u ∈ TxCP d−1, (39) 
+
+then 
+
+12
+
+> K
+
+X
+
+> k=1
+
+ek(ekf ) = 12 ∆FS f + Rtf, (40) 
+
+where Rt collects Levi–Civita connection terms induced by the (generally non-parallel) local frame {ek}. Consequently, the induced generator can be written as 
+
+LCP  
+
+> t
+
+f = ⟨a(·, t ), ∇FS f ⟩FS + σ(t)2
+
+2 ∆FS f + σ(t)2 Rtf, (41) 
+
+which matches the intrinsic FS diffusion generator in Eq. (8) up to curvature/connection effects. 
+
+Connection to the SSE in Eq. (10) . Eq. (34) fits into Proposition B.4 by taking Vk(ψ, t ) = −ipη(t) eXk(ψ) (and incorporating the remaining deterministic terms into V0). Up to a normalization constant that depends on the convention for 
+
+{Gk}, σ(t)2 is proportional to η(t).
+
+B.4. What “Up to Curvature Terms” Means in Practice 
+
+The remainder Rt in Eq. (40) arises because: (i) on a curved manifold, ∆FS is the trace of the covariant Hessian, whereas P 
+
+> k
+
+ek(ek·) depends on the chosen local frame and introduces connection terms; and (ii) the pushed-forward fields {ek}
+
+constructed from a fixed Lie-algebra basis {Gk} need not coincide with a geodesic orthonormal frame at every point. 
+
+Corollary B.5 (Small-step regime suppresses curvature remainder) . Assume the reverse-time sampler and the local-time objective use a step size δt and map tangent increments back to M via Exp (or a retraction) in locally orthonormal frames. Then the accumulated effect of Rt scales to higher order in δt (and vanishes as δt → 0), so the resulting discrete-time updates approximate the intrinsic diffusion (8) without requiring explicit coordinate correction terms. 
+
+14 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+B.5. Sanity Checks for the SSE-Induced Isotropy Proposition B.6 (Soundness of practical isotropy diagnostics) . Consider a drift-free diffusion (xt)t≥0 on (CP d−1, g FS )
+
+with generator 
+
+Lf = σ2
+
+2 ∆FS f, f ∈ C∞(CP d−1), (42) 
+
+i.e., (time-homogeneous) FS-Brownian motion up to a diffusion-rate factor σ2. Then: (i) The unitarily-invariant FS/Haar measure μFS is stationary for (xt), i.e., if x0 ∼ μFS then xt ∼ μFS for all t ≥ 0.(ii) (Moment/observable test.) For any bounded measurable observable ϕ : CP d−1 → R,
+
+Ex∼μFS [ϕ(x)] = lim  
+
+> t→∞
+
+Eϕ(xt) | x0 = x for μFS -a.e. x, (43) 
+
+whenever the process is ergodic w.r.t. μFS . In particular, empirical averages of low-order overlap/observable statistics computed from long-time samples converge to the corresponding FS/Haar expectations. (iii) (Generator test.) For any f ∈ C∞(CP d−1),
+
+E
+
+ f (xt+δ ) − f (xt)
+
+δ xt = x
+
+
+
+−−→ 
+
+> δ↓0
+
+(Lf )( x) = σ2
+
+2 (∆ FS f )( x), (44) 
+
+so short-time numerical estimates of the generator on probe functions necessarily scale with ∆FS .Consequently, if an SSE-induced (or numerically implemented) dynamics is a faithful discretization/realization of the isotropic FS diffusion (42) , then diagnostics based on (ii)–(iii) must hold. Conversely, passing these diagnostics for a finite family of observables/probe functions provides empirical support but does not by itself imply full isotropy. Proof. (i) Stationarity of μFS . Let μFS denote the Riemannian volume measure induced by gFS , normalized to be a probability measure. On a compact boundaryless Riemannian manifold, the Laplace–Beltrami operator is symmetric w.r.t. the volume measure: for all f, g ∈ C∞(CP d−1),
+
+Z
+
+f ∆FS g dμ FS =
+
+Z
+
+g ∆FS f dμ FS = −
+
+Z
+
+⟨∇ FS f, ∇FS g⟩FS dμ FS . (45) In particular, taking f ≡ 1 yields R ∆FS g dμ FS = 0 , hence R Lg dμ FS = σ2
+
+> 2
+
+R ∆FS g dμ FS = 0 . Equivalently, L∗μFS = 0 ,so μFS is stationary for the Markov semigroup generated by L.
+
+(ii) Long-time moment/observable convergence (ergodic case). Assume ergodicity w.r.t. μFS (true for FS-Brownian motion on compact connected manifolds). Then by the ergodic theorem for Markov processes, for any integrable observable 
+
+ϕ, time averages (and, under mild additional mixing assumptions, also long-time marginals) converge to R ϕ dμ FS . In particular, empirical averages of low-order overlap/observable statistics computed from sufficiently long trajectories converge to the FS/Haar expectations. 
+
+(iii) Generator test. By definition of the (infinitesimal) generator of a Markov process, for f in the domain of L (in particular C∞), 
+
+(Lf )( x) = lim 
+
+> δ↓0
+
+E[f (xt+δ ) | xt = x] − f (x)
+
+δ . (46) This gives (44). Substituting (42) yields (Lf )( x) = σ2 
+
+> 2
+
+∆FS f (x).
+
+## C. Time Reversal and Riemannian Score on CP d−1
+
+C.1. Forward Diffusion Generator Proposition C.1 (Forward generator on (M, g FS )). Let (M, g FS ) be a Riemannian manifold and consider the time-inhomogeneous diffusion 
+
+dψ t = b(ψt, t ) dt + σ(t) dW (M) 
+
+> t
+
+, (47) 15 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+where W (M) 
+
+> t
+
+denotes Brownian motion associated with gFS and b(·, t ) is a smooth vector field. Then for any f ∈ C∞(M),the infinitesimal generator of ψt is 
+
+(Ltf )( ψ) = ⟨b(ψ, t ), ∇FS f (ψ)⟩FS + σ(t)2
+
+2 ∆FS f (ψ), (48) 
+
+where ∇FS and ∆FS denote the Riemannian gradient and Laplace–Beltrami operator induced by gFS .Proof. This is the standard generator formula for a diffusion with drift b and isotropic Brownian noise on a Riemannian manifold. The Brownian component contributes 12 ∆FS , and the scaling by σ(t) yields the factor σ(t)2 
+
+> 2
+
+.
+
+C.2. Reverse-Time Dynamics and the Riemannian Score Proposition C.2 (Reverse-time drift and Riemannian score) . Let (M, g FS ) be a compact Riemannian manifold without boundary and consider the forward diffusion 
+
+dψ t = b(ψt, t ) dt + σ(t) dW (M) 
+
+> t
+
+, t ∈ [0 , T ], (49) 
+
+where W (M) 
+
+> t
+
+is Brownian motion associated with gFS . Let pt denote the density of ψt with respect to the Riemannian volume measure, and assume pt is smooth and strictly positive for t ∈ (0 , T ].Then the time-reversed process {ψT −t}t∈[0 ,T ] is again a diffusion on M with the same diffusion coefficient. In intrinsic Stratonovich form, its dynamics can be written as 
+
+dψ t = ˜b(ψt, t ) dt + σ(t) d ¯W (M) 
+
+> t
+
+, (50) 
+
+where ¯W (M) 
+
+> t
+
+is reverse-time Brownian motion and the reverse drift satisfies 
+
+˜b(ψ, t ) = b(ψ, t ) − σ(t)2 ∇FS log pt(ψ). (51) 
+
+Equivalently, the reverse drift depends on the Riemannian score 
+
+s⋆(ψ, t ) := ∇FS log pt(ψ) ∈ Tψ M. (52) 
+
+Proof. This result follows from the time-reversal theory of nondegenerate diffusions on Riemannian manifolds when the forward diffusion is defined using Brownian motion associated with the Riemannian volume measure. In intrinsic Stratonovich form, the reverse drift differs from the forward drift by −σ(t)2∇FS log pt. See, e.g., Haussmann and Pardoux (1986) and Fathi (2021) for rigorous statements. 
+
+## D. Coordinate Form and Itˆ o Corrections for the Reverse-Time SDE 
+
+This appendix unpacks the remark in Sec. 3.2 on geometry-dependent correction terms. We state the intrinsic Stratonovich reverse-time SDE and then provide its coordinate/Itˆ o representations. 
+
+D.1. Intrinsic Stratonovich form 
+
+Let (M, g ) be a Riemannian manifold and consider the reverse-time diffusion written intrinsically in Stratonovich form 
+
+dψ t = ˜b(ψt, t ) dt + σ(t) d ¯W (M) 
+
+> t
+
+, (53) where ¯W (M) 
+
+> t
+
+denotes reverse-time Brownian motion on (M, g ). Equivalently, fixing a (local) orthonormal frame {ei(·)}ni=1 
+
+on M (n = dim M), one may represent Brownian motion as 
+
+d ¯W (M) 
+
+> t
+
+=
+
+> n
+
+X
+
+> i=1
+
+ei(ψt) ◦ d ¯W (i) 
+
+> t
+
+, (54) so that (53) becomes 
+
+dψ t = ˜b(ψt, t ) dt + σ(t)
+
+> n
+
+X
+
+> i=1
+
+ei(ψt) ◦ d ¯W (i) 
+
+> t
+
+. (55) 16 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+D.2. Conversion to Itˆ o form 
+
+Let ∇ be the Levi–Civita connection associated with g. The Stratonovich SDE (55) can be converted to an equivalent It ˆoSDE: 
+
+dψ t =
+
+˜b(ψt, t ) + σ(t)2
+
+2
+
+> n
+
+X
+
+> i=1
+
+∇ei ei(ψt)
+
+
+
+dt + σ(t)
+
+> n
+
+X
+
+> i=1
+
+ei(ψt) d ¯W (i) 
+
+> t
+
+. (56) The additional drift term σ(t)2
+
+> 2
+
+P 
+
+> i
+
+∇ei ei is the geometry-dependent It ˆo–Stratonovich correction; it vanishes at a point where the chosen orthonormal frame is geodesic (normal) (i.e., ∇ei ei = 0 at that point). 
+
+D.3. Local coordinate form 
+
+Let (x1, . . . , x n) be local coordinates and write the Itˆ o SDE in components: 
+
+dx αt =
+
+˜bα(xt, t ) + σ(t)2
+
+2
+
+> n
+
+X
+
+> i=1
+
+ ∇ei ei
+
+α(xt)
+
+
+
+dt + σ(t)
+
+> n
+
+X
+
+> i=1
+
+eαi (xt) d ¯W (i) 
+
+> t
+
+. (57) Equivalently, one may express the correction in terms of Christoffel symbols Γαβγ if the diffusion is written using the coordinate basis; such expressions coincide with (56) after identifying eαi and using ∇ei eαi = eβi ∂β eαi + Γ αβγ eβi eγi .In our implementation, each update is performed in a locally orthonormal frame on Tψ M and then mapped back to the manifold using Exp (or a retraction). For sufficiently small step size δt , one may choose the frame to be (approximately) normal at the current point, so that P 
+
+> i
+
+∇ei ei(ψ) is O(δt ) and the induced bias from the It ˆo–Stratonovich correction is higher order. This is consistent with the small-step regime assumed in our sampler and in the local-time teacher construction. 
+
+## E. Local-Time Approximation and Teacher Scores 
+
+Proposition E.1 (Short-time asymptotics and the local teacher score) . Let (M, g ) be a smooth n-dimensional Riemannian manifold (in our case, (CP d−1, g FS ) with n = 2 d − 2). Consider the time-inhomogeneous diffusion 
+
+dψ t = b(ψt, t ) dt + σ(t) dW (M) 
+
+> t
+
+, (58) 
+
+where W (M) 
+
+> t
+
+is Brownian motion associated with g and b(·, t ) is C2 in space and continuous in time. Fix t ∈ (0 , T ] and let 
+
+δt > 0 be small. Condition on ψt−δt = ϕ. Assume ψt stays within the injectivity radius of ϕ (so log ϕ is well-defined). Let pδt (ψ | ϕ) denote the conditional density of ψt given ϕ, with respect to the Riemannian volume measure. Let 
+
+z = log ϕ(ψ) ∈ TϕM be normal coordinates at ϕ, and write r = dg (ϕ, ψ ) = ∥z∥ + O(∥z∥3).Then the short-time transition density admits the heat-kernel asymptotic expansion 
+
+pδt (ψ | ϕ) = (2 πσ (t)2δt )−n/ 2 exp 
+
+
+
+− r2
+
+2σ(t)2δt 
+
+
+
+J(ϕ, ψ )−1/2 
+
+1 + O(δt )
+
+
+
+, (59) 
+
+where J(ϕ, ψ ) is the Jacobian determinant of the exponential map (equivalently the volume distortion term) and the O(δt )
+
+is uniform on compact subsets inside the injectivity neighborhood. Consequently, the intrinsic conditional score satisfies, as δt ↓ 0,
+
+∇ψ log pδt (ψ | ϕ) = − 1
+
+σ(t)2δt ∇ψ
+
+ r2
+
+2
+
+
+
+− 12 ∇ψ log J(ϕ, ψ ) + O(1) , (60) 
+
+where O(1) is bounded as δt ↓ 0 (locally uniformly away from the cut locus). Moreover, in normal coordinates z = log ϕ(ψ), the leading term becomes Euclidean: 
+
+ d log ϕ
+
+∗ 
+
+> ψ
+
+∇ψ log pδt (ψ | ϕ) = − 1
+
+σ(t)2δt z + O(∥z∥) + O(1) , (61) 
+
+so that the Gaussian teacher score s(teach)  
+
+> z
+
+(z) = − σ(t)2δt −1z matches the dominant short-time behavior, and mapping it back via  d log ϕ
+
+∗ 
+
+> ψ
+
+gives a first-order approximation to the intrinsic conditional score. 
+
+17 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Proof. We use standard short-time heat-kernel asymptotics for nondegenerate diffusions on Riemannian manifolds. 
+
+Step 1 (Reduction to a frozen-time operator). Over a short interval [t − δt, t ], freeze coefficients at time t: the generator is Lt = ⟨b(·, t ), ∇(·)⟩ + σ(t)2 
+
+> 2
+
+∆. The drift contributes only an O(δt ) shift in the mean and enters the prefactor at order O(1) 
+
+in the score; the singular δt −1 behavior is determined by the diffusion (the Laplace–Beltrami part). Therefore, the leading short-time asymptotics are governed by the heat kernel of σ(t)2 
+
+> 2
+
+∆ (with lower-order perturbations absorbed into the O(δt )
+
+factor in (59)). 
+
+Step 2 (Heat kernel expansion). Let qδt (ψ, ϕ ) be the heat kernel associated with σ(t)2 
+
+> 2
+
+∆. On the injectivity neighborhood of ϕ, the classical Minakshisundaram–Pleijel (Hadamard) parametrix gives 
+
+qδt (ψ, ϕ ) = (2 πσ (t)2δt )−n/ 2 exp 
+
+
+
+− dg (ϕ, ψ )2
+
+2σ(t)2δt 
+
+
+
+J(ϕ, ψ )−1/2  1 + O(δt ),
+
+uniformly on compact subsets away from the cut locus. This yields (59) for pδt (ψ | ϕ) up to lower-order perturbations induced by b, which remain inside the (1 + O(δt )) factor. 
+
+Step 3 (Differentiate log pδt to obtain the score). Take log of (59) and differentiate w.r.t. ψ: the normalization term contributes zero gradient, while the exponential term gives 
+
+∇ψ log pδt (ψ | ϕ) = − 1
+
+σ(t)2δt ∇ψ
+
+ dg (ϕ, ψ )2
+
+2
+
+
+
+− 12 ∇ψ log J(ϕ, ψ ) + O(1) ,
+
+where O(1) collects the gradient of log(1 + O(δt )) and drift-induced lower-order terms. This proves (60). 
+
+Step 4 (Normal coordinates and leading Euclidean form). In normal coordinates z = log ϕ(ψ), we have dg (ϕ,ψ )2 
+
+> 2
+
+= 
+
+> ∥z∥2
+> 2
+
++ O(∥z∥4) and  d log ϕ
+
+∗ 
+
+> ψ
+
+∇ψ dg (ϕ,ψ )2 
+
+> 2
+
+= z + O(∥z∥3). Also, ∇ψ log J(ϕ, ψ ) = O(∥z∥) near ϕ (volume distortion starts at quadratic order in normal coordinates). Substituting these into (60) yields (61). 
+
+## F. Riemannian Denoising Score Matching: Consistency 
+
+For fixed t and δt , the training pair (ϕ, ψ ) is generated by simulating the forward diffusion starting from data ψ0 ∼ p0, i.e., 
+
+(ϕ, ψ ) = ( ψt−δt , ψ t).
+
+This induces a joint density p(ϕ, ψ ) and the corresponding conditional density p(ψ | ϕ). The population objective in Eq. (20) is exactly J[s] in Eq. (62) with target 
+
+u(ψ, ϕ ) = ∇FS log p(ψ | ϕ).
+
+In practice, we replace u by the local-time teacher approximation in Eqs. (17)–(18), whose consistency in the limit δt → 0
+
+is established in Proposition F.2. 
+
+Proposition F.1 (Population optimum of Riemannian DSM equals the marginal score) . Let (M, g FS ) be a compact Riemannian manifold without boundary and let pt denote the time-marginal density of the forward diffusion w.r.t. the Riemannian volume measure. Fix t ∈ (0 , T ] and a step δt > 0. Let (ϕ, ψ ) = ( ψt−δt , ψ t) be drawn from the forward process, and denote the conditional density p(ψ | ϕ) (again w.r.t. the Riemannian volume measure). Consider the population objective over measurable tangent vector fields s(·, t ) : M → T M:
+
+J [s] := E
+
+h
+
+λ(t, δt ) ∥s(ψ, t ) − ∇ FS log p(ψ | ϕ)∥2FS 
+
+i
+
+, (62) 
+
+where the expectation is over ψ0 ∼ p0 and the forward diffusion randomness, and λ(t, δt ) > 0 is any weight that does not depend on s.Then any minimizer s⋆(·, t ) of (62) satisfies, pt-a.e. in ψ,
+
+s⋆(ψ, t ) = ∇FS log pt(ψ). (63) 
+
+Equivalently, the DSM objective distills conditional scores into the marginal Riemannian score. 
+
+18 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Proof. Fix t and abbreviate S(ψ) := s(ψ, t ). By conditioning on ψ, we can write 
+
+J [S] = Eψ
+
+h
+
+λ(t, δt ) E∥S(ψ) − U ∥2FS ψi
+
+,
+
+where U := ∇FS log p(ψ | ϕ) ∈ Tψ M. Since λ(t, δt ) > 0 is a constant given (t, δt ), minimization over S is pointwise in 
+
+ψ. For each fixed ψ, the unique minimizer of E[∥S(ψ) − U ∥2 | ψ] is 
+
+S⋆(ψ) = E[U | ψ]. (64) It remains to show E[∇FS log p(ψ | ϕ) | ψ] = ∇FS log pt(ψ). Let p(ϕ, ψ ) be the joint density of (ϕ, ψ ) and pt(ψ) the marginal. Using p(ψ | ϕ) = p(ϕ, ψ )/p t−δt (ϕ), we have 
+
+∇FS log p(ψ | ϕ) = ∇FS log p(ϕ, ψ ),
+
+because pt−δt (ϕ) does not depend on ψ. Therefore, 
+
+E∇FS log p(ψ | ϕ) | ψ =
+
+Z
+
+∇FS log p(ϕ, ψ ) p(ϕ | ψ) dϕ. 
+
+Since p(ϕ | ψ) = p(ϕ, ψ )/p t(ψ), the integral becomes 
+
+1
+
+pt(ψ)
+
+Z
+
+∇FS p(ϕ, ψ ) dϕ = ∇FS pt(ψ)
+
+pt(ψ) = ∇FS log pt(ψ),
+
+where we used that differentiation w.r.t. ψ commutes with integration in ϕ under the stated smoothness/compactness assumptions. Combining with (64) yields (63). 
+
+Proposition F.2 (Consistency of the local-time teacher objective) . Under the assumptions of Proposition F.1, suppose the teacher score s(teach) (ψ, ϕ, t, δt ) satisfies the short-time approximation 
+
+s(teach) (ψ, ϕ, t, δt ) = ∇FS log p(ψ | ϕ) + ε(ψ, ϕ, t, δt ), (65) 
+
+with 
+
+E∥ε(ψ, ϕ, t, δt )∥2FS 
+
+ −−−→ 
+
+> δt ↓0
+
+0, (66) 
+
+for each fixed t (uniformly on compact subsets away from the cut locus). Then the population minimizer of the practical objective 
+
+eJ [s] := E
+
+h
+
+λ(t, δt ) ∥s(ψ, t ) − s(teach) (ψ, ϕ, t, δt )∥2FS 
+
+i
+
+(67) 
+
+converges (in L2(pt)) to the marginal score ∇FS log pt(ψ) as δt ↓ 0.Proof. Let U := ∇FS log p(ψ | ϕ) and ˆU := s(teach) = U + ε. As in Proposition F.1, the pointwise minimizer of (67) satisfies 
+
+s⋆δt (ψ, t ) = E[ ˆU | ψ] = E[U | ψ] + E[ε | ψ].
+
+By Proposition F.1, E[U | ψ] = ∇FS log pt(ψ). Moreover, by Jensen, 
+
+E∥E[ε | ψ]∥2FS 
+
+ ≤ E∥ε∥2FS 
+
+ −−−→ 
+
+> δt ↓0
+
+0,
+
+which implies s⋆δt (·, t ) → ∇ FS log pt(·) in L2(pt).
+
+Lemma F.3 (Projection to Tψ M does not change the optimum) . Let u(ψ) ∈ Tψ M be any target tangent field and let ˆs(ψ)
+
+be an arbitrary ambient vector. Then 
+
+∥P ψ (ˆ s(ψ)) − u(ψ)∥2FS = ∥P ψ (ˆ s(ψ)) − u(ψ)∥2FS + (term independent of u),
+
+and the minimizer over ambient ˆs is achieved when Pψ (ˆ s(ψ)) = u(ψ). In particular, including Pψ in the loss enforces tangency without altering the target optimum. 
+
+19 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+## G. Experimental Setup 
+
+Target ensembles and modeled object. Across all experiments, the generative model is trained to model a distribution over normalized pure quantum states. The target pure-state ensemble is constructed in two ways. For the main generative experiments (RQ1–RQ3), the target dataset is a synthetic pure-state ensemble constructed directly in Hilbert space; these experiments do not start from a classical raw-input dataset x. For the QML augmentation experiments (RQ4), we first construct a labeled raw-input dataset {(xi, y i)} and then encode each input into a quantum feature state |ψ(xi)⟩. In both cases, SSDM operates in quantum representation space: it models and generates normalized pure states rather than raw classical inputs. Thus, classical data appear only as one possible mechanism for constructing a target pure-state ensemble. 
+
+Synthetic training data construction. For the controlled pure-state ensemble experiments, we follow the same data-generation protocol as QuDDPM (Zhang et al., 2024). For an n-qubit system with Hilbert-space dimension d = 2 n, we generate a cluster of states around the computational basis state |0 · · · 0⟩ by applying small complex Gaussian perturbations followed by normalization: 
+
+|ψ⟩ = |0 · · · 0⟩ + ϵ ξ 
+
+∥| 0 · · · 0⟩ + ϵ ξ ∥ , ξ ∼ CN (0 , I d). (68) All samples are simulated as normalized statevectors; no quantum hardware measurements or finite-shot estimation are used in these experiments. We draw mini-batches of size 64 from a pool of 4096 target states and generate 256 samples for evaluation. 
+
+Forward diffusion and prior. We construct an intrinsic Riemannian OU forward diffusion on CP d−1 under the FS metric, with diffusion horizon T and diffusion schedule σ(t). In all reported experiments, we set the diffusion horizon to T = 1 and use 500 discretization steps, so the local-time step is δt = 1 /500 . The noise schedule follows an exponential interpolation between σmin = 0 .05 and σmax = 1 .0. The OU drift strength is fixed to λOU = 0 .2. For the prior pT , we use a Clifford 
+
+t-design ensemble as the default due to its efficient sampling. 
+
+Score model and training. Unless otherwise noted, we parameterize the score model sθ (ψ, t ) using a classical neural network that outputs a tangent vector field. We train sθ using the Riemannian denoising score matching objective in Eq. (19) , with analytic local-time teacher scores derived from the FS normal-coordinate OU approximation (Section 3.3). The score network takes as input the concatenated real and imaginary parts of the statevector, yielding a 2d-dimensional state representation, together with a 128 -dimensional time embedding. It is implemented as a five-layer fully connected MLP with hidden width 512 and SiLU activations, and its output is projected onto the horizontal tangent space of CP d−1 to respect the manifold geometry. We train for 10 ,000 optimization steps using AdamW with learning rate 2 × 10 −4 and gradient clipping at norm 1.0. The loss uses variance-based weighting λ(t, δt ) = β(t, δt )2, consistent with VP-style denoising score matching. 
+
+Sampling and numerical integration. We simulate forward and reverse processes using a manifold-adapted Euler– Maruyama scheme: we take Euler steps in the tangent space and retract back to CP d−1 via the FS exponential map (or a first-order retraction) as in Eq. (21) . Reverse-time sampling is performed with 500 Euler–Maruyama steps on the manifold, and 256 generated samples are used for evaluation. We report results averaged over M random seeds. All experiments are conducted on an NVIDIA A6000 GPU. 
+
+Reporting protocol. In the main paper we report results for n = 2 , 4, 6 qubits as the largest setting in our evaluation, and defer results for n ∈ { 2, 4, 6} . All methods use the same feature map, training budget, and evaluation metrics unless stated otherwise. 
+
+G.1. Evaluation Metrics 
+
+Evaluating quantum generative models requires distributional metrics beyond pointwise fidelity. We use a combination of the following: 
+
+Fidelity to target ensemble. We additionally report the average state fidelity between generated samples and the target ensemble, defined as 
+
+F0 = Eψ∼pgen , ϕ ∼pdata 
+
+ | ⟨ ψ⟩ ϕ|2 . (69) 20 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Higher values of F0 indicate closer overlap between generated and target pure states. 
+
+Observable statistics. Given a set of observables {Oj }Jj=1 , we compare the generated and target ensembles via moment matching: 
+
+∆obs 
+
+= 1
+
+J
+
+> J
+
+X
+
+> j=1
+
+Eψ∼pgen 
+
+ ⟨ψ| Oj |ψ⟩  − Eψ∼pdata 
+
+ ⟨ψ| Oj |ψ⟩  . (70) 
+
+Kernel MMD on pure states. We measure distributional similarity using the maximum mean discrepancy (MMD) with an overlap kernel: 
+
+k(ψ, ϕ ) = | ⟨ ψ⟩ ϕ|2,
+
+MMD 2(p, q ) = Ep,p [k] + Eq,q [k] − 2Ep,q [k]. (71) 
+
+Entanglement statistics. To capture nonlocal structure, we compare distributions of subsystem entanglement, measured by von Neumann entropy: 
+
+SA(ψ) = −Tr  ρA log ρA
+
+, ρA = Tr ¯A |ψ⟩ ⟨ ψ| . (72) We report Wasserstein distances between entropy histograms and compare mean/variance. To compare entanglement statistics at the distributional level, we compute the entropic Wasserstein-1 distance between histograms of subsystem entropies: 
+
+Ent . W1(p, q ) = W ε 
+
+> 1
+
+(Hp(SA), Hq (SA)) , (73) where H(·) denotes the empirical entropy histogram and W ε 
+
+> 1
+
+is the entropy-regularized Wasserstein distance. Lower values indicate closer agreement of entanglement structure. 
+
+Downstream QML performance. For QML utility, we evaluate classification or regression performance using (i) quantum kernel methods and (ii) variational quantum classifiers, trained on original and augmented quantum encodings (Section 5.4). 
+
+G.2. Baselines 
+
+We compare SSDMs with the following baselines: • Euclidean VP-SDE. A naive score-based diffusion model trained on the same target quantum-state samples as SSDM, but represented extrinsically in an ambient Euclidean coordinate system. Each normalized state ψ ∈ Cd is mapped to a real vector in R2d by concatenating its real and imaginary parts, and a standard Euclidean VP-SDE with denoising score matching is trained on these vectors. During sampling, the Euclidean model first generates vectors in R2d; these vectors are mapped back to complex vectors in Cd and normalized to unit norm before evaluation. Therefore, this baseline is not trained in the original classical input space, but on the same quantum states as SSDM under an extrinsic Euclidean representation. • QGAN (Lloyd & Weedbrook, 2018b). A variational quantum generative adversarial model trained via measurement-based losses. • QuDDPM (Zhang et al., 2024). A circuit-based quantum denoising diffusion probabilistic model. • RSGM (Bortoli et al., 2022). A Riemannian score-based diffusion model on the manifold of pure quantum states. We adapt RSGM to CP d−1 using the standard Riemannian Brownian motion construction, without local-time analytic teacher supervision. • Ablated SSDMs. Variants of our method with key components removed. In addition to generative quality, we evaluate the representation-level impact of SSDM-based augmentation on downstream quantum machine learning tasks. For the circuit-based baselines, QGAN uses a 120 -layer parameterized quantum-circuit generator and a 16 -layer parameterized quantum-circuit discriminator, while QDDPM/QuDDPM uses time-dependent parameterized quantum circuits with 6 layers per diffusion step over T = 20 denoising steps. 21 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation          
+
+> Table 3. Ablations on local-time supervision and score construction for n= 2 ,4,6qubits (RQ3). Higher is better for fidelity F0, while lower is better for MMD, ∆obs , and entanglement Wasserstein distance.
+
+n = 2 F0 ↑ MMD ↓ ∆obs ↓ Ent. W 1 ↓
+
+No local teacher 0.6818 1.1912 × 10 −1 3.9591 × 10 −1 2.1341 × 10 −1
+
+Finite-difference teacher 0.9381 2.3944 × 10 −3 5.4271 × 10 −2 4.8452 × 10 −2
+
+Analytic OU teacher (ours) 0.9582 2.0351 × 10 −3 2.8584 × 10 −2 2.6872 × 10 −2
+
+n = 4 F0 ↑ MMD ↓ ∆obs ↓ Ent. W 1 ↓
+
+No local teacher 0.1579 5.8873 × 10 −1 7.8866 × 10 −1 6.5886 × 10 −1
+
+Finite-difference teacher 0.6763 6.1424 × 10 −2 2.3786 × 10 −1 3.3521 × 10 −1
+
+Analytic OU teacher (ours) 0.8144 1.4391 × 10 −2 9.7529 × 10 −2 1.6561 × 10 −1
+
+n = 6 F0 ↑ MMD ↓ ∆obs ↓ Ent. W 1 ↓
+
+No local teacher 0.0213 4.5677 × 10 −1 6.8235 × 10 −1 6.9585 × 10 −1
+
+Finite-difference teacher 0.1476 2.9737 × 10 −1 5.5325 × 10 −1 6.5607 × 10 −1
+
+Analytic OU teacher (ours) 0.3922 9.6945 × 10 −2 3.0519 × 10 −1 4.6613 × 10 −1
+
+Kernel alignment. Kernel alignment measures the agreement between the task kernel and label similarity. Given a kernel matrix K and label vector y, the alignment is defined as 
+
+KA( K, y ) = ⟨K, yy ⊤⟩F
+
+∥K∥F ∥yy ⊤∥F
+
+, (74) where ⟨· , ·⟩ F denotes the Frobenius inner product. Higher kernel alignment indicates a more task-relevant quantum representation. 
+
+Kernel gap. The kernel gap quantifies class separability in feature space by measuring the difference between intra-class and inter-class similarities: 
+
+Gap( K) = E(i,j )∈S [Kij ] − E(i,j )∈D [Kij ], (75) where S and D denote sets of same-class and different-class pairs, respectively. Larger kernel gaps correspond to improved class separation. 
+
+Mean margin. We further evaluate the margin induced by the quantum kernel classifier. Given the learned decision function f (·), the margin of a sample (xi, y i) is 
+
+γi = yif (xi), (76) and we report the mean margin over the training set: 
+
+Margin = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+γi. (77) Higher mean margins indicate more robust and discriminative representations. These representation-level metrics complement generative evaluation by assessing how improved sample quality translates into more discriminative and task-aligned quantum representations. All baselines are evaluated under the same statevector access assumption and classical simulation setting. Circuit-based methods are simulated classically, and no hardware noise is assumed. 
+
+## H. Discussion 
+
+We proposed Stochastic Schr ¨odinger Diffusion Models (SSDMs), a score-based generative framework for learning and sampling distributions over quantum pure states on CP d−1. SSDMs generalize Euclidean score-based diffusion to the quantum setting by (i) designing an intrinsic Riemannian OU forward diffusion on the pure-state manifold with a stochastic 22 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Table 4. Representation-level improvements induced by SSDM-based augmentation in downstream QML tasks (RQ4). Results are reported for n = 2 , 4, 6 qubits. 
+
+Qubits Training Set Kernel Alignment ↑ Kernel Gap ↑ Mean Margin ↑
+
+n = 2 Original only 0.1749 0.0155 0.0304 + SSDM augmentation 0.2747 0.0254 0.0527 
+
+n = 4 Original only 0.1054 0.0109 0.0126 + SSDM augmentation 0.1594 0.0201 0.0118 
+
+n = 6 Original only 0.0831 0.0039 0.0559 + SSDM augmentation 0.1053 0.0081 0.0518 10 1                           
+
+> 10 2
+> n=2
+> Training loss
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> F0
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> MMD
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> obs
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> Ent. W 1
+> 10 2
+> n=4
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 02000 4000 6000 8000 10000
+> Steps
+> 10 2
+> 10 3
+> n=6
+> 02000 4000 6000 8000 10000
+> Steps
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 02000 4000 6000 8000 10000
+> Steps
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 02000 4000 6000 8000 10000
+> Steps
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 02000 4000 6000 8000 10000
+> Steps
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> Analytic OU teacher (ours) FD Non-local
+
+Figure 2. Training stability across system sizes n ∈ { 2, 4, 6} (rows). Columns report training loss, F0, MMD, ∆obs , and entropic Wasserstein distance (Ent. W 1). 
+
+Schr ¨odinger (SSE) realization, and (ii) learning a Riemannian score field under the Fubini–Study (FS) geometry. A key practical challenge—the intractability of transition densities on curved manifolds—is addressed via a local-time learning signal derived from the local Euclidean OU limit of the forward diffusion in FS normal coordinates. This yields an analytic Gaussian teacher score for short-time transitions in the tangent space, which is mapped back to the manifold via the logarithm map. In FS normal coordinates, the forward diffusion reduces to a first-order OU/VP process with curvature corrections, providing a principled bridge to classical score-based diffusion models. 
+
+H.1. Relation to Prior Work and the Role of Generative Sampling 
+
+Existing quantum diffusion efforts often emphasize (a) channel-based diffusion and learned inverse maps, or (b) stochastic trajectory formulations with recovery/control interpretations. In contrast, SSDMs directly target generative modeling of 
+
+pure-state ensembles by enabling sampling from an implicit distribution p0(ψ). Our objective aligns naturally with QML, where data are frequently encoded as pure states and downstream tasks may benefit from learning and generating quantum representations. A conceptual difference is that SSDMs treat the state space as a Riemannian manifold and formulate the reverse-time 23 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+dynamics in terms of the Riemannian score :
+
+s⋆(ψ, t ) = ∇FS log pt(ψ) ∈ Tψ CP d−1. (78) This geometric viewpoint yields a coordinate-free generalization of the score-based paradigm and avoids gauge ambiguities associated with global phase. 
+
+H.2. Why Stochastic Schr¨ odinger Diffusion? 
+
+Beyond providing a physical realization, the SSE perspective clarifies how to design forward diffusions that remain stable on curved pure-state manifolds while retaining compatibility with score-based time reversal. SSE-based dynamics naturally define stochastic pure-state trajectories while remaining consistent with open-system evolution in expectation. Beyond physical motivation, SSEs provide a flexible design principle for constructing stable forward diffusions on CP d−1. In SSDMs, we make this precise by designing a Riemannian OU diffusion on the pure-state manifold and providing an SSE realization, thereby obtaining an intrinsic forward process that is OU/VP to first order in FS normal coordinates. The core quantity required for sampling appears explicitly in the reverse-time drift. For the intrinsic manifold diffusion 
+
+dψ t = b(ψt, t ) dt + σ(t) dW (M) 
+
+> t
+
+, (79) time reversal yields the reverse-time sampler 
+
+dψ t = b(ψt, t ) − σ(t)2 s⋆(ψt, t ) dt + σ(t) d ¯W (M) 
+
+> t
+
+,s⋆(ψ, t ) = ∇FS log pt(ψ), (80) up to coordinate-form geometry corrections (cf. Appendix D). Eq. (80) mirrors the Euclidean reverse SDE, but with the 
+
+Riemannian score under the FS metric. Once a model sθ (ψ, t ) ≈ s⋆(ψ, t ) is learned, sampling becomes straightforward by integrating Eq. (80) from a tractable prior pT .
+
+H.3. Learning Signals via Local OU Normal Coordinates 
+
+A practical limitation in manifold diffusion modeling is that the marginal density pt(ψ) (and hence the Riemannian score 
+
+s⋆(ψ, t ) = ∇FS log pt(ψ)) is not available in closed form on CP d−1. Rather than relying on explicit transition-kernel formulas, SSDMs leverage a local-time supervision signal based on a geometric fact: in FS normal coordinates, the intrinsic manifold diffusion admits a local Euclidean OU/VP approximation to first order, with curvature and volume-element effects entering only at higher order. 
+
+Analytic local-time teacher score. Given a short step size δt > 0, we form local-time pairs (ϕ, ψ ) := ( ψt−δt , ψ t) from the forward diffusion and define FS normal coordinates centered at ϕ by 
+
+z := log ϕ(ψ) ∈ TϕM. (81) In these coordinates, the short-time transition is well-approximated by a Euclidean OU/VP step 
+
+z ≈ β(t, δt ) ξ, ξ ∼ N (0 , I ), (82) where β(t, δt ) is determined by the diffusion schedule (with curvature corrections entering at higher order). Consequently, the induced local conditional density q(z | 0) is Gaussian, yielding a closed-form teacher score in the tangent space: 
+
+s(teach)  
+
+> z
+
+(z, t, δt ) := ∇z log q(z | 0) = −β(t, δt )−2 z. (83) We map this score back to the manifold via the adjoint differential of the logarithm map, 
+
+s(teach) (ψ, ϕ, t, δt ) := ( d log ϕ)∗ 
+
+> ψ
+
+s(teach)  
+
+> z
+
+(z, t, δt ), z = log ϕ(ψ), (84) which yields a tangent vector in Tψ M.24 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+Distillation into a global score model. We distill these analytic local conditional scores into a global score estimator 
+
+sθ (ψ, t ) by minimizing a Riemannian denoising score matching objective, 
+
+L(θ) = E
+
+h
+
+λ(t, δt ) Pψt
+
+ sθ (ψt, t ) − s(teach) (ψt, ψ t−δt , t, δt ) 2FS 
+
+i
+
+, (85) where Pψ projects onto the tangent space and λ(t, δt ) is a variance-based weighting (we use λ(t, δt ) = β(t, δt )2 by default, matching standard VP denoising score matching). 
+
+H.4. Choice of Prior Distribution 
+
+A practical diffusion model requires a tractable prior pT on CP d−1. Haar-random priors are theoretically appealing but expensive to sample and implement. SSDMs therefore adopt hardware-friendly priors such as Clifford t-design ensembles, which efficiently approximate Haar statistics while remaining implementable on near-term devices. From the perspective of our Riemannian OU construction, such priors provide convenient “endpoints” for reverse-time integration while preserving rotational symmetry properties that align with the FS geometry. Another promising direction is to use dissipative fixed-point ensembles induced by simple Lindblad dynamics as priors, which would further strengthen the physical interpretability of the forward process and may improve sampling efficiency. 
+
+H.5. Classical vs. Quantum Score Models 
+
+SSDMs are agnostic to the parameterization of the score estimator sθ (ψ, t ) ≈ ∇ FS log pt(ψ). Classical neural networks provide strong baselines and enable rapid prototyping, while quantum neural networks (QNNs) may offer advantages when score features are naturally expressed via quantum measurements or when one seeks end-to-end quantum pipelines. Importantly, the primary contribution of SSDMs is the formulation of an intrinsic score-based generative framework on the quantum pure-state manifold; establishing a definitive advantage of QNN parameterizations remains an open question. A practically useful intermediate direction is hybrid modeling, where a classical network predicts a tangent-vector score from measurement features (e.g., overlaps or shadow-based estimates), while a QNN provides a structured inductive bias. 
+
+H.6. QML Utility: Generative Augmentation in Quantum Representation Space 
+
+SSDMs enable representation-level augmentation: rather than generating new raw inputs, we generate additional quantum feature states that follow the learned pure-state ensemble distribution. Consider a downstream predictor h (classical or quantum) trained on quantum representations. A standard supervised objective is the empirical risk 
+
+min 
+
+> h∈H
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ℓ h(ψ(xi)) , y i
+
+. (86) SSDM-generated states can be incorporated in two complementary ways. 
+
+(i) Conditional generation (when available). If one trains class-conditional SSDMs p0(ψ | y), then additional samples 
+
+˜ψj ∼ p0(ψ | y) can be used for standard supervised augmentation. 
+
+(ii) Unconditional augmentation via representation consistency. Even without labels for generated samples, SSDM augmentation can improve representation learning by enforcing prediction consistency under generated variations in the quantum feature space. Concretely, one may optimize 
+
+min 
+
+> h∈H
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ℓ h(ψ(xi)) , y i
+
+ + α E ˜ψ∼p0
+
+h
+
+D h( ˜ψ), h (Π( ˜ψ)) i
+
+, (87) where D( ·, ·) is a divergence (e.g., squared error or KL) and Π denotes a stochastic perturbation or pairing in the repre-sentation space. This viewpoint emphasizes SSDMs as a generative prior over CP d−1, enabling augmentation even when assigning reliable labels to generated states is difficult. 
+
+## I. Limitations and Future Directions 
+
+Our work has several limitations. First, our local-time teacher signal relies on the local Euclidean OU/VP approximation of the intrinsic forward diffusion in Fubini–Study normal coordinates. This approximation is most accurate in the small-δt 
+
+25 Stochastic Schr¨ odinger Diffusion Models for Pure-State Ensemble Generation 
+
+regime and in neighborhoods where normal-coordinate distortions are small. Although the leading-order OU teacher yields an analytic and stable training signal, residual curvature and volume-element effects enter at higher order (e.g., O(∥z∥2)
+
+terms in normal coordinates) and may introduce bias when δt is not sufficiently small or when the diffusion explores regions with stronger curvature effects. Developing multi-scale teacher signals, curvature-aware corrections, or more accurate local approximations (e.g., higher-order normal-coordinate expansions or learned local transition models) could further enhance training stability and sample quality. Second, our current framework focuses on pure states on CP d−1. Extending SSDMs to mixed states would require diffusion processes on the space of density matrices and appropriate notions of scores under quantum information geometry, which is nontrivial but important for modeling noisy quantum data and open-system dynamics. Third, scalability remains a shared challenge for generative modeling of quantum pure states. Although a 6-qubit system corresponds to a 64 -dimensional complex vector space, valid pure states do not occupy an unconstrained Euclidean space: normalization and global-phase equivalence restrict them to the nonlinear manifold CP d−1. The geometry of this constrained state space must be preserved during both modeling and sampling. Thus, the limitation to small systems is not simply a GPU-memory limitation, but reflects the intrinsic difficulty of learning distributions on high-dimensional quantum state manifolds. In contrast to many classical data domains, such as images, where strong spatial inductive biases can be exploited by convolutional or hierarchical architectures, quantum pure states are subject to hard geometric constraints and generally lack comparably universal inductive biases. Empirically, as the number of qubits increases, generative quality metrics such as fidelity and MMD degrade substantially. This degradation is not specific to SSDMs: baseline methods such as QGAN and QDDPM/QuDDPM show even more severe drops, and Euclidean VP-SDE baselines already perform poorly in small quantum-state settings, indicating that the difficulty is not method-specific. Overall, the scalability issue arises from the combined effect of exponential Hilbert-space growth, the nonlinear geometry of CP d−1, and the limited inductive biases available for quantum-state ensembles. For this reason, and consistent with prior work in quantum generative modeling, existing studies—including ours—typically report results only for small numbers of qubits. Developing architectures and learning principles that better exploit structure in high-dimensional quantum state spaces remains an important direction for future research. Finally, our framework implicitly assumes a degree of access to quantum state information during training. In particular, SSDMs operate from an ensemble-level perspective, where statistical information about quantum pure states is assumed to be available, either through repeated measurements, observable statistics, or effective descriptions induced by physical processes. While this assumption departs from a fully operational view of quantum state preparation and measurement, it reflects a deliberate trade-off: by learning a classical generative model of quantum state ensembles, one can replace repeated or expensive quantum state preparation with efficient classical sampling at the representation level. This perspective is especially relevant in near-term settings where quantum resources are limited, and classical generative surrogates may provide a practical alternative for augmenting or simulating quantum representations before large-scale fault-tolerant devices become available. Despite these limitations, SSDMs establish a physically grounded and geometrically principled route for score-based generative modeling and sampling of quantum pure-state ensembles. We hope this framework will stimulate further research at the intersection of diffusion models, stochastic quantum dynamics, and QML. 26

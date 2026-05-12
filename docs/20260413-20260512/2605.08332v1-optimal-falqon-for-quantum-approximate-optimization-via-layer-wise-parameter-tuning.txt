@@ -1,0 +1,543 @@
+Title: Optimal FALQON for Quantum Approximate Optimization via Layer-wise Parameter Tuning
+
+URL Source: https://arxiv.org/pdf/2605.08332v1
+
+Published Time: Tue, 12 May 2026 00:09:03 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Optimal FALQON for Quantum Approximate Optimization via Layer-wise Parameter Tuning 
+
+Michael Mancini and Shabnam Sodagari, Senior Member, IEEE 
+
+Computer Engineering & Computer Science California State University, Long Beach, CA 90840 michael@mancini.institute; shabnam@csulb.edu 
+
+Abstract —Feedback-based adaptive quantum optimization (FALQON) is a promising approach for solving combinatorial problems on noisy intermediate-scale quantum (NISQ) devices, requiring only single circuit evaluations per layer. However, standard FALQON relies on fixed hyperparameters that severely limit convergence speed, requiring hundreds to thousands of layers for acceptable solutions. This paper proposes Optimal FALQON, an optimization-based formulation that treats the per-layer time step ( δk ) and scaling factor ( Mk ) as decision variables optimized via classical methods. We present a comprehensive empirical study on all 94 non-isomorphic 3-regular graphs with 12 vertices, comparing Optimal FALQON with standard FALQON and multiple QAOA variants. Results demonstrate statistically significant improvements in success probability, eval-uation efficiency, and depth-normalized cost across the evaluated benchmarks. Furthermore, initializing QAOA with parameters from Optimal FALQON yields superior warm-start performance compared to fixed initialization. 
+
+Index Terms —Quantum optimization, variational quantum algorithms, FALQON, QAOA, parameter optimization, NISQ 
+
+I. I NTRODUCTION 
+
+Quantum optimization algorithms such as the Variational Quantum Eigensolver (VQE), the Quantum Approximate Op-timization Algorithm (QAOA), and the recently proposed Feedback-Based Adaptive Quantum Optimization (FALQON) have emerged as promising tools for solving combinatorial problems on noisy intermediate-scale quantum (NISQ) devices [1]–[5]. QAOA relies on classical optimization of parameters γk
+
+and βk at each layer, which can require extensive circuit evaluations. Here, γk is the rotation angle applied to the problem (cost) Hamiltonian at layer k, and βk is the rotation angle applied to the driver (mixer) Hamiltonian at layer k. In contrast, FALQON provides an analytically derived scheme requiring only a single circuit evaluation per layer. However, standard FALQON exhibits a critical limitation: it requires hundreds or thousands of layers to achieve satisfactory con-vergence because the fixed time step δ and gain factor w must be chosen conservatively to guarantee stability [4], [5]. This inefficiency is particularly problematic on current hardware where circuit depth and shot budgets are severely constrained. Current superconducting quantum hardware faces gate-error limitations, with representative single-qubit gate errors around 
+
+10 −3 and two-qubit gate errors in the 10 −3 to 10 −2 range [6], [7]. Additionally, execution costs for off-premises quantum hardware remain on the order of $10 per execution [8], [9], leading to several hundreds of dollars per solution. Recent FALQON literature demonstrates strong sensitiv-ity to step and gain choices. The original formulation uses fixed-step implementations with fixed gain ( w = 1 ), while subsequent works introduce analytical modifications such as time-rescaling factors and robust gain regularization [10], [11]. These extensions effectively adjust per-layer step and scaling terms, suggesting that direct layer-wise optimization of both parameters could substantially improve practical performance. 
+
+A. Contributions 
+
+This paper makes the following contributions:  
+
+> •
+
+Optimal FALQON : An optimization-based formulation treating the per-layer time step δk and scaling term Mk
+
+as decision variables, optimized via the Powell method.  
+
+> •
+
+Comprehensive Benchmarking : A comprehensive eval-uation framework (Python/PennyLane) benchmarking Optimal FALQON against standard FALQON and mul-tiple QAOA variants on all 94 non-isomorphic 3-regular graphs with N = 12 vertices.  
+
+> •
+
+Statistical Evidence : Paired Wilcoxon signed-rank tests with Holm correction demonstrating statistically signifi-cant improvements in success probability and efficiency metrics.  
+
+> •
+
+Warm-Start Analysis : Quantitative assessment showing that initializing QAOA with parameters from Optimal FALQON yields substantial performance improvements compared to fixed initialization and warm-starts from standard FALQON. The organization of this paper is as follows. Section II provides background on quantum systems, the MaxCut prob-lem benchmark, and existing optimization algorithms (QAOA, QAOA-MA, and standard FALQON), along with foundational statistical testing methodology. Section III introduces the Op-timal FALQON formulation, derives the per-layer parameter equations, and justifies the selection of the Powell optimizer for noisy quantum optimization. Section IV presents com-prehensive simulation results across all 94 graph instances and depths 1–10, including success probability distributions, efficiency metrics, and statistical significance tests. Section V discusses key insights regarding dynamic per-layer tuning, cross-method comparisons, and warm-start synergies. Finally, 
+
+> arXiv:2605.08332v1 [quant-ph] 8 May 2026
+
+Section VI concludes with a summary of findings and impli-cations for NISQ-era quantum optimization. II. R ELATED WORK AND BACKGROUND 
+
+A. Quantum Optimization on NISQ Devices 
+
+Quantum optimization algorithms have attracted significant interest for solving combinatorial problems on near-term quan-tum hardware. The Variational Quantum Eigensolver (VQE) [1] pioneered the variational approach to hybrid quantum-classical computation, becoming a foundational method for quantum chemistry simulations [2]. The Quantum Approxi-mate Optimization Algorithm (QAOA) extends this framework to combinatorial optimization, providing a gate-depth-efficient approach [3] that has become a standard benchmark for near-term quantum algorithms. Recent advances in feedback-based quantum control have led to the development of FALQON [4], which provides an analytically-derived optimization scheme requiring minimal circuit evaluations. Building on FALQON’s foundation, subse-quent work introduced time-rescaling improvements [10] and robust gain regularization techniques [11], with recent refine-ments enabling scalable depth reduction through quadratic approximations [5]. Despite these improvements, standard FALQON converges slowly when using conservative fixed hyperparameters, motivating the investigation of adaptive pa-rameter strategies. Quantum circuits operate under shot-noise limitations, in-troducing stochastic variation in measurement outcomes. Pen-nyLane [12] and related frameworks enable simulation and optimization of quantum circuits subject to realistic noise mod-els, though real hardware introduces additional error sources including readout errors and crosstalk effects. 
+
+B. Quantum Systems and Hamiltonians 
+
+A quantum state |ψ⟩ can be understood as a probability distribution over all bitstrings [13]. The Hamiltonian H repre-sents the total energy of a quantum system, and the expected value of the Hamiltonian under state |ψ⟩ is written as ⟨ψ|H|ψ⟩
+
+[13]. Time evolution of a state |ψ0⟩ via Hamiltonian H over time t is governed by the unitary operator [13]: 
+
+UH (t) = e−iHt (1) In quantum optimization, two types of Hamiltonians are employed as defined in related literature [3]–[5]: the Problem Hamiltonian ( Hp), whose ground states correspond to solu-tions of the optimization problem and encode the optimization objective, and the Driver Hamiltonian ( Hd), chosen to have an easily prepared ground state and to be non-commuting with the Problem Hamiltonian. This non-commutativity relationship ensures a path between ground states exists. Practical imple-mentations of quantum circuits on current hardware exhibit non-negligible gate errors [6], [7], necessitating algorithms that minimize circuit depth. 
+
+C. MaxCut Problem and Benchmark 
+
+The MaxCut problem is a canonical NP-hard combinatorial optimization problem [14]. Given an undirected simple graph 
+
+G = ( V, E ) with |V | = N vertices, the objective is to partition vertices into disjoint sets S and ¯S maximizing the number of edges crossing between sets. MaxCut has become the standard benchmark for variational quantum algorithms [3], [14], [15]. For robust statistical evaluation, we employ all non-isomorphic 3-regular graphs with N = 12 vertices. A 3-regular graph has degree d = 3 for every vertex, containing exactly 
+
+|E| = 3N 
+
+> 2
+
+= 18 edges. This ensemble comprises precisely 94 distinct graphs under relabeling [16], [17], providing a finite yet diverse benchmark set with well-characterized optimal solutions. MaxCut is encoded as an Ising Hamiltonian: 
+
+Hp = X
+
+> (i,j )∈E
+
+ZiZj (2) where Zi is the Pauli-Z operator on qubit i. Minimizing ⟨Hp⟩
+
+maximizes the cut value [14]. 
+
+D. QAOA and Multi-Angle Variants 
+
+The Quantum Approximate Optimization Algorithm [3] prescribes parameters γk ∈ R and βk ∈ R as unconstrained optimization variables to be optimized via classical methods. QAOA Multi-Angle (QAOA-MA) [15] extends standard QAOA by replacing scalar parameters with vectors ¯γk =(γk, 1, . . . , γ k,N p ) and ¯βk = ( βk, 1, . . . , β k,N d ), corresponding to individual Hamiltonian components. This expands the pa-rameter space, enabling more expressive ans¨ atze at the cost of increased optimization complexity. Both gradient-descent and gradient-free optimizers (e.g., Powell) are commonly employed for QAOA parameter tuning. Gradient-free methods show promise in noisy quantum settings where gradient estimates require additional circuit evaluations [18], [19]. Warm-starting QAOA from good initial parame-ters—such as those derived from other algorithms—has shown empirical benefits [20], [21], motivating investigation of cross-method initialization strategies. 
+
+E. Feedback-Based Adaptive Quantum Optimization (FALQON) 
+
+FALQON [4], [22] derives a feedback control law requiring only single circuit evaluations per layer, making it exception-ally efficient in terms of evaluation count. This builds on a long tradition of feedback control in quantum systems [23], where control laws adapt parameters based on system measurements. The update rule depends on commutator expectations: 
+
+Ak = ⟨ψk|i[Hd, H p]|ψk⟩ (3) 
+
+Bk = ⟨ψk
+
+12 [[ Hd, H p], H d] ψk⟩ (4) 
+
+Ck = ⟨ψk |[[ Hd, H p], H p]| ψk⟩ (5) Standard FALQON applies fixed time step δ and gain 
+
+w = 1 across all layers. Recent extensions introduce per-layer adaptations: time-rescaling modifies the step term and introduces additional factors which effectively modify the gain term [10], and robust gain regularization scales the gain term using a hyperparameter [11]. These developments suggest that direct layer-wise optimization of both step and scaling parameters could substantially improve practical convergence. 
+
+F. Statistical Hypothesis Testing 
+
+Comparative algorithm studies require rigorous statistical methodology. The Wilcoxon signed-rank test [24] is a non-parametric test suitable for paired samples lacking normality assumptions [25]. When performing multiple hypothesis tests, family-wise error control via the Holm step-down procedure [26] prevents inflated type-I error rates, ensuring that observed differences are statistically meaningful rather than due to multiple testing. III. O PTIMAL FALQON M ETHOD 
+
+A. Proposed Formulation 
+
+Prior FALQON studies indicate strong convergence sensi-tivity to step and gain choices, with several extensions pre-scribing analytical modifications to these terms [4], [5], [10], [11], [22]. We propose treating the per-layer step and scaling terms as decision variables. The symbol Mk is introduced as a unifying scaling term for cross-method comparison. Under this view: standard FALQON corresponds to fixed δk = δ and 
+
+Mk = w (typically w = 1 ) [4], [5]; TR-FALQON introduces per-layer rescaling factors that can be interpreted as changes to step and gain terms [10]; robust FALQON uses w = 1 /(2 λ)
+
+with λ = 1 /2 recovering the standard w = 1 case [11]. The key idea of Optimal FALQON is to optimize these two quantities (step size δk and scaling factor Mk) per layer: 
+
+δk ∈ R, k ∈ [1 , L ] (6) 
+
+Mk ∈ R, k ∈ [1 , L ] (7) where L denotes the total number of layers. For each layer k, we prescribe: 
+
+γk = δk (8) 
+
+βk =
+
+(−MkAk−1δk First Order (FO) 
+
+−Mk Ak−1+Ck−1δk 
+
+> 2Bk−1δk
+
+δk Second Order (SO) (9) where we note that when |Bk−1| < 1 × 10 −12 , the SO method falls back to FO. The optimization problem is a two-dimensional layer-wise search over {δk, M k} keeping FALQON’s structure intact. 
+
+B. Classical Optimization and Cost Function 
+
+At each layer k, we solve the two-dimensional minimization problem: 
+
+(δ∗ 
+
+> k
+
+, M ∗ 
+
+> k
+
+) = arg min Cost k(δk, M k) (10) where the cost function is the expected value of the problem Hamiltonian: 
+
+Cost k(δk, M k) = ⟨ψk(δk, M k)|Hp|ψk(δk, M k)⟩ (11) The optimization problem at each layer is: 
+
+(δ∗ 
+
+> k
+
+, M ∗ 
+
+> k
+
+) = arg min  
+
+> δk,M k
+
+⟨ψk(δk, M k)|Hp|ψk(δk, M k)⟩ (12) We employ the Powell optimizer [18] for its robustness in noisy quantum environments compared to gradient-free alternatives like Nelder-Mead and COBYLA [19]. Existing FALQON variants avoid explicit per-layer optimization loops, but quantum algorithms suffer from multiple noise sources inhibiting optimization [19]. Nelder-Mead [27], Powell, and COBYLA [28] are widely assessed as candidate gradient-free optimizers for noisy optimization landscapes. Powell [18] is recognized as comparatively robust in noisy variational settings with stable and competitive outcomes across noise conditions [19], outperforming Nelder-Mead in our prelimi-nary testing and showing advantages over COBYLA in related quantum benchmarking literature. 
+
+C. Benchmarking Framework 
+
+We evaluate a systematic suite of algorithms across acomprehensive problem ensemble:  
+
+> •
+
+FALQON (Standard) : First-order (FO) with fixed δ =0.03 , w = 1 ; Second-order (SO) with fixed δ = 0 .05 , w =1. 
+
+> •
+
+Optimal FALQON : FO and SO variants where δk and 
+
+Mk are optimized per layer using Powell, initialized at 
+
+δk = 0 .5, M k = 1 . 
+
+> •
+
+QAOA Standard : Initialized with γ = 0 .5, β = 0 .5;optimized via Gradient Descent or Powell.  
+
+> •
+
+QAOA Multi-Angle (QAOA-MA) : Initialized with all 
+
+γk,j = 0 .5, β k,j = 0 .5; optimized via Gradient Descent or Powell.  
+
+> •
+
+Warm-Started QAOA/QAOA-MA : Initialized with pa-rameters from standard or Optimal FALQON, then opti-mized. Problem instances comprise all 94 non-isomorphic 3-regular graphs with N = 12 vertices. Exact optimal solutions were computed via exhaustive search over all 212 = 4096 bitstrings per instance. Algorithms are evaluated at circuit depths L ∈{1, 2, 3, . . . , 10 } with 8192 shots per evaluation for shot-noise simulation. Hyperparameter settings appear in Table I. TABLE I: Hyperparameter settings across all method variants and depths.                                        
+
+> Method Init δInit Mk/w Max Iter Shots
+> FALQON FO 0.03 1.0 (fixed) 20 8192 FALQON SO 0.05 1.0 (fixed) 20 8192 Optimal FALQON FO 0.5 1.0 20 8192 Optimal FALQON SO 0.5 1.0 20 8192 QAOA (GD) 0.5 —20 8192 QAOA-MA (GD) 0.5 —20 8192 QAOA (Powell) 0.5 —20 8192 QAOA-MA (Powell) 0.5 —20 8192
+
+D. Performance Metrics 
+
+The probability that a single shot samples an optimal Max-Cut solution is: 
+
+Psuccess = X
+
+> x(i)∈S ⋆
+
+P (x(i)) (13) where S⋆ denotes the set of all optimal bitstrings for a given graph and P (x(i)) is the probability of measuring bitstring x(i)
+
+from the quantum state. In practice, we estimate Psuccess by capturing the bitstring probabilities from multi-shot sampling of |ψ⟩ and summing the probabilities of all bitstrings that belong to S⋆.We define two efficiency metrics to assess cost-performance tradeoffs. Evaluation-normalized efficiency accounts for circuit evaluation count: 
+
+E1 = Psuccess 
+
+nevals 
+
+(14) Cost-depth efficiency additionally penalizes circuit depth L:
+
+E2 = Psuccess 
+
+nevals × L (15) Higher E1 indicates better use of quantum resources per evaluation. Higher E2 indicates better joint optimization of both evaluation and depth resources, reflecting realistic NISQ constraints where gate error accumulates with circuit depth. 
+
+E. Statistical Methodology 
+
+For each metric ( Psuccess , E 1, E 2), depth ( L ∈ { 1, . . . , 10 }), and method pair, we perform paired Wilcoxon signed-rank tests [24] using all 94 graph instances as matched pairs. The Wilcoxon signed-rank test is a non-parametric test appropriate when normality is not assumed; it tests whether the median paired difference is zero. For background on numerical op-timization and statistical testing, see standard computational references [29]. For multiple hypothesis testing, for each metric, the Holm step-down correction [26] was applied across all comparisons in that metric’s test family to control family-wise error at α =0.05 . Let Ntests denote the number of tests in a comparison family and p(1) ≤ p(2) ≤ · · · ≤ p(Ntests ) the ordered raw p-values. The Holm-adjusted p-values are: 
+
+padj ,(r) = max 
+
+> 1≤u≤r
+
+[( Ntests −u+1) p(u)], r = 1 , . . . , N tests (16) with truncation at 1 as needed. A comparison is deemed statistically significant when padj < 0.05 .IV. S IMULATION RESULTS 
+
+A. FALQON Family Results 
+
+Figure 1 displays success-probability distributions for FALQON variants across depths L = 1 to 10 . The dominant pattern is a consistent upward shift for Optimal FALQON variants compared to fixed-parameter FALQON. Standard FALQON achieves median Psuccess ∼ 0.004 , demonstrating ineffectiveness at utilizing available circuit depth when hy-perparameters are conservatively fixed. In contrast, Optimal FALQON FO and SO achieve median success probabilities approaching 0.22 , representing approximately 50-fold im-provement. Figure 2 presents evaluation-normalized efficiency E1 =
+
+Psuccess /n evals . Optimal FALQON sustains substantially higher 
+
+E1 across depths, indicating greater success probability per circuit evaluation. This metric is particularly relevant for NISQ hardware where evaluation cost is a primary economic constraint. Figure 3 shows depth-normalized efficiency E2 =
+
+Psuccess /(nevals ×L). This metric penalizes both evaluation costs and circuit depth, reflecting the dual constraint of gate error ac-cumulation and hardware execution costs. Optimal FALQON maintains substantial efficiency advantage even under this stricter normalization, demonstrating that improvements are not merely artifacts of utilizing more evaluations, but reflect genuine adaptive convergence benefits. The FALQON family results establish that per-layer opti-mization of δk and Mk yields substantial practical benefits over standard fixed-parameter FALQON. 
+
+B. QAOA Family Results: Gradient Descent 
+
+Figure 4 shows success probability for QAOA optimized via gradient descent. A clear pattern emerges: warm-starting from Optimal FALQON parameters (whether FO or SO variant) yields substantially higher distributions compared to fixed initialization ( γ = 0 .5, β = 0 .5) or warm-starts from standard FALQON. Median success probability improves from ∼ 0.005 
+
+(fixed init) and ∼ 0.05 (warm start from standard FALQON) to ∼ 0.28 (warm start from Optimal FALQON). Warm-starting QAOA from good initial parameters enables the gradient-based optimizer to explore relevant regions of the parameter space, while fixed initialization often leads to suboptimal local minima. This demonstrates complementarity between feedback-based methods (effective for rapid initial convergence) and classical optimization (effective for fine-tuning in expanded parameter spaces). 
+
+C. QAOA Family Results: Powell Optimizer 
+
+Figure 5 presents QAOA results using Powell optimization. For this configuration, median Psuccess increased from ∼ 0.02 
+
+(fixed init) and ∼ 0.03 (warm start from standard FALQON) to ∼ 0.22 (warm start from Optimal FALQON). Warm-started variants again demonstrate superior performance, though fixed QAOA (Powell) achieves competitive results at specific depths (notably L = 2 and L = 10 ), suggesting depth-dependent strengths. This depth-dependent variation in optimal method suggests that future approaches might employ dynamic algorithm selec-tion, choosing between Optimal FALQON, QAOA, or hybrid methods based on available circuit depth. 
+
+D. QAOA-MA Results: Gradient Descent 
+
+Figure 6 presents multi-angle QAOA with gradient descent. The expanded parameter space (separate parameters for each Hamiltonian component) provides greater expressiveness, but 1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Psuccess
+
+Psuccess (FALQON) 
+
+Method 
+
+> FALQON FO
+> Optimal FALQON FO (Ours)
+> FALQON SO
+> Optimal FALQON SO (Ours)
+
+Fig. 1: Depth-wise distributions of Psuccess for FALQON family. Optimal FALQON medians consistently exceed standard FALQON across all depths, with pronounced separation at higher depths. 1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.000
+> 0.001
+> 0.002
+> 0.003
+> 0.004
+> 0.005
+> E1 = Psuccess
+> nevals
+
+E1 = Psuccess  
+
+> nevals
+
+(FALQON) 
+
+Method 
+
+> FALQON FO
+> Optimal FALQON FO (Ours)
+> FALQON SO
+> Optimal FALQON SO (Ours)
+
+Fig. 2: Depth-wise distributions of E1 for FALQON variants. Optimal FALQON demonstrates median evaluation-normalized efficiency approximately 5-50 times higher than standard FALQON. requires stronger initialization guidance to avoid poor local minima. Warm-starting from Optimal FALQON dramatically improves performance: median success probability rises from 
+
+∼ 0.002 (fixed) and ∼ 0.007 (warm-start from standard FALQON) to ∼ 0.22 (warm-start from Optimal FALQON). 
+
+E. QAOA-MA Results: Powell Optimizer 
+
+Figure 7 shows QAOA-MA with Powell optimization. For this configuration, median Psuccess increases from ∼ 0.0001 1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.000
+> 0.001
+> 0.002
+> 0.003
+> 0.004
+> 0.005
+> E2 = Psuccess
+> nevals  × layers
+
+E2 = Psuccess   
+
+> nevals × layers
+
+(FALQON) 
+
+Method 
+
+> FALQON FO
+> Optimal FALQON FO (Ours)
+> FALQON SO
+> Optimal FALQON SO (Ours)
+
+Fig. 3: Depth-wise distributions of E2 for FALQON variants. Optimal FALQON retains median efficiency advantage after joint evaluation-depth normalization, indicating genuine adaptive benefits. 1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Psuccess
+
+Psuccess (QAOA (Gradient Descent)) 
+
+Method     
+
+> QAOA (GD)
+> Warm-Start FALQON FO QAOA (GD)
+> Warm-Start Optimal FALQON FO QAOA (GD) (Ours)
+> Warm-Start FALQON SO QAOA (GD)
+> Warm-Start Optimal FALQON SO QAOA (GD) (Ours)
+
+Fig. 4: Depth-wise Psuccess for QAOA with gradient descent. Warm-starting from Optimal FALQON shifts distributions upward relative to fixed initialization and standard FALQON warm-starts. (fixed init) and ∼ 0.003 (warm start from standard FALQON) to ∼ 0.27 (warm start from Optimal FALQON). 
+
+F. Efficiency Metrics and Cost Analysis 
+
+Figure 8 examines evaluation-normalized efficiency E1 for QAOA (Powell). While warm-started variants dominate at most depths, fixed QAOA (Powell) achieves competitive or 1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Psuccess
+
+Psuccess (QAOA (Powell)) 
+
+Method     
+
+> QAOA (Powell)
+> Warm-Start FALQON FO QAOA (Powell)
+> Warm-Start Optimal FALQON FO QAOA (Powell) (Ours)
+> Warm-Start FALQON SO QAOA (Powell)
+> Warm-Start Optimal FALQON SO QAOA (Powell) (Ours)
+
+Fig. 5: Depth-wise Psuccess for QAOA with Powell optimizer. Warm-start from Optimal FALQON dominates at most depths; fixed QAOA competitive at isolated depths. 1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Psuccess
+
+Psuccess (QAOA-MA (Gradient Descent)) 
+
+Method     
+
+> QAOA-MA (GD)
+> Warm-Start FALQON FO QAOA-MA (GD)
+> Warm-Start Optimal FALQON FO QAOA-MA (GD) (Ours)
+> Warm-Start FALQON SO QAOA-MA (GD)
+> Warm-Start Optimal FALQON SO QAOA-MA (GD) (Ours)
+
+Fig. 6: Depth-wise Psuccess for QAOA-MA with gradient descent. Warm-start from Optimal FALQON shows pronounced advantage over fixed initialization and standard FALQON warm-starts. superior E1 at depths L = 2 and L = 10 , revealing depth-dependent efficiency tradeoffs. This suggests that fixed initialization may be sufficient, and further investigations com-paring QAOA with and without Optimal FALQON warm start schedules are warranted. 
+
+G. Performance Summary 
+
+Table II aggregates median statistics across all depths and 94 graph instances. Optimal FALQON achieves Psuccess ≈1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Psuccess
+
+Psuccess (QAOA-MA (Powell)) 
+
+Method     
+
+> QAOA-MA (Powell)
+> Warm-Start FALQON FO QAOA-MA (Powell)
+> Warm-Start Optimal FALQON FO QAOA-MA (Powell) (Ours)
+> Warm-Start FALQON SO QAOA-MA (Powell)
+> Warm-Start Optimal FALQON SO QAOA-MA (Powell) (Ours)
+
+Fig. 7: Depth-wise Psuccess for QAOA-MA with Powell optimizer, demonstrating our method’s effectiveness. 1 2 3 4 5 6 7 8 9 10 
+
+Depth (Layers) 
+
+> 0.000
+> 0.002
+> 0.004
+> 0.006
+> 0.008
+> E1 = Psuccess
+> nevals
+
+E1 = Psuccess  
+
+> nevals
+
+(QAOA (Powell)) 
+
+Method     
+
+> QAOA (Powell)
+> Warm-Start FALQON FO QAOA (Powell)
+> Warm-Start Optimal FALQON FO QAOA (Powell) (Ours)
+> Warm-Start FALQON SO QAOA (Powell)
+> Warm-Start Optimal FALQON SO QAOA (Powell) (Ours)
+
+Fig. 8: Depth-wise E1 efficiency for QAOA (Powell). Optimal FALQON warm-starts maintain high efficiency at most depths; fixed QAOA competitive at L = 2 , 10 .
+
+0.22 compared to standard FALQON’s ∼ 0.004 (50 × im-provement). In evaluation-normalized efficiency E1, Opti-mal FALQON reaches 1.35 –1.68 × 10 −3 versus standard FALQON’s 0.07 –0.32 × 10 −3 (4–23 × improvement). For depth-aware efficiency E2, Optimal FALQON achieves 2.59 –
+
+3.17 × 10 −4 (5–24 × improvement over standard FALQON). Warm-starting QAOA (GD) with parameters from the pro-posed Optimal FALQON yields notably superior success rates (e.g., 0.26 –0.28 ), exceeding Optimal FALQON alone, sug-gesting that gradient descent initialization particularly benefits from feedback-based parameter seeding. Table II reveals that warm-starting with standard FALQON improves over baseline QAOA (e.g., 0.045 –0.047 for QAOA-GD), but warm-starting with the proposed Optimal FALQON provides substantially better results (e.g., 0.263 –0.284 for QAOA-GD), demonstrat-ing that layer-wise parameter optimization yields superior initialization values for downstream classical optimization. 
+
+H. Statistical Significance Assessment 
+
+Comprehensive paired Wilcoxon signed-rank tests with Holm-Bonferroni correction at α = 0 .05 reveal:  
+
+> •
+
+Optimal vs. Standard FALQON : Optimal FALQON exhibits statistically significant superiority ( padj < 0.05 )in Psuccess , E1, and E2 across nearly all depths. This dominant pattern confirms that layer-wise parameter op-timization provides substantial benefits.  
+
+> •
+
+FO vs. SO within Optimal FALQON : The two variants are frequently statistically indistinguishable in terms of 
+
+Psuccess (padj > 0.05 ), indicating that first-order opti-mization captures most benefits without the additional measurement overhead of second-order methods. For practitioners, FO is recommended.  
+
+> •
+
+Warm-Start Benefits : Initialization with Optimal FALQON parameters yields statistically significant improvements across QAOA and QAOA-MA variants compared to fixed initialization and warm-starts from standard FALQON.  
+
+> •
+
+Depth-Dependent Effects : Fixed QAOA (Powell) achieves statistical equivalence to warm-started variants at specific depths, indicating depth-dependent algorithm selection opportunities. This suggests future work should explore adaptive method selection. V. D ISCUSSION 
+
+The empirical study validates several key insights about adaptive quantum optimization: 
+
+a) Dynamic Per-Layer Tuning Effects: Optimizing δk
+
+and Mk yields clear performance benefits over static standard FALQON. The 50-fold improvement in success probability (0.22 vs. 0.004 ) indicates that adaptive step sizes enable layers to move closer to optimal gradient directions, mitigating over-shoot and undershoot effects that plague fixed-step schemes. This aligns with the observation in prior FALQON literature that convergence sensitivity to parameter choices is a critical limitation. 
+
+b) First-Order vs. Second-Order Trade-Off: While the SO variant uses more accurate gradient estimates from com-mutator expectations Bk and Ck, its practical advantage over FO is marginal ( padj > 0.05 in most comparisons). The addi-tional measurement overhead required to estimate Bk and Ck
+
+does not translate to statistically significant performance gains. For practitioners, FO Optimal FALQON is recommended, achieving most adaptive benefits with reduced measurement burden. 
+
+c) Warm-Start Synergies: Initializing QAOA/QAOA-MA with Optimal FALQON parameters produces substantial im-provements over fixed initialization and standard FALQON warm-starts. The highest overall success rate ( Psuccess ≈ 0.28 )occurs with warm-started QAOA-MA (GD). This suggests that combining structured parameter guidance from feedback-based methods with classical optimization creates complementary benefits: FALQON provides rapid convergence in early layers, while QAOA refines parameters in expanded spaces. 
+
+d) Depth-Dependent Method Selection: Fixed QAOA (Powell) achieves competitive or superior performance at specific depths (particularly L = 2 , 10 ), while warm-started variants dominate at other depths. This depth-dependence suggests future work should explore adaptive method selection strategies that choose algorithms and warm-start sources based on available circuit depth. 
+
+e) Practical Implications: On current NISQ hardware with execution costs of $10 per evaluation, the evaluation efficiency gains translate directly to cost reductions. Opti-mal FALQON enables cost-per-solution reductions of nearly 1 order of magnitude, making quantum optimization more economically viable for practical applications. VI. C ONCLUSION 
+
+This paper introduces Optimal FALQON, an optimization-based extension of FALQON that treats per-layer time step (δk) and scaling parameters ( Mk) as decision variables solved via Powell optimization. Comprehensive evaluation on all 94 non-isomorphic 3-regular graphs with 12 vertices—across multiple QAOA variants, depths 1–10, and both first-order and second-order formulations—demonstrates:  
+
+> •
+
+Significant Improvements : Optimal FALQON achieves 50-fold improvement in success probability over standard FALQON, with statistically significant gains across mul-tiple efficiency metrics.  
+
+> •
+
+Reduced Computational Cost : Optimal FALQON me-dian E1 ≈ 1.4–1.7× higher than baseline QAOA (Pow-ell) and ≈ 5–50 × higher than baseline QAOA (GD) translate to substantial cost savings on current NISQ hardware.  
+
+> •
+
+Warm-Start Synergies : Hybrid approaches warm-starting QAOA with Optimal FALQON parameters achieve the highest overall success rates, demonstrating complementary benefits of feedback-based and classical optimization.  
+
+> •
+
+Statistical Rigor : Paired Wilcoxon tests with Holm cor-rection provide robust evidence of method superiority, while revealing that FO and SO variants are frequently equivalent in terms of Psuccess , simplifying practical de-ployment. The practical applicability is strong: per-layer optimization imposes minimal overhead (20 evaluations per layer in our implementation) while yielding substantial performance gains. The method is readily implementable in modern quantum com-puting frameworks (PennyLane, Qiskit) and scales naturally to larger problems. TABLE II: Overall median performance aggregating all depths and 94 instances. Metrics: success probability Psuccess , evaluation efficiency E1, depth-normalized efficiency E2. Optimal FALQON methods shown in bold. 
+
+Method Med Psucc Med E1 × 10 −3 Med E2 × 10 −4
+
+FALQON FO 4.39 × 10 −3 0.32 0.50 
+
+Optimal FALQON FO 2.20 × 10 −1 1.68 3.17 FALQON SO 3.11 × 10 −3 0.07 0.13 
+
+Optimal FALQON SO 2.18 × 10 −1 1.35 2.59 QAOA (GD) 5.04 × 10 −3 0.04 0.058 QAOA (Powell) 1.99 × 10 −2 0.99 1.30 Warm-Start FALQON FO → QAOA (GD) 4.73 × 10 −2 0.22 0.42 
+
+Warm-Start Optimal FALQON FO → QAOA (GD) 2.63 × 10 −1 0.93 1.87 Warm-Start FALQON SO → QAOA (GD) 4.52 × 10 −2 0.24 0.45 
+
+Warm-Start Optimal FALQON SO → QAOA (GD) 2.84 × 10 −1 1.02 2.05 Warm-Start FALQON FO → QAOA (Powell) 3.66 × 10 −2 0.18 0.23 
+
+Warm-Start Optimal FALQON FO → QAOA (Powell) 2.16 × 10 −1 0.97 1.86 Warm-Start FALQON SO → QAOA (Powell) 2.47 × 10 −2 0.16 0.34 
+
+Warm-Start Optimal FALQON SO → QAOA (Powell) 2.12 × 10 −1 1.01 1.99 QAOA-MA (GD) 1.65 × 10 −3 0.004 0.007 QAOA-MA (Powell) 1.22 × 10 −4 0.002 0.002 Warm-Start FALQON FO → QAOA-MA (GD) 7.00 × 10 −3 0.04 0.08 
+
+Warm-Start Optimal FALQON FO → QAOA-MA (GD) 2.24 × 10 −1 0.81 1.63 Warm-Start FALQON SO → QAOA-MA (GD) 5.92 × 10 −3 0.03 0.05 
+
+Warm-Start Optimal FALQON SO → QAOA-MA (GD) 2.20 × 10 −1 0.89 1.82 Warm-Start FALQON FO → QAOA-MA (Powell) 4.88 × 10 −3 0.02 0.04 
+
+Warm-Start Optimal FALQON FO → QAOA-MA (Powell) 2.27 × 10 −1 0.94 1.93 Warm-Start FALQON SO → QAOA-MA (Powell) 2.93 × 10 −3 0.02 0.03 
+
+Warm-Start Optimal FALQON SO → QAOA-MA (Powell) 2.19 × 10 −1 1.02 2.01 
+
+We anticipate Optimal FALQON will be valuable for near-term quantum optimization on NISQ devices, where circuit depth and evaluation budgets are severely constrained and computational cost is a primary concern. REFERENCES [1] A. Peruzzo, J. McClean, P. Shadbolt, M.-H. Yung, X.-Q. Zhou, P. J. Love, A. Aspuru-Guzik, and J. L. O’Brien, “A variational eigenvalue solver on a photonic quantum processor,” Nature Communications ,vol. 5, p. 4213, 2014. [Online]. Available: https://doi.org/10.1038/ ncomms5213 [2] J. R. McClean, J. Romero, R. Babbush, and A. Aspuru-Guzik, “The theory of variational hybrid quantum-classical algorithms,” New Journal of Physics , vol. 18, p. 023023, 2016. [Online]. Available: https://doi.org/10.1088/1367-2630/18/2/023023 [3] E. Farhi, J. Goldstone, and S. Gutmann, “A quantum approximate optimization algorithm,” arXiv preprint arXiv:1411.4028 , 2014. [Online]. Available: https://arxiv.org/abs/1411.4028 [4] A. B. Magann, K. M. Rudinger, M. D. Grace, and M. Sarovar, “Feedback-based quantum optimization,” Physical Review Letters , vol. 129, p. 250502, 2022. [Online]. Available: https://doi.org/10.1103/ PhysRevLett.129.250502 [5] D. Arai, K. N. Okada, Y. Nakano, K. Mitarai, and K. Fujii, “Scalable circuit depth reduction in feedback-based quantum optimization with a quadratic approximation,” Physical Review Research , vol. 7, p. 013035, Jan 2025. [Online]. Available: https://doi.org/10.1103/PhysRevResearch. 7.013035 [6] F. Arute, K. Arya, R. Babbush et al. , “Quantum supremacy using a programmable superconducting processor,” Nature , vol. 574, no. 7779, pp. 505–510, 2019. [Online]. Available: https: //doi.org/10.1038/s41586-019-1666-5 [7] M. Kjaergaard, M. E. Schwartz, J. Braum¨ uller, P. Krantz, J. I.-J. Wang, S. Gustavsson, and W. D. Oliver, “Superconducting qubits: Current state of play,” Annual Review of Condensed Matter Physics , vol. 11, no. 1, pp. 369–395, 2020. [Online]. Available: https://doi.org/10.1146/annurev-conmatphys-031119-050605 [8] IBM Research, “Ibm quantum services,” https://www.ibm.com/quantum, 2025, accessed: January 24, 2026. [9] Amazon Web Services, “Amazon braket pricing,” https://aws.amazon. com/braket/pricing/, 2026, accessed: January 24, 2026. [10] L. A. M. Rattighieri, G. E. L. Pexe, B. L. Bernardo, and F. F. Fanchini, “Accelerating feedback-based quantum algorithms through time rescaling,” Physical Review A , vol. 112, p. 042607, 2025. [Online]. Available: https://doi.org/10.1103/qc91-5mj2 [11] M. Legnini and J. Berberich, “Robust feedback-based quantum optimization: analysis of coherent control errors,” in 2025 IEEE International Conference on Quantum Control, Computing and Learning (qCCL) , 2025, pp. 17–22. [Online]. Available: https: //doi.org/10.1109/qCCL65142.2025.11158422 [12] V. Bergholm, J. Izaac, M. Schuld, C. Gogolin, C. Blank, K. McK-iernan, and N. Killoran, “Pennylane: Automatic differentiation of hy-brid quantum-classical computations,” arXiv preprint arXiv:1811.04968 ,2018. [13] D. J. Griffiths and D. F. Schroeter, Introduction to Quantum Mechanics ,3rd ed. Cambridge University Press, 2018. [14] M. H. M. noz Arias, S. Kourtis, and A. Blais, “Low-depth clifford circuits approximately solve maxcut,” Physical Review Research , vol. 6, p. 023294, 2024. [Online]. Available: https: //doi.org/10.1103/PhysRevResearch.6.023294 [15] R. Herrman, P. C. Lotshaw, J. Ostrowski, T. S. Humble, and G. Siopsis, “Multi-angle quantum approximate optimization algorithm,” 
+
+Scientific Reports , vol. 12, p. 6781, 2022. [Online]. Available: https://doi.org/10.1038/s41598-022-10555-8 [16] The Sage Developers, SageMath, the Sage Mathematics Software System (Version 9.5) , 2022, https://www.sagemath.org .[17] B. D. McKay, “Practical graph isomorphism,” Congressus Numerantium , vol. 30, pp. 45–87, 1981, version 2.7: 
+
+https://pallini.di.uniroma1.it/ .[18] M. J. D. Powell, “An efficient method for finding the minimum of a function of several variables without calculating derivatives,” The Computer Journal , vol. 7, no. 2, pp. 155–162, 1964. [19] M. A. Alam, S. Ghosh, T. S. Humble, and N. Imam, “A comparison of various classical optimizers for a variational quantum linear solver,” 
+
+arXiv preprint arXiv:2106.08682 , 2021. [20] D. J. Egger, J. Mareˇ cek, and S. Woerner, “Warm-starting quantum optimization,” Quantum , vol. 5, p. 479, jun 2021. [Online]. Available: https://doi.org/10.22331/q-2021-06-17-479 [21] S. H. Sack and M. Serbyn, “Quantum annealing initialization of the quantum approximate optimization algorithm,” Quantum ,vol. 5, p. 491, jul 2021. [Online]. Available: https://doi.org/10.22331/ q-2021-07-01-491 [22] A. B. Magann, K. M. Rudinger, M. D. Grace, and M. Sarovar, “Lyapunov control-inspired strategies for quantum combinatorial optimization,” Physical Review A , vol. 106, p. 062414, 2022. [Online]. Available: https://doi.org/10.1103/PhysRevA.106.062414 [23] S. Grivopoulos and B. Bamieh, “Lyapunov-based control of quantum systems,” in Proceedings of the 42nd IEEE Conference on Decision and Control , vol. 1. Maui, HI, USA: IEEE, dec 2003, pp. 434–438. [24] F. Wilcoxon, “Individual comparisons by ranking methods,” Biometrics Bulletin , vol. 1, no. 6, pp. 80–83, 1945. [25] M. Hollander, D. A. Wolfe, and E. Chicken, Nonparametric Statistical Methods , 3rd ed. Wiley, 2013. [26] S. Holm, “A simple sequentially rejective multiple test procedure,” 
+
+Scandinavian Journal of Statistics , vol. 6, pp. 65–70, 1979. [27] J. A. Nelder and R. Mead, “A simplex method for function minimiza-tion,” The Computer Journal , vol. 7, no. 4, pp. 308–313, 1965. [28] M. J. D. Powell, “A direct search optimization method that models the objective and constraint functions by linear interpolation,” in Advances in Optimization and Numerical Analysis . Springer, 1994, pp. 51–67. [29] The Scipy community, Scipy Lecture Notes , https: //scipy-lectures.org/advanced/mathematical optimization/, 2023, 
+
+https://scipy-lectures.org/ .

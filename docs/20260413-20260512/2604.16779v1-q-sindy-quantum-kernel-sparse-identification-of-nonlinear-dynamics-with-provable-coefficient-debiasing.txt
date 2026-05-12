@@ -1,0 +1,485 @@
+Title: Q-SINDy: Quantum-Kernel Sparse Identification of Nonlinear Dynamics with Provable Coefficient Debiasing
+
+URL Source: https://arxiv.org/pdf/2604.16779v1
+
+Published Time: Tue, 21 Apr 2026 00:29:36 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Q-SINDy: Quantum-Kernel Sparse Identification of Nonlinear Dynamics with Provable Coefficient Debiasing 
+
+Samrendra Roy Department of Nuclear, Plasma, and Radiological Engineering University of Illinois at Urbana-Champaign Urbana, IL, USA 
+
+samrendra.roy@illinois.edu 
+
+Syed Bahauddin Alam Department of Nuclear, Plasma, and Radiological Engineering University of Illinois at Urbana-Champaign National Center for Supercomputing Applications Urbana, IL, USA 
+
+Abstract 
+
+Quantum feature maps offer expressive embeddings for classical learning tasks, and augmenting sparse identification of nonlinear dynamics (SINDy) with such features is a natural but unexplored direction. We introduce Q-SINDy , a quantum-kernel-augmented SINDy framework, and identify a specific failure mode that arises: coefficient cannibalization , in which quantum features absorb coefficient mass that rightfully belongs to the polynomial basis, corrupting equation recovery. We derive the exact cannibalization-bias formula ∆ ξP = ( P ⊤P )−1P ⊤Q ˆξQ and prove that orthogonalizing quantum features against the polynomial column space at fit time eliminates this bias exactly. The claim is verified numerically to machine precision ( < 10 −12 ) on multiple systems. Empirically, across six canonical dynamical systems (Duffing, Van der Pol, Lorenz, Lotka-Volterra, cubic oscillator, R¨ ossler) and three quantum feature map architectures (ZZ-angle encoding, IQP, data re-uploading), orthogonalized Q-SINDy consistently matches vanilla SINDy’s structural recovery while uncorrected augmentation degrades true-positive rates by up to 100%. A refined dynamics-aware diagnostic, R2 
+
+> Q
+
+for ˙X, predicts cannibalization severity with statistical significance (Pearson r = 0 .70, p = 0 .023). An RBF classical-kernel control across 20 hyperparameter configurations fails more severely than any quantum variant, ruling out feature count as the cause. Orthogonalization remains robust under depolarizing hardware noise up to 2% per gate, and the framework extends without modification to Burgers’ equation. 
+
+# 1 Introduction 
+
+Sparse identification of nonlinear dynamics (SINDy) [Brunton et al., 2016] has become a widely adopted framework for discovering governing equations of dynamical systems from time-series data. The method solves min  
+
+> Ξ
+
+∥ ˙X − Θ( X) Ξ ∥2 
+
+> F
+
++ λ∥Ξ∥0, (1) where Θ is a pre-specified library of candidate functions and sparsity in Ξ selects the active terms. Library choice is pivotal: too narrow a library misses true dynamics, too rich a library introduces spurious terms and numerical conditioning problems. 1
+
+> arXiv:2604.16779v1 [quant-ph] 18 Apr 2026
+
+A natural extension is to augment a baseline polynomial library P with a learned or structured feature family Q, yielding Θ = [ P, Q ]. This mirrors a broader trend in scientific machine learning toward hybrid symbolic–learned representations, and parallels growing interest in quantum algorithms for engineering applications more generally [Roy et al., 2025a]. In the quantum machine learning literature, quantum feature maps [Havl´ ıˇ cek et al., 2019, Schuld and Killoran, 2019, P´ erez-Salinas et al., 2020] project classical data into exponentially high-dimensional Hilbert spaces via parameterized circuits, and have shown promise on classification tasks [Huang et al., 2021]. Their application to equation discovery , however, has been limited to specialized variants (quantum Hamiltonian discovery [Tateyama and Kato, 2026], quantum-circuit-based model discovery [Heim et al., 2021], physics-informed solvers [Paine et al., 2023]). The direct question— does augmenting classical SINDy with a quantum feature library improve equation discovery? —has remained open. 
+
+Contributions. This paper answers that question with a nuanced “no, not naively, but yes with a geometric correction”. Our contributions: 1. We introduce Q-SINDy , a quantum-kernel-augmented SINDy method, and demonstrate that naive implementation suffers from a systematic failure mode we call coefficient cannibalization :the polynomial coefficients of the ground-truth equation are systematically biased away from their vanilla SINDy values as quantum features absorb part of the explanatory power that rightfully belongs to the polynomial basis. 2. We derive the exact coefficient-bias formula (Theorem 1) and prove that orthogonalizing the quantum feature matrix against the polynomial column space at fit time eliminates the bias (Theorem 3). Numerical verification confirms the theory to machine precision. 3. We introduce a dynamics-aware diagnostic R2 
+
+> Q
+
+(Section 5.4) that predicts cannibalization severity with statistical significance ( r = 0 .70, p = 0 .023), improving substantially over a column-space overlap baseline ( r = 0 .55, p = 0 .098). 4. Empirical validation spans six dynamical systems, three quantum feature map architectures (ZZ-angle, IQP, data re-uploading), hardware-noise simulation with depolarizing channels, and a PDE extension to Burgers’ equation. 
+
+# 2 Related Work 
+
+SINDy and extensions. Beyond the original SINDy [Brunton et al., 2016], PDE-FIND [Rudy et al., 2017] extends the framework to partial differential equations, Weak-SINDy [Messenger and Bortz, 2021] replaces pointwise derivatives with Galerkin weak forms for noise robustness, SINDYc [Kaiser et al., 2018] adds control inputs, SINDy-autoencoder [Champion et al., 2019] couples SINDy with neural coordinate discovery, and SINDy-PI [Kaheman et al., 2020] handles implicit dynamics. PySINDy [de Silva et al., 2020] provides the canonical implementation. All are complementary to our contribution, which concerns the library-construction step. 
+
+Quantum feature maps. Havl´ ıˇ cek et al. [2019] introduced the canonical IQP-style feature map and kernel formulation. Schuld et al. [2021] analyzed expressivity of data-encoded quantum models. P´ erez-Salinas et al. [2020] proposed data re-uploading circuits. These were designed with classification in mind; their use as regression feature libraries for equation discovery is the angle we pursue. 2Quantum machine learning for dynamics. SIQHDy [Tateyama and Kato, 2026] performs sparse identification of quantum Hamiltonian dynamics from measurement data—an orthogonal prob-lem to ours, which identifies classical ODEs using quantum features as representation. QMoD [Heim et al., 2021] uses differentiable quantum circuits [Mitarai et al., 2018] for model discovery via varia-tional optimization rather than sparse regression. Paine et al. [2023] use quantum kernels to solve 
+
+differential equations rather than discover them. None of these address our setting, where quantum features augment a classical polynomial library for equation discovery with sparse regression. 
+
+# 3 Methods 
+
+3.1 Q-SINDy: quantum-augmented equation discovery 
+
+Given time-series X ∈ RN ×d sampled from an autonomous dynamical system, we assemble two feature libraries: 
+
+• a polynomial library P ∈ RN ×p with columns {1, x i, x ixj , x ixj xk, . . . },
+
+• a quantum library Q ∈ RN ×q whose columns are expectation values of a fixed observable set under the state prepared by a parametrized circuit Uϕ(x). Letting ˙X denote an estimate of the time derivative (finite differences with mild smoothing in our experiments), Q-SINDy solves min  
+
+> Ξ
+
+∥ ˙X − [P Q] Ξ ∥2 
+
+> F
+
++ λ∥Ξ∥0 (2) via sequentially thresholded least squares (STLSQ). The intent is for Q to capture residual structure not expressible in P , sharpening recovery. 
+
+3.2 Quantum feature maps 
+
+We study three canonical feature-map designs, each mapping x ∈ Rd to a set of expectation values 
+
+⟨Ok⟩Uϕ(x)|0⟩:
+
+ZZ angle-encoded (2- or 3-qubit). Data-encoding rotations RX (xi) followed by RZZ (xixj )pairwise entanglers and a second rotation layer RY (xi), measured in Pauli-Z, Pauli-X, and ZZ/XX 
+
+bases. 
+
+IQP [Havl´ ıˇ cek et al., 2019]. Two layers of H⊗d followed by RZ (xi) and RZZ (xixj ), classically hard to simulate for sufficient depth. 
+
+Data re-uploading [P´ erez-Salinas et al., 2020]. Three interleaved layers of data encoding and fixed variational gates. Variational parameters are frozen so the map is deterministic. 
+
+3.3 The orthogonalization fix 
+
+Figure 1 shows the full pipeline. The key modification to naive Q-SINDy is a single algebraic step inserted between library construction and sparse regression: 
+
+Q⊥ = Q − P (P ⊤P )−1P ⊤Q. (3) This projects Q onto the orthogonal complement of the polynomial column space. Replacing Q
+
+with Q⊥ in Eq. (2), we obtain orthogonalized Q-SINDy .3Q-SINDy pipeline · orthogonalization eliminates coefficient cannibalization                                                
+
+> Time series
+> X(t)∈RN×d
+> Derivatives
+> ˙X=dX/dt
+> finite diff
+> P: polynomial library
+> [ 1 , x, y, x 2, xy, y 2, x 3, . . . ]
+> Q: quantum features
+> Qik =⟨ψ(xi)|Ok|ψ(xi)⟩,|ψ(x)⟩=Uϕ(x)|0⟩
+> CLASSICAL BASE QUANTUM AUGMENT
+> Orthogonalization step: Q⊥=Q−P(P⊤P)−1P⊤Q
+> Key property (Thm. 1)
+> P⊤Q⊥=0
+> Combined library Θ = [ P, Q ⊥]∈RN×(p+q)
+> Without orthogonalization:
+> Naive [P, Q ]regression gives
+> ˆξP= ˆξvanilla
+> P−∆ξP
+> ∆ξP= ( P⊤P)−1P⊤QˆξQ
+> = coefficient cannibalization
+> (Thm. 1, §3)
+> Sparse regression (STLSQ): min
+> Ξ∥˙X−Θ Ξ ∥2
+> F+λ∥Ξ∥0
+
+˙xi = ∑ 
+
+> j
+
+ξPij Pj (x)
+
+︸ ︷︷ ︸
+
+> polynomial terms
+> unbiased by Thm. 2
+
++ ∑ 
+
+> k
+
+ξQik Q⊥,k (x)
+
+︸ ︷︷ ︸ 
+
+> quantum residuals orthogonal to P
+
+Figure 1: The Q-SINDy pipeline with the orthogonalization step. The classical polynomial library 
+
+P and quantum feature library Q are combined, but Q is first projected onto the orthogonal complement of P ’s column space. This eliminates the coefficient-cannibalization bias (red callout) by construction; polynomial coefficients in the output remain unbiased. Without this step (straight concatenation [ P, Q ]), polynomial coefficients are biased by ∆ ξP = ( P ⊤P )−1P ⊤Q ˆξQ.
+
+# 4 Theory: Coefficient Cannibalization and Its Cure 
+
+We work in the least-squares setting (the non-sparse relaxation of Eq. (2) ) to derive exact formulae. The sparse regression we actually run (STLSQ) inherits the phenomenon: its active-set phase is a block least-squares problem to which Theorems 1–3 apply directly, as Proposition 4 below formalizes. 
+
+Theorem 1 (Coefficient cannibalization bias) . Let ˆξP , ˆξQ minimize ∥ ˙X − [P, Q ] Ξ ∥2
+
+F . Then the polynomial coefficients satisfy 
+
+ˆξP = ˆξ vanilla 
+
+P − (P ⊤P )−1 P ⊤Q ˆξQ
+
+| {z }
+
+∆ξP
+
+, (4) 
+
+where ˆξ vanilla 
+
+P = ( P ⊤P )−1P ⊤ ˙X is the vanilla SINDy fit. Proof. The block-matrix normal equations for min ∥ ˙X − [P, Q ]Ξ ∥2
+
+F are 
+
+P ⊤P P ⊤QQ⊤P Q⊤Q
+
+  ˆξP
+
+ˆξQ
+
+
+
+=
+
+P ⊤ ˙XQ⊤ ˙X
+
+
+
+.
+
+The top block gives P ⊤P ˆξP + P ⊤Q ˆξQ = P ⊤ ˙X. Solving for ˆξP yields Eq. (4). 
+
+Remark 2. Theorem 1 identifies two necessary conditions for cannibalization: (i) P ⊤Q̸ = 0 so that quantum features are not orthogonal to P , and (ii ) ˆξQ̸ = 0 so that quantum features have explanatory power for ˙X. Both are typical in practice because (i) quantum feature maps evaluated on trajectory 
+
+4data have large overlap with polynomial bases (empirically > 0.9 for most systems we study; see Table 3), and (ii) if Q had no explanatory power we would not have augmented the library at all. 
+
+Theorem 3 (Orthogonalization eliminates cannibalization) . Define Q⊥ = Q − P (P ⊤P )−1P ⊤Q.Replacing Q with Q⊥ in the augmented least squares yields 
+
+ˆξ orth  
+
+> P
+
+= ˆξ vanilla  
+
+> P
+
+. (5) 
+
+That is, the polynomial coefficients in orthogonalized Q-SINDy are identical to those of vanilla SINDy, independent of any ˆξQ obtained on the quantum residual. Proof. By construction, P ⊤Q⊥ = P ⊤Q − P ⊤P (P ⊤P )−1P ⊤Q = 0. The off-diagonal blocks of the normal equations vanish, the system decouples, and ˆξ orth  
+
+> P
+
+= ( P ⊤P )−1P ⊤ ˙X = ˆξ vanilla  
+
+> P
+
+.
+
+Proposition 4 (STLSQ preservation) . Let A ⊆ { 1, . . . , p + q} denote the active column set at any iterate of STLSQ, and partition A = AP ∪ A Q into polynomial and quantum indices. With the orthogonalized library [P, Q ⊥], the restricted-active-set least squares problem min ΞA ∥ ˙X − Θ:,AΞA∥2
+
+> F
+
+satisfies ˆξA, orth  
+
+> P
+
+= ( P ⊤AP PAP )−1P ⊤AP
+
+˙X, (6) 
+
+i.e. the polynomial active-set coefficients equal those that vanilla STLSQ would return on the same support AP , independent of ˆξA 
+
+> Q
+
+.Proof. Since P ⊤Q⊥ = 0, any column subset PAP of P and any column subset ( Q⊥):,AQ of Q⊥
+
+also satisfy P ⊤AP (Q⊥):,AQ = 0. The restricted normal equations decouple block-wise by the same argument as Theorem 3. 
+
+Remark 5. Proposition 4 is the practically important statement: our experiments use STLSQ rather than unpenalized least squares, and the proposition guarantees that the unbiased-polynomial-coefficient property of Theorem 3 is preserved at every STLSQ iterate. When STLSQ converges to an active set AP that contains the ground-truth support, the recovered polynomial coefficients are the vanilla STLSQ estimates on that same support—exactly as if quantum features had been omitted. 
+
+Figure 2 confirms the algebra numerically: predicted and observed polynomial-coefficient biases agree to relative error < 10 −12 , and the orthogonalized polynomial coefficients deviate from their vanilla counterparts by O(10 −14 )—i.e., both theorems hold modulo floating-point error. Conceptually, orthogonalization restricts quantum features to the subspace orthogonal to P , where they can only explain variance in ˙X that P itself cannot. The polynomial fit becomes decoupled from the quantum fit: no matter what the quantum coefficients do, they cannot shift polynomial coefficients. This is achievable at essentially zero cost—Eq. (3) is a single projection computed once per fit. 
+
+# 5 Experiments 
+
+We evaluate Q-SINDy across six dynamical systems, four methods (vanilla SINDy, RBF-augmented, naive Q-augmented, orthogonalized Q-SINDy), multiple noise levels, and three quantum feature-map architectures. Details (system parameters, initial conditions, circuit diagrams, STLSQ thresholds) are in Appendix A (Table 2). All quantum circuits are simulated with PennyLane [Bergholm et al., 2018]. Results are reported as true-positive rate (TPR) of ground-truth term recovery with signs correct and coefficients within 50% of true values. 5Figure 2: Theorem 1 verified to machine precision. For Duffing (left) and Lotka-Volterra (right, noise-free), predicted bias (orange) matches observed bias (blue) per polynomial feature to relative error < 10 −12 . Orthogonalized coefficients (green, barely visible) coincide with vanilla to 
+
+< 10 −14 , confirming Theorem 3. 
+
+5.1 Dense noise sweep: the headline finding 
+
+Figure 3 shows TPR curves across Duffing, Van der Pol, and Lorenz at 7 noise levels, N = 5 trials each, for the four methods. Three patterns emerge. 
+
+(i) Cannibalization is real and severe. On Duffing at σ = 0 .02, vanilla SINDy achieves TPR = 1 .0 while naive Q-augmentation drops to 0 .40—a 60% degradation at the same noise level. At higher noise ( σ = 0 .12), augmented TPR reaches 0 .20 while vanilla retains 0 .65. Lorenz shows the same pattern at its characteristic noise scale (Lorenz amplitudes are ∼ 10 × larger than Duffing’s, so comparable relative perturbations appear at larger σ). 
+
+(ii) Orthogonalization fixes it exactly. The green (orthogonalized) curve overlays the blue (vanilla) curve across all noise levels on all three systems, confirming Theorem 3 empirically. 
+
+(iii) RBF baseline performs worse, not better. Red curves crash to TPR= 0 at even mild noise, ruling out “more features help” as an explanation. 
+
+5.2 Generality across additional systems 
+
+Figure 4 repeats the sweep on three more systems: Lotka-Volterra, cubic oscillator, and R¨ ossler. The cannibalization-plus-orthogonalization pattern persists. Particularly striking: on Lotka-Volterra, cannibalization appears even at σ = 0—TPR= 0 for Q-augmented at zero noise, recovered to 1 .0 by orthogonalization. On the cubic oscillator, cannibalization emerges immediately above σ = 0, with Q-augmented TPR collapsing to 0 at the first nonzero noise level ( σ = 0 .01) while orthogonalized Q-SINDy retains TPR= 1 .0 until σ = 0 .05. Together these demonstrate that the failure mode is structural (coefficient geometry), not noise-induced. 
+
+5.3 Ruling out “more features”: RBF hyperparameter robustness 
+
+A natural objection is that cannibalization might simply reflect having too many features, mak-ing the RBF baseline too weak as tuned. To defuse this, we grid over RBF bandwidths γ ∈{0.25 , 0.5, 1, 2, 4} × γmedian and landmark counts {3, 6, 12 , 24 }—20 configurations on Duffing at 6Figure 3: Dense noise sweep (N=5 trials). Across Duffing, Van der Pol, and Lorenz, orthogonal-ized Q-SINDy (green) overlays vanilla SINDy (blue) at all noise levels, while naive Q-augmentation (orange) degrades significantly. RBF-augmented (red) baselines fail more severely, ruling out feature count as the mechanism. 
+
+σ = 0 .05. Figure 5 shows the TPR heatmap: the best RBF configuration achieves TPR= 0 .50 versus vanilla’s 0 .92. All 20 configurations fail. The pathology is not attributable to feature count. 
+
+5.4 Refined dynamics-aware diagnostic 
+
+A predictive diagnostic would be valuable: given a candidate feature map, can we predict in advance whether cannibalization will occur? A first attempt, frac variance in P = ∥P (P ⊤P )−1P ⊤Q∥2 
+
+> F
+
+/∥Q∥2 
+
+> F
+
+,measures column-space overlap. Across 10 (system, feature-map) combinations we found this corre-lates with observed cannibalization at Pearson r = 0 .55 (not significant, p = 0 .098). A refined diagnostic uses the dynamics :
+
+R2 
+
+> Q
+
+= 1 − ∥ ˙X − Q(Q+ ˙X)∥2
+
+> F
+
+∥ ˙X − ˙X∥2
+
+> F
+
+. (7) This is the R2 of a linear regression of ˙X on Q alone. High R2 
+
+> Q
+
+means quantum features can predict the time derivative well on their own—the precise condition (per Theorem 1) for ˆξQ to be large and for cannibalization to occur. Figure 6 shows the comparison. The refined diagnostic raises correlation to r = 0 .70 ( p =0.023)—statistically significant. It also correctly handles a previously anomalous case (Duffing with IQP feature map), where column-space overlap was high but cannibalization was negligible; R2
+
+> Q
+
+correctly predicts the low cannibalization. 
+
+Prospective validation. The in-sample correlation could in principle be inflated by post-hoc selection of the diagnostic form. To check, we perform exhaustive leave-k-out cross-validation on the ten ( system , feature-map ) combinations, fitting a linear predictor of cannibalization severity from each diagnostic on N −k points and measuring mean absolute error on the held-out k. Table 1 reports results for k ∈ { 1, 2, 3}, averaged exhaustively over all  10 
+
+> k
+
+ splits. The R2 
+
+> Q
+
+predictor achieves 7%–11% lower held-out MAE than column-space overlap across all k, confirming that the correlation generalizes rather than overfitting. 7Figure 4: Three additional systems (Lotka-Volterra, cubic oscillator, R¨ ossler). Pattern persists: orthogonalized Q-SINDy (green) tracks vanilla (blue) while naive Q-augmentation (orange) degrades. Lotka-Volterra shows cannibalization at σ = 0 itself; cubic oscillator from σ = 0 .01 onward, confirming the failure mode is coefficient-geometric rather than noise-driven. Table 1: Held-out MAE (cannibalization severity) under exhaustive leave-k-out cross-validation.              
+
+> kSplits Column-space overlap MAE R2
+> QMAE 110 0.246 0.228
+> 245 0.249 0.232
+> 3120 0.266 0.237
+
+5.5 Generality across quantum feature-map architectures 
+
+We test whether the cannibalization+orthogonalization pattern generalizes beyond the ZZ-angle encoding. On Duffing and Van der Pol, we swap in IQP and data re-uploading feature maps. Table 3 reports R2 
+
+> Q
+
+and observed cannibalization severity for each (system, feature-map) combination; orthogonalized Q-SINDy matches vanilla across all six ZZ/IQP/re-up variants on these two systems, with residual polynomial-coefficient deviations O(10 −14 ) in every case. The mechanism is not specific to any particular quantum architecture. Circuit specifications for each feature map appear in Appendix B. 
+
+5.6 Robustness to hardware noise 
+
+A common concern with quantum-feature methods is noise sensitivity. We simulate realistic hardware noise using PennyLane’s default.mixed device with depolarizing channels of strength p after each gate. Figure 7 shows Duffing TPR at σobs = 0 .02 as p varies from 0 to 0.02 (a 6-gate circuit has cumulative error rate ∼ 12% at p = 0 .02). Cannibalization severity is essentially unchanged; orthogonalization remains perfect. 
+
+5.7 PDE extension: Burgers’ equation 
+
+To demonstrate the framework extends beyond ODEs, we apply Q-SINDy to Burgers’ equation 
+
+ut = νu xx − uu x with ν = 0 .1. We build a spatial feature vector ( u, u x, u xx ) at each grid point and use the same 3-qubit quantum circuit. Vanilla SINDy recovers ut = 0 .0999 uxx − 1.0009 uu x at 
+
+σ = 0 (within 0 .1% of ground truth). The diagnostic gives R2 
+
+> Q
+
+= 0 .118, below the cannibalization 8Figure 5: RBF hyperparameter sweep. Across 20 configurations, the best RBF-augmented variant achieves TPR=0.50 vs. vanilla’s 0.92. Most configurations give TPR= 0. Feature count and bandwidth are not the mechanism. regime, correctly predicting that naive augmentation and orthogonalization will both recover ground truth—which they do (TPR= 1 .0 for both). This is the first validation of the R2 
+
+> Q
+
+diagnostic’s predictions in the absence of cannibalization. 
+
+# 6 Discussion and Limitations 
+
+We have identified coefficient cannibalization as a failure mode of quantum-augmented SINDy and introduced a principled geometric fix with theoretical guarantees and extensive empirical validation. The orthogonalization step is computationally free (one projection per fit), trivially compatible with any sparse regression solver, and preserves the quantum features’ ability to capture residual dynamics not expressible in P .
+
+When does orthogonalization matter? Theorem 1 gives the cannibalization bias as ∆ ξP =(P ⊤P )−1P ⊤Q ˆξQ, a product of three factors. The bias vanishes in either of two limiting cases: 
+
+(i) P ⊤Q ≈ 0, meaning quantum features are already nearly orthogonal to P ’s column space (no cannibalization precondition), or (ii) ˆξQ ≈ 0, meaning quantum features have no independent explanatory power for ˙X (no coefficient mass to cannibalize). Our experiments exemplify case (ii): both Van der Pol ( R2 
+
+> Q
+
+= 0 .12, overlap 0 .79) and Burgers’ equation (Sec. 5.7, R2 
+
+> Q
+
+= 0 .12) have low dynamics-relevant content in Q, and correspondingly exhibit minimal cannibalization (VdP severity +0 .25; Burgers zero). Pure case (i) is harder to reach with trajectory data because trajectory columns typically overlap strongly with polynomial features. Orthogonalization is most valuable in 9Figure 6: Dynamics-aware R2 
+
+> Q
+
+diagnostic vs. column-space overlap. Across 10 (system, feature-map) combinations, the refined R2 
+
+> Q
+
+diagnostic (right) predicts cannibalization severity with Pearson r = 0 .70 ( p = 0 .023), versus r = 0 .55 ( p = 0 .098) for column-space overlap (left). The previously anomalous Duffing/IQP case (square marker, low cannibalization despite high overlap) aligns with the R2 
+
+> Q
+
+prediction. the both-nontrivial regime, where quantum features are neither geometrically orthogonal to P nor dynamically inert, and naive augmentation silently degrades equation recovery. 
+
+Relation to other uses of “orthogonality” in quantum SciML. Recent work on quantum neural operators for PDEs integrates orthogonal quantum layers (QOrthoNN) into DeepONet, achieving linear-in-input-dimension inference complexity via unary encoding and pyramidal RBS-gate circuits [Xiao et al., 2025]. Their orthogonality is a property of weight matrices within a quantum neural network and delivers a circuit-counting computational advantage at inference. Our orthogonality is different in both content and purpose: a classical Gram–Schmidt projection of one feature matrix against another at fit time, used to eliminate a coefficient-bias mechanism rather than to reduce asymptotic complexity. The two contributions are complementary—feature-library design (ours) and efficient forward-pass architecture (theirs)—and could in principle be combined in a single quantum SciML pipeline. 
+
+Hardware scaling considerations. Our experiments use 2–3 qubit circuits that are classically simulable in microseconds; hardware execution at these scales would run slower, not faster, than simulation. The orthogonalization technique is substrate-independent: it applies identically whether 
+
+Q is generated by a larger quantum device, a classical kernel, or a neural network. Scaling to qubit counts where classical simulation of Q becomes intractable ( ≳ 20 qubits with ω(log n)-depth IQP-style circuits, where classical-hardness guarantees apply) is an engineering effort rather than a methodological one. Whether quantum features at such scales provide equation-discovery benefits not obtainable classically—i.e., a representation advantage beyond the complexity advantage established for quantum kernels on separate tasks—is an open empirical question that our small-scale experiments 10 Figure 7: Hardware-noise robustness. Under depolarizing channels up to 2% per gate (realistic NISQ regime), orthogonalized Q-SINDy retains vanilla TPR; naive augmentation retains its canni-balization. cannot settle. The hardware-noise results (Sec. 5.6) demonstrate the method’s portability to current NISQ devices; a real-hardware demonstration at 2–3 qubits is the natural near-term validation step. 
+
+Limitations. (1) All quantum feature maps tested (ZZ, IQP with 2 layers, data re-uploading) are classically simulable at the qubit counts we use; we make no claim of quantum computational advantage. Our contribution is methodological. (2) The R2 
+
+> Q
+
+diagnostic was validated on N = 10 (system , feature-map ) points; while leave-k-out cross-validation (Table 1) indicates the relationship generalizes within this set, scaling to 30+ combinations would tighten the statistical claim. (3) We demonstrate framework extension on one PDE (Burgers); cannibalization did not occur there because 
+
+R2 
+
+> Q
+
+was low. A PDE where cannibalization manifests—reaction–diffusion and Kuramoto–Sivashinsky are candidates—remains future work. (4) All experiments use STLSQ; whether cannibalization manifests equivalently under LASSO, Weak-SINDy, or Bayesian SINDy is unverified, though Proposition 4’s block-decoupling argument suggests orthogonalization should remain beneficial under any sparse regression that admits the same active-set normal equations. 
+
+Broader relevance. The cannibalization mechanism is not quantum-specific. Its precondition— that the augmenting feature matrix has significant column-space overlap with the base library 
+
+and explanatory power for the target—holds for any kernel-augmented sparse regression, including RBF, neural, and random-feature libraries. Our RBF baseline already shows that classical kernel augmentations fail on similar systems. The orthogonalization fix and the R2 
+
+> Q
+
+diagnostic apply iden-tically. We have demonstrated the effect in the quantum setting where it was surfaced by our initial experiments, and have chosen to keep this paper focused there; whether it quantitatively matters in neural-feature-augmented SINDy—for instance, in SINDy-autoencoder variants [Champion et al., 2019]—is an open question our work directly suggests. Downstream, reliable equation-discovery primitives matter for engineering applications where interpretability is a first-class requirement along-side accuracy: safety-critical systems increasingly pair physics-based simulators with data-driven surrogates in digital-twin architectures [Roy et al., 2025b, Kobayashi et al., 2025], and recovered symbolic dynamics can be verified, audited, and composed with existing physics codes in ways that 11 black-box surrogates cannot. 
+
+# 7 Conclusion 
+
+We introduced Q-SINDy, a quantum-kernel-augmented sparse identification framework, and showed that naive implementation suffers from systematic coefficient cannibalization that corrupts equation recovery. We derived the exact bias and proved that a simple orthogonalization step at library-construction time eliminates it. Experimental validation across six dynamical systems, three quantum feature-map architectures, an RBF classical baseline across 20 hyperparameters, realistic hardware noise, and a PDE case confirms both the failure mode and the fix. The dynamics-aware R2
+
+> Q
+
+diagnostic predicts cannibalization in advance. We hope this work accelerates reliable deployment of quantum feature libraries in scientific-machine-learning pipelines. 
+
+Reproducibility. All code, notebooks, and experimental checkpoints for four progressive experi-mental rounds are available at [repository URL] ; the full pipeline runs end-to-end in under one hour on a laptop. 
+
+# References 
+
+Steven L. Brunton, Joshua L. Proctor, and J. Nathan Kutz. Discovering governing equations from data by sparse identification of nonlinear dynamical systems. Proceedings of the National Academy of Sciences , 113 (15):3932–3937, 2016. Samrendra Roy, Kazuma Kobayashi, Sajedul Talukder, and Syed Bahauddin Alam. Harnessing quantum algorithms in nuclear engineering. In Nuclear Plant Instrumentation, Control & Human-Machine Interface Technology (NPIC & HMIT 2025) . American Nuclear Society, 2025a. Vojtˇ ech Havl´ ıˇ cek, Antonio D. C´ orcoles, Kristan Temme, Aram W. Harrow, Abhinav Kandala, Jerry M. Chow, and Jay M. Gambetta. Supervised learning with quantum-enhanced feature spaces. Nature , 567:209–212, 2019. Maria Schuld and Nathan Killoran. Quantum machine learning in feature Hilbert spaces. Physical Review Letters , 122(4):040504, 2019. Adri´ an P´ erez-Salinas, Alba Cervera-Lierta, Elies Gil-Fuster, and Jos´ e I. Latorre. Data re-uploading for a universal quantum classifier. Quantum , 4:226, 2020. Hsin-Yuan Huang, Michael Broughton, Masoud Mohseni, Ryan Babbush, Sergio Boixo, Hartmut Neven, and Jarrod R. McClean. Power of data in quantum machine learning. Nature Communications , 12(1):2631, 2021. Yusei Tateyama and Yuzuru Kato. Sparse identification of quantum hamiltonian dynamics via quantum circuit learning. arXiv:2602.14556 , 2026. Niklas Heim, Atiyo Ghosh, Oleksandr Kyriienko, and Vincent E. Elfving. Quantum model-discovery. 
+
+arXiv:2111.06376 , 2021. Annie E. Paine, Vincent E. Elfving, and Oleksandr Kyriienko. Physics-informed quantum machine learning: Solving nonlinear differential equations in latent spaces without costly grid evaluations. arXiv:2308.01827 ,2023. Samuel H. Rudy, Steven L. Brunton, Joshua L. Proctor, and J. Nathan Kutz. Data-driven discovery of partial differential equations. Science Advances , 3(4):e1602614, 2017. 
+
+12 Daniel A. Messenger and David M. Bortz. Weak SINDy: Galerkin-based data-driven model selection. 
+
+Multiscale Modeling & Simulation , 19(3):1474–1497, 2021. Eurika Kaiser, J. Nathan Kutz, and Steven L. Brunton. Sparse identification of nonlinear dynamics for model predictive control in the low-data limit. Proceedings of the Royal Society A , 474(2219):20180335, 2018. Kathleen Champion, Bethany Lusch, J. Nathan Kutz, and Steven L. Brunton. Data-driven discovery of coordinates and governing equations. Proceedings of the National Academy of Sciences , 116(45):22445–22451, 2019. Kadierdan Kaheman, J. Nathan Kutz, and Steven L. Brunton. SINDy-PI: a robust algorithm for parallel implicit sparse identification of nonlinear dynamics. Proceedings of the Royal Society A , 476(2242):20200279, 2020. Brian M. de Silva, Kathleen Champion, Markus Quade, Jean-Christophe Loiseau, J. Nathan Kutz, and Steven L. Brunton. PySINDy: A Python package for the sparse identification of nonlinear dynamical systems from data. Journal of Open Source Software , 5(49):2104, 2020. Maria Schuld, Ryan Sweke, and Johannes Jakob Meyer. Effect of data encoding on the expressive power of variational quantum-machine-learning models. Physical Review A , 103(3):032430, 2021. K. Mitarai, M. Negoro, M. Kitagawa, and K. Fujii. Quantum circuit learning. Physical Review A , 98(3): 032309, 2018. Ville Bergholm et al. PennyLane: Automatic differentiation of hybrid quantum-classical computations. 
+
+arXiv:1811.04968 , 2018. Pengpeng Xiao, Muqing Zheng, Anran Jiao, Xiu Yang, and Lu Lu. Quantum DeepONet: Neural operators accelerated by quantum computing. Quantum , 9:1761, 2025. Samrendra Roy, Kazuma Kobayashi, Souvik Chakraborty, Sajedul Talukder, and Syed Bahauddin Alam. Foundation models for dynamic nuclear systems: Energy-efficient surrogates via deep operator learning. 
+
+Transactions of the American Nuclear Society , 133(1):158–161, 2025b. Kazuma Kobayashi, Farid Ahmed, Samrendra Roy, Mehedi H. Tusar, Sajedul Talukder, and Syed Bahauddin Alam. Sequential deep operator network for time-series nuclear system monitoring. In Nuclear Plant Instrumentation, Control & Human-Machine Interface Technology (NPIC & HMIT 2025) , 2025. Edward N. Lorenz. Deterministic nonperiodic flow. Journal of the Atmospheric Sciences , 20(2):130–141, 1963. Otto E. R¨ ossler. An equation for continuous chaos. Physics Letters A , 57(5):397–398, 1976. 
+
+13 A System specifications 
+
+Table 2: Systems, parameters, and library configurations. 
+
+System Equations IC Poly deg. STLSQ thresh. Duffing ˙x = y, ˙y = −x − 0.3x3 − 0.1y [1 , 0] 3 0.05 Van der Pol ˙x = y, ˙y = μ(1 − x2)y − x, μ = 1 [2 , 0] 3 0.05 Lorenz [Lorenz, 1963] ˙x = 10( y − x), ˙y = x(28 − z) − y, ˙z = xy − 83 z [1 , 1, 1] 2 0.1 Lotka-Volterra ˙x = 23 x − 43 xy, ˙y = xy − y [1 , 1] 2 0.05 Cubic osc. ˙x = y, ˙y = −x3 [1 , 0] 3 0.05 R¨ ossler [R¨ ossler, 1976] ˙x = −y − z, ˙y = x + 0 .2y, ˙z = 0 .2 + z(x − 5.7) [1 , 1, 1] 2 0.1 
+
+Table 3: Feature overlap and cannibalization severity across (system, feature-map) combinations. 
+
+R2 
+
+> Q
+
+is the dynamics-aware diagnostic from Section 5.4. 
+
+System Feature map frac var in P R2 
+
+> Q
+
+Cannibalization Duffing ZZ 0.948 0.924 +0 .60 Duffing IQP 0.968 0.426 +0 .05 Duffing Re-up 0.971 0.665 +0 .45 Van der Pol ZZ 0.786 0.116 +0 .25 Van der Pol IQP 0.661 0.067 +0 .05 Van der Pol Re-up 0.762 0.357 +0 .35 Lorenz ZZ 0.985 0.934 +0 .34 Lotka-Volterra ZZ 0.999 0.986 +1 .00 Cubic osc. ZZ 0.985 0.855 +1 .00 R¨ ossler ZZ 0.987 0.956 +0 .43 
+
+# B Feature-map details 
+
+ZZ angle-encoded (2-qubit). Circuit: RX (x0) on q0, RX (x1) on q1; CNOT 0,1, RZ (x0x1) on q1,CNOT 0,1; then RY (xi) rotations. Six observables measured: ⟨Z0⟩, ⟨Z1⟩, ⟨X0⟩, ⟨X1⟩, ⟨Z0Z1⟩, ⟨X0X1⟩.
+
+ZZ angle-encoded (3-qubit). Analogous 3-qubit generalization with pairwise ZZ entanglers in a ring, yielding 9 observables. Input data is rescaled by π/ (2 · max |X|) for the 3D systems (Lorenz, R¨ ossler, Burgers). 
+
+IQP. Two layers of H⊗2, RZ (x0), R Z (x1), RZZ (x0x1). Measurements as for ZZ. 
+
+Data re-uploading. Three layers of the form [ RX (xi) encoding, fixed variational gates RZ , R Y , R X
+
+with parameters specified in code, CNOT ]. Variational parameters are fixed (not trained) to make the map deterministic. 14 C Orthogonalization algorithm 
+
+Algorithm 1 Orthogonalized Q-SINDy 
+
+Require: Time series X ∈ RN ×d, timestep dt , polynomial degree D, quantum feature map Uϕ,sparsity threshold λ 
+
+> 1:
+
+˙X ← SmoothedFiniteDifference( X, dt ) 
+
+> 2:
+
+P ← PolynomialFeatures( X, D ) 
+
+> 3:
+
+Q ← [⟨Ok⟩Uϕ(xi)|0⟩]i,k  
+
+> 4:
+
+A ← (P ⊤P )−1P ⊤Q ▷ projection matrix  
+
+> 5:
+
+Q⊥ ← Q − P A ▷ orthogonalization  
+
+> 6:
+
+Θ ← [P, Q ⊥] 
+
+> 7:
+
+Ξ ← STLSQ(Θ , ˙X, λ ) 
+
+> 8:
+
+return Ξ15

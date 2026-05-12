@@ -1,0 +1,1944 @@
+Title: Benchmarking Quantum Kernel Support Vector Machines Against Classical Baselines on Tabular Data: A Rigorous Empirical Study with Hardware Validation
+
+URL Source: https://arxiv.org/pdf/2604.18837v1
+
+Published Time: Wed, 22 Apr 2026 00:23:45 GMT
+
+Number of Pages: 45
+
+Markdown Content:
+# Benchmarking Quantum Kernel Support Vector Machines Against Classical Baselines on Tabular Data: A Rigorous Empirical Study with Hardware Validation 
+
+Siavash Kakavand ∗
+
+, Christoph Strohmeyer, Michael Schlotter 
+
+SHARE at FAU, Schaeffler Technologies AG & Co. KG, Herzogenaurach 91074, Bavaria, Germany 
+
+April 2026 
+
+Abstract 
+
+Quantum kernel methods have been proposed as a promising approach for leveraging near-term quantum computers for supervised learning, yet rigorous benchmarks against strong classical baselines remain scarce. We present a comprehensive empirical study of quantum kernel support vector machines (QSVMs) across nine binary classification datasets, four quantum feature maps, three classical kernels, and multiple noise models, totalling 970 experiments with strict nested cross-validation. Our analysis spans four phases: (i) statistical significance testing, revealing that none of 29 pairwise quantum–classical comparisons reach significance at α = 0 .05; (ii) learning curve analysis over six training fractions, showing steeper quantum slopes on six of eight datasets that nonetheless fail to close the gap to the best classical baseline; (iii) hardware validation on IBM ibm fez (Heron r2), demonstrating kernel fidelity r ≥ 0.976 across six experiments; and (iv) seed sensitivity analysis confirming reproducibility (mean CV 1.4%). A Kruskal–Wallis factorial analysis reveals that dataset choice dominates performance variance ( ε2 = 0 .73), while kernel type accounts for only 9%. Spectral analysis offers a mechanistic explanation: current quantum feature maps produce eigenspectra that are either too flat or too concentrated, missing the intermediate profile of the best classical kernel, the radial basis function (RBF). Quantum kernel training (QKT) via kernel-target alignment yields the single competitive result – balanced accuracy 0.968 on breast cancer – but with 
+
+∼ 2,000 × computational overhead. Our findings provide actionable guidelines for quantum kernel research. The complete benchmark suite is publicly available to facilitate reproduction and extension. 
+
+Keywords: Quantum machine learning, Quantum kernel methods, Support vector ma-chines, Benchmarking, Hardware validation, Feature maps 
+
+# 1 Introduction 
+
+The prospect of achieving computational advantages through quantum computing has gener-ated significant interest across machine learning [Biamonte et al., 2017, Schuld and Killoran, 2019, Havl´ ıˇ cek et al., 2019]. Among the most promising near-term approaches are quantum 
+
+> ∗
+
+Corresponding author: siavash.kakavand@rwth-aachen.de 
+
+1
+
+> arXiv:2604.18837v1 [quant-ph] 20 Apr 2026
+
+kernel methods , which leverage parameterised quantum circuits to embed classical data into exponentially large Hilbert spaces, where inner products serve as kernel evaluations for clas-sical support vector machines (SVMs) [Rebentrost et al., 2014, Havl´ ıˇ cek et al., 2019, Schuld, 2021]. This framework is theoretically appealing: it inherits the well-understood generalisation guarantees of classical kernel methods [Vapnik, 1998, Shawe-Taylor and Cristianini, 2004] while potentially accessing feature spaces that are classically intractable to compute under certain structural conditions [Liu et al., 2021]. Despite this theoretical promise, the practical utility of quantum kernels on real-world datasets remains an open question. Several theoretical works have identified conditions un-der which quantum kernels can provably outperform classical methods [Liu et al., 2021, Huang et al., 2021], but these constructions typically require specially crafted datasets or access to the data-generating process. On standard tabular datasets – the primary domain for SVMs in practice – the evidence for quantum advantage is mixed at best [Huang et al., 2021, K¨ ubler et al., 2021, Thanasilp et al., 2024]. Moreover, the exponential concentration of quantum ker-nels in high-dimensional feature spaces [Thanasilp et al., 2024] and the limited expressiveness of shallow quantum circuits [Schuld, 2021] raise fundamental concerns about the scalability of these methods. Existing benchmarks of quantum kernel SVMs suffer from several methodological limita-tions. Many studies (i) compare against weak classical baselines (e.g., linear SVMs only), (ii) use simple hold-out validation rather than nested cross-validation (CV), risking optimistic bias [Cawley and Talbot, 2010, Varma and Simon, 2006], (iii) evaluate on a single or few datasets without statistical significance testing [Demˇ sar, 2006], or (iv) rely entirely on simulation without hardware validation. The few studies that address some of these concerns [Schnabel and Roth, 2025] typically do not combine all elements into a single, comprehensive framework that also includes hardware execution on real quantum processors. In this work, we present a rigorous, large-scale empirical study of quantum kernel SVMs that addresses all of the above limitations simultaneously. Our benchmark comprises 970 experiments across nine binary classification datasets, four quantum feature maps, three classical kernel baselines, and three backend types (ideal simulation, noisy simulation, IBM quantum hardware), evaluated using strict nested cross-validation (main benchmark: 5 × 3 folds; extended study: 5 × 5 folds). We structure our analysis into four complementary phases: (i) Statistical analysis (Sect. 6.2): Paired Wilcoxon signed-rank tests across 29 quantum– classical comparisons, Kruskal–Wallis factorial analysis of seven experimental factors, and spectral analysis of 95 kernel matrices. (ii) Learning curves (Sect. 6.3): Evaluation at six training fractions (10%–100%) to assess data efficiency and convergence behaviour across 720 data points. (iii) Hardware validation (Sect. 6.4): Six experiments on IBM ibm fez (Heron r2 proces-sor, 156 qubits) computing fidelity-based kernel matrices and comparing against cached simulation results. (iv) Seed sensitivity (Sect. 6.5): Reproducibility analysis across 16 random seeds for 21 representative configurations, totalling 8 400 SVM fits. 2The remainder of this paper is organised as follows. Section 2 introduces the mathematical framework for quantum kernel methods. Section 3 reviews related benchmarking studies. Sec-tion 4 describes our benchmark methodology, including feature maps, kernels, and evaluation protocol. Section 5 details the experimental configuration. Section 6 presents results across all four phases. Section 7 discusses implications and limitations. Section 8 concludes with recommendations for the quantum kernel community. 
+
+# 2 Background 
+
+2.1 Support Vector Machines and Kernel Methods 
+
+A support vector machine (SVM) [Cortes and Vapnik, 1995, Vapnik, 1998] solves the binary classification problem by finding the maximum-margin hyperplane in a (possibly transformed) feature space. Given training data {(xi, y i)}Ni=1 with xi ∈ Rd and yi ∈ {− 1, +1 }, the soft-margin SVM optimises: min 
+
+> w,b, ξ
+
+12 ∥w∥2 + C
+
+> N
+
+X
+
+> i=1
+
+ξi, s.t. yi(w⊤ϕ(xi) + b) ≥ 1 − ξi, ξi ≥ 0, (1) where ϕ : Rd → H maps inputs to a reproducing kernel Hilbert space (RKHS) H, C > 0controls the regularisation–margin trade-off, and ξi ≥ 0 are slack variables measuring the margin violation of sample i. The dual formulation [Shawe-Taylor and Cristianini, 2004] depends on the data only through the kernel matrix :
+
+Kij = k(xi, xj ) = ⟨ϕ(xi), ϕ (xj )⟩H. (2) By Mercer’s theorem, any continuous symmetric positive semi-definite (PSD) function k : X × X → R on a compact domain X corresponds to an inner product in some RKHS. Common classical kernels include the linear kernel k(x, z) = x⊤z, the radial basis function (RBF) kernel 
+
+k(x, z) = exp( −γ∥x − z∥2), and the polynomial kernel k(x, z) = ( γx⊤z + r)p.
+
+2.2 Quantum Kernel Methods 
+
+Quantum kernel methods [Havl´ ıˇ cek et al., 2019, Schuld and Killoran, 2019] replace the classical feature map ϕ with a quantum feature map U (x) that encodes classical data into quantum states: 
+
+|ψ(x)⟩ = U (x)|0⟩⊗n, (3) where U (x) is a parameterised unitary acting on n qubits, and |0⟩⊗n is the all-zero initial state. The quantum kernel is then defined as the fidelity between encoded states: 
+
+kQ(x, z) = |⟨ ψ(x)|ψ(z)⟩| 2 = |⟨ 0|⊗nU †(x)U (z)|0⟩⊗n|2. (4) This fidelity kernel is symmetric, bounded in [0 , 1], satisfies kQ(x, x) = 1, and is PSD by con-struction [Schuld, 2021], since kQ(x, z) = |⟨ ψ(x)|ψ(z)⟩| 2 = Tr( ρxρz ) where ρx = |ψ(x)⟩⟨ ψ(x)|.3On a quantum computer, kQ(x, z) is estimated via the compute-uncompute circuit: apply U (x), then U †(z), and measure the probability of the all-zero bitstring. The implicit quantum feature map ϕQ(x) = |ψ(x)⟩ embeds data into a 2 n-dimensional Hilbert space. For n qubits, the feature space dimension grows exponentially, which may pro-vide representational power beyond efficient classical simulation [Havl´ ıˇ cek et al., 2019]. How-ever, Schuld [Schuld, 2021] proved that all quantum models with a fixed encoding circuit are mathematically equivalent to classical kernel methods, implying that any potential advantage must come from the specific structure of the quantum feature map rather than from quantum computation per se. 
+
+2.3 Quantum Feature Maps 
+
+The choice of quantum feature map U (x) is critical for kernel quality. Feature maps differ in their entanglement structure, circuit depth, and data encoding strategy. We evaluate four families, detailed in Sect. 4.3 and Appendix B: 
+
+• Rot2DoF : Product-state encoding with RX and RZ rotations per qubit (no entangle-ment). Constant depth = 12 at reps = 2. 
+
+• Belis [Belis et al., 2021]: Controlled-NOT (CNOT) ladder entanglement with RX /R Z
+
+data encoding. Depth scales linearly with n.
+
+• Sakhnenko10 [Sakhnenko et al., 2022]: Ring-CNOT topology with double-feature RX
+
+encoding interleaved with fixed RY (π/ 2) and RX (π/ 2) rotations per qubit, yielding a four-gate single-qubit block RX (x1) · RY (π/ 2) · RX (π/ 2) · RX (x2) per qubit, where x1, x 2
+
+denote the two encoded features. 
+
+• ZZFeatureMap [Havl´ ıˇ cek et al., 2019]: Hadamard preparation followed by pairwise ZZ -interaction data encoding. 
+
+2.4 Trainable Quantum Kernels 
+
+Quantum Kernel Training (QKT) [Hubregtsen et al., 2022] introduces learnable parameters 
+
+θ that scale the input features before encoding: x 7 → θ ⊙ x. The parameters are optimised to maximise the centred kernel-target alignment (KTA) [Cristianini et al., 2001, Cortes et al., 2012]: KTA( θ) = ⟨ ˜Kθ, ˜Y ⟩F
+
+∥ ˜Kθ∥F ∥ ˜Y ∥F
+
+, (5) where ˜Kθ is the centred kernel matrix with parameters θ, ˜Y = ˜ y ˜y⊤ is the centred ideal kernel, 
+
+⟨· , ·⟩ F denotes the Frobenius inner product, and centring removes the kernel mean: ˜K = HKH 
+
+with H = I − 1 
+
+> N
+
+11 ⊤. Centring ensures that KTA measures alignment in the zero-mean subspace, making the metric invariant to constant shifts in kernel entries and thus a more robust objec-tive for optimisation. The optimisation is performed using the efficient, gradient-based algo-rithm Limited-memory Broyden–Fletcher–Goldfarb–Shanno with Bound constraints (L-BFGS-B) with box constraints θj ∈ [0 .01 , 5.0]. The lower bound prevents degenerate zero-scaling that 4would effectively remove a feature from the encoding, while the upper bound limits extreme amplification that causes rotation-angle wrapping and numerical instability in the kernel. Crucially, to avoid data leakage, QKT parameters must be optimised per fold on training data only, as the optimal θ depends on the label distribution. 
+
+2.5 Kernel Matrix Spectral Analysis 
+
+The spectral properties of a kernel matrix K provide insight into its suitability for SVM classi-fication. We characterise kernels by: 
+
+• Effective rank ratio (normalised spectral entropy): ˆ r = exp  H(p)/N , where H(p) = 
+
+− P 
+
+> i
+
+pi ln pi is the Shannon entropy of the normalised eigenvalue distribution pi = λi/ P 
+
+> j
+
+λj
+
+(with λi > 0), and N is the matrix size. Values near 1 indicate a near-identity (flat) kernel; values near 1 /N indicate rank-1 collapse. 
+
+• Spectral concentration : Fraction of total variance captured by the top-k eigenvalues. 
+
+• Diagonal dominance : Ratio ¯Kdiag / ¯Koff-diag . High values indicate a near-identity kernel where all sample pairs are projected to nearly orthogonal states. An effective SVM kernel should have an intermediate spectral profile: sufficient eigenvalue concentration to provide discriminative structure for the decision boundary, but not so extreme as to collapse information (cf. the general spectral analysis framework in Shawe-Taylor and Cristianini [2004]). As we show in Sect. 6.2, current quantum feature maps tend toward one extreme or the other. 
+
+# 3 Related Work 
+
+Theoretical landscapes The theoretical underpinnings of quantum kernel methods were established by Havl´ ıˇ cek et al. [Havl´ ıˇ cek et al., 2019], who demonstrated that quantum com-puters can generate kernel functions corresponding to classically intractable feature maps, and by Schuld and Killoran [Schuld and Killoran, 2019], who formalised the connection between quantum circuits and kernel methods. Liu et al. [Liu et al., 2021] proved a rigorous quantum speed-up for a carefully constructed classification problem, establishing that provable advan-tages exist in principle. However, Huang et al. [Huang et al., 2021] showed that the advantage depends critically on the relationship between the quantum feature map and the data distribu-tion – classical methods equipped with a prediction function derived from the quantum model can match its performance when classical data is abundant. 
+
+Concentration and trainability K¨ ubler et al. [K¨ ubler et al., 2021] analysed the inductive bias of quantum kernels, demonstrating that random quantum feature maps tend to produce kernels that are essentially random inner products in high-dimensional spaces, offering no useful structure for classification. Thanasilp et al. [Thanasilp et al., 2024] proved that quantum kernels exhibit exponential concentration : as the number of qubits grows, all kernel values concentrate around a fixed value, rendering the kernel matrix uninformative. These results suggest that 5Table 1: Comparison of quantum kernel benchmarking studies. ✓ indicates inclusion; – indicates absence. NCV: nested cross-validation; Stats: statistical tests; Spec.: spectral analysis; Seed: seed sensitivity analysis. 
+
+Study Year Data NCV Stats QKT HW Spec. Seed 
+
+Havl´ ıˇ cek et al. 2019 1 – – – ✓ – –Peters et al. 2021 1 – – – ✓ – –Hubregtsen et al. 2022 5 – – ✓ – – –Belis et al. 2024 2 – – – ✓ – –Schnabel & Roth 2025 >5 ✓ ✓ – – – –
+
+This work 2026 9 ✓ ✓ ✓ ✓ ✓ ✓
+
+unstructured quantum feature maps cannot provide systematic advantages, and that problem-specific circuit design is essential. 
+
+Quantum kernel training To address the limitations of fixed feature maps, Hubregtsen et al. [Hubregtsen et al., 2022] proposed training quantum embedding kernels by optimising learnable parameters to maximise kernel-target alignment (KTA). Glick et al. [Glick et al., 2024] introduced covariant quantum kernels that exploit group structure in the data. Shay-dulin and Wild [Shaydulin and Wild, 2022] demonstrated the importance of kernel bandwidth tuning, showing that carefully scaled quantum kernels can significantly improve classification performance. 
+
+Benchmarking studies Several recent studies have benchmarked quantum kernels against classical methods. Peters et al. [Peters et al., 2021] evaluated quantum kernel methods on high-dimensional cosmological data (67 features) using Google’s Sycamore processor, demonstrating that kernel-based classification on real data is feasible on current hardware with careful attention to shot statistics. Belis et al. [Belis et al., 2021] benchmarked QSVMs on a trapped-ion device for high-energy physics classification, reporting competitive performance with specific feature map designs. Schnabel and Roth [Schnabel and Roth, 2025] performed a scrutiny-focused benchmark in the same journal, highlighting the importance of proper evaluation methodology and identifying common pitfalls in existing studies. 
+
+Our contribution in context Our work builds upon and extends these studies in several key dimensions, summarised in Table 1. Specifically, we combine: (i) nine datasets spanning a range of sizes, dimensionalities, and class balances (vs. typically 2–5), (ii) strict nested cross-validation throughout (vs. hold-out or simple k-fold), (iii) comprehensive statistical testing with Wilcoxon, Friedman, and Kruskal–Wallis tests including effect sizes, (iv) both fixed and train-able quantum kernels, (v) hardware validation on IBM Quantum hardware alongside simulation, (vi) spectral analysis providing mechanistic explanations, and (vii) seed sensitivity analysis for reproducibility assessment. To our knowledge, no single prior study integrates all seven of these dimensions simultaneously. 6Table 2: Dataset characteristics. N : post-cleaning sample count; d: original features; Class ratio: majority/minority class balance. 
+
+Dataset N d Class Ratio Domain 
+
+banknote 1372 4 56/44 Image authentication breast cancer 569 30 63/37 Medical diagnosis diabetes pima 768 8 65/35 Medical diagnosis haberman 306 3 74/26 Survival analysis heart disease 303 13 54/46 Medical diagnosis ionosphere 351 34 64/36 Radar signal parkinson 489 489 22 75/25 Speech analysis sonar 208 60 53/47 Signal classification spambase 4601 57 61/39 Text classification 
+
+# 4 Methodology 
+
+4.1 Datasets 
+
+We evaluate on nine binary classification datasets from the UCI Machine Learning Reposi-tory [Dua and Graff, 2017] and OpenML [Vanschoren et al., 2014], selected to span a range of sample sizes ( N ∈ [208 , 4601]), dimensionalities ( d ∈ [3 , 60]), and class balances. Table 2 sum-marises the dataset characteristics. While the majority of datasets originate from biomedical and physical-science domains, they cover distinct statistical profiles (feature counts, class ra-tios, separability) and are standard benchmarks in the classical SVM literature, enabling direct comparison with established baselines. 
+
+4.2 Preprocessing and Dimensionality Reduction 
+
+Quantum feature maps require low-dimensional input, because embedding data into an exces-sively large Hilbert space often results in exponentially vanishing inner products, rendering the quantum kernel uninformative as the Gram matrix converges toward the identity matrix. This necessitates dimensionality reduction from the original feature space to k ∈ { 3, 4, 6, 8, 10 , 12 , 14 }
+
+dimensions. The number of qubits depends on the encoding strategy: feature maps with double-feature encoding (Rot2DoF, Belis, Sakhnenko10) embed two features per qubit via paired single-qubit rotations, requiring n = ⌈k/ 2⌉ qubits for k features; ZZFeatureMap uses single-feature encoding with one qubit per feature, requiring n = k qubits. We employ three reduction strate-gies: 
+
+• PCA (Principal Component Analysis): An unsupervised linear projection that retains the top-k orthogonal principal components maximising explained variance [Pedregosa et al., 2011], preceded by standard scaling to zero mean and unit variance. 
+
+• NMF (Non-negative Matrix Factorisation) [Lee and Seung, 1999]: A parts-based decom-position that factorises the feature matrix into k non-negative components, preserving additive structure. Preceded by min-max scaling to [0 , 1] to enforce the non-negativity constraint. 7• Tree (SelectFromModel): A supervised feature-selection method that ranks the original features by Gini importance from a fitted DecisionTreeClassifier and selects the top-k
+
+features, preceded by standard scaling. Unlike PCA and NMF, this retains interpretable original features rather than constructing linear combinations. All preprocessing – scaling and dimensionality reduction – is applied per outer CV fold :the scaler and reducer are fit exclusively on the training split and then used to transform both training and test splits. This prevents information leakage from test-fold statistics into the feature transforms. For quantum experiments, the per-fold design requires computing a separate kernel matrix for each outer fold (rather than a single global N × N matrix), increasing the kernel budget by a factor equal to the number of outer folds. We accept this additional cost to ensure that absolute performance estimates are unbiased. Reduced features are passed directly to the quantum feature-map circuits as rotation-gate angles (no further rescaling to a fixed range such as [0 , π ] is applied). 
+
+4.3 Quantum Feature Maps 
+
+We evaluate four quantum feature maps spanning different entanglement topologies and encod-ing strategies. All circuits use native-gate decomposition ( SX +RZ ) for hardware compatibility. The circuit depth is controlled by the reps parameter (default: reps = 2). We briefly describe each feature map below; full circuit diagrams and per-qubit-count properties are provided in Appendix B (Fig. 6). 
+
+Rot2DoF A product-state encoding with no entanglement. Each qubit encodes two features via paired rotations: Urot (x) = QRr=1 
+
+Qn−1 
+
+> q=0
+
+RX (x2q) RZ (x2q+1 ). Its constant depth (= 12 at 
+
+R = 2) makes it the shallowest circuit, and the absence of two-qubit gates gives it the highest hardware fidelity. 
+
+Belis Proposed by Belis et al. [2021] for high-energy physics classification. Each repeti-tion applies an encoding block Sx with RX (x2q) RZ (x2q+1 ) per qubit, a CNOT ladder for nearest-neighbour entanglement, and a second encoding block S′ 
+
+> x
+
+with swapped rotation axes (RZ (x2q) RX (x2q+1 )). Like Rot2DoF, it uses double-feature encoding ( ⌈k/ 2⌉ qubits). 
+
+Sakhnenko10 Based on Sakhnenko et al. [2022]. Applies double-feature RX encoding with fixed intermediate rotations ( RY (π/ 2), RX (π/ 2)) and ring-topology CX gates for cyclic entan-glement. The ring structure creates all-to-all correlations even at moderate depth. 
+
+ZZFeatureMap The standard Qiskit feature map based on Havl´ ıˇ cek et al. [2019]. Encodes data through pairwise ZZ interactions: UZZ (x) = Q
+
+> r
+
+[Q 
+
+> i<j
+
+eix ixj ZiZj Q 
+
+> i
+
+Hi]. Uses single-feature encoding ( k qubits), and the product xixj creates second-order feature interactions. Table 3 summarises the properties of the decomposed circuits. 8Table 3: Quantum feature map circuit properties at reps = 2 after native-gate decomposition. Depths and gate counts are for k = 8 features. CX: two-qubit controlled-NOT gates. Params: number of unique data-encoding parameters (= k). Qubits: number of qubits for k = 8 features. Post-transpilation metrics for hardware experiments are reported in Appendix B.                                      
+
+> Feature Map Qubits Depth CX Params Entanglement Encoding
+> rot2dof 412 0kNone (product state) RX, R Z(2/qubit) belis 429 6kCNOT ladder (linear) RX, R Z(2/qubit) sakhnenko10 448 8kRing CNOT RX(2/qubit) zzfm 867 112 kZZ interaction RZ(1/qubit)
+
+4.4 Kernel Computation 
+
+We compute kernel matrices via three pathways: 
+
+Ideal (statevector) Exact overlap kQ(x, z) = |⟨ ψ(x)|ψ(z)⟩| 2 computed via statevector sim-ulation. Each data point is embedded once: the feature-map circuit U (x) is applied to |0⟩⊗n
+
+and the resulting 2 n-dimensional statevector is stored. Kernel entries are then computed as classical inner products |⟨ ψ(x)|ψ(z)⟩| 2, requiring O(N ) circuit simulations plus O(N 2) classical dot products for an N -sample dataset. This provides the noise-free reference kernel matrix; diagonal entries are 1 by definition. 
+
+Noisy (density matrix) The kernel is computed as the Hilbert–Schmidt inner product 
+
+kQ(x, z) = Tr[ ρ(x) · ρ(z)], where ρ(x) is the density matrix of the encoded state U (x)|0⟩⊗n
+
+evolved under a depolarising noise model with single-qubit error rate p1q = 10 −3 and two-qubit error rate p2q = 10 −2, representative of current superconducting hardware. For pure states this equals the fidelity |⟨ ψ(x)|ψ(z)⟩| 2; for the mixed states arising from decoherence the Hilbert– Schmidt inner product remains a valid positive semi-definite kernel but is no longer identical to the Uhlmann fidelity [Havl´ ıˇ cek et al., 2019]. The density-matrix trace formulation avoids the O(N 2) circuit overhead of the compute-uncompute approach: each data point requires only 
+
+one circuit simulation to obtain ρ(x), and kernel entries are computed as classical matrix inner products. This provides an O(N ) circuit advantage while faithfully modelling incoherent noise. 
+
+Hardware (IBM QPU) Fidelity-based compute-uncompute circuits executed on IBM ibm fez (Heron r2, 156 qubits) [IBM Quantum, 2024] using Qiskit Runtime SamplerV2. For each pair (x, z), the circuit U (x) followed by U †(z) is applied and measured. Circuits are transpiled at 
+
+optimization level=3 to the native gate set {rz, sx, controlled-Z (CZ) , x }, minimising circuit depth. Each kernel entry is estimated from 1 024 shots as the empirical probability of the all-zero bitstring: ˆk(x, z) = count( 0)/1024. No readout error mitigation is applied; results therefore reflect raw hardware fidelity. 
+
+Kernel post-processing Simulation kernels (ideal and noisy) are positive semi-definite (PSD) by construction: ideal kernels are Gram matrices of statevector inner products, and noisy ker-nels are Hilbert–Schmidt inner products of positive operators. No explicit eigenvalue clipping is applied. Hardware kernel matrices, which can be slightly indefinite due to shot noise, are 9also used without PSD projection: scikit-learn’s SVC accepts pre-computed kernels that may be indefinite, and retaining the raw matrices preserves the unfiltered hardware signal for fidelity analysis. 
+
+4.5 Classical Baselines 
+
+We compare against three classical SVM kernels: 
+
+• Linear : k(x, z) = x⊤z.
+
+• RBF : k(x, z) = exp( −γ∥x − z∥2) with γ = 1 /(d · Var( X)) (scikit-learn gamma="scale" ). 
+
+• Polynomial (degree 3): k(x, z) = ( γx⊤z)3, i.e., the homogeneous variant ( r = 0 in the general form of Eq. 2’s discussion; scikit-learn SVC default coef0=0 ). Classical kernels are computed analytically using scikit-learn [Pedregosa et al., 2011], providing exact baselines without shot noise or hardware artefacts. 
+
+4.6 Evaluation Protocol 
+
+Nested cross-validation All experiments use stratified nested cross-validation [Cawley and Talbot, 2010, Varma and Simon, 2006]: the main benchmark (V1) uses a 5 × 3 design (5 outer, 3 inner folds) and the extended study (V2) uses 5 × 5 (5 outer, 5 inner folds). In both cases, the outer folds provide unbiased performance estimation and the inner folds select the C-hyperparameter from C ∈ { 0.01 , 0.1, 1, 10 , 100 }. For the Parkinson 489 dataset, group-aware splits ensure no speaker appears in both training and test folds. For each outer fold, prepro-cessing is fit on the training split, the training and test features are transformed, and the kernel matrices are computed from the transformed features. Inner CV operates on the training-fold kernel sub-matrix. 
+
+Primary metric Balanced accuracy BA = 12
+
+ TP TP+FN + TN TN+FP 
+
+
+
+is reported as the primary metric due to class imbalance in several datasets. We also compute F1-score, Matthews corre-lation coefficient (MCC), receiver operating characteristic area under the curve (ROC-AUC), and precision-recall AUC. 
+
+Statistical testing We employ nonparametric rank-based tests, which make no distributional assumptions about the per-fold accuracy values: 
+
+• Wilcoxon signed-rank test [Wilcoxon, 1945]: Two-sided paired comparison of per-fold BA arrays ( n = 5) between quantum and classical kernels. This test is the nonparametric counterpart of the paired t-test and is appropriate for small paired samples. 
+
+• Friedman test [Friedman, 1937]: Omnibus test for differences among multiple methods within each dataset, the nonparametric equivalent of repeated-measures ANOVA. When significant, Nemenyi post-hoc tests identify which pairs of methods differ. 10 The Wilcoxon signed-rank and Friedman tests are the recommended nonparametric methods for classifier comparison across multiple datasets [Demˇ sar, 2006]. In addition, we perform a factorial screening via: 
+
+• Kruskal–Wallis H-test [Kruskal and Wallis, 1952]: One-way analysis of seven experimental factors (dataset, reducer, k, kernel family, backend, QKT flag, group) on balanced accu-racy across all 222 extended-study configurations, with epsilon-squared ( ε2) effect sizes. Unlike the paired tests above, Kruskal–Wallis treats the experimental configurations as independent observations and identifies which design factors most influence performance – the nonparametric equivalent of one-way ANOVA. Within the Phase 4 seed sensitivity analysis, Bonferroni correction is applied across the seven per-dataset comparisons ( αcorr = 0 .05 /7). 
+
+Reproducibility Deterministic seeding (seed = 42) is used throughout. All experiments log the Python environment, library versions, git commit hash, and random states. Kernel matrices are cached as content-addressable NumPy compressed archive ( .npz ) files (xxhash-based keys) for exact reproducibility. 
+
+# 5 Experimental Setup 
+
+The benchmark is organised into two experimental campaigns – a main benchmark and a targeted extended study – plus four analysis phases, totalling 970 kernel evaluations and 8 400 additional SVM fits. 
+
+5.1 Main Benchmark (V1) 
+
+This campaign comprises 748 experiments across five systematic sweeps: 
+
+• Main comparison: 8 datasets × 7 kernels (4 quantum + linear + rbf + poly) at default settings ( k = dmax , reps = 2, no noise). 
+
+• Reducer ablation: PCA vs. NMF vs. tree-based selection on representative dataset– kernel pairs. 
+
+• Qubit scaling: k ∈ { 3, 4, 6, 8} features with both PCA and NMF. 
+
+• Circuit depth: reps ∈ { 1, 2, 3} for all quantum feature maps. 
+
+• Noise sensitivity: Depolarising noise at p1q ∈ { 0, 5×10 −4, 10 −3, 5×10 −3} using density-matrix simulation. All experiments use 5 × 3 nested CV, producing 588 cached kernel matrices and 748 result records. 11 5.2 Extended Study (V2) 
+
+Motivated by V1 findings, the extended study adds 222 targeted experiments: 
+
+• Higher-k: k ∈ { 10 , 12 , 14 } for breast cancer, ionosphere, and sonar with NMF and tree reducers. Tests whether more qubits improve quantum kernel performance. 
+
+• Larger datasets: spambase ( n = 1 ,000 stratified subsample) and diabetes pima at k ∈{4, 6, 8, 10 }. Tests scalability to larger problems. 
+
+• Quantum Kernel Training (QKT): 28 QKT experiments across 7 datasets with per-fold theta optimisation via L-BFGS-B. Tests whether learnable feature scaling can close the quantum–classical gap. The extended study uses 5 × 5 nested CV (more inner folds), generating 95 additional kernel matrices. QKT experiments each require 50–170 iterations of kernel recomputation per fold, resulting in ∼ 2,000 × computational overhead vs. classical baselines. 
+
+5.3 Analysis Phases 
+
+The analysis phases operate on existing data from both campaigns without generating new kernel matrices: 
+
+• Phase 1 (Statistical analysis): 29 Wilcoxon tests, 9 Friedman tests, 7-factor Kruskal– Wallis, QKT stability analysis (28 configs), kernel eigenvalue decomposition (95 matrices), computational cost analysis, and dataset suitability criterion. 
+
+• Phase 2 (Learning curves): 720 data points from 24 representative configurations (8 datasets × 3 categories) at 6 training fractions (10%, 20%, 30%, 50%, 70%, 100%), using precomputed kernel sub-matrices. 
+
+• Phase 3 (Hardware validation): 6 experiments on IBM ibm fez (Heron r2, 156 qubits) [IBM Quantum, 2024], designed to answer three research questions. Q1 (Headline fidelity): Does the hardware kernel faithfully reproduce ideal simulation? Q2 (Entanglement ef-fect): How does entangling (belis) vs. product-state (rot2dof) encoding affect hardware performance? Q3 (Cross-dataset generalisation): Does kernel fidelity hold across multiple datasets? Each experiment computes a 60 × 60 kernel matrix on a stratified subsample using 1 830 compute-uncompute circuits at 1 024 shots. Total: ∼11 000 circuits. Table 4 details the experimental matrix. 
+
+• Phase 4 (Seed sensitivity): 21 configs × 16 seeds × 5 folds × 5 inner folds = 8 ,400 SVM fits. The kernel matrix is held fixed; only the StratifiedKFold random state varies. 12 Table 4: Hardware experiments on IBM ibm fez (Heron r2). All use 1 024 shots, k = 6 −10 features, and nsub = 60 stratified subsample.                                           
+
+> ID Dataset Feature Map Reducer kDepth CZ Gates
+> HW-01 breast cancer belis NMF 10 74 16 HW-02 breast cancer rot2dof NMF 10 22 0HW-03 sonar belis PCA 662 8HW-04 sonar rot2dof PCA 622 0HW-05 diabetes pima belis NMF 662 8HW-06 diabetes pima rot2dof NMF 622 0
+
+5.4 Implementation 
+
+The benchmark suite is implemented in Python 3.10+ using Qiskit 2.1+ [Javadi-Abhari et al., 2024] for quantum circuit construction and simulation, and scikit-learn [Pedregosa et al., 2011] for classical SVMs. The complete codebase comprises ∼18 700 non-blank lines of Python across 22 modules and 51 scripts, with 132 unit tests achieving full pass status. All quantum circuits use native-gate ( SX +RZ ) decomposition. Hardware experiments use Qiskit Runtime SamplerV2 in Job mode (IBM Quantum Open Plan, no sessions) with optimization level=3 transpilation. No readout error mitigation is applied; results reflect raw hardware fidelity. Computation was performed on a standard workstation (11th Gen Intel Core i7-1185G7, 3.00 GHz, 16 GB RAM) for simulation, and IBM ibm fez (156-qubit Heron r2 processor) for hardware experiments. Hardware wall times range from 11 to 74 minutes per experiment (dominated by queue wait times). The complete simulation benchmark requires approximately 48 hours of compute time. 
+
+# 6 Results 
+
+We present results across four analysis phases: statistical analysis (Sect. 6.2), learning curves (Sect. 6.3), hardware validation (Sect. 6.4), and seed sensitivity (Sect. 6.5). 
+
+6.1 Main Benchmark Overview 
+
+Table 5 summarises the best-performing kernel for each dataset across both campaigns. The classical linear kernel achieves the highest mean balanced accuracy across datasets (BA = 0 .830), followed by RBF (0 .825) and polynomial (0 .807). The best quantum kernel, rot2dof, achieves BA = 0 .649 – an 18.1 percentage point (pp) gap to linear. With QKT optimisation, the best quantum configuration (belis/tree/k=8 on breast cancer) reaches BA = 0 .968, narrowly approaching the classical ceiling. The sole dataset showing quantum favourability is haberman (∆ = +3 .2 pp), the smallest and hardest dataset in our suite with classical baselines at BA ≈ 0.55. On all other datasets, classical kernels dominate by 1.6–12.0 pp. 13 Table 5: Best balanced accuracy (BA) per dataset. Q-Ideal: best quantum kernel (ideal simu-lation); Q-QKT: best quantum kernel with QKT; Classical: best classical baseline. ∆: Q-Ideal 
+
+− Classical.                                                   
+
+> Dataset Classical Kernel Q-Ideal Q-QKT ∆haberman 0.549 rbf 0.581 0.586 +3.2 spambase 0.903 rbf 0.888 —−1.6 ionosphere 0.935 rbf 0.905 0.911 −3.1 sonar 0.872 rbf 0.813 0.748 −5.9 diabetes pima 0.729 linear 0.669 0.676 −6.0 breast cancer 0.976 rbf 0.913 0.968 −6.3 banknote 1.000 rbf 0.921 0.871 −7.9 parkinson 489 0.829 rbf 0.746 —−8.3 heart disease 0.844 poly3 0.724 0.804 −12.0 Haberman
+> Spambase
+> Ionosphere
+> Sonar
+> Diabetes
+> Breast C.
+> Banknote
+> Parkinson
+> Heart D.
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Balanced Accuracy
+> Classical
+> Q-Ideal
+> Q-QKT
+
+Figure 1: Balanced accuracy comparison across all nine datasets. For each dataset, bars show the best classical kernel (blue), best quantum ideal kernel (orange), and best quantum kernel with QKT (purple, where available). Classical kernels dominate on 8/9 datasets; haberman is the sole exception. 
+
+6.2 Statistical Significance and Factor Analysis 
+
+Zero significant quantum advantages Table 6 reports paired Wilcoxon signed-rank tests comparing the best quantum (ideal) kernel against the best classical kernel per dataset, using per-fold balanced accuracy arrays ( n = 5 folds). None of the 29 pairwise comparisons reach statistical significance at α = 0 .05. The minimum achievable two-sided p-value for the exact Wilcoxon signed-rank test with n = 5 paired observations is p = 0 .0625, which places a fun-damental floor on statistical power. Several comparisons reach this floor (e.g., breast cancer, banknote, diabetes pima at p = 0 .0625), suggesting that larger fold counts might reveal signif-icance – but in the wrong direction for quantum advocates, as classical kernels outperform on 8/9 datasets. Friedman tests within each dataset confirm significant omnibus differences among methods (p < 0.001 for all 9 datasets), establishing that the kernel methods are not exchangeable. The lack of Wilcoxon significance is thus a sample-size limitation ( n = 5), not an absence of performance differences. 14 Table 6: Wilcoxon signed-rank tests: best quantum (ideal) vs. best classical per dataset. BA: balanced accuracy. ∆: quantum − classical BA. All tests non-significant at α = 0 .05.                                         
+
+> Dataset Best Quantum Best Classical ∆p
+> haberman sakhnenko10 rbf +0.032 0.3125 spambase belis rbf −0.016 0.0625 ionosphere belis rbf −0.031 0.0625 sonar rot2dof rbf −0.059 0.1250 diabetes pima rot2dof linear −0.060 0.0625 breast cancer rot2dof rbf −0.063 0.0625 banknote rot2dof rbf −0.079 0.0625 parkinson 489 rot2dof rbf −0.083 0.1250 heart disease rot2dof poly3 −0.120 0.0625
+
+0.00 0.20 0.40 0.60 0.80 
+
+Effect size ( 2)
+
+Uses QKT 
+
+Reducer 
+
+Backend type 
+
+Kernel family 
+
+Experiment group 
+
+Features ( k)
+
+Dataset 
+
+0.014 (n.s.) 
+
+0.016 (n.s.) 
+
+0.068 
+
+0.089 
+
+0.168 
+
+0.278 
+
+0.729 
+
+(V3-1) Factor Importance on Balanced Accuracy 
+
+Figure 2: Kruskal–Wallis epsilon-squared ( ε2) effect sizes for seven experimental factors. Dataset choice dominates performance variance at ε2 = 0 .73, while kernel family contributes only ε2 =0.089. 
+
+Factorial analysis A Kruskal–Wallis analysis examines seven experimental factors on bal-anced accuracy across all 222 extended-study experiments. Dataset choice dominates with 
+
+ε2 = 0.73 ( p < 10 −31 ), explaining 73% of rank variance – 8 × larger than kernel family (ε2 = 0 .089). Feature dimensionality ( k) is the second most important factor ( ε2 = 0 .278). Notably, the reducer (NMF vs. tree) and QKT flag are not statistically significant, suggesting that these design choices matter less than the dataset itself. 
+
+Spectral analysis: The Goldilocks hypothesis Eigenvalue decomposition of 95 kernel matrices reveals a structural explanation for quantum kernel underperformance. Table 7 shows that quantum feature maps produce extreme eigenspectra: 
+
+• Belis kernels are near-uniform : effective rank ratio 0.40–0.74, top-1 eigenvalue explains only 3–6% of variance. The kernel matrix is approximately identity-like, providing minimal 15 Table 7: Kernel matrix spectral properties across extended-study configurations ( n = 95 kernel matrices, 3 datasets). Effective rank ratio normalised by matrix size N .
+
+Kernel Eff. Rank Ratio Top-1 Var. Top-5 Var. Diag. Dom. 
+
+belis (quantum) 0.40–0.74 3–6% 7–13% 18–39 rot2dof (quantum) 0.01–0.02 52–57% 66–72% 1.9–2.2 linear (classical) 0.01 27–29% 76–80% 568 poly3 (classical) 0.03 22–26% 62–63% 154–168 rbf (classical) 0.06–0.07 31–35% 52–54% 3.7–3.8 belis 
+
+> rot2dof
+> rbf
+> linear
+> poly3
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Effective Rank Ratio
+> (a) Eigenspectrum Spread
+> belis
+> rot2dof
+> rbf
+> linear
+> poly3
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Top-1 Eigenvalue Explained Var.  (b) Spectral Concentration
+> (V3-2) Kernel Eigenspectrum Profiles
+
+Figure 3: Kernel eigenspectra comparison across all extended-study configurations (3 datasets, 
+
+k ∈ { 4, 6, 8, 10 , 12 , 14 }, NMF and tree reducers). Belis produces a near-uniform spectrum (too flat), rot2dof is heavily concentrated in the first eigenvalue (too peaked), while RBF occupies an intermediate “Goldilocks zone” that enables the best SVM performance. geometric structure for the SVM decision boundary. 
+
+• Rot2dof kernels are extremely concentrated : top-1 eigenvalue captures 52–57%, effective rank ratio 0.01–0.02. Information is collapsed onto essentially one principal component. 
+
+• RBF kernels occupy an intermediate “ Goldilocks zone ”: top-1 at 31–35%, effective rank 0.06–0.07. This provides sufficient structure for discrimination while preserving multi-dimensional information. Neither quantum kernel achieves the spectral profile of RBF, which quantitatively explains their consistent underperformance. This “ Goldilocks hypothesis ” – that an ideal kernel must be neither too flat nor too concentrated – offers a constructive design criterion for future quantum feature maps. 
+
+Computational cost Quantum kernel computation via statevector simulation costs a mean of 3.07 s per kernel matrix, versus 0.31 s for classical kernels – a 10 × overhead. QKT adds a further ∼ 207 × factor (50–170 iterations), totalling ∼ 2,060 × overhead (Fig. 6 in Appendix D). Given the comparable or inferior accuracy, the cost–benefit ratio is strongly unfavourable for quantum kernels on the tested datasets. 16 Table 8: Hardware validation results on IBM ibm fez (Heron r2). FM: feature map. HW: hardware. r: Pearson correlation between hardware and ideal kernel matrices (off-diagonal entries). BA: downstream 5-fold SVM balanced accuracy on n = 60 subsample. ∆: hardware 
+
+− ideal.                                                
+
+> ID Dataset FM Pearson rMAE BA (HW) ∆ pp HW-01 breast cancer belis 0.986 0.008 0.473 +1.2 HW-02 breast cancer rot2dof 0.996 0.018 0.760 +7.5 HW-03 sonar belis 0.984 0.018 0.550 +3.3 HW-04 sonar rot2dof 0.998 0.013 0.544 −2.6 HW-05 diabetes pima belis 0.976 0.025 0.511 −5.5 HW-06 diabetes pima rot2dof 0.997 0.017 0.538 +5.2
+> Mean 0.990 0.016 —+1.5
+
+6.3 Learning Curve Analysis 
+
+We evaluate 24 representative configurations (8 datasets × 3 categories) at six training fractions to assess data efficiency. Slopes are computed via ordinary least-squares (OLS) regression of balanced accuracy on log ntrain across six fractions. Learning curves and full slope data are reported in Fig. 7 and Table 40 (Appendix D). 
+
+Comparable learning rates, persistent classical lead On 6 of 8 datasets, the quantum– classical accuracy gap narrows slightly as training size increases, with quantum kernels ex-hibiting steeper learning slopes on 6/8 datasets (Table 40). The mean slope across quantum ideal configurations is 0.032 (BA per log-unit of ntrain ), matching the classical mean of 0.032. However, since quantum kernels start from a lower baseline, comparable learning rates do not translate into competitive final accuracy: classical baselines maintain or widen their lead at full training size on 8 of 9 datasets. 
+
+Haberman: the sole quantum success Only on haberman does the quantum kernel sur-pass the representative classical configuration at full training size (BA = 0 .581 vs. 0 .534, gap narrows from −0.002 to +0 .046, where the learning-curve classical representative uses a fixed config rather than the best overall classical BA of 0.549), consistent with our Phase 1 finding that haberman is the sole dataset with marginal quantum favourability (Table 5). 
+
+Heart disease: quantum divergence On heart disease, quantum starts slightly ahead at 10% training data (+0 .8 pp) but falls far behind at 100% ( −11 .0 pp), suggesting the quantum kernel’s limited spectral structure prevents it from exploiting additional data. 
+
+6.4 Hardware Validation on IBM Quantum 
+
+Six experiments on IBM ibm fez validate that quantum kernels computed on real hardware closely reproduce ideal simulation. Table 8 summarises kernel fidelity metrics and downstream SVM performance. 
+
+Kernel fidelity (Q1) Across all six experiments, the Pearson correlation between hardware and ideal kernel matrices satisfies r ≥ 0.976 (exact minimum r = 0 .9758 for HW-05, rounded to 17 0.0 0.2 0.4 0.6 0.8 1.0      
+
+> Ideal simulation kernel value
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Hardware kernel value
+> HW-01: r=0.9858, MAE=0.0075
+> HW-02: r=0.9961, MAE=0.0176
+> HW-03: r=0.9843, MAE=0.0179
+> HW-04: r=0.9978, MAE=0.0126
+> HW-05: r=0.9758, MAE=0.0250
+> HW-06: r=0.9973, MAE=0.0170
+> (a) Hardware vs Ideal
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Noisy simulation kernel value
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Hardware kernel value
+> HW-01: r=0.9860, MAE=0.0066
+> HW-02: r=0.9961, MAE=0.0238
+> HW-03: r=0.9847, MAE=0.0146
+> HW-04: r=0.9978, MAE=0.0131
+> HW-05: r=0.9766, MAE=0.0207
+> HW-06: r=0.9974, MAE=0.0197
+> (b) Hardware vs Noisy
+> HW-01 (breast_c./belis)
+> HW-02 (breast_c./rot2dof)
+> HW-03 (sonar/belis)
+> HW-04 (sonar/rot2dof)
+> HW-05 (diabetes_p./belis)
+> HW-06 (diabetes_p./rot2dof)
+> Identity
+
+Figure 4: Hardware vs. simulation kernel entries for six experiments on IBM ibm fez (Heron r2): (a) hardware vs. ideal statevector simulation, (b) hardware vs. noisy depolarising simulation. Each point represents one upper-triangular off-diagonal kernel entry; colours distinguish indi-vidual experiments (see legend). Pearson r ≥ 0.976 for both ideal and noisy comparisons across all experiments, validating that both statevector and depolarising-noise simulations are faithful proxies for hardware kernel matrices. three decimal places in Table 8), with a mean of r = 0 .990. Mean absolute error (MAE) ranges from 0.008 to 0.025 per kernel entry. This validates statevector simulation as a faithful proxy for hardware at the circuit scales tested (3–5 qubits, depth 22–74). 
+
+Noise as regulariser Hardware kernels yield marginally higher BA than ideal simulation in 4 of 6 experiments (mean ∆ = +1 .5 pp). While not statistically significant at n = 60, the consistent direction across experiments is noteworthy; we discuss the theoretical interpretation in Sect. 7.3. 
+
+Entanglement impact (Q2) Comparing feature map pairs within each dataset: on breast cancer, rot2dof outperforms belis by 28.7 pp (BA = 0 .760 vs. 0 .473); on sonar, the difference is negli-gible ( −0.6 pp); on diabetes pima, rot2dof leads by +2 .7 pp. The entanglement effect is thus 
+
+dataset-dependent . However, rot2dof consistently achieves higher kernel fidelity (mean r = 0 .997 vs. 0 .982 for belis), attributable to its shallower hardware circuits (depth 22 vs. 62–74, zero CZ gates). 
+
+Cross-dataset generalisation (Q3) Kernel fidelity r ≥ 0.976 across all three datasets con-firms that hardware noise does not selectively degrade specific data distributions. The validation generalises from breast cancer ( k = 10, 5 qubits) to sonar ( k = 6, 3 qubits) and diabetes pima (k = 6, 3 qubits). 18 Table 9: Seed sensitivity: coefficient of variation (CoV) of mean balanced accuracy (BA) across 16 seeds. “QI Wins”: number of seeds where quantum ideal BA exceeds classical BA.                                                                  
+
+> Dataset CoV CoV CoV QI Wins Mean QI Wilcoxon Classical Q-Ideal Q-Noisy /16 Adv. p
+> banknote 0.000 0.002 0.004 0/16 −0.084 <0.001 breast cancer 0.005 0.007 0.007 0/16 −0.069 <0.001 diabetes pima 0.007 0.017 0.016 0/16 −0.053 <0.001
+> haberman 0.033 0.026 0.024 14/16 +0.019 0.004
+> heart disease 0.019 0.018 0.014 0/16 −0.072 <0.001 ionosphere 0.008 0.008 0.008 0/16 −0.055 <0.001 sonar 0.018 0.028 0.024 0/16 −0.081 <0.001
+> Mean 0.013 0.015 0.014 ———
+
+6.5 Seed Sensitivity Analysis 
+
+Table 9 reports the stability of balanced accuracy across 16 random seeds for 21 representative configurations (7 datasets × 3 categories). 
+
+High reproducibility The mean CoV across all configurations is 1.4%, with maximum BA range 0.065 (heart disease, classical). The reference seed (42) is not an outlier – results are robust to fold randomisation. 
+
+Resolving Phase 1 ambiguity With 16 paired observations (vs. 5 in Phase 1), Wilcoxon tests now achieve sufficient statistical power: all 7 datasets show significant differences at α =0.05. On 6/7 datasets, classical kernels are significantly better ( p < 0.001). On haberman, quantum kernels are significantly better ( p = 0 .004), winning on 14/16 seeds. The Phase 1 result of “0/29 significant” was entirely a sample-size limitation. 
+
+Haberman advantage is robust The quantum advantage on haberman (+1 .9 pp mean, 
+
+p = 0 .004, 87.5% win rate) persists across random seed perturbation, confirming it is not a statistical artefact of the reference seed. 
+
+# 7 Discussion 
+
+7.1 Why Quantum Kernels Underperform: A Structural Explanation 
+
+The spectral analysis in Sect. 6.2 reveals that current quantum feature maps produce kernel ma-trices with extreme eigenspectra – either near-identity (belis) or near-rank-1 (rot2dof) – failing to provide the intermediate spectral structure that enables effective SVM decision boundaries. The RBF kernel, by contrast, occupies a “Goldilocks zone” with moderate spectral con-centration (effective rank ratio 0.06–0.07). This is no coincidence: the RBF bandwidth γ is specifically tuned (via scikit-learn’s auto-scaling) to match the data distribution, while quan-tum feature maps encode data through a fixed nonlinear transformation without such adaptive scaling. 19 Implications for quantum feature map design This analysis suggests that the quantum kernel community should prioritise feature maps with tunable spectral properties . QKT [Hubregt-sen et al., 2022] is one approach, but it is computationally expensive ( ∼ 2,000 × overhead). Alternative strategies include: 
+
+• Bandwidth-aware encoding : Introducing a learnable or data-dependent rescaling of fea-tures to [0 , π ] before encoding, analogous to RBF γ tuning. 
+
+• Covariant kernels : Leveraging data symmetries to construct structurally matched feature maps [Glick et al., 2024]. 
+
+• Spectral pre-screening : Computing the effective rank ratio of a candidate quantum kernel 
+
+before running the full SVM pipeline, rejecting kernels with extreme profiles. 
+
+7.2 Dataset Dominance and Benchmarking Practice 
+
+The finding that dataset choice explains 73% of performance variance (Sect. 6.2) has important implications for the QML benchmarking community. It suggests that: 1. Performance differences between quantum feature maps on a single dataset are largely uninformative – the dataset itself, not the kernel, drives the result. 2. Future benchmarks should prioritise dataset diversity over exhaustive kernel hyperparam-eter sweeps. 3. Claims of quantum advantage based on a single or few datasets are inherently fragile, as our Phase 4 results demonstrate: the direction of the quantum–classical gap is consistent across seeds, but the dataset determines whether it favours quantum or classical. The non-linearity gap (RBF − linear BA) shows a Spearman correlation with quantum ad-vantage ( ρ = 0 .683, p = 0 .042), suggesting potential for pre-screening: datasets where classical non-linearity is minimal may be better candidates for quantum kernels, aligning with the the-oretical insight that quantum advantage should occur for problems that are hard for classical feature maps [Liu et al., 2021, Huang et al., 2021]. We note that this correlation is based on only nine datasets and is at the boundary of statistical significance; it should be interpreted as a suggestive hypothesis rather than a confirmatory result. 
+
+7.3 Hardware Validation and the Simulation–Reality Gap 
+
+The high kernel fidelity established in Sect. 6.4 ( r ≥ 0.976 across all experiments) provides strong evidence that the negative results from our simulation-based benchmark transfer to real hardware at the tested circuit scales (3–5 qubits, depth 22–74). The noise-as-regulariser trend observed in Sect. 6.4 (4/6 experiments, mean +1 .5 pp) aligns with theoretical work by Heyraud et al. [2022], who showed that decoherence suppresses the effective kernel rank, acting as implicit regularisation. In classical machine learning, Bishop [1995] established the formal equivalence between training with noise and Tikhonov regularisa-tion; an analogous mechanism may operate at the kernel-computation level in quantum systems. 20 0.02 0.00 0.02 0.04 0.06 0.08 0.10 
+
+Nonlinearity Gap (RBF Linear BA)   
+
+> 0.12
+> 0.10
+> 0.08
+> 0.06
+> 0.04
+> 0.02
+> 0.00
+> 0.02
+> Quantum Advantage (Best Q  Best C)  Haberman
+> Spambase
+> Ionosphere
+> Sonar Diabetes
+> Breast Cancer
+> Banknote
+> Parkinson
+> Heart Disease
+> Spearman = 0.683
+> p= 0.042
+
+(V3-4) Dataset Suitability for Quantum Kernels Figure 5: Dataset suitability criterion: non-linearity gap (RBF − linear BA) vs. quantum advantage (∆). Spearman ρ = 0 .683 ( p = 0 .042). Haberman is the only dataset above the dashed parity line, indicating positive quantum advantage. However, the effect is small, not statistically significant at n = 60, and may not persist at larger sample sizes where regularisation is less critical. 
+
+Practical QPU readiness The experimental pipeline demonstrates end-to-end hardware readiness: vectorised SamplerV2 Primitive Unified Blocs (PUBs) enable efficient circuit sub-mission ( ∼1 830 circuits per experiment) and per-batch checkpointing ensures resume-safety. No readout error mitigation is applied, yet the high kernel fidelity ( r ≥ 0.976) confirms that raw hardware counts suffice at the tested circuit scales. Each experiment consumes approxi-mately 10 minutes of QPU time. Scaling to larger datasets ( n > 100) will require O(n2) circuits, making QPU cost a primary bottleneck. 
+
+7.4 Quantum Kernel Training: Promise and Limitations 
+
+QKT achieves the single competitive quantum result (BA = 0 .968 on breast cancer via belis/tree/k=8), almost matching the classical ceiling (BA = 0 .976). However, several concerns temper this suc-cess: 1. Computational cost : QKT requires 50–170 iterations per fold, each involving a full kernel recomputation, resulting in ∼ 2,000 × overhead vs. classical SVM. 2. Low convergence : Only 13.6% of QKT configurations converge (reach optimal KTA within tolerance). Most hit the iteration limit. 21 3. Theta instability : Mean coefficient of variation of QKT parameters across folds is 0.54, indicating that the optimiser finds different solutions per fold. While KTA consistently improves (mean +0.13), the structure of the learned scaling varies. 4. Dataset sensitivity : QKT improves belis on 5/7 datasets but harms performance on small datasets (sonar: −4 to −6 pp regression), suggesting overfitting of the theta param-eters. 5. Haberman failure : QKT on haberman – the sole dataset with quantum favourability – yields BA = 0 .500–0 .586 (near random), indicating that QKT cannot exploit the same structure that fixed quantum kernels capture. These findings suggest that QKT is best understood as a kernel bandwidth tuning method rather than a fundamental quantum advantage mechanism. 
+
+7.5 Limitations 
+
+Simulation fidelity While our hardware experiments validate simulation at 3–5 qubits, the noise landscape at higher qubit counts may differ qualitatively. Coherent errors, crosstalk, and qubit leakage (i.e., population transfer to non-computational states) – not captured by our depolarising noise model – may become significant at n > 10. 
+
+Statistical power The Wilcoxon signed-rank test with n = 5 folds has a minimum achievable 
+
+p-value of 0.0625, limiting power for small effect sizes. Our Phase 4 seed analysis partially addresses this, but the ideal approach would be repeated k-fold CV with more folds or bootstrap resampling. 
+
+Preprocessing cost Our per-fold preprocessing design – fitting scalers and dimensionality reducers independently on each outer training fold – requires computing a separate kernel matrix for every outer fold rather than caching a single global N × N matrix. For quantum kernels this multiplies the already-dominant circuit budget by the number of outer folds. We accept this cost to ensure unbiased absolute performance estimates; future work on efficient per-fold kernel caching or feature-map parameter sharing may reduce this overhead. 
+
+Binary classification only All experiments address binary classification. The findings may not generalise to multi-class problems, regression, or structured prediction tasks. 
+
+Dataset scope Our nine datasets, while diverse, are drawn from the UCI repository and may not represent all relevant application domains. Industrial datasets with specific geometric structure may exhibit different quantum–classical dynamics. 
+
+Feature map selection We test four quantum feature maps, all based on single- and two-qubit gates with reps ≤ 3. More expressive architectures (e.g., hardware-efficient circuit designs, problem-specific layouts) might perform differently. 22 8 Conclusion 
+
+We have presented a comprehensive, four-phase empirical study of quantum kernel support vector machines, benchmarking four quantum feature maps against three classical SVM kernels across nine binary classification datasets, with 970 total experiments and strict nested cross-validation (main benchmark: 5 × 3; extended study: 5 × 5). 
+
+Main findings Our results lead to the following principal conclusions: 1. No quantum advantage on standard tabular data. None of the 29 pairwise com-parisons reach statistical significance at α = 0 .05. The Phase 4 seed analysis (16 seeds, 
+
+n = 8 ,400 SVM fits) confirms that classical kernels are significantly better on 6/7 datasets (p < 0.001). Only haberman shows robust quantum favourability ( p = 0 .004, 87.5% seed win rate), with a modest +1 .9 pp advantage. 2. Dataset choice dominates performance. Kruskal–Wallis factorial analysis reveals that dataset selection accounts for 73% of performance variance ( ε2 = 0 .73), while kernel type contributes only 9%. This implies that quantum–classical comparisons on a single dataset are insufficient. 3. Spectral mismatch explains the gap. Quantum feature maps produce kernel ma-trices with extreme eigenspectra – either near-identity (belis) or near-rank-1 (rot2dof) – while the best classical kernel (RBF) achieves an intermediate profile. This “Goldilocks hypothesis” provides a constructive design criterion for future quantum feature maps. 4. Hardware validation confirms simulation faithfulness. Across six experiments on IBM ibm fez (Heron r2), kernel fidelity satisfies r ≥ 0.976 (mean r = 0 .990), and downstream SVM performance is statistically indistinguishable from simulation. The negative results from simulation transfer to hardware. 5. QKT yields the sole competitive result, at high cost. Quantum kernel training via KTA optimisation reaches BA = 0 .968 on breast cancer, near the classical ceiling of 0.976 – but with ∼ 2,000 × computational overhead, 13.6% convergence rate, and high parameter instability. 6. Quantum kernels show steeper individual slopes but no aggregate data advan-tage. Learning curves show steeper quantum slopes on 6/8 datasets and gap narrowing on 6/8; however, the mean quantum and classical slopes are equal (0.032), indicating that while quantum kernels start from a lower baseline they learn at a comparable aggregate rate. 
+
+Recommendations Based on these findings, we offer the following recommendations for the quantum kernel research community: 
+
+• For benchmarking : Use nested cross-validation, multiple diverse datasets, and statistical significance testing with effect sizes. Report confidence intervals, not just point estimates. 23 • For feature map design : Target intermediate spectral profiles. Compute the effective rank ratio as a cheap diagnostic before committing to expensive evaluations. 
+
+• For QKT : Invest in more efficient optimisation strategies (e.g., analytic gradients, quan-tum natural gradient) to reduce the ∼ 2,000 × overhead. Address convergence instability. 
+
+• For advantage claims : Demonstrate improvements that are (i) statistically significant, (ii) substantial ( >5 pp), (iii) consistent across seeds, and (iv) observed on multiple datasets. 
+
+Future work Several directions merit further investigation: 
+
+• Hardware scaling : Extending hardware validation to higher qubit counts ( n = 10 −20) and more complex feature maps to test whether fidelity degrades gracefully or catastrophically. 
+
+• Problem-specific feature maps : Designing quantum circuits informed by the data geometry or symmetry group [Glick et al., 2024], rather than using generic architectures. 
+
+• Projected quantum kernels : Using partial trace operations to create richer kernel structures that may achieve better spectral properties [Huang et al., 2021]. 
+
+• Error mitigation : Evaluating whether advanced error mitigation techniques (zero-noise extrapolation, probabilistic error cancellation) can improve hardware kernel quality be-yond readout correction. 
+
+• Real-world industrial datasets : Testing quantum kernels on domain-specific classification problems (e.g. manufacturing quality control, predictive maintenance) where data geom-etry may differ from standard UCI benchmarks. 
+
+Reproducibility The complete benchmark suite – comprising ∼18 700 lines of open-source Python code, 683 cached kernel matrices, 54 figures, and 132 unit tests – is publicly available to facilitate reproduction and extension of our results. 
+
+# A Dataset Descriptions 
+
+Table 10 provides detailed descriptions of all nine binary classification datasets used in this study. All datasets are publicly available from the UCI Machine Learning Repository [Dua and Graff, 2017] or OpenML [Vanschoren et al., 2014]. 
+
+Preprocessing Pipeline 
+
+All datasets undergo the following standardised preprocessing pipeline, applied independently per outer CV fold to prevent information leakage: 1. Missing value handling : Datasets with missing values (diabetes pima: zeros as missing for glucose, blood pressure, body mass index (BMI)) are imputed with column medians. 24 Table 10: Full dataset descriptions, preprocessing, and class distributions. N : post-cleaning sample count used in all experiments; d: original feature dimensionality.                                                       
+
+> Dataset NdClass ratio Description banknote 1372 456:44 Wavelet-transformed features from banknote images; task is genuine vs. forged classification. breast cancer 569 30 63:37 Wisconsin Diagnostic Breast Cancer; 30 real-valued features computed from digitised cell nuclei images. diabetes pima 768 865:35 Diabetes diagnosis from clinical measurements (Pima commu-nity); 8 features. haberman 306 374:26 Haberman’s survival data; 3 features: patient age, year of operation, number of axillary nodes. heart disease 303 13 54:46 Cleveland Heart Disease; 13 clinical attributes including chest pain type, resting blood pressure. ionosphere 351 34 64:36 Johns Hopkins Ionosphere radar returns; 34 pulse features indicating good/bad radar signal. parkinson 489 489 22 75:25 Replicated Acoustic Features – Parkinson Database; 22 acous-tic features from sustained phonation tasks (80 subjects, grouped by speaker for CV). sonar 208 60 53:47 Connectionist Bench; 60 frequency-band energy features from sonar returns (rocks vs. mines). spambase 4601 57 61:39 UCI Spambase; 57 word/character frequency features for spam vs. ham email classification.
+
+2. Standardisation : Features are scaled to zero mean and unit variance using StandardScaler 
+
+(or MinMaxScaler for NMF), fit on the outer-fold training split only and then applied to both training and test splits. 3. Dimensionality reduction : Features are projected to k ∈ { 3, 4, 6, 8, 10 , 12 , 14 } compo-nents using one of three methods, each fit on the training split: 
+
+• PCA : Principal Component Analysis, retaining the top-k principal components. 
+
+• NMF : Non-negative Matrix Factorisation [Lee and Seung, 1999], extracting k non-negative components. 
+
+• Tree : DecisionTreeClassifier -based feature importance ranking, selecting the top-k features by Gini impurity. 4. Kernel computation : Reduced features are passed directly as rotation-gate angles to the quantum feature maps (no further rescaling to a fixed range is applied). Kernel matrices are computed per fold from the transformed features. 
+
+Subsampling for Hardware Experiments 
+
+For Phase 3 hardware validation (Sect. 6.4), full datasets are subsampled to n = 60 stratified samples to fit within QPU time budgets. Subsampling preserves the original class ratio via stratified random sampling with fixed seed ( seed = 42). The subsampled indices are stored in 
+
+split indices.json for reproducibility. 25 Dataset Provenance 
+
+Table 11 lists the primary repository identifiers for each dataset. The benchmark framework fetches datasets at runtime using the ucimlrepo Python package (primary source) with an automatic fallback to OpenML [Vanschoren et al., 2014] via sklearn.datasets.fetch openml 
+
+(specifying version=1 for reproducibility). The breast cancer dataset is loaded from scikit-learn’s built-in copy, which mirrors the UCI source. Downloaded datasets are cached locally by the respective libraries ( ucimlrepo and scikit-learn) and are not re-fetched on subsequent runs. Table 11: Dataset provenance. UCI ID: identifier used by ucimlrepo.fetch ucirepo() ;OpenML name: identifier used by sklearn.datasets.fetch openml() as fallback.                               
+
+> Dataset Primary source UCI ID OpenML name
+> banknote UCI 267 banknote-authentication breast cancer sklearn built-in ——diabetes pima UCI 34 diabetes haberman UCI 43 haberman heart disease UCI 45 heart-statlog ionosphere UCI 52 ionosphere parkinson 489 UCI 489 (local CSV fallback) sonar UCI 151 sonar spambase UCI 94 spambase
+
+# B Quantum Feature Map Specifications 
+
+This appendix details the four quantum feature maps evaluated in this study. All circuits use the compute-uncompute (fidelity) kernel: K(x, x′) = |⟨ ψ(x)|ψ(x′)⟩| 2, where |ψ(x)⟩ = U (x)|0⟩⊗n.
+
+Encoding convention. Rot2DoF, Belis, and Sakhnenko10 employ double-feature encoding :each qubit absorbs two classical features via paired rotations, so n = ⌈k/ 2⌉ qubits suffice for k
+
+features. ZZFeatureMap uses single-feature encoding with n = k qubits. Property tables below list k as the feature count; see Section 4.2 for qubit counts. Figure 6 shows the quantum circuits for the four evaluated feature maps at k = 4 features (n = 2 qubits for rot2dof, belis, and sakhnenko10; n = 4 qubits for zzfm). 
+
+B.1 Rot2DoF (Two-Parameter Rotation) 
+
+A product-state encoding that applies two single-qubit rotations per qubit per repetition: 
+
+Urot2dof (x) = 
+
+> R
+
+Y
+
+> r=1
+> n−1
+
+Y
+
+> q=0
+
+RX (x2q) RZ (x2q+1 ) (6) where RX and RZ are Pauli rotation gates, R is the number of repetitions, and qubit q en-codes features x2q and x2q+1 (double-feature encoding). Despite its simplicity, rot2dof achieves competitive QSVM performance due to its expressiveness in the single-qubit Bloch sphere. 26 (a) Rot2DoF (product state) 
+
+q0 |0 
+
+q1 |0 
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+(b) Belis (CNOT ladder) 
+
+q0 |0 
+
+q1 |0 
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+(c) Sakhnenko10 (ring CNOT) 
+
+q0 |0 
+
+q1 |0 
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[0] 
+
+RZ
+
+x[2] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+X
+
+X
+
+x[1] 
+
+RZ
+
+x[3] 
+
+RZ
+
+X
+
+X
+
+/2 
+
+RZ
+
+/2 
+
+RZ
+
+(d) ZZFeatureMap (Pauli-Z)
+
+0 |0 
+
+1 |0 
+
+2 |0 
+
+3 |0                         
+
+> H
+> H
+> H
+> H
+> 2*x[0]
+> P
+> 2*x[1]
+> P
+> 2*x[2]
+> P
+> 2*x[3]
+> P
+> (+ x[0])*( + x[1])*2
+> P
+> (+ x[0])*( + x[2])*2
+> P
+> (+ x[0])*( + x[3])*2
+> P
+> (+ x[1])*( + x[2])*2
+> P
+> H
+> 2*x[0]
+> P
+> (+ x[1])*( + x[3])*2
+> P
+> H
+> (+ x[2])*( + x[3])*2
+> P
+> 2*x[1]
+> P
+> H
+> H
+> (+ x[0])*( + x[1])*2
+> P
+> 2*x[2]
+> P
+> 2*x[3]
+> P
+> (+ x[0])*( + x[2])*2
+> P
+> (+ x[0])*( + x[3])*2
+> P
+> (+ x[1])*( + x[2])*2
+> P
+> (+ x[1])*( + x[3])*2
+> P
+> (+ x[2])*( + x[3])*2
+> P
+
+Figure 6: Quantum circuits for the four evaluated feature maps, shown at k = 4 features. (a) Rot2DoF uses product-state encoding with RX –RZ rotations and no entanglement ( n =2 qubits). (b) Belis applies RX –RZ encoding with a CNOT ladder for linear-connectivity entanglement ( n = 2 qubits). (c) Sakhnenko10 uses ring-topology CNOT gates with RX data encoding ( n = 2 qubits). (d) ZZFeatureMap encodes data through pairwise ZZ interactions (n = 4 qubits). Rot2DoF/Belis/Sakhnenko10 require ⌈k/ 2⌉ qubits; ZZFeatureMap requires k
+
+qubits. Table 12: Rot2DoF circuit properties at R = 2 repetitions. 
+
+k (features) Depth CX/CZ gates Gate slots Entanglement 4 12 0 16 None 8 12 0 32 None 14 12 0 56 None 
+
+27 B.2 Belis (CNOT Ladder) 
+
+Proposed by Belis et al. [2021] for high-energy physics jet classification. Each repetition applies an encoding block Sx with RX (x2q) RZ (x2q+1 ) per qubit, a CNOT ladder for nearest-neighbour entanglement, and a second encoding block S′ 
+
+> x
+
+with swapped rotation axes ( RZ (x2q) RX (x2q+1 )): 
+
+Ubelis (x) = 
+
+> R
+
+Y
+
+> r=1
+
+S′ 
+
+> x
+
+·
+
+> n−2
+
+Y
+
+> q=0
+
+CX q,q +1 · Sx
+
+ (7) where Sx = Qn−1 
+
+> q=0
+
+RX (x2q) RZ (x2q+1 ) and S′ 
+
+> x
+
+= Qn−1 
+
+> q=0
+
+RZ (x2q) RX (x2q+1 ). The CNOT ladder creates linear-connectivity entanglement, producing near-identity ker-nels with high effective rank (0.40–0.74) but limited discriminative power due to eigenspectral flatness. Table 13: Belis circuit properties at R = 2 repetitions. 
+
+k (features) Depth CX/CZ gates Gate slots Entanglement 4 26 2 8 Linear 8 29 6 16 Linear 14 32 12 28 Linear 
+
+B.3 Sakhnenko (10-Parameter Ansatz) 
+
+Based on Sakhnenko et al. [2022], this feature map uses double-feature RX encoding with fixed intermediate rotations and ring entanglement: 
+
+Usakh. (x) = 
+
+> R
+
+Y
+
+> r=1
+
+Went ·
+
+> n−1
+
+Y
+
+> q=0
+
+RX (x2q) RY ( π 
+
+> 2
+
+) RX ( π 
+
+> 2
+
+) RX (x2q+1 )
+
+ (8) where Went applies CX gates in a ring topology ( q0 → q1 → · · · → qn−1 → q0). Table 14: Sakhnenko10 circuit properties at R = 2 repetitions. 
+
+k (features) Depth CX/CZ gates Gate slots Entanglement 4 44 4 16 Ring 8 48 8 32 Ring 14 54 14 56 Ring 
+
+B.4 ZZFeatureMap (Qiskit Standard) 
+
+The standard Qiskit feature map [Javadi-Abhari et al., 2024] based on the approach of Havl´ ıˇ cek et al. [2019]. Encodes data through ZZ interactions: 
+
+UZZ (x) = 
+
+> R
+
+Y
+
+> r=1
+
+Y
+
+> i<j
+
+exp( i x ixj ZiZj )
+
+> n
+
+Y
+
+> i=1
+
+Hi
+
+ (9) 28 where H denotes the Hadamard gate. The ZZ interaction terms create pairwise entanglement modulated by the product of feature values. Table 15: ZZFeatureMap circuit properties at R = 2 repetitions.                     
+
+> k(features) Depth CX/CZ gates Gate slots Entanglement 431 24 4Full (via ZZ )867 112 8Full (via ZZ )14 121 364 14 Full (via ZZ )
+
+The reported depth and CX/CZ gate counts reflect the parametrised and decomposed circuit properties with full entanglement before transpilation. 
+
+B.5 Transpiled Circuit Properties on ibm fez 
+
+For the hardware experiments (Phase 3), circuits were transpiled to the ibm fez native gate set 
+
+{rz, sx, cz, x } at optimization level=3 . Table 16 shows the post-transpilation properties for the two feature maps used in hardware experiments. Table 16: Transpiled circuit properties on ibm fez (Heron r2) for hardware experiments. Entries marked “–” were not separately profiled; only the qubit count and depth were verified post-transpilation.                                    
+
+> Feature Map kDepth CZ RZ SX XMeasurements Belis 10 74 16 137 82 10 5Rot2DoF 10 22 065 40 05Belis 662 10 –––3Rot2DoF 622 039 24 03
+
+Note: rot2dof transpiles to zero CZ gates on Heron r2, confirming that this feature map creates only product states despite the “entangling rotations” in its parametric form. The aggressive instruction-set-architecture (ISA) transpilation at level 3 eliminates redundant two-qubit gates. 
+
+# C Extended Hardware Validation Results 
+
+This appendix provides per-experiment details for all six hardware experiments executed on IBM ibm fez (Heron r2, 156 qubits). All experiments use 1 024 shots per circuit without readout error mitigation; kernel entries are computed from raw counts. Fidelity tables report mean absolute error (MAE), root mean squared error (RMSE), and relative Frobenius norm between hardware and reference kernel matrices. 
+
+C.1 HW-01: Breast Cancer / Belis / NMF / k=10 
+
+Kernel properties : 60 ×60, off-diagonal mean 0 .045 ± 0.049, effective rank 54.25/60 (90.4%). Near-identity kernel with high effective rank, consistent with belis spectral profile (Sect. 7.1). 
+
+Execution : 1 830 circuits, 7 batches, 681 s wall time. Transpiled depth 74, 16 CZ gates. 29 Table 17: HW-01 kernel fidelity and SVM performance.                  
+
+> Reference Pearson rSpearman ρMAE RMSE Frob. (rel.) Ideal (statevector) 0.9858 0.9643 0.0075 0.0109 0.0736 Noisy (depolarising) 0.9860 0.9668 0.0066 0.0097 0.2723
+
+Table 18: HW-01 downstream SVM balanced accuracy (5-fold stratified CV, n=60).                  
+
+> Kernel source BA (mean ±std) Best C
+> Hardware (ibm fez) 0.473 ±0.033 10.0 Ideal (statevector) 0.461 ±0.051 10.0 Noisy (depolarising) 0.461 ±0.051 10.0
+
+C.2 HW-02: Breast Cancer / Rot2DoF / NMF / k=10 
+
+Key observation : ∆(HW − Ideal) = +7 .46 pp. Hardware noise acts as a regulariser for rot2dof, selecting a lower C (10 vs. 100) and achieving higher BA. Transpiled depth 22, zero CZ gates on Heron r2. 
+
+C.3 HW-03: Sonar / Belis / PCA / k=6 
+
+Cross-dataset validation : Belis fidelity on sonar ( r = 0 .984) is comparable to breast cancer (r = 0 .986), confirming cross-dataset generalisation. 
+
+C.4 HW-04: Sonar / Rot2DoF / PCA / k=6 
+
+Entanglement comparison (sonar) : Rot2dof ( r = 0 .998) vs. belis ( r = 0 .984) on sonar—the shallower rot2dof circuit achieves higher fidelity, consistent with breast cancer results. 
+
+C.5 HW-05: Diabetes Pima / Belis / NMF / k=6 
+
+Third dataset validated : Belis fidelity on diabetes pima ( r = 0 .976) is the lowest of the three datasets (breast cancer: 0.986, sonar: 0.984), but still well above the r = 0 .95 threshold typically considered adequate for downstream task transfer. The higher MAE (0.025) reflects the more complex feature geometry of the diabetes dataset. 
+
+C.6 HW-06: Diabetes Pima / Rot2DoF / NMF / k=6 
+
+Noise-as-regulariser observation : ∆ = +5 .2 pp, the second largest hardware improvement after HW-02 (+7.5 pp). Both cases involve the rot2dof feature map, suggesting that product-state encodings may benefit more from hardware noise regularisation, though this effect is not statistically significant at n = 60. Table 19: HW-02 kernel fidelity and SVM performance.                  
+
+> Reference Pearson rSpearman ρMAE RMSE Frob. (rel.) Ideal (statevector) 0.9961 0.9955 0.0176 0.0223 —Noisy (depolarising) 0.9961 0.9956 0.0238 0.0302 —
+
+30 Table 20: HW-02 downstream SVM balanced accuracy (5-fold stratified CV, n=60). 
+
+Kernel source BA (mean ± std) Best C
+
+Hardware (ibm fez) 0.760 ± 0.131 10.0 Ideal (statevector) 0.686 ± 0.086 100.0 Noisy (depolarising) 0.686 ± 0.086 100.0 
+
+Table 21: HW-03 kernel fidelity and SVM performance. 
+
+Reference Pearson r Spearman ρ MAE RMSE Ideal (statevector) 0.9843 0.9795 0.0179 0.0233 Noisy (depolarising) 0.9847 0.9802 0.0146 0.0205 
+
+Table 22: HW-03 downstream SVM balanced accuracy (5-fold stratified CV, n=60). 
+
+Kernel source BA (mean ± std) Best C
+
+Hardware (ibm fez) 0.550 ± 0.114 10.0 Ideal (statevector) 0.516 ± 0.063 10.0 Noisy (depolarising) 0.520 ± 0.032 1.0 
+
+Table 23: HW-04 kernel fidelity (hardware vs. reference). 
+
+Reference Pearson r MAE RMSE Frob. rel. Ideal (statevector) 0.9980 0.0126 0.0168 0.041 
+
+Table 24: HW-04 downstream SVM balanced accuracy (5-fold stratified CV, n=60). 
+
+Kernel source BA (mean ± std) Best C
+
+Hardware (ibm fez) 0.544 ± 0.095 0.01 Ideal (statevector) 0.570 ± 0.122 100.0 Noisy (depolarising) 0.570 ± 0.122 1.0 
+
+Table 25: HW-05 kernel fidelity (hardware vs. reference). 
+
+Reference Pearson r MAE RMSE Frob. rel. Ideal (statevector) 0.9760 0.0250 0.0340 0.136 
+
+Table 26: HW-05 downstream SVM balanced accuracy (5-fold stratified CV). 
+
+Kernel source BA (mean ± std) Best C
+
+Hardware (ibm fez) 0.511 ± 0.091 10.0 Ideal (statevector) 0.566 ± 0.115 10.0 Noisy (depolarising) 0.545 ± 0.095 10.0 
+
+Table 27: HW-06 kernel fidelity (hardware vs. reference). 
+
+Reference Pearson r MAE RMSE Frob. rel. Ideal (statevector) 0.9970 0.0170 0.0220 0.032 
+
+31 Table 28: HW-06 downstream SVM balanced accuracy (5-fold stratified CV).                  
+
+> Kernel source BA (mean ±std) Best C
+> Hardware (ibm fez) 0.538 ±0.075 0.01 Ideal (statevector) 0.486 ±0.029 10.0 Noisy (depolarising) 0.531 ±0.067 10.0
+
+C.7 Cross-Experiment Summary 
+
+Table 29: Summary of all six hardware experiments on ibm fez.                                                         
+
+> ID Dataset FM kDepth rMAE BA HW ∆HW-01 breast cancer belis 10 74 0.986 0.008 0.473 +1 .2HW-02 breast cancer rot2dof 10 22 0.996 0.018 0.760 +7 .5HW-03 sonar belis 662 0.984 0.018 0.550 +3 .3HW-04 sonar rot2dof 622 0.998 0.013 0.544 −2.6HW-05 diabetes pima belis 662 0.976 0.025 0.511 −5.5HW-06 diabetes pima rot2dof 622 0.997 0.017 0.538 +5 .2
+
+Aggregate statistics : Mean r = 0 .990 (min 0.976, max 0.998). Mean MAE = 0 .016. Mean 
+
+|∆| = 4 .2 pp (mean signed ∆ = +1 .5 pp). Rot2dof achieves higher fidelity on all three datasets (mean r = 0 .997 vs. 0.982 for belis), attributable to its shallower transpiled circuits. 
+
+Research questions answered :
+
+• Q1 (Headline fidelity): r ≥ 0.976 across all experiments. Simulation is a faithful proxy for hardware. 
+
+• Q2 (Entanglement effect): Dataset-dependent. Rot2dof outperforms belis by +28.7 pp on breast cancer, but only +2.6 pp on diabetes pima and −0.6 pp on sonar. Rot2dof consistently achieves higher kernel fidelity ( r ≥ 0.997). 
+
+• Q3 (Cross-dataset): Both feature maps maintain high fidelity across all three datasets. Belis: r ∈ [0 .976 , 0.986]. Rot2dof: r ∈ [0 .996 , 0.998]. 
+
+# D Full Result Tables 
+
+This appendix presents the complete result tables referenced in the main text, including per-dataset detailed results, cost breakdowns, and learning curve data. 
+
+D.1 Pairwise Wilcoxon Signed-Rank Tests 
+
+Table 30 reports the 9 best-vs-best pairwise Wilcoxon signed-rank tests comparing quantum and classical kernel configurations on balanced accuracy across 5 outer CV folds. The full set of 29 comparisons (multiple quantum–classical pairs) is consistent with the results shown here: none reach significance at α = 0 .05. Note: The minimum achievable two-sided p-value under the exact Wilcoxon signed-rank test with n = 5 paired observations is p = 0 .0625, attained when all five fold differences share the 32 HW-01    
+
+> breast_c.
+> (belis)
+> HW-02
+> breast_c.
+> (rot2dof)
+> HW-03
+> sonar
+> (belis)
+> HW-04
+> sonar
+> (rot2dof)
+> HW-05
+> diabetes_p.
+> (belis)
+> HW-06
+> diabetes_p.
+> (rot2dof)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Balanced Accuracy
+> 0.473
+> 0.760
+> 0.550 0.544 0.511 0.537
+> Hardware
+> Ideal Sim
+
+Figure 1: SVM balanced accuracy across all six hardware experiments. Solid bars: hardware (ibm fez, 1 024 shots); hatched bars: ideal statevector simulation. Colour encodes the feature map; x-axis labels identify the experiment, dataset, and feature map. Rot2dof achieves the highest BA on breast cancer (HW-02), while hardware noise acts as a regulariser on four of six experiments (∆ > 0). HW-01 
+
+> breast_c.
+> (belis)
+> HW-02
+> breast_c.
+> (rot2dof)
+> HW-03
+> sonar
+> (belis)
+> HW-04
+> sonar
+> (rot2dof)
+> HW-05
+> diabetes_p.
+> (belis)
+> HW-06
+> diabetes_p.
+> (rot2dof)
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> 1.00
+> Pearson  r (hw vs ideal)
+> 0.9858
+> 0.9961
+> 0.9843
+> 0.9978
+> 0.9758
+> 0.9973
+
+Figure 2: Kernel fidelity (Pearson r) of the hardware kernel matrix versus ideal statevector sim-ulation for each experiment. All experiments exceed r = 0 .97. Rot2dof (product-state circuits) consistently achieves higher fidelity than belis (entangling circuits), reflecting its shallower tran-spiled depth on Heron r2. 33 20 30 40 50 60 70 
+
+> Transpiled circuit depth
+> 0.0075
+> 0.0100
+> 0.0125
+> 0.0150
+> 0.0175
+> 0.0200
+> 0.0225
+> 0.0250
+> MAE (hw vs ideal)
+> HW-01 breast_c. (belis)
+> HW-02 breast_c. (rot2dof)
+> HW-03 sonar (belis)
+> HW-04 sonar (rot2dof)
+> HW-05 diabetes_p. (belis)
+> HW-06 diabetes_p. (rot2dof)
+> breast_cancer
+> sonar
+> diabetes_pima
+
+Figure 3: Kernel mean absolute error (MAE) versus transpiled circuit depth for all six hardware experiments. Colour encodes the feature map (blue: belis, pink: rot2dof); marker shape encodes the dataset (circle: breast cancer, square: sonar, diamond: diabetes pima). Deeper circuits (belis, depth ≥ 62) incur higher MAE than shallow circuits (rot2dof, depth 22), confirming that circuit depth is the primary driver of hardware noise. 0 20 40 
+
+Sample index 
+
+0
+
+10 
+
+20 
+
+30 
+
+40 
+
+50 
+
+> Sample index
+
+(a) Ideal Simulation 
+
+0 20 40 
+
+Sample index 
+
+(b) Noisy Simulation 
+
+0 20 40 
+
+Sample index 
+
+(c) Hardware (ibm_fez) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Kernel value K(x, y)
+
+Figure 4: Kernel matrix heatmaps for HW-01 (belis, breast cancer, k=10). Left to right: ideal statevector simulation, depolarising noise simulation, and IBM ibm fez hardware. The belis kernel is near-identity with off-diagonal values ≈ 0.045; the hardware reproduces this structure with Pearson r = 0 .986. 34 0 20 40     
+
+> Sample index
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sample index
+> (a) Ideal Simulation
+> 020 40
+> Sample index
+> (b) Noisy Simulation
+> 020 40
+> Sample index
+> (c) Hardware (ibm_fez)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Kernel value K(x, y)
+
+Figure 5: Kernel matrix heatmaps for HW-02 (rot2dof, breast cancer, k=10). Left to right: ideal statevector simulation, depolarising noise simulation, and IBM ibm fez hardware. Rot2dof produces richer off-diagonal structure than belis, and the hardware achieves Pearson r = 0 .996, the highest fidelity among all experiments. Table 30: Pairwise Wilcoxon signed-rank tests: best quantum ideal vs. best classical, per dataset. All tests use 5 paired observations (outer folds). This table shows the 9 best-vs-best comparisons; the full set of 29 pairwise comparisons (multiple quantum–classical pairs per dataset) is available in the supplementary data. 
+
+Dataset Best Quantum BA Q Best Classical BA C p-value Sig.? haberman sakhnenko10 0.581 rbf 0.549 0.3125 No spambase belis 0.888 rbf 0.903 0.0625 No ionosphere belis 0.905 rbf 0.935 0.0625 No sonar rot2dof 0.813 rbf 0.872 0.1250 No diabetes pima rot2dof 0.669 linear 0.729 0.0625 No breast cancer rot2dof 0.913 rbf 0.976 0.0625 No banknote rot2dof 0.921 rbf 1.000 0.0625 No parkinson 489 rot2dof 0.746 rbf 0.829 0.1250 No heart disease rot2dof 0.724 poly3 0.844 0.0625 No 
+
+35 same sign (rank sum T + = 15 or T + = 0). Six of nine comparisons reach this floor, confirming a consistent directional effect (classical > quantum) that nonetheless cannot reach α = 0 .05 significance with only five folds. 
+
+D.2 Friedman Tests Within Datasets 
+
+Table 31: Friedman test results within each dataset (all quantum + classical configs). All datasets show significant within-method variation ( p < 0.001).                                                  
+
+> Dataset χ2df p-value Significant? banknote 128.6 27 <0.001 Yes breast cancer 219.6 47 <0.001 Yes diabetes pima 170.5 47 <0.001 Yes haberman 72.7 27 <0.001 Yes heart disease 129.1 35 <0.001 Yes ionosphere 206.2 47 <0.001 Yes parkinson 489 83.3 35 <0.001 Yes sonar 184.1 47 <0.001 Yes spambase 59.8 15 <0.001 Yes
+
+Interpretation: while methods significantly differ within each dataset, the best quantum con-figuration never statistically outperforms the best classical baseline in pairwise tests. 
+
+D.3 Kernel Spectral Properties 
+
+Table 32: Representative kernel eigenspectrum ranges (extended-study ideal/classical kernel matrices, ntrain ≈ 400–1 ,300). Ranges correspond to the most common configurations; extreme-
+
+k or very small datasets may produce values outside these intervals.                                
+
+> Kernel Eff. Rank Ratio Top-1 Expl. Top-5 Expl. Diag. Dom. Neg. λ
+> belis (quantum) 0.40–0.74 0.03–0.06 0.07–0.13 18–39 0% rot2dof (quantum) 0.01–0.02 0.52–0.57 0.66–0.72 1.9–2.2 0% linear (classical) ∼0.01 0.27–0.29 0.76–0.80 568 ≤0.4% poly3 (classical) ∼0.03 0.22–0.26 0.62–0.63 154–168 ≤1.3%
+> rbf (classical) 0.06–0.07 0.31–0.35 0.52–0.54 3.7–3.8 0%
+
+The “Goldilocks zone” is visible in the effective rank ratio: belis is too high (near-identity), rot2dof is too low (near-rank-1), while RBF sits at an intermediate value that provides the best classification performance. 
+
+D.4 Computational Cost 
+
+Table 33 reports the mean wall-clock time for computing a single kernel matrix (training split) across all main-benchmark and extended-study experiments, measured on a single CPU core with statevector simulation. Classical kernels (linear, RBF, polynomial) are computed via scikit-learn in ∼0.3 s. Quantum kernels require ∼3 s (10 ×) due to the overhead of simulating the fidelity circuit for each sample pair. Quantum kernel training (QKT) amplifies cost further, as each KTA optimisation step requires a full kernel recomputation; with 50–170 gradient 36 iterations per fold, the aggregate overhead reaches ∼2 000 ×. These timings exclude hardware queue latency, which adds additional overhead for on-device execution (Appendix C). Table 33: Mean kernel computation time by category and cost ratios relative to classical.         
+
+> Category Mean Kernel Time (s) Ratio vs. Classical Classical (linear/rbf/poly) 0.31 1×
+> Quantum (belis/rot2dof/. . . ) 3.07 10 ×
+> QKT (kernel training) 433–837 1,400–2 ,700 ×
+
+D.5 Circuit Depth Scaling 
+
+Table 34 summarises pre-transpilation circuit depths and two-qubit gate counts for the four quantum feature maps at representative feature dimensions ( k ∈ { 4, 8, 14 }), all with R =2 repetitions. Rot2DoF maintains constant depth 12 regardless of k because it contains no entangling gates. Belis and Sakhnenko10 scale linearly with the number of qubits due to their CNOT structures. ZZFeatureMap reports a nominal depth of 1 at the parameterised-circuit level; its actual depth after transpilation to a hardware gate set depends on the target topology. Detailed transpiled properties on ibm fez are given in Appendix B. Table 34: Feature map circuit depths and gate counts at R=2 repetitions.                          
+
+> Feature Map k=4 k=8 k=14 CX ( k=8) Entanglement rot2dof 12 12 12 0No belis 26 29 32 14 Yes (linear) sakhnenko10 44 48 54 16 Yes (ring) zzfm 31 67 121 24/112/364 ∗Yes ( ZZ )
+> ∗
+
+CX counts at k=4/ k=8/ k=14 respectively (post-decomposition; see also Table 3). 
+
+D.6 Learning Curve Slopes 
+
+Table 35 extends the main-text learning curve analysis (Table 40) by reporting per-category slopes and their statistical significance. Slopes are computed as the ordinary least-squares coefficient of balanced accuracy regressed on log ntrain across six training fractions (10%, 20%, 30%, 50%, 70%, 100%). Significance is assessed via a two-sided t-test on the slope coefficient at 
+
+α = 0 .05. Parkinson 489 is excluded because it was added in Phase 3 under a different pipeline configuration. Quantum ideal slopes are significantly positive on all eight datasets, whereas classical slopes fail to reach significance on two (diabetes pima, haberman). This confirms that quantum kernels exhibit steeper learning rates on the majority of datasets, despite starting from a lower absolute baseline (see Table 36). Noisy simulation slopes closely track their ideal counterparts, indicating that depolarising noise does not substantially alter the data-efficiency profile. 37 Table 35: Learning curve slopes (BA vs. log ntrain ) with significance. Positive slopes indicate performance improves with more training data. Parkinson 489 is excluded as it was added in Phase 3 with a different pipeline configuration.                                                         
+
+> Classical Q. Ideal Q. Noisy Dataset Slope Sig. Slope Sig. Slope Sig. banknote 0.009 Yes 0.015 Yes 0.009 No breast cancer 0.024 Yes 0.032 Yes 0.032 Yes diabetes pima 0.008 No 0.023 Yes 0.008 No haberman 0.010 No 0.026 Yes 0.024 Yes heart disease 0.063 Yes 0.024 Yes 0.029 Yes ionosphere 0.069 Yes 0.047 Yes 0.047 Yes sonar 0.068 Yes 0.079 Yes 0.084 Yes spambase 0.007 Yes 0.011 Yes 0.012 Yes
+
+D.7 Quantum vs. Classical Gap Evolution 
+
+Table 36 tracks the performance gap between the best quantum ideal and best classical config-uration at two training fractions: 10% and 100% of the available training data. Negative values indicate classical superiority. The “Narrows?” column indicates whether the gap decreases (in absolute terms) from 10% to 100% training data; “Q Surpasses?” indicates whether the quantum configuration achieves higher BA at any fraction. On six of eight datasets, the gap narrows as training size increases, consistent with the steeper quantum learning slopes reported in Table 35. However, only haberman sees a full crossover: the gap moves from −0.002 at 10% to +0 .046 at 100%, making it the only dataset where the quantum kernel eventually outperforms the classical representative. Heart disease and ionosphere show an initial marginal quantum advantage at 10% training data that reverses at full data, suggesting that the quantum feature space saturates earlier than the classical one on these datasets. Table 36: Quantum–classical BA gap at 10% and 100% training fraction (negative = classical better).                                     
+
+> Dataset Gap@10% Gap@100% Narrows? Q Surpasses? banknote −0.086 −0.077 Yes No breast cancer −0.079 −0.063 Yes No diabetes pima −0.098 −0.062 Yes No haberman −0.002 +0 .046 Yes Yes
+> heart disease +0 .008 −0.110 No Yes* ionosphere +0 .012 −0.047 No Yes* sonar −0.139 −0.084 Yes No spambase −0.032 −0.025 Yes No
+
+*At 10% training fraction only; advantage reverses at full data. 
+
+D.8 Seed Sensitivity: Paired Analysis 
+
+Haberman is the only dataset where quantum ideal consistently outperforms classical (14/16 seeds, p = 0 .004). On all other datasets, classical wins on every seed. 38 Table 37: Seed stability (CoV of mean BA across 16 seeds) and paired quantum vs. classical analysis. Parkinson 489 and spambase are excluded: seed analysis was conducted on the seven Phase 1 datasets. 
+
+CoV (%) Paired Analysis Dataset Class. Q.I. Q.N. QI Wins Adv. p
+
+banknote 0.02 0.24 0.41 0/16 −0.084 < 0.001 breast cancer 0.46 0.70 0.66 0/16 −0.069 < 0.001 diabetes pima 0.75 1.74 1.59 0/16 −0.053 < 0.001 haberman 3.30 2.60 2.44 14/16 +0 .019 0.004 heart disease 1.89 1.81 1.41 0/16 −0.072 < 0.001 ionosphere 0.81 0.84 0.85 0/16 −0.055 < 0.001 sonar 1.81 2.81 2.37 0/16 −0.081 < 0.001 
+
+D.9 QKT Theta Stability 
+
+Table 38: QKT optimisation stability summary across 28 configurations. 
+
+Metric Value Configurations analysed 28 Mean theta CoV across folds 0.535 Median pairwise rank corr. 0.738 Mean KTA improvement (final − initial) +0 .130 Convergence rate (within tol.) 13.6% Best QKT result BA = 0 .968 (breast cancer, tree-k8-belis) Theta CoV 0.050 Rank correlation 0.973 
+
+The best QKT configuration (breast cancer, tree-k8-belis) is also the most stable (CoV = 0.050, rank correlation = 0 .973), suggesting that QKT effectiveness and parameter stability are correlated. 
+
+D.10 Dataset Suitability Criterion 
+
+Table 39: Dataset suitability for quantum kernels. N : post-cleaning sample count (identical to Table 2). Non-linearity gap = BA rbf − BA linear ; ∆ = BA Q − BA C.
+
+Dataset N BA C BA Q ∆ NL Gap Favorable? haberman 306 0.549 0.581 +0 .032 +0 .043 Yes 
+
+spambase 4601 0.903 0.888 −0.016 +0 .017 No ionosphere 351 0.935 0.905 −0.031 +0 .079 No sonar 208 0.872 0.813 −0.059 +0 .086 No diabetes pima 768 0.729 0.669 −0.060 −0.008 No breast cancer 569 0.976 0.913 −0.063 +0 .006 No banknote 1372 1.000 0.921 −0.079 +0 .010 No parkinson 489 489 0.829 0.746 −0.083 +0 .017 No heart disease 303 0.844 0.724 −0.120 −0.008 No 
+
+Spearman’s ρ = 0 .683 ( p = 0 .042) between non-linearity gap and ∆, suggesting that datasets where RBF already provides large gains over linear are not the datasets where quantum kernels help – a potentially useful pre-screening criterion. 39 D.11 Computational Cost Comparison 
+
+Figure 6 compares wall-clock times for classical kernel computation, quantum statevector sim-ulation, and quantum kernel training (QKT) with iterative KTA optimisation. Discussion is in Sect. 6.2. Classical Quantum QKT 
+
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> Mean Kernel Time (s, log scale)
+> n=75
+> n=240
+> n=14
+
+(V3-3) Kernel Computation Cost 
+
+Figure 6: Computational cost comparison (log scale). Classical kernels complete in ∼0.31 s, quantum statevector simulation requires ∼3.1 s (10 ×), and quantum kernel training (QKT) requires ∼635 s (2 ,060 ×). 
+
+D.12 Learning Curves and Slope Analysis 
+
+Figure 7 shows per-dataset learning curves at six training fractions, and Table 40 reports the corresponding OLS slopes and gap evolution. Discussion is in Sect. 6.3. Table 40: Learning curve slopes (BA vs. log ntrain ) and gap evolution. Slopes are computed via OLS regression across six training fractions. Quantum ideal slopes are steeper on 6/8 datasets. “Gap narrows” indicates the quantum–classical gap decreases from 10% to 100% training data.                                                  
+
+> Dataset Classical Q-Ideal Q-Noisy Gap Gap Slope Slope Slope @10% @100%
+> banknote 0.009 0.015 0.009 −8.6 −7.7 breast cancer 0.024 0.032 0.032 −7.9 −6.3 diabetes pima 0.008 0.023 0.008 −9.8 −6.2 haberman 0.010 0.026 0.024 −0.2 +4.6
+> heart disease 0.063 0.024 0.029 +0.8 −11.0 ionosphere 0.069 0.047 0.047 +1.2 −4.7 sonar 0.068 0.079 0.084 −13.9 −8.4 spambase 0.007 0.011 0.012 −3.2 −2.5
+
+40 0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+> Balanced Accuracy
+
+Banknote 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+Breast Cancer 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+Diabetes 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+Haberman 
+
+0.25 0.50 0.75 1.00 
+
+Training Fraction 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+> Balanced Accuracy
+
+Heart Disease 
+
+0.25 0.50 0.75 1.00 
+
+Training Fraction 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+Ionosphere 
+
+0.25 0.50 0.75 1.00 
+
+Training Fraction 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+Sonar 
+
+0.25 0.50 0.75 1.00 
+
+Training Fraction 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+1.0 
+
+Spambase 
+
+(V3-5) Learning Curves: Balanced Accuracy vs Training Size 
+
+Classical Quantum (ideal) Quantum (noisy) Figure 7: Learning curves for all eight datasets across six training fractions (10%–100%). Each panel shows classical (blue), quantum ideal (orange), and quantum noisy (magenta) balanced accuracy as a function of training set size. Quantum kernels show steeper slopes on 6/8 datasets but fail to close the gap. 41 Supplementary Information 
+
+The online supplementary material includes all 39 figures, per-fold balanced accuracy arrays for all 970 experiments, and the complete set of 683 cached kernel matrices in NumPy compressed format. 
+
+# Acknowledgements 
+
+This work has been supported by the Schaeffler Hub for Advanced Research at the Friedrich-Alexander-Universit¨ at Erlangen-N¨ urnberg (SHARE at FAU). The authors thank IBM Quantum for providing access to the ibm fez quantum processor through the IBM Quantum Open Plan. Computational experiments were performed using the Qiskit 2.1+ framework. 
+
+# Statements and Declarations 
+
+Funding. This research was funded by Schaeffler Technologies AG & Co. KG. 
+
+Competing interests. The authors declare no competing interests. 
+
+Data availability. All datasets used in this study are publicly available from the UCI Machine Learning Repository [Dua and Graff, 2017] and OpenML [Vanschoren et al., 2014]. The complete benchmark suite, including cached kernel matrices, hardware results, and figure generation scripts, is archived at https://doi.org/10.5281/zenodo.19197916 .
+
+Code availability. The complete benchmark framework ( ∼18,700 lines of Python code) is open-source and publicly archived at https://doi.org/10.5281/zenodo.19197916 , including 132 unit tests and all experiment runner scripts. 
+
+Use of AI-assisted technologies. The entire codebase and manuscript were independently developed, implemented, and written by the authors. AI-assisted tools were used solely for refining readability, optimising code quality, and proof-reading. All AI-generated suggestions were critically reviewed and verified by the authors before incorporation. The authors take full responsibility for the content of this publication. 
+
+Author contribution. S.K. conceived and designed the study, implemented all software, conducted all experiments (including hardware execution on IBM ibm fez), performed the anal-ysis, generated all figures, and wrote the manuscript. C.S. and M.S. contributed to manuscript review, proofreading, and technical verification. All authors reviewed and approved the final manuscript. 42 References 
+
+Vasilis Belis, Samuel Gonzalez-Castillo, Christina Reissel, Sofia Vallecorsa, El´ ıas F. Com-barro, G¨ unther Dissertori, and Florentin Reiter. Higgs analysis with quantum clas-sifiers. In EPJ Web of Conferences , volume 251, page 03070. EDP Sciences, 2021. 
+
+doi:10.1051/epjconf/202125103070 .Jacob Biamonte, Peter Wittek, Nicola Pancotti, Patrick Rebentrost, Nathan Wiebe, and Seth Lloyd. Quantum machine learning. Nature , 549(7671):195–202, 2017. 
+
+doi:10.1038/nature23474 .Christopher M. Bishop. Training with noise is equivalent to Tikhonov regularization. Neural Computation , 7(1):108–116, 1995. doi:10.1162/neco.1995.7.1.108 .Gavin C. Cawley and Nicola L. C. Talbot. On over-fitting in model selection and subsequent selection bias in performance evaluation. Journal of Machine Learning Research , 11:2079– 2107, 2010. Corinna Cortes and Vladimir Vapnik. Support-vector networks. Machine Learning , 20(3): 273–297, 1995. doi:10.1007/BF00994018 .Corinna Cortes, Mehryar Mohri, and Afshin Rostamizadeh. Algorithms for learning kernels based on centered alignment. Journal of Machine Learning Research , 13:795–828, 2012. Nello Cristianini, John Shawe-Taylor, Andr´ e Elisseeff, and Jaz Kandola. On kernel-target align-ment. In Advances in Neural Information Processing Systems , volume 14, Cambridge, MA, 2001. MIT Press. Janez Demˇ sar. Statistical comparisons of classifiers over multiple data sets. Journal of Machine Learning Research , 7:1–30, 2006. Dheeru Dua and Casey Graff. UCI machine learning repository, 2017. URL https://archive. ics.uci.edu/ml . Accessed: 2025-01-15. Milton Friedman. The use of ranks to avoid the assumption of normality implicit in the anal-ysis of variance. Journal of the American Statistical Association , 32(200):675–701, 1937. 
+
+doi:10.1080/01621459.1937.10503522 .Jennifer R. Glick, Tanvi P. Gujarati, Antonio D. C´ orcoles, Youngseok Kim, Abhinav Kandala, Jay M. Gambetta, and Kristan Temme. Covariant quantum kernels for data with group structure. Nature Physics , 20:479–483, 2024. doi:10.1038/s41567-023-02340-9 .Vojtˇ ech Havl´ ıˇ cek, Antonio D. C´ orcoles, Kristan Temme, Aram W. Harrow, Abhinav Kandala, Jerry M. Chow, and Jay M. Gambetta. Supervised learning with quantum-enhanced feature spaces. Nature , 567(7747):209–212, 2019. doi:10.1038/s41586-019-0980-2 .Valentin Heyraud, Zejian Li, Zakari Denis, Alexandre Le Boit´ e, and Cristiano Ciuti. Noisy quantum kernel machines. Physical Review A, 106:052421, 2022. 
+
+doi:10.1103/PhysRevA.106.052421 .43 Hsin-Yuan Huang, Michael Broughton, Masoud Mohseni, Ryan Babbush, Sergio Boixo, Hart-mut Neven, and Jarrod R. McClean. Power of data in quantum machine learning. Nature Communications , 12(1):2631, 2021. doi:10.1038/s41467-021-22539-9 .Thomas Hubregtsen, David Wierichs, Elies Gil-Fuster, Peter-Jan H. S. Derks, Paul K. Faehrmann, and Johannes Jakob Meyer. Training quantum embedding ker-nels on near-term quantum computers. Physical Review A, 106(4):042431, 2022. 
+
+doi:10.1103/PhysRevA.106.042431 .IBM Quantum. IBM quantum platform. https://quantum.ibm.com , 2024. Accessed 2025. Ali Javadi-Abhari, Matthew Treinish, Kevin Krsulich, Christopher J. Wood, Jake Lish-man, Julien Gacon, Simon Martiel, Paul D. Nation, Lev S. Bishop, Andrew W. Cross, Blake R. Johnson, and Jay M. Gambetta. Quantum computing with Qiskit. arXiv preprint arXiv:2405.08810 , 2024. William H. Kruskal and W. Allen Wallis. Use of ranks in one-criterion variance analysis. Journal of the American Statistical Association , 47(260):583–621, 1952. 
+
+doi:10.1080/01621459.1952.10483441 .Jonas M. K¨ ubler, Simon Buchholz, and Bernhard Sch¨ olkopf. The inductive bias of quantum kernels. In Advances in Neural Information Processing Systems , volume 34, pages 12661– 12673, Red Hook, NY, 2021. Curran Associates, Inc. Daniel D. Lee and H. Sebastian Seung. Learning the parts of objects by non-negative matrix factorization. Nature , 401(6755):788–791, 1999. doi:10.1038/44565 .Yunchao Liu, Srinivasan Arunachalam, and Kristan Temme. A rigorous and robust quan-tum speed-up in supervised machine learning. Nature Physics , 17:1013–1017, 2021. 
+
+doi:10.1038/s41567-021-01287-z .Fabian Pedregosa, Ga¨ el Varoquaux, Alexandre Gramfort, Vincent Michel, Bertrand Thirion, Olivier Grisel, Mathieu Blondel, Peter Prettenhofer, Ron Weiss, Vincent Dubourg, Jake Vanderplas, Alexandre Passos, David Cournapeau, Matthieu Brucher, Matthieu Perrot, and ´Edouard Duchesnay. Scikit-learn: Machine learning in Python. Journal of Machine Learning Research , 12:2825–2830, 2011. Evan Peters, Jo˜ ao Caldeira, Alan Ho, Stefan Leichenauer, Masoud Mohseni, Hartmut Neven, Panagiotis Spentzouris, Doug Strain, and Gabriel N. Perdue. Machine learning of high di-mensional data on a noisy quantum processor. npj Quantum Information , 7(1):161, 2021. 
+
+doi:10.1038/s41534-021-00498-9 .Patrick Rebentrost, Masoud Mohseni, and Seth Lloyd. Quantum support vector ma-chine for big data classification. Physical Review Letters , 113(13):130503, 2014. 
+
+doi:10.1103/PhysRevLett.113.130503 .Alona Sakhnenko, Corey O’Meara, Kumar J. B. Ghosh, Christian B. Mendl, Giorgio Cortiana, and Juan Bernab´ e-Moreno. Hybrid classical-quantum autoencoder for anomaly detection. 
+
+Quantum Machine Intelligence , 4(2):27, 2022. doi:10.1007/s42484-022-00075-z .44 Jan Schnabel and Marco Roth. Quantum kernel methods under scrutiny: a benchmarking study. Quantum Machine Intelligence , 7(1):58, 2025. doi:10.1007/s42484-025-00273-5 .Maria Schuld. Supervised quantum machine learning models are kernel methods. arXiv preprint arXiv:2101.11020 , 2021. Maria Schuld and Nathan Killoran. Quantum machine learning in feature Hilbert spaces. Phys-ical Review Letters , 122(4):040504, 2019. doi:10.1103/PhysRevLett.122.040504 .John Shawe-Taylor and Nello Cristianini. Kernel Methods for Pattern Analysis . Cambridge University Press, Cambridge, UK, 2004. doi:10.1017/CBO9780511809682 .Ruslan Shaydulin and Stefan M. Wild. Importance of kernel bandwidth in quantum machine learning. Physical Review A , 106(4):042407, 2022. doi:10.1103/PhysRevA.106.042407 .Supanut Thanasilp, Samson Wang, M. Cerezo, and Zo¨ e Holmes. Exponential con-centration in quantum kernel methods. Nature Communications , 15:5200, 2024. 
+
+doi:10.1038/s41467-024-49287-w .Joaquin Vanschoren, Jan N. van Rijn, Bernd Bischl, and Luis Torgo. OpenML: Networked science in machine learning. ACM SIGKDD Explorations Newsletter , 15(2):49–60, 2014. 
+
+doi:10.1145/2641190.2641198 .Vladimir N. Vapnik. Statistical Learning Theory . Wiley-Interscience, New York, 1998. Sudhir Varma and Richard Simon. Bias in error estimation when using cross-validation for model selection. BMC Bioinformatics , 7(1):91, 2006. doi:10.1186/1471-2105-7-91 .Frank Wilcoxon. Individual comparisons by ranking methods. Biometrics Bulletin , 1(6):80–83, 1945. doi:10.2307/3001968 .45

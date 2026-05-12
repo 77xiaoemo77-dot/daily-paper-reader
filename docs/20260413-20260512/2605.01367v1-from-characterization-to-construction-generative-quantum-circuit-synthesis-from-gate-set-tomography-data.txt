@@ -1,0 +1,616 @@
+Title: From Characterization To Construction: Generative Quantum Circuit Synthesis from Gate Set Tomography Data
+
+URL Source: https://arxiv.org/pdf/2605.01367v1
+
+Published Time: Tue, 05 May 2026 00:42:02 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# From Characterization To Construction: 
+
+## Generative Quantum Circuit Synthesis from Gate Set Tomography Data 
+
+## King Yiu Yu 1,2 , Aritra Sarkar 1,2 , Erbing Hua 1,Maximilian Rimbach-Russ 2,3 , Ryoichi Ishihara 1,2 , and Sebastian Feld 1,2 1Quantum and Computer Engineering, Delft University of Technology, The Netherlands 
+
+> 2
+
+## QuTech, Delft University of Technology, The Netherlands 
+
+> 3
+
+## Kavli Institute of Nanoscience Delft, Delft University of Technology, The Netherlands 
+
+Abstract 
+
+High-fidelity circuit execution on noisy intermediate-scale quantum (NISQ) devices is often bot-tlenecked by traditional compilation pipelines that disregard complex, correlated noise. To address this, this methodology article proposes a quantum machine learning control (QMLC) framework for generative quantum circuit synthesis from gate-set tomography (GST) data that bypasses the traditional two-step pipeline of characterizing native quantum gates via GST followed by unitary decomposition algorithms. Instead, our idea is to directly learn a generative concept space from GST data which enables conditional synthesis of quantum circuits that produce a desired output distribution. Our approach tokenizes GST germ circuits and embeds them into a structured latent space using a curriculum-learning-motivated strategy, starting with short circuits and progressively incorporating longer ones with diverse output statistics. The embedded sequences are processed by a set-vision transformer with permutation-invariant pooling, producing k-seed vectors that represent the learned concept space of the quantum device. Aggregating data across multiple circuits makes this latent representation inherently “context-aware”, capturing the shared physical noise environment (such as crosstalk and drift) that isolated gate metrics miss. We propose an unconditional diffusion model to sample from the concept space. During inference, a user provides a target measurement distribution, and the model generates a corresponding circuit. To ensure fidelity and robustness, the output is denoised using a diffusion model that operates on the target conditional covariance matrix. This end-to-end framework make steps towards context-aware, hardware-native circuit syn-thesis directly from raw GST data, which offers a new paradigm for integrating quantum control and compilation. This QMLC framework is particularly suited for near-term quantum devices with complex calibration procedures. 
+
+# 1 Introduction 
+
+The rapid development of quantum hardware has catalyzed the need for efficient hardware-aware circuit compilation strategies [1–5]. Quantum processors are heterogeneous owing to calibration drift, cross-talk, and gate imperfections, leading to a growing demand for compilation and control techniques that are grounded in empirical online characterization of the devices [6, 7]. Quantum process and gate-set tomography (GST) [8], and derivatives of randomized benchmarking [9–12] are used to characterize the native gates of a quantum device with high precision, providing complete and self-consistent models of gate operations, SPAM errors, and measurement maps. However, leveraging GST data in downstream tasks remains limited: it is typically used to calibrate or correct gate operations post hoc, and circuit design is still performed independently using standard decomposition techniques [13, 14]. Thus, tra-ditional quantum compilation workflows assume idealized gate libraries, which often result in circuits that perform poorly when deployed on real hardware. This decoupling between characterization and compilation misses the opportunity to leverage models grounded in hardware behavior. In this work, we explore the opportunity [15] of bridging hardware characterization data and gate-based compilation in quantum computation. To this end, we propose a generative framework that integrates gate-level tomography data directly into the quantum circuit synthesis process. The proposed workflow of our QMLC framework is shown in Figure 1. Instead of following the traditional workflow of first using GST to characterize a tomographically complete set of gates and measurement operators 1
+
+> arXiv:2605.01367v1 [quant-ph] 2 May 2026
+
+(see GST block) and then performing unitary decomposition over those operators (UD block), our ap-proach learns and maintains a latent concept space (QMLC block, short for Quantum Machine Learning Control). This is achieved by first tokenizing and embedding GST germ circuits, i.e., short sequences designed to amplify gate errors [8, 16, 17]. The training set for these circuits is organized according to a schedule inspired by curriculum learning, where each subset introduces longer, more information-rich sequences while maintaining the variability in the output statistics within the subset. These training sequences are processed by a set-vision transformer (Set-ViT) [18], equipped with permutation-invariant pooling, which outputs a fixed number of k-seed vectors that capture the underlying structure of the hardware behavior, as inferred from the GST data. The concept space is refined and sampled using a context-denoising diffusion model. At inference time, the user provides a conditional prompt in the form of a target measurement probability distribution in the target basis, along with side information on the circuit’s length bound and the subset of gates to use. A denoising diffusion model generates a candidate circuit, which is passed through a conditional diffusion model [19] trained to denoise circuit outputs in the learned distributional space. This candidate circuit is the output of our model, which implements the target probability distribution for the specific noisy quantum hardware. assumed known                             
+
+> unknown Quantum Gate Set
+> Tomography
+> 𝐺 𝐴 𝑀 𝜌 𝐺 𝐵 𝐺 …𝐺 ..……𝐺 𝜌 𝐺 𝑀
+> set of sequences
+> of different sizes
+> 𝐺 𝐴 𝐺 𝐵
+> 𝐺 𝜌 𝐺 𝑀
+> set of characterized
+> operations
+> 𝑈 𝑇
+> 𝐺 𝐴 𝐺 𝐵
+> 𝐺 𝜌 𝐺 𝑀
+> Quantum Unitary
+> Decomposition
+> target
+> operator
+> 𝐺 𝐴 𝑀 𝜌 𝐺 𝐵 𝐺 …𝐺 ..……𝐺 𝜌 𝐺 𝑀
+> sequence of gates for implementing 𝑈 𝑇
+> set of ideal
+> operations
+> 𝐺 𝐴 𝑀 𝜌 𝐺 𝐵 𝐺 …𝐺 ..……𝐺 𝜌 𝐺 𝑀
+> sequence of gates replicating
+> target probability distribution
+> 𝐺 𝐴 𝑀 𝜌 𝐺 𝐵 𝐺 …𝐺 ..……𝐺 𝜌 𝐺 𝑀
+> set of sequences
+> of different sizes
+> target probability
+> distribution
+
+Quantum Machine Learning Control 
+
+> learnt concept space
+
+# QMLC 
+
+# UD 
+
+# GST 
+
+Figure 1: Workflow depicting the two traditional pipelines of characterizing native quantum gates via gate set tomography (GST) and unitary decomposition (UD) algorithm, and the proposed quantum machine learning control (QMLC) method of directly learning a generative concept space from GST data, enabling conditional synthesis of quantum circuits that produce a desired output distribution. This integration of system identification, hardware-aware representation learning, generative mod-eling, and denoising opens the possibilities to a range of applications, from context-driven quantum algorithm adaptation to robust control pulse generation directly matched to calibrated hardware. Our proposed quantum machine learning control (QMLC) method also lays the groundwork for continual learning and real-time circuit re-compilation in the presence of hardware drift. The remainder of this article is structured as follows: Section 2 provides the motivation of the proposal and the required background of the quantum technique and the ML-based models. Sections 3 establish the foundational GST dataset format and our overarching research framework. Building on this, Section 4 details the dataset encoding strategy, utilizing a Set-ViT to derive the latent contexts essential for the generative process. To ensure training stability and high-fidelity synthesis, Section 5 outlines our specialized data grouping and curriculum learning techniques. The core of our contribution is presented in Sections 6 and 7, where we formally define the hierarchical diffusion framework and its variational objectives. Finally, Section 8 paths towards practical utility of our QMLC framework across key applications, followed by concluding remarks in Section 9. 22 Background and Motivation 
+
+Quantum computation is typically expressed in the circuit model. An algorithm is decomposed into a sequence of elementary quantum gates drawn from some basis, which are mapped to the native gate operations that can be controlled on the hardware, then scheduled and executed. The basis typically allows universal computation [20] with local (e.g., single- and two-qubit gates) operations, and can be either discrete or continuous (e.g., single-qubit parametric rotations about a fixed axis). The traditional approach to circuit decomposition (also called synthesis or transpilation) involves mathematically decom-posing a target n-qubit unitary into a product of gates using standard techniques like quantum Shannon decomposition [21, 22], QR or cosine-sine decompositions, Cartan decomposition, Solovay-Kitaev ap-proximations [13], or Ross-Sellinger approximations [23, 24]. These methods provide correctness (exact or approximate) at the unitary level and are relatively well understood, with performance metrics [2] centered on effective gate count, circuit depth, and fidelity under ideal unitary operations. However, real hardware has many non-idealities, for example, finite coherence time, restricted connec-tivity, noise (both coherent and incoherent), limited control over pulse shapes, cross-talk, calibration drift, and more [25]. These discrepancies mean that a circuit that is optimal under the abstract gate-unitary model does not perpetuate the fidelity in practice [26]. To bridge this gap, there are essentially two com-plementary directions. Pulse-level quantum optimal control operates at a lower level of abstraction and uses microwave or laser waveforms to directly drive the qubit Hamiltonian. Methods in this space include optimal control algorithms (such as GRAPE [27], EO-GRAPE [28], and GEOPE [29]), firmware that combines hardware calibration and analog modulation, and approaches that aggregate circuits or gate sequences and optimize pulses in tandem [1]. Pulse-level control can reduce execution latency, minimize errors caused by unnecessary gate decompositions, and sometimes improve resilience against noise. Re-cent works [30,31] in this direction propose compiler frameworks that break the standard Instruction Set Architecture (ISA) and optimize across gate aggregates to achieve speedups by exploiting pulse-level con-trol. In the second approach, machine-learning-based decomposition has received considerable attention. As quantum devices and experiments scale, using mathematically exact synthesis becomes increasingly expensive, both in terms of quantum resources and compilation tractability. Moreover, it becomes diffi-cult to incorporate noise and hardware constraints. ML-based tools are increasingly being explored to help with decomposition, e.g., (i) models that propose ans¨ atze [32,33] that are close to the target unitary to reduce the search effort, (ii) reinforcement learning or other ML methods to choose instruction order, map qubits, optimize small circuit windows, or decide which decompositions to use and when to apply approximations [34–36], and (iii) unitary neural networks [37] that try to directly capture input-output behavior via weights that are constrained to be unitary, are some promising directions. While the two complementary approaches of pulse-level control and ML-based decomposition are interesting directions, their fusion into a unified layer is largely unexplored. In particular, ref [38] tackles hardware-aware compilation by accepting the device’s inherent “imperfect” physics. Rather than iteratively fine-tuning pulses to suppress coherent errors or match ideal gate definitions, they explicitly characterize the native dynamics of uncalibrated gates and adapt the circuit synthesis routine to construct operations directly using these raw primitives. While effective for coherent errors, these methods typically rely on explicit Hamiltonian characterization and classical optimization, in contrast to our proposed data-driven, gen-erative approach that implicitly learns the full noise model via GST and diffusion. In what follows, we develop a QMLC framework that integrates the approaches from noise characterization to gate sequence compilation, and discuss its advantages. An often necessary gateway for both decomposition and pulse control is characterizing the hardware via Gate Set Tomography (GST) or calibration processes. ML has also begun to be used here, for example, to model drift, detect coherent errors, predict miscalibrations, and more. This helps inform both traditional and ML- or pulse-based decomposition workflows. In ref [39], the authors apply standard supervised regression to GST style characterization data, with the primary aim of interpolating device noise within a predefined parameter range. Their method is intentionally lightweight and GST-inspired rather than a full, self-consistent gate set tomography procedure. In practice, they prepare tensor-product basis states, optionally apply a native gate, and record Pauli expectation values to form two matrices: g (no gate) and U (with the gate). These expectation matrices, rather than maximum likelihood reconstructions with germ sequences, serve directly as the features for learning. The gate pool is restricted to a curated, discrete set of native single qubit PRx angles and CZ, chosen so that different noise mechanisms imprint distinguishable signatures on the resulting g and U .To make the characterization simulator ready, the authors posit a small heuristic channel family: per-qubit channels composing depolarizing, amplitude damping, dephasing, and readout errors; and, for 3each qubit pair, an additional two-qubit depolarizing channel composed with the single-qubit channels. These channels are combined after the gates in classical simulation, yielding a compact, composable device noise emulator. Learning is performed as plain supervised regression by training two shallow multilayer perceptrons (MLPs) to learn the inverse map from g and U to the noise parameters. Inputs are the GST style expec-tation matrices; outputs are the corresponding channel parameters, bounded to maintain valid ranges. The training corpus is synthetic; it simulates the curated gate set by performing a multidimensional grid sweep over the noise parameters to generate g and U , and uses the associated parameter values as labels. After training, they execute the same GST-style routine on hardware to obtain empirical g and U , which are then fed into the regressors to estimate the device-specific parameters. Their design emphasizes interpolation over the grid, as extrapolation beyond the trained domain is not the goal and is expected to be unreliable. Meanwhile, the learned noise family is fundamentally constrained by the expressivity of the emulator’s channel ansatz, because effects not encompassed by the assumed composition (e.g., coherent, non-Markovian, crosstalk-mediated errors, leakage) are effectively projected away. As a result, the practical usefulness of the fitted model is bounded by the fidelity of the underlying simulation assumptions. Any mismatch between hardware reality and the simulator induces systematic bias in the inferred parameters. The framework employs a shortcut relative to full GST, omitting the germ sequences necessary for self-consistency. It is crucial to define this precise boundary because, unlike full GST, this approach cannot isolate gate errors from SPAM bias. Formally, treating the state initialization and measurement operators as fixed rather than variable makes the method functionally resemble Process Tomography. This limits the achievable reconstruction accuracy to the noise floor of the SPAM operations. By contrast, Ref. [40] adheres to the standard GST setup and introduces ML4GST : a transformer-based (Vision Transformer-style) regressor that predicts gate- and device-level noise parameters from GST datasets. The network’s outputs parameterize a simulated noise model, and training optimizes these parameters to match measured GST data, thus relying on the emulator to define the mapping. While this preserves the formal GST framework, the approach remains constrained by the expres-sivity and fidelity of the assumed noise model and incurs additional computational cost from repeatedly simulating GST circuits during training. The usefulness of the learned parameters is therefore bounded by how accurately the emulator reflects hardware, and the inner-loop simulation cost scales linearly with the cumulative depth of the GST sequences. Motivated by these constraints, the QMLC framework proposed in this paper bypasses both the fixed parametric noise family and the need for in-loop circuit simulation by using a generative diffusion model that directly compiles quantum circuits from user input, aiming to internalize hardware regularities in a data-driven way while improving scalability. Recent studies have demonstrated that diffusion models [41–44] are effective quantum-circuit synthe-sizers. Most notably, [41] introduces a denoising diffusion probabilistic model (DDPM) whose condition-ing signal is an encoded unitary matrix. Millions of random circuits are simulated once, each labeled with its exact unitary, giving rise to paired training samples, (C, L ), where C is a gate sequence and L is its ideal unitary representation. During inference, the DDPM is conditioned on the label tensor L, and an optional text prompt (e.g. “use gate set [X, Y, CX ]”) embedded by a frozen CLIP encoder [45]. The above framework relies exclusively on noise-free simulated data. Because simulation yields noise-less unitaries, a fully informative label L is always available. Real devices, however, deviate from this ideal in two critical ways: (1) Intrinsic noise, since experimental counts are inevitably corrupted by state-preparation and measurement (SPAM) errors, decoherence, and cross-talk, so the data distribution no longer matches the simulator output, and (2) Inaccessible labels, as obtaining a full density matrix for every candidate circuit would require quantum-state tomography, which is exponentially costly in qubit number and therefore impractical for realistic training sets. The theoretical viability of applying such data-driven approaches to quantum systems has been established in the context of machine learning control (MLC), as demonstrated by ref [15]. Motivated by this precedent, and shifting the focus from control to characterization, we conclude this section by posing our primary research question: Can a generative model, specifically a denoising diffusion probabilistic model, learn directly from real, noisy tomographic data to capture hardware characteristics without relying on idealized density-matrix labels, while generating circuits whose statistics agree with experiment? In this article, we propose a potential solution towards the development of a noise-aware circuit synthesis framework that integrates a permutation-invariant set transformer encoder with a conditional diffusion decoder trained on gate-set tomography data. GST is information-complete, i.e., in principle, 4it fully characterizes the underlying quantum processor through experimentally obtained outcome fre-quencies. Instead of supplying explicit labels, we embed each unordered GST dataset into a latent code that captures its joint statistics, and train the diffusion decoder to generate new circuits whose synthetic GST outputs match the empirical distribution. This design yields an end-to-end machine-learning pipeline that dispenses with simulator-generated supervision and respects real hardware noise by construction. Gate Set 
+
+> Tomography
+> Dataset
+> Set Vision
+> Transformer
+> Permutation
+> Invariant
+> Pooling
+> Con cept
+> Space of
+> (k -Seed Vectors)
+> Conditional
+> Covariance
+> Matrix
+> Prompt
+> conditional input
+> (target distribution, gates, length)
+> Generated
+> Circuit
+> Denoising
+> Diffusion
+> Model
+> Context
+> Denoising
+> Diffusion
+> Model
+> Subsets
+> (variability + gradual
+> complexity)
+> Embedding
+> (tokenized circuits
+> and measurements)
+
+Figure 2: Overview of the proposed architecture for tomography-driven quantum circuit generation. 
+
+# 3 Preliminaries 
+
+In the following sections, we formalize the GST-conditioned generative-compilation problem, detail the encoder-decoder architecture, present a likelihood-based training objective that enforces physical validity, and validate the framework on experimental datasets. Figure 2 shows an overview of our architectural pipeline. Our primary objective is to replace full-information labels L with experimentally realistic Gate-Set Tomography (GST) data, all while preserving the capability for generative circuit compilation. In modern GST protocols, an experimental data point is characterized by the tuple (C, ρ 0, M, p). Here, C represents the quantum circuit, while ρ0 and M denote the state-preparation and measurement (SPAM) operators, respectively. The vector of outcome probabilities p ∈ Rd of N qubits, where d = 2N , is obtained by executing the circuit, formally defined as 
+
+p = (pk)dk=1, where pk = Tr (Mk C(ρ0)) with ∑
+
+> k
+
+pk = 1.
+
+Because quantum measurement induces wavefunction collapse, distinct physical processes can map to identical probability vectors p. Consequently, any single pair (C, p) carries only partial information regarding the underlying gate set. This observational constraint motivates our central inquiry: given an aggregate dataset 
+
+D = {( Ci, ρ 0,i , M i, pi)} Ni=1,
+
+is it possible to learn an implicit, low-dimensional latent code ˜h ≈ h that captures the device’s physical dynamics? Such a representation would allow us to decode new circuits whose predicted statistics align with experimental results. Now consider any paired data instance (Ai, B i) in a dataset D, i.e. Ai = (Ci, ρ 0,i , M i) and Bi = pi
+
+satisfying the structural equation 
+
+Bi = O (Ai; h),
+
+with a known forward operator O (in our case, the matrix multiplication of quantum gates) and hidden parameters h. Because each pair provides only partial constraints on h, the inverse problem is locally 5underdetermined; thus, O cannot be inverted via pointwise encoding alone. We therefore propose a two-stage learning scheme: 1. Dataset Encoder: map the full dataset {Bi}Ni=1, together with {Ai}Ni=1 to a latent vector ˜h ∈ Rk,
+
+with a feature size k.2. Generative Decoder: sample A ∼ pθ (A ∣ ˜h) (implemented via a diffusion model) and accept if the simulated ˆB = O(A; ˜h) is statistically consistent from the empirical distribution of B.Currently, we do not strictly enforce physical regularizations on ˜h, such as Completely Positive Trace-Preserving (CPTP) maps for valid quantum evolution or gauge-fixing to address inherent freedom in the gate set’s coordinate system. Instead, we adopt a flexible approach where extra degrees of freedom are permissible, provided the combination of ˜h and the decoder successfully reproduces the observed statis-tics. This flexibility simplifies the current framework, but integrating physical priors could significantly enhance both training efficiency and model interpretability in future work. Potential refinements include adding penalties for deviations from CPTP conditions or defining structured latent spaces based on physical circuit models, such as Hamiltonian generators or specific error channels, similar to how shadow tomography efficiently extracts properties from sparse quantum data. 
+
+# 4 Dataset Encoding 
+
+A single GST circuit-measurement pair (C, p) provides only a partial and noisy observation of the underlying processor. Each execution probes a restricted subspace of the device’s full quantum dynamics, revealing only a limited number of operator matrix elements. Consequently, any model that conditions on a single circuit at a time risks overfitting to local id-iosyncrasies (shot noise, SPAM errors) and underrepresenting global hardware regularities. For example, without access to complementary bases, a model may fail to distinguish a coherent superposition from a fully dephased mixed state, as both yield identical statistics in a single measurement setting. To achieve informational richness, we group n distinct circuits into a mini-dataset S = {( Ci, pi)} ni=1,thereby exposing the encoder to a richer, joint empirical distribution of outcomes. The resulting latent context vector acts as a sufficient statistic, summarizing shared information, such as common gate errors, correlated crosstalk, and drift, across the set. Effectively, this captures device-level physics that no single circuit can reveal in isolation. Processing such a collection requires the encoding mapping f ∶ (X)n → Z,where X is the space of individual circuit-outcome pairs and Z is the continuous latent representation space, to be permutation invariant. Formally, this implies that f (xπ(1), . . . , x π(n)) = f (x1, . . . , x n) for every permutation π ∈ Sn, ensuring that the representation depends solely on the multiset of inputs rather than the order in which they are presented. 
+
+## 4.1 Permutation Invariance and Non-Local Correlation 
+
+Gate-Set Tomography (GST) produces a collection 
+
+S = {( Ci, pi)} ni=1
+
+of circuit-measurement pairs. The physical distribution of outcomes is determined entirely by the under-lying gate set and circuit arrangement. In the context of offline reconstruction, the dataset S is treated as a static collection of circuit-measurement pairs. Although real hardware exhibits temporal drift, ren-dering the physical execution order significant, we currently model the system as stationary over the collection window. Thus, our learned representation is constrained to be invariant to permutations of the input pairs. This focuses the model on the time-averaged gate behavior and global error correlations. Explicitly modeling non-stationary drift by conditioning on measurement timestamps t, e.g., inputs of the form (C, p, t ), is a promising avenue for future work, but remains outside the scope of this static reconstruction framework. Long GST sequences encode non-local correlations that arise from coherent error accumulation and entangling operations spanning many time steps. Transformer self-attention naturally captures such long-range structure without inductive biases toward local connectivity (unlike convolutions) [46], making it a principled choice for quantum-physics workloads where global contextual reasoning is essential. In summary, encoding mini-datasets as unordered sets enables the model to (i) Integrate complemen-tary partial observations into a unified, information-rich context; (ii) Respect the physical permutation 6invariance of tomographic experiments; and (iii) Leverage transformer attention to model the intrinsi-cally long-range correlations present in realistic quantum devices. These principles guide the design of our Set Vision Transformer (Set-ViT) encoder, which forms the backbone of the generative framework introduced in the following. 
+
+## 4.2 Circuit and Label Embedding 
+
+To process GST circuits and their associated measurement counts in a manner that respects set invari-ance, we first transform each circuit into an image-like array suitable for a Vision Transformer (ViT) encoder [47]. Concretely, each circuit C is represented as a Q × T grid of integer tokens, where Q denotes the number of qubits and T denotes the maximum circuit depth (number of time steps). We begin by tokenizing the circuit, assigning a unique integer to each gate type and special symbol. For example, we define the mapping: X ↦ 1, Y ↦ 2, CX ↦ 3, Idle ↦ 4, Padding ↦ 5, . . . 
+
+This process transforms the circuit layout into an integer matrix (or grid) G of size Q × T , where every entry represents a specific token: 
+
+G ∈ {1, . . . , K }Q×T ,
+
+with K representing the size of the token vocabulary. Next, we project these discrete tokens into a continuous space using an embedding function Egate ∶
+
+{1, . . . , K } → Rdgate . We strictly enforce orthogonality, such that for distinct tokens i ≠ j, ⟨Egate (i), E gate (j)⟩ =
+
+0 and ∥Egate (i)∥ = 1. Applying this embedding element-wise to the integer grid converts G into a real-valued circuit tensor G:
+
+Gq,t = Egate (Gq,t ) ⟹ G ∈ RQ×T ×dgate .
+
+This resulting 3D array encodes the qubit index, time step, and gate type along its three axes. Simultaneously, the measurement counts m ∈ R dm associated with each circuit execution are nor-malized by their ℓ1-norm to form a vector 
+
+y = m
+
+∥m∥1
+
+∈ R dm .
+
+While the normalized vector y faithfully represents the empirical measurement distribution, directly feeding it into a neural network poses a subtle but critical challenge related to the physics of our quantum system. In the ideal noiseless case, the target measurement probability y for Clifford circuits is highly structured, distributing uniformly over affine subspaces of the Boolean hypercube. Consequently, the vector is dominated by a few “major” terms (e.g., 0 .5 or 0 .25) and zeros. However, the critical physical information we seek to detect, such as SPAM errors, coherent miscalibrations, and cross-talk, resides entirely within the minor perturbation terms, yi = yi, ideal ± δi.Standard Multi-Layer Perceptrons (MLPs) are known to exhibit a strong spectral bias [48], meaning they preferentially learn low-frequency, high-amplitude functions. If y is ingested directly, the net-work will easily capture the major structural distribution but critically smooth over or ignore the high-frequency δi deviations, thereby losing the subtle hardware noise signatures. To resolve this, we propose applying a pre-conditioning mathematical transformation T ∶ Rdm →
+
+Rdemb to the probability vector, ˜ y = T (y), designed specifically to amplify these physically significant minor terms. Within our framework, this transformation can be instantiated using one of three theoret-ically motivated encoding strategies: 1. Boundary-Amplified Logit Embedding: In quantum physics, an error δ on an outcome that should theoretically be strictly forbidden (probability 0) carries disproportionately high Shannon information regarding leakage or bit-flip mechanisms. To aggressively stretch the vector space near zero and highlight these specific errors, we apply a clamped logit transformation element-wise: ˜yi = log ( yi + ϵ
+
+1 − yi + ϵ ) ,
+
+where ϵ ≈ 10 −6 acts as a numerical stabilizer. This mapping converts a minuscule physical perturba-tion (e.g., δ = 10 −3) into a significantly shifted continuous embedding value, forcing the subsequent network layers to attend heavily to small leakage terms. 72. Walsh-Hadamard Transform (WHT): Alternatively, we can map the probability distribution from the computational basis into the space of Pauli expectation values. The mathematically rigorous equivalent of a Fourier Transform on the Boolean hypercube Ω Q is the Walsh-Hadamard Transform [49, 50]: ˜y = H⊗Qy, 
+
+where H is the standard 2 ×2 Hadamard matrix. By stabilizer theory, an ideal Clifford output yields exact expectation values of {0, ±1}. Under real hardware noise, these values become ±(1 − δ1) and 
+
+δ2. The WHT effectively isolates the physical error terms into distinct parity dimensions, naturally decoupling the major structural signals from the minor physical perturbations. 3. High-Frequency Sinusoidal Representation: To counteract the MLP’s spectral bias directly, we can adapt the concept of positional encoding used in standard Transformers to our continuous probability features. We project each probability element yi into a high-dimensional, high-frequency Fourier feature space [51]: ˜yi =
+
+> L−1
+
+⨁
+
+> j=0
+
+[sin (2j πy i), cos (2j πy i)] ,
+
+where L controls the maximum frequency band and ⊕ denotes concatenation. Because the fre-quency 2 j acts as a massive exponential multiplier inside the trigonometric argument, even an infinitesimal shift δi results in a detectable, orthogonal variation in the higher-dimensional embed-ding space, guaranteeing that the network detects the subtle error mechanics. Following the methodology of the original CCDM paper [19] to enable label consistency, we then feed the transformed distribution ˜ y (rather than the raw y) into a deep multilayer perceptron fθ of at least five hidden layers, obtaining a new vector hly of embedding dimension dcircuit :
+
+hly = fθ (˜y) ∈ Rdcircuit .
+
+This long label embedding hly has the same dimension as the flattened clean (circuit) image x0 in the diffusion model, and is later used for constructing the covariance matrix during diffusion. Likewise, we can obtain the short-label embedding hsy , which serves as the typical input to the set-ViT encoder and as the conditional injection for the diffusion model, by following similar steps. For completeness, we briefly outline the procedure for obtaining the long-label embedding hly in the CCDM framework, introducing the concept of label consistency that stabilizes training. We introduce three neural subnetworks for label consistency: 
+
+T1 ∶ x ↦ hly , T2 ∶ hly ↦̂ y, T 3 ∶̂ y ↦̂ hly .
+
+Here, T1 and T2 are trained jointly to predict normalized probability ̂y from the circuit image x, and once converged, they are frozen while T3 is trained via the CCDM consistency loss. Specifically, for a mini-batch of size m, we add standard multidimensional Gaussian noise 
+
+γ ∼ N (0, σ 2I)
+
+to each true label yi and minimize 1
+
+m
+
+> m
+
+∑
+
+> i=1
+
+Eγ [ ∥ T2(T3(yi + γ)) − (yi + γ)∥ 22].
+
+This consistency loss ensures that T3 learns a semantically meaningful inversion of T2 rather than producing arbitrary latent features. 
+
+## 4.3 Set Vision Transformer Encoder 
+
+After obtaining the 3D circuit array G and the short label embedding hsy , we feed them into a Vision Transformer (ViT) encoder. The steps are as follows: 81. Patch Embedding. The circuit array of shape (Q, T, d gate ) is partitioned into non-overlapping patches of size 2 × 2 (two qubits by two time steps). For instance, if Q = 2 and T = 20, this yields  
+
+> Q
+> 2
+
+× T 
+
+> 2
+
+= 10 patches along the time dimension. Each 2 × 2 patch is a tensor in R2×2×dgate , which is flattened into a vector in R4 dgate . We then apply a learnable linear projection PatchEmbed ∶ R 4 dgate ⟶ R dmodel ,
+
+producing a sequence of 10 token embeddings {ek}10  
+
+> k=1
+
+⊂ R dmodel .
+
+2. Tokenization. Following ref. [47], we introduce a single learnable token [LRN] in the manner of the original Vision Transformer. Specifically, we prepend the learnable token 
+
+[LRN] ∈ R dmodel 
+
+at the beginning of the tokenized sequence. Immediately thereafter, we place the label token 
+
+[LBL] ≡ hsy ; ∈ R dmodel ,
+
+which is not learned directly but is produced by the pre-trained network T3. Thus, our token sequence becomes 
+
+[ [LRN] ; [LBL] ; e1; . . . ; e10 ] ∈ R (T +2)×dmodel ,
+
+where {ek} are the 2 × 2 patch embeddings. The learnable token [LRN] serves as a global summary vector exactly as in the original ViT formulation, while [LBL] carries the encoded measurement information from T3.3. Positional Encoding. We add a learnable positional embedding Epos [k] ∈ R dmodel to each token, for indices k = 0, . . . , T + 1, where k = 0 corresponds to [LRN] , k = 1 to [LBL] , and k = 2, . . . , T + 1to patches 1 , . . . , T , respectively. This ensures the transformer sees each token’s location within the circuit. 4. Transformer Encoder Blocks. We pass the entire (T +2)×dmodel token matrix X ∈ R(T +2)×dmodel 
+
+through LViT number of identical Transformer encoder blocks. Each block applies: 
+
+X′ = LayerNorm (X + MultiHeadAttn (X, X, X)) ,
+
+X′′ = LayerNorm (X′ + rFF (X′)) 
+
+Here, MultiHeadAttn refers to a standard multi-head attention layer, and rFF denotes a row-wise feedforward layer as defined in the Set Transformer paper [18], meaning it processes each token embedding (each row of X′) independently through the same two-layer MLP, followed by layer normalization. After LViT such layers, we take the final hidden state corresponding to [LRN] ,denoted 
+
+hLRN = [[LRN] ]output ∈ R dmodel ,
+
+which serves as the high-level latent feature for both the circuit and the label. The final hidden state of [LBL] can be stored and used for downstream tasks like diffusion. Because the self-attention layers operate on the entire token row, the [LRN] , [LBL] , and patch tokens can attend to one another fully. We exploit the learned [LRN] token as a summary of the entire circuit-label input. After encoding a mini-set of n circuit-label pairs, we collect the [LRN] outputs into a matrix 
+
+HLRN ∈ R n×dmodel .To maintain permutation invariance while circumventing the O(n2) computational bottleneck of standard self-attention, we employ Induced Set Attention Blocks (ISAB) [18]. By mediating interactions through a set of m learnable inducing points, ISAB reduces the complexity to O(nm ), enabling the efficient processing of large circuit sets. Specifically, each HLRN is processed by two stacked ISAB layers with m = 32. This value was selected based on empirical evidence demonstrating that set representations saturate rapidly with respect to m. A value of m = 32 provides a sufficient number of ’prototypes’ to capture the global data topology while minimizing the computational overhead of the linear attention mechanism. We then apply Pooling by Multi-head Attention (PMA) with k learnable seed vectors. For example, if the GST dataset has four unique underlying gates, we set k = 4. The PMA output is a set of k context vectors, each in R dmodel . We denote the resulting context matrix by Hcontext ∈ R k×dmodel .95 Data Grouping and Curriculum Learning 
+
+Since the proposed machine learning model is based on “sets” of input data (with the encoder imple-mented as a set transformer), it is essential to group the raw data into appropriate sets. These sets must satisfy several criteria to (i) minimize ambiguity in the downstream generative task and (ii) enhance training efficiency and quality through curriculum learning. The grouping procedure is illustrated in Figure 3 and follows the principles outlined below: 1. Minimizing ambiguity. As discussed earlier, when using GST data as the training dataset, the conditional prompt (e.g., probability distribution, gate type, circuit length) used to guide the generative model for quantum circuit synthesis is often ambiguous and degenerate (not to be confused with quantum degeneracy). That is, the same conditional prompt can correspond to multiple valid quantum circuits. To reduce such ambiguity, we group data into sets such that each data instance within a set is maximally distinct. For an n-qubit register, projective measurement in the computational basis yields one of 2 n out-comes, i.e., strings in {0, 1}n. We denote the outcome set by Ωn = {0, 1}n, ∣Ωn∣ = 2n.
+
+When restricting to Clifford circuits (e.g., generated by {Xπ/2, Y π/2, CNOT }), the measurement distributions are not arbitrary. By stabilizer theory, any Clifford circuit maps ∣0⟩⊗n to a stabilizer state whose computational ( Z-)basis outcomes form an affine subspace of Ω n and are distributed uniformly on that subspace. In this case, every distribution corresponds to a uniform distribution over an affine subspace of Ω n. If the affine subspace has dimension k, its support size is 2 k, and each outcome occurs with probability 2 −k.The number of distinct affine subspaces of dimension k is 
+
+N (n, k ) = 2 n−k(nk)
+
+> 2
+
+where (nk)2 denotes the Gaussian binomial coefficient 
+
+(nk)
+
+> 2
+
+=
+
+> k−1
+
+∏
+
+> i=0
+
+1 − 2 n−i
+
+1 − 2 i+1 .
+
+Hence, the total number of distinct computational-basis measurement distributions achievable with Clifford circuits is 
+
+T (n) =
+
+> n
+
+∑
+
+> k=0
+
+2 n−k(nk)
+
+> 2
+
+in an ideal noiseless scenario, assuming the circuit depth is sufficiently large. Accordingly, we ensure that each selected data instance within a set is distinct with respect to its probability distribution. This distinction can be further extended to include gate types and circuit lengths, thereby compounding the diversity within each set. 2. Circuit length consistency. Each data instance within a set must fall within a narrow range of circuit lengths, i.e., 
+
+lmin ≤ circuit length ≤ lmax , with lmax − lmin ≤ τ, 
+
+where τ denotes a threshold parameter controlling the allowable variation in length. 3. Overlap across sets. Data instances may appear in multiple sets. That is, partial overlap between sets is permitted and, in practice, beneficial for maintaining training diversity. 4. Curriculum learning. The model is trained in stages according to increasing circuit length. Training proceeds from shorter and simpler circuits to longer and more complex circuits, following the principles of curriculum learning [52] [53]. This staged approach improves convergence stability and helps the model progressively adapt to increasingly challenging synthesis tasks. Ultimately, this grouping strategy organizes the data to prevent redundancy while stabilizing the training process. We feed the network diverse sets of uniform-length circuits to ensure the learned representation captures the actual structural properties of the Clifford group, instead of simply memorizing trivial patterns or getting lost in ambiguous data. 10 Raw Data Instances        
+
+> short circuits medium circuits long circuits
+> S1S2
+> S3
+> ⋯
+> Sk
+> Sk+1Sk+2
+> ⋯
+> SrSr+1
+> Sr+2
+> ⋯
+> Overlap among sets is allowed
+> Stage 1: Short / Simple Stage 2: Medium Stage 3: Long / Complex
+
+Figure 3: Schematic illustration of the data grouping strategy. Raw data instances are partitioned into sets such that instances within a set are maximally distinct yet share a narrow range of circuit lengths. Overlap across sets is allowed. The sets are then ordered by circuit length to enable curriculum learning from simple to complex circuits. 
+
+# 6 Hierarchical Diffusion Framework 
+
+To effectively model the complex, high-dimensional distribution of the dataset, we propose a hierarchical diffusion framework. This approach is motivated by the observation that our data is not independent and identically distributed (i.i.d.) at the global level, instead it consists of exchangeable “mini-sets” governed by shared underlying physical parameters. 
+
+## 6.1 Theoretical Motivation 
+
+Directly modeling the joint probability distribution p(X) over the raw data space is computationally intractable and prone to mode collapse due to the underlying physics’ multimodality. Instead, we de-compose the generation process into two distinct semantic levels: a global context manifold and a local 
+
+state manifold. Let a mini-set be denoted as X = {x1, . . . , xN }, where the elements are permutation invariant. We posit that the generation of X depends on a latent context variable c that encapsulates the global physical constraints (e.g., Hamiltonian parameters). The joint distribution factorizes as: 
+
+p(X ) = ∫ p(X ∣c)p(c) dc ≈ ∫ (
+
+> N
+
+∏
+
+> i=1
+
+p(xi∣c)) p(c) dc (1) This formulation necessitates a two-stage generative process: (i) Global-Context Diffusion (GCD) that models the prior distribution of physical contexts p(c), and (ii) Conditional Circuit-Token Diffusion (CTD) that models the conditional likelihood p(x∣c), generating detailed data structures given the physical context. Crucially, to extract c from raw data during training, we require an encoder Eset (⋅) that respects the permutation invariance of the input set. A standard Convolutional Neural Network (CNN) or Multilayer Perceptron (MLP) would impose an arbitrary ordering, introducing inductive bias errors. Therefore, we employ a Set Vision Transformer (Set ViT) to serve as a permutation-invariant statistic extractor. 
+
+## 6.2 Architecture 
+
+The framework consists of three coupled components: 
+
+1. Set Vision Transformer (Set ViT): The Set ViT acts as the encoder Eϕ ∶ RN ×din → Rdctx .Given an input mini-set X , it aggregates information via self-attention mechanisms to produce a global 11 context vector zctx = Eϕ(X ). This vector serves as a sufficient statistic for the mini-set. 
+
+2. Global-Context Diffusion (GCD): This module operates in the latent space of the Set ViT. It is an unconditional diffusion model trained to reverse a noise process on the context vector zctx . It utilizes a standard isotropic Gaussian prior p(zT ) = N (0, I).
+
+3. Conditional Circuit-Token Diffusion (CTD): The CTD generates the high-dimensional circuit tokens x0 ∈ RL×dtok conditioned on the clean context zctx . Unlike standard Gaussian diffusion, the CTD incorporates a label-dependent covariance Hy into the transition dynamics to enforce measurement probability constraints. Hy is derived from a pre-trained, frozen MLP and ensures that generated samples adhere to physical validity. 
+
+## 6.3 Joint Latent Diffusion Optimization 
+
+A significant challenge in hierarchical diffusion models is end-to-end differentiability. Naively “daisy-chaining” the models (i.e., sampling a context ˆ z from GCD and feeding it to CTD during training)renders backpropagation intractable, as it requires differentiating with respect to the ODE solver of the GCD sampling process. To circumvent this, we adopt a joint training strategy inspired by Score-based Generative Modeling in Latent Space (LSGM) [54]. Instead of sampling from the prior during training, we use a teacher-forcing approach in which the encoder’s output directly conditions the diffusion objectives. The procedure is defined as follows: The training procedure begins with the context encoding phase, where the Set ViT processes a mini-set of real data Xreal to generate a “ground truth” context embedding zgt = Eϕ(Xreal ). This embedding serves as the anchor for two parallel diffusion objectives. On one hand, the GCD is trained to denoise 
+
+zgt directly, treating the latent vector itself as the data to be modeled. Simultaneously, the CTD is trained to reconstruct the original data x ∈ Xreal by denoising it, conditioned on this fixed ground-truth embedding zgt .This configuration creates a shared information bottleneck. The gradient flow connects the Set ViT to both diffusion models simultaneously. The Set ViT is updated to produce embeddings that are both generable (low GCD loss) and informative for reconstruction (low CTD loss). Formally, the total objective is: 
+
+Ltotal = LGCD (zgt ) + λLCTD (x, zgt ). (2) This ensures end-to-end differentiability without the need to backpropagate through the sampling chain. 
+
+# 7 Variational Diffusion Formalism 
+
+We adopt the continuous-time Variational Diffusion Model (VDM) framework [55] for both the global context and the circuit tokens. This formalism allows us to jointly optimize the generative model and the noise schedule, expressed via the signal-to-noise ratio (SNR). 
+
+## 7.1 Global-Context Variational Diffusion (GCD) 
+
+The GCD models the distribution of the latent context vectors z(c) ∈ Rdctx . We define a monotonically decreasing log-signal-to-noise ratio schedule γ(c) 
+
+> η
+
+(t) ∶ [0, 1] → R, parameterized by η. The diffusion process is governed by the noise variance σ(c)2 
+
+> t
+
+= sigmoid (γ(c) 
+
+> η
+
+(t)) and the signal preservation coefficient 
+
+α(c)2 
+
+> t
+
+= 1 − σ(c)2 
+
+> t
+
+. By satisfying the condition α(c)2 
+
+> t
+
++ σ(c)2 
+
+> t
+
+= 1, this coefficient ensures the forward process preserves unit variance, creating a smooth interpolation between the data distribution at t = 0 and the standard Gaussian prior at t = 1. The forward diffusion kernel is given by the marginal distribution at any time t ∈ [0, 1]. For a clean context z(c) 
+
+> 0
+
+, the intermediate noisy latent state z(c) 
+
+> t
+
+is sampled via: 
+
+q(z(c) 
+
+> t
+
+∣ z(c) 
+
+> 0
+
+) = N (z(c) 
+
+> t
+
+; α(c) 
+
+> t
+
+z(c) 
+
+> 0
+
+, σ (c)2 
+
+> t
+
+I). (3) 12 Equivalently, using the reparameterization trick with ϵ ∼ N (0, I), this can be written as the stochastic trajectory: 
+
+z(c) 
+
+> t
+
+= α(c) 
+
+> t
+
+z(c) 
+
+> 0
+
++ σ(c) 
+
+> t
+
+ϵ. (4) The generative model learns to reverse this process by predicting the noise ϵ from the noisy state 
+
+z(c) 
+
+> t
+
+. The variational lower bound on the likelihood reduces to a weighted mean squared error (MSE). As T → ∞, the objective approximates: 
+
+LGCD = 12 Et∼U(0,1),ϵ∼N (0,I) [γ(c)′ 
+
+> η
+
+(t) ÂÂÂÂÂϵ(c) 
+
+> θ
+
+(z(c) 
+
+> t
+
+, t ) − ϵÂÂÂÂÂ
+
+> 22
+
+] . (5) Here, γ′(t) acts as a weighting function that emphasizes time steps where the noise level changes most rapidly. In practice, we compute the raw MSE, mse (c) = ∥ϵ(c) 
+
+> θ
+
+− ϵ∥22, and scale gradients by γ′(t)/ 2. 
+
+## 7.2 Conditional Circuit-Token Variational Diffusion (CTD) 
+
+The CTD generates the token grid x ∈ RL×dtok conditioned on the label y and the clean ground-truth context z(c) 
+
+> 0
+
+. Unlike isotropic diffusion in GCD, the circuit tokens must adhere to specific physical mea-surement constraints encoded in the covariance matrix Hy . We incorporate this into the diffusion kernel to enforce valid optimization trajectories. Given a schedule γη (t), the transition kernel is anisotropic: 
+
+q(xt ∣ x0, y) = N (xt; αtx0, σ 2 
+
+> t
+
+Hy ). (6) Since Hy is positive definite, it introduces a directional bias to the diffusion process. The matrix scales the noise magnitude along different axes, ensuring that exploration is concentrated within the subspace of valid physical constraints. Sampling is performed by scaling standard Gaussian noise: 
+
+xt = αtx0 + σtH1/2 
+
+> y
+
+ϵ, where ϵ ∼ N (0, I). (7) 
+
+7.2.1 Whitened Diffusion Objective 
+
+The standard diffusion loss must be adjusted to account for the correlated noise structure. Deriving the VDM bound for this anisotropic process leads to a Mahalanobis distance metric ∥ ⋅ ∥2 
+
+> H−1
+> y
+
+. To simplify computation, we “whiten” the error by pre-multiplying with H−1/2 
+
+> y
+
+:
+
+LCTD = 12 E t∼U(0,1) 
+
+> ϵ∼N(0,I)
+
+[γ′ 
+
+> η
+
+(t) ÂÂÂÂÂH−1/2 
+
+> y
+
+ϵϕ(xt, t, y, z(c) 
+
+> 0
+
+) − H−1/2 
+
+> y
+
+ϵÂÂÂÂÂ
+
+> 22
+
+] . (8) Intuitively, this objective penalizes errors more heavily in directions where the variance Hy is small (high certainty constraints) and less in directions of high variance. Since Hy is diagonal in our implementation, this operation is efficiently computed as an element-wise division: 
+
+mse white =
+
+ÂÂÂÂÂÂÂÂÂÂ
+
+ϵϕ − ϵ
+
+√
+
+diag (Hy )ÂÂÂÂÂÂÂÂÂÂ
+
+> 22
+
+. (9) 
+
+7.2.2 Hard-Vicinal Image Denoising Loss (HVIDL) 
+
+To rigorously address the challenge of data sparsity in the continuous regression label space, we employ the Hard-Vicinal Image Denoising Loss (HVIDL), as introduced in ref [19]. Training generative models strictly on exact label matches (x, y) is often inefficient because the underlying physical manifold varies smoothly, yet exact samples for any specific parameter y may be rare or non-existent. HVIDL regularizes the training by “borrowing” information from a local neighborhood defined by a radius κ. We define a perturbed label y′ = y + δ, where the perturbation follows δ ∼ N (0, σ 2 
+
+> δ
+
+I). The validity of this neighbor is gated by a hard vicinal weight function: 
+
+Wh(y, y′) = 1{∥ y − y′∥2 ≤ κ}. (10) 13 The loss function applies this mask to the whitened diffusion objective derived above. By substituting the conditioning label with the vicinal label y′, the total objective becomes: 
+
+LHVIDL = 12 E t∼U(0,1)   
+
+> ϵ∼N(0,I)
+> δ∼N(0,σ 2
+> δI)
+
+[γ′ 
+
+> η
+
+(t) Wh(y, y′) ∥ H−1/2 
+
+> y′
+
+(ϵϕ(xt, t, y′, z(c) 
+
+> 0
+
+) − ϵ)∥ 22]. (11) Relative to standard pointwise training and soft vicinal weighting schemes, this formulation offers two theoretical advantages. First, it enforces local smoothness and data efficiency. Since neighboring labels typically correspond to perceptually and physically similar data states, HVIDL implicitly augments the effective data density. It compels the network’s noise prediction to change smoothly within the local neighborhood of y instead of memorizing isolated points. Second, unlike soft weighting schemes (e.g., Gaussian weights), the hard vicinity constraint acts as a strict gating mechanism. This is crucial for scientific domains where precision is paramount. It ensures that the model effectively ignores “distant” physical parameters where ∥δ∥2 > κ. These distant points, while statistically reachable, often correspond to fundamentally different physical processes, and learning from them would introduce label noise. Furthermore, the quadratic form of the whitened residual preserves the closed-form Gaussian algebra of the VDM framework, which ensures that the optimization landscape remains tractable. 
+
+## 7.3 Discrete Circuit-Token Decoder 
+
+The Conditional Circuit-Token Diffusion (CTD) produces a clean, continuous embedding x0 ∈ RL×dtok .While this representation captures the rich semantic relationships between circuit elements, it serves as a continuous relaxation of the target discrete gate sequence. To recover valid quantum operations, we must project this relaxation back onto the discrete manifold. Decoding entails a single linear projection fdec ∶ Rdtok → R∣V ∣, where ∣V ∣ is the size of the discrete gate vocabulary. For the i-th row of the generated tensor, denoted x0,i , the probability distribution over possible tokens is computed via: 
+
+P (token i = v) = Softmax (Wdec x0,i + bdec ). (12) The final discrete circuit is obtained via an argmax step (for deterministic reconstruction) or categorical sampling (for stochastic exploration), as detailed in [41]. This step effectively collapses the generated continuous manifold onto the valid quantum gates. 
+
+# 8 Exemplary Applications 
+
+The QMLC framework introduced in this article enables the inference of a shared latent representation directly from partially informative observations. It finds applications in bridging systems identification with generative modeling. As exemplary applications of this general recipe, this section discusses three applications in learning hidden dynamics in physics and engineering domains where full-information labels are unattainable. 
+
+## 8.1 Gaussian Boson Sampling 
+
+A learned context space that conditionally generates Gaussian Boson Sampling (GBS) configurations based on desired measurement statistics can be a promising direction for both forward modeling and inverse design in quantum photonics [56, 57]. Traditional GBS setups rely on fixed interferometers and squeezed input states, which makes the mapping from physical parameters to output photon number statistics analytically tractable but computationally intensive to invert. Using the proposed generative model trained over the context space of GBS configurations, such as squeezing parameters, interferometer unitaries, and detection patterns, conditioned on target measurement distributions, we can effectively learn an implicit inverse map that bypasses direct simulation. This approach can be particularly useful for applications in molecular vibronic/energy spectra generation, where the underlying data is inherently quantum. 14 8.2 Machine Learning Quantum Control 
+
+An emerging application of machine learning is quantum control. Using the proposed framework, tra-ditional circuit compilation can be bypassed, and pulse-level control signals can be synthesized directly, tailored to the desired measurement outcome [27, 28]. This approach of driving the physical qubits directly to produce the intended output distribution is particularly advantageous for near-term quantum devices, where noise characteristics that drift significantly affect overall fidelity. By replacing discrete gate decomposition with continuous control synthesis, such techniques promise faster execution, lower overhead, and improved robustness to device variability, ultimately bridging the gap between abstract quantum algorithms and their hardware realization. 
+
+## 8.3 Quantum Program Synthesis 
+
+This framework also enables applications of empirical quantum algorithmic information theory, shifting from abstract Kolmogorov complexity to learned representations of quantum programs grounded in ex-perimental datasets. The shared latent space inferred directly from GST observations reframes quantum program synthesis as a problem of navigating a generative concept manifold, which makes the trade-off between explainability and efficiency explicit. On one end, compressed latent information enables the efficient optimization of performant circuits, aligning with directions such as Quantum Architecture Search for parametric ans¨ atze [58], QISA for minimal instruction sets, quantum agency models [59], and group-invariant geometric QML [60]. Meanwhile, breaking abstractions and co-design [61] allows for the optimization of full-stack quantum resources. This suggests a principled approach to studying how algorithmic complexity, physical realizability, and semantic transparency interact in quantum computing systems. 
+
+## 8.4 Neuromorphic Hardware Acceleration 
+
+Another promising direction for practical deployment of the proposed QMLC framework is the imple-mentation of its learning and inference pipeline on neuromorphic computing substrates. Neuromorphic processors implement massively parallel, event-driven computation and support spiking or analog neu-ral networks with extremely high energy efficiency, making them attractive platforms for accelerating machine-learning workloads derived from experimental data streams. Recent neuromorphic architec-tures such as IBM TrueNorth [62], Intel Loihi [63], and mixed-signal memristive systems [64] demon-strate the ability to perform large-scale neural inference with orders-of-magnitude improvements in en-ergy efficiency compared to conventional von Neumann processors. In the proposed architecture, the permutation-invariant Set-ViT encoder aggregates collections of GST circuits into a compact latent con-text representation that captures correlated hardware behavior such as drift, crosstalk, and coherent error accumulation. Mapping this encoder onto neuromorphic hardware would enable highly parallel process-ing of circuit tokens and measurement embeddings, allowing continuous assimilation of experimental data streams. Similarly, the diffusion-based generative decoder can be implemented using neuromorphic inference engines that efficiently approximate iterative denoising dynamics. Such an implementation would enable a tightly integrated closed-loop characterization and synthesis system, in which experi-mental GST data are processed on dedicated neuromorphic accelerators colocated with the quantum control stack. The learned latent context could then be updated in near real time and used to generate hardware-native circuits that adapt to device drift or calibration changes. This hardware-algorithm co-design may significantly reduce classical computational overhead while improving responsiveness of the compilation layer for near-term quantum processors [65–67]. 
+
+# 9 Conclusion 
+
+In this article, we propose a new paradigm for quantum circuit synthesis that fundamentally rethinks the interface between hardware characterization and compilation. The proposed quantum machine learn-ing control (QMLC) framework bridges three traditionally disjoint layers of the quantum stack: system identification, machine-learning-based control, and program synthesis. Instead of treating gate-set to-mography (GST) as a preliminary calibration step followed by an idealized unitary decomposition (UD), we introduce an end-to-end generative framework that learns directly from tomographic data and syn-thesizes circuits whose operational behavior is natively grounded in the device’s physics. This bypasses 15 the reliance on explicit noise models and rigid physicality constraints, offering instead a fully data-driven route from characterization to construction. We embed unordered GST datasets into a permutation-invariant latent concept space and couple this representation with a hierarchical diffusion model, which enables robust conditional circuit gen-eration. The proposed Set Vision Transformer captures global device-level regularities from partially informative observations, while the conditional diffusion decoder translates user-specified measurement objectives, supplied as probability distributions, into executable circuits that respect the empirically learned dynamics of the hardware. QMLC opens a pathway toward continual, context-aware compilation in the presence of drift, crosstalk, and calibration challenges of NISQ hardware. Beyond circuit synthesis, we discuss how the same concep-tual workflow extends naturally to pulse-level control, inverse design in photonic platforms, and empirical approaches to quantum program complexity. Large-scale implementation and experimental validation of the proposed architecture would be imperative to quantify the practical advantages of generative, tomography-conditioned compilation over conventional pipelines. 
+
+# References 
+
+[1] Colin Campbell, Frederic T Chong, Denny Dahl, Paige Frederick, Palash Goiporia, Pranav Gokhale, Benjamin Hall, Salahedeen Issa, Eric Jones, Stephanie Lee, et al. Superstaq: Deep optimiza-tion of quantum programs. In 2023 IEEE International Conference on Quantum Computing and Engineering (QCE), volume 1, pages 1020–1032. IEEE, 2023. [2] Aritra Sarkar, Akash Kundu, Matthew Steinberg, Sibasish Mishra, Sebastiaan Fauquenot, Tamal Acharya, Jaroslaw Miszczak, and Sebastian Feld. Yaqq: Yet another quantum quantizer–design space exploration of quantum gate sets using novelty search. New Journal of Physics, 2026. [3] Peter Stano and Daniel Loss. Review of performance metrics of spin qubits in gated semiconducting nanostructures. Nature Reviews Physics, 4(10):672–688, 2022. [4] Daniel Bochen Tan, Dolev Bluvstein, Mikhail D Lukin, and Jason Cong. Compiling quantum circuits for dynamically field-programmable neutral atoms array processors. Quantum, 8:1281, 2024. [5] Matthew P Harrigan, Tanuj Khattar, Charles Yuan, Anurudh Peduri, Noureldin Yosri, Fionn D Malone, Ryan Babbush, and Nicholas C Rubin. Expressing and analyzing quantum algorithms with qualtran. arXiv preprint arXiv:2409.04643, 2024. [6] Justyna P Zwolak and Jacob M Taylor. Colloquium: Advances in automation of quantum dot devices control. Reviews of modern physics, 95(1):011006, 2023. [7] Sam R Katiraee-Far, Yuta Matsumoto, Brennan Undseth, Maxim De Smet, Valentina Gualtieri, Christian Ventura Meinersen, Irene Fernandez de Fuentes, Kenji Capannelli, Maximilian Rimbach-Russ, Giordano Scappucci, et al. Unified evolutionary optimization for high-fidelity spin qubit operations. arXiv preprint arXiv:2503.12256, 2025. [8] Erik Nielsen, John King Gamble, Kenneth Rudinger, Travis Scholten, Kevin Young, and Robin Blume-Kohout. Gate set tomography. Quantum, 5:557, 2021. [9] Emanuel Knill, Dietrich Leibfried, Rolf Reichle, Joe Britton, R Brad Blakestad, John D Jost, Chris Langer, Roee Ozeri, Signe Seidelin, and David J Wineland. Randomized benchmarking of quantum gates. Physical Review A—Atomic, Molecular, and Optical Physics, 77(1):012307, 2008. [10] Jonas Helsen, Ingo Roth, Emilio Onorati, Albert H Werner, and Jens Eisert. General framework for randomized benchmarking. PRX quantum, 3(2):020357, 2022. [11] Hsin-Yuan Huang, Richard Kueng, and John Preskill. Predicting many properties of a quantum system from very few measurements. Nature Physics, 16(10):1050–1057, 2020. [12] Jonas Helsen, Marios Ioannou, Jonas Kitzinger, Emilio Onorati, AH Werner, Jens Eisert, and Ingo Roth. Shadow estimation of gate-set properties from random sequences. Nature Communications, 14(1):5039, 2023. 16 [13] Christopher M Dawson and Michael A Nielsen. The solovay-kitaev algorithm. arXiv preprint quant-ph/0505030, 2005. [14] Neil J Ross and Peter Selinger. Optimal ancilla-free clifford+ t approximation of z-rotations. arXiv preprint arXiv:1403.2975, 2014. [15] Lucien Hardy and Adam GM Lewis. Quantum computation with machine-learning-controlled quan-tum stuff. Machine Learning: Science and Technology, 2(1):015008, 2020. [16] Daniel Greenbaum. Introduction to quantum gate set tomography. arXiv preprint arXiv:1509.02921, 2015. [17] Erik Nielsen, Kenneth Rudinger, Timothy Proctor, Antonio Russo, Kevin Young, and Robin Blume-Kohout. Probing quantum processor performance with pygsti. Quantum Science & Technology, 5(4):044002, 2020. [18] Juho Lee, Yoonho Lee, Jungtaek Kim, Adam Kosiorek, Seungjin Choi, and Yee Whye Teh. Set trans-former: A framework for attention-based permutation-invariant neural networks. In International Conference on Machine Learning, pages 3744–3753. PMLR, 2019. [19] Xin Ding, Yongwei Wang, Kao Zhang, and Z Jane Wang. Ccdm: Continuous conditional diffusion models for image generation. arXiv preprint arXiv:2405.03546, 2024. [20] Adriano Barenco, Charles H Bennett, Richard Cleve, David P DiVincenzo, Norman Margolus, Peter Shor, Tycho Sleator, John A Smolin, and Harald Weinfurter. Elementary gates for quantum computation. Physical review A, 52(5):3457, 1995. [21] Anna M Krol, Aritra Sarkar, Imran Ashraf, Zaid Al-Ars, and Koen Bertels. Efficient decomposition of unitary matrices in quantum circuit compilers. Applied Sciences, 12(2):759, 2022. [22] Anna M Krol and Zaid Al-Ars. Beyond quantum shannon decomposition: Circuit construction for n-qubit gates based on block-zxz decomposition. Physical Review Applied, 22(3):034019, 2024. [23] Neil J Ross and Peter Selinger. Optimal ancilla-free clifford+ t approximation of z-rotations. Quantum Inf. Comput., 16(11&12):901–953, 2016. [24] Mathias Weiden, Justin Kalloor, John Kubiatowicz, Ed Younis, and Costin Iancu. High-precision multi-qubit clifford+ t synthesis by unitary diagonalization. arXiv preprint arXiv:2409.00433, 2024. [25] Jens Eisert and John Preskill. Mind the gaps: The fraught road to quantum advantage. arXiv preprint arXiv:2510.19928, 2025. [26] Xavier Waintal. The quantum house of cards. Proceedings of the National Academy of Sciences, 121(1):e2313269120, 2024. [27] Navin Khaneja, Timo Reiss, Cindie Kehlet, Thomas Schulte-Herbr¨ uggen, and Steffen J Glaser. Op-timal control of coupled spin dynamics: design of nmr pulse sequences by gradient ascent algorithms. Journal of magnetic resonance, 172(2):296–305, 2005. [28] Sebastiaan Fauquenot, Aritra Sarkar, and Sebastian Feld. Open and closed loop approaches for energy efficient quantum optimal control. Advanced Quantum Technologies, page 2400690, 2025. [29] Dylan Lewis, Roeland Wiersema, and Sougato Bose. Quantum optimal control with geodesic pulse engineering. arXiv preprint arXiv:2508.16029, 2025. [30] Harrison Ball, Michael J Biercuk, Andre RR Carvalho, Jiayin Chen, Michael Hush, Leonardo A De Castro, Li Li, Per J Liebermann, Harry J Slatyer, Claire Edmunds, et al. Software tools for quantum control: Improving quantum computer performance through noise and error suppression. Quantum Science & Technology, 6(4):044011, 2021. [31] Kaitlin N Smith, Gokul Subramanian Ravi, Thomas Alexander, Nicholas T Bronn, Andr´ e RR Car-valho, Alba Cervera-Lierta, Frederic T Chong, Jerry M Chow, Michael Cubeddu, Akel Hashim, et al. Programming physical quantum systems with pulse-level control. Frontiers in physics, 10:900099, 2022. 17 [32] Mathias Weiden, Ed Younis, Justin Kalloor, John Kubiatowicz, and Costin Iancu. Improving quan-tum circuit synthesis with machine learning. In 2023 IEEE International Conference on Quantum Computing and Engineering (QCE), volume 1, pages 1–11. IEEE, 2023. [33] Ed Younis, Koushik Sen, Katherine Yelick, and Costin Iancu. Qfast: Conflating search and numerical optimization for scalable quantum circuit synthesis. In 2021 IEEE International Conference on Quantum Computing and Engineering (QCE), pages 232–243. IEEE, 2021. [34] Sebastian Rietsch, Abhishek Y Dubey, Christian Ufrecht, Maniraman Periyasamy, Axel Plinge, Christopher Mutschler, and Daniel D Scherer. Unitary synthesis of clifford+ t circuits with rein-forcement learning. In 2024 IEEE International Conference on Quantum Computing and Engineering (QCE), volume 1, pages 824–835. IEEE, 2024. [35] Anouk Paradis, Jasper Dekoninck, Benjamin Bichsel, and Martin Vechev. Synthetiq: Fast and versatile quantum circuit synthesis. Proceedings of the ACM on Programming Languages, 8(OOPSLA1):55–82, 2024. [36] Giacomo Belli, Marco Mordacci, and Michele Amoretti. A scalable quantum neural network for approximate srbb-based unitary synthesis. arXiv preprint arXiv:2412.03083, 2024. [37] M Zomorodi, H Amini, M Abbaszadeh, J Sohrabi, V Salari, and P Plawiak. Optimal quantum circuit design via unitary neural networks. arXiv preprint arXiv:2408.13211, 2024. [38] Ashish Kakkar, Samuel Marsh, Yulun Wang, Pranav Mundada, Paul Coote, Gavin Hartnett, Michael J Biercuk, and Yuval Baum. No need to calibrate: characterization and compilation for high-fidelity circuit execution using imperfect gates. arXiv preprint arXiv:2511.21831, 2025. [39] Matthew Ho, Jun Yong Khoo, Adrian M Mak, and Stefano Carrazza. Ai-powered noisy quan-tum emulation: Generalized gate-based protocols for hardware-agnostic simulation. arXiv preprint arXiv:2502.19872, 2025. [40] King Yiu Yu, Aritra Sarkar, Maximilian Rimbach-Russ, Ryoichi Ishihara, and Sebastian Feld. Trans-former models for quantum gate set tomography. Quantum Machine Intelligence, 7(1):10, 2025. [41] Florian F¨ urrutter, Gorka Mu˜ noz-Gil, and Hans J Briegel. Quantum circuit synthesis with diffusion models. Nature Machine Intelligence, 6(5):515–524, 2024. [42] Zhiwei Chen and Hao Tang. Uditqc: U-net-style diffusion transformer for quantum circuit synthesis. arXiv preprint arXiv:2501.16380, 2025. [43] Daniel Barta, Darya Martyniuk, Johannes Jung, and Adrian Paschke. Leveraging diffusion models for parameterized quantum circuit generation. arXiv preprint arXiv:2505.20863, 2025. [44] Florian F¨ urrutter, Zohim Chandani, Ikko Hamamura, Hans J Briegel, and Gorka Mu˜ noz-Gil. Syn-thesis of discrete-continuous quantum circuits with multimodal diffusion models. arXiv preprint arXiv:2506.01666, 2025. [45] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning, pages 8748–8763. PmLR, 2021. [46] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems, 30, 2017. [47] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, and Others. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929, 2020. [48] Nasim Rahaman, Aristide Baratin, Devansh Arpit, Felix Dr¨ axler, Min Lin, Fred A. Hamprecht, Yoshua Bengio, and Aaron C. Courville. On the spectral bias of neural networks. In International Conference on Machine Learning, 2018. 18 [49] Ryan O’Donnell. Analysis of boolean functions. ArXiv, abs/2105.10386, 2014. [50] Joseph L. Walsh. A closed set of normal orthogonal functions. American Journal of Mathematics, 45:5, 1923. [51] Matthew Tancik, Pratul P. Srinivasan, Ben Mildenhall, Sara Fridovich-Keil, Nithin Raghavan, Utkarsh Singhal, Ravi Ramamoorthi, Jonathan T. Barron, and Ren Ng. Fourier features let networks learn high frequency functions in low dimensional domains. ArXiv, abs/2006.10739, 2020. [52] Yoshua Bengio, J´ erˆ ome Louradour, Ronan Collobert, and Jason Weston. Curriculum learning. In Proceedings of the 26th annual international conference on machine learning, pages 41–48, 2009. [53] Petru Soviany, Radu Tudor Ionescu, Paolo Rota, and Nicu Sebe. Curriculum learning: A survey. International Journal of Computer Vision, 130(6):1526–1565, 2022. [54] Arash Vahdat, Karsten Kreis, and Jan Kautz. Score-based generative modeling in latent space. Advances in neural information processing systems, 34:11287–11302, 2021. [55] Diederik Kingma, Tim Salimans, Ben Poole, and Jonathan Ho. Variational diffusion models. Advances in neural information processing systems, 34:21696–21707, 2021. [56] J Eli Bourassa, Rafael N Alexander, Michael Vasmer, Ashlesha Patil, Ilan Tzitrin, Takaya Matsuura, Daiqin Su, Ben Q Baragiola, Saikat Guha, Guillaume Dauphinais, et al. Blueprint for a scalable photonic fault-tolerant quantum computer. Quantum, 5:392, 2021. [57] Lars S Madsen, Fabian Laudenbach, Mohsen Falamarzi Askarani, Fabien Rortais, Trevor Vincent, Jacob FF Bulmer, Filippo M Miatto, Leonhard Neuhaus, Lukas G Helt, Matthew J Collins, et al. Quantum computational advantage with a programmable photonic processor. Nature, 606(7912):75– 81, 2022. [58] Shubing Xie, Aritra Sarkar, and Sebastian Feld. Deqompile: quantum circuit decompilation using genetic programming for explainable quantum architecture search. arXiv preprint arXiv:2504.08310, 2025. [59] Aritra Sarkar, Zaid Al-Ars, and Koen Bertels. Qksa: Quantum knowledge seeking agent. In International Conference on Artificial General Intelligence, pages 384–393. Springer, 2022. [60] Johannes Jakob Meyer, Marian Mularski, Elies Gil-Fuster, Antonio Anna Mele, Francesco Arzani, Alissa Wilms, and Jens Eisert. Exploiting symmetry in variational quantum machine learning. PRX quantum, 4(1):010328, 2023. [61] Aritra Sarkar. Automated quantum software engineering. Automated Software Engineering, 31(1):36, 2024. [62] Paul A Merolla, John V Arthur, Rodrigo Alvarez-Icaza, Andrew S Cassidy, Jun Sawada, Fil-ipp Akopyan, Bryan L Jackson, Nabil Imam, Chen Guo, Yutaka Nakamura, et al. A million spiking-neuron integrated circuit with a scalable communication network and interface. Science, 345(6197):668–673, 2014. [63] Mike Davies, Narayan Srinivasa, Tsung-Han Lin, Gautham Chinya, Yongqiang Cao, Sri Harsha Choday, Georgios Dimou, Prasad Joshi, Nabil Imam, Shweta Jain, et al. Loihi: A neuromorphic manycore processor with on-chip learning. Ieee micro, 38(1):82–99, 2018. [64] Duygu Kuzum, Shimeng Yu, and HS Philip Wong. Synaptic electronics: materials, devices and applications. Nanotechnology, 24(38):382001, 2013. [65] Giacomo Indiveri and Shih-Chii Liu. Memory and information processing in neuromorphic systems. Proceedings of the IEEE, 103(8):1379–1397, 2015. [66] Fatemeh Hadaeghi. Neuromorphic electronic systems for reservoir computing. In Reservoir Computing: Theory, Physical Implementations, and Applications, pages 221–237. Springer, 2021. [67] J¨ urgen Schmidhuber. Deep learning in neural networks: An overview. Neural networks, 61:85–117, 2015. 19

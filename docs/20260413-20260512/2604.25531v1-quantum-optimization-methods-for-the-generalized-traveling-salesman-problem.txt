@@ -1,0 +1,645 @@
+Title: Quantum Optimization Methods for the Generalized Traveling Salesman Problem
+
+URL Source: https://arxiv.org/pdf/2604.25531v1
+
+Published Time: Wed, 29 Apr 2026 01:02:35 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Quantum Optimization Methods for the Generalized Traveling Salesman Problem 
+
+Maximilian Zorn , Melinda Braun, Michael Ertl, Tommy Kiss, Sara Juarez Oropeza, Claudia Linnhoff-Popien , and Jonas Stein 
+
+Department of Computer Science, LMU Munich, Munich, Germany 
+
+Abstract —This paper studies quantum optimization baselines for the Generalized Traveling Salesman Problem (GTSP), aclustered routing problem that naturally models variant selec-tion and sequencing problems under discrete alternatives. We propose a novel GTSP QUBO formulation focused on main-taining feasible solutions for quantum annealing, as well as a hardware-executable gate-based pipeline utilizing the Quantum Approximate Optimization Algorithm (QAOA). We implement a constrained QAOA variant using an XY-mixer, which preserves the stepwise Hamming weight in the ideal circuit model, while feasibility with respect to the full GTSP constraints is tracked explicitly during post-processing. We compare the two quantum optimization paradigms on problem instances from GTSPLIB, an established benchmark dataset, and validate against classical state-of-the-art solvers. To mitigate current quantum hardware size limitations, we further extend a preprocessing method to reduce the node count in instance clusters, constructing new NISQ-friendly instances from reduced subsets. Across all tested instances, quantum solvers often produce competitive solution quality when tested on smaller graphs, but exhibit higher runtimes and a sharp degradation in feasibility and scalability as instance size grows. Our evaluation highlights where quantum op-timizers can already succeed and which algorithmic bottlenecks, like sampling rates, runtime issues, and other practical failure modes, remain as open problems. 
+
+I. I NTRODUCTION 
+
+The Generalized Traveling Salesman Problem (GTSP) ex-tends the classical Traveling Salesman Problem (TSP) by partitioning nodes into disjoint clusters and requiring a tour that visits exactly one representative per cluster while mini-mizing total travel cost [1]. The GTSP remains NP -hard and is frequently used to model routing and sequencing problems under discrete alternatives. As a modeling tool, the GTSP is versatile in its application, allowing for broad industrial uses such as flexible manufacturing scheduling [2], automated storage and retrieval systems [3], warehouse order picking with multiple stock locations [4], as well as various related routing problems with an additional selection component. Industrial robotics commonly presents a wide range of such problems, where a clustered structure in ordered sequential operations arises naturally in tasks like tool-path navigation and motion planning. For example, a robot may need to execute a sequence of subtasks (e.g., drilling, welding, cutting), where each subtask admits multiple feasible execution variants such as different entry points or inverse-kinematics configurations [5], [6]. Recent advances in Quantum Computing [7] and Quantum Optimization [8] have made promising progress on quantum TSP-style formulations of routing problems, typically through QUBO/Ising encodings for quantum annealing and through QAOA on gate-based hardware [9]–[11]. While these results provide important foundations for conventional routing prob-lems, comparable end-to-end studies for the GTSP remain much rarer compared to the TSP, with quantum-specific for-mulations and benchmarks missing almost completely. Motivated by this gap, we propose a set of quantum opti-mization baselines for conventional GTSP test instances that can be executed on current quantum hardware and compared directly against strong classical algorithms. For our study, we consider known issues and practical bottlenecks from the quantum TSP literature, including limited qubit budgets, embedding overhead, circuit depth, noise, and the difficulty of maintaining feasible solutions (cf. [10]–[12]). Our evaluation focuses on understanding which formulations are practically viable, where and why they fail under realistic hardware constraints, and how far preprocessing can extend the solvable instance range on today’s Noisy Intermediate-Scale Quantum (NISQ) devices. The contributions of this paper are as follows: i. We propose a novel GTSP QUBO encoding with quadratic penalty terms specifically focused on produc-ing feasible solutions. We further provide a hardware-oriented constrained QAOA pipeline based on a one-hot-preserving XY-mixer, and report feasibility-aware decod-ing, sampling rates, runtime, and practical failure modes of our algorithms. ii. We benchmark both quantum optimization approaches against classical state-of-the-art solvers on the established GTSP benchmark dataset GTSPLIB. iii. We introduce a practical preprocessing method that reduces benchmark-derived GTSP instances to NISQ-feasible sizes and provide empirical insights on scala-bility, runtime, and practical failure modes. We begin by summarizing the technical background on GTSP, QUBO/Ising models and quantum optimization in Section II, before reviewing related literature on relevant quantum approaches in Section III. We detail our QUBO for-mulation, our QAOA/annealing pipelines and NISQ-feasible instance preprocessing, as well as our experimental setup (Sections IV&V). Sections VI& VII provide an in-depth discussion and interpretation of solution quality, scalability and feasibility of the evaluation results, after which we conclude our findings and outline directions for future work. 
+
+> arXiv:2604.25531v1 [quant-ph] 28 Apr 2026
+
+II. B ACKGROUND 
+
+A. Generalized Traveling Salesman Problem (GTSP) 
+
+The Generalized Traveling Salesman Problem is an opti-mization problem focused on finding a minimum-cost tour 
+
+S∗ = arg min S∈S cost( S), where S denotes the set of feasible tours and cost( S) the total travel cost of a tour. The GTSP is defined on an undirected connected, weighted graph 
+
+G = ( V, E ), where V denotes the set of nodes and E ⊆ V ×V
+
+the set of edges. Each edge (i, j ) ∈ E is assigned a non-negative weight given by the function w : E → R+. The node set V is partitioned into K mutually exclusive subsets C =
+
+{C1, C 2, . . . , C K } for Ck ⊆ V , such that SKk=1 Ck = V and 
+
+Ci∩Cj = ∅ ∀i̸ = j. Each subset Ck is referred to as a cluster. The set of feasible tours, that visit each cluster exactly once returning to the origin, is defined as S = {(v1, . . . , v K ) | vk ∈
+
+Ck, k = 1, . . . , K } with the corresponding cyclic tour 
+
+(v1, v 2), (v2, v 3), . . . , (vK−1, v K ), (vK , v 1). The cost of a tour is defined as cost( S) = P 
+
+> (i,j )∈S
+
+wij , where wij is the weight of the edge (vi, v j ) ∈ E.
+
+B. Quadratic Unconstrained Binary Optimization (QUBO) 
+
+QUBO represents the class of binary optimization problems as the minimization of a quadratic function f : {0, 1}n → R
+
+over binary variables arg min x∈{ 0,1}n xT Qx , for some QUBO matrix Q ∈ Rn×n such that xT Qx = f (x). QUBO matrices are equivalent to Ising Hamiltonians and thus suitable for na-tive encoding on quantum devices. Minimizing the total energy of the system is then equivalent to finding the solution(s) of minimal cost for any given optimization problem [13]. Given that QUBO exactly represents the NP -hard problem of quadratic programming, all NP -hard problems can be formulated as a QUBO matrix [14]. The objective function can be further extended with penalty terms p : {0, 1}n → R+0 to encode problem specific constraints through simple addition, i.e., xT Qx := f (x) + λp (x), where p(x) = 0 for valid solutions and p(x) > 0, otherwise. These penalty terms are scaled by a penalty factor λ > 0 that ensures that constraint violations are sufficiently undesirable in the energy landscape. 
+
+C. Quantum Annealing (QA) 
+
+Quantum annealing is an optimization paradigm that ex-ploits the quantum physical phenomenon of adiabatic time evolution and can be used to solve optimization problems. This works by encoding the cost function as an Ising Hamiltonian 
+
+HC = − P 
+
+> ij
+
+Jij σzi σzj − P 
+
+> i
+
+hiσzi , such that its ground state 
+
+|φ⟩ encodes the optimal solution of the given optimization problem, i.e., ⟨φ| HC |φ⟩ = min x f (x). Given an easy to prepare ground state of a known Hamiltonian HI (e.g., |+⟩⊗n
+
+and corresponding HI := − P 
+
+> i
+
+σxi ), we can use the time evolution operator 
+
+H(t) = 
+
+
+
+1 − tT
+
+
+
+HI + tT HC , (1) that interpolates between HI and HC , to evolve the ground state of HI into the desired ground state HC , as governed by the adiabatic theorem [15]. Even though the duration required for executing this time evolution in an adiabatic manner is typically exponentially large for NP -hard problems [14], faster time evolutions are practically possible and often yield close approximations to the optimal solutions. 
+
+D. Quantum Approximate Optimization Algorithm (QAOA) 
+
+The Quantum Approximate Optimization Algorithm, intro-duced by Farhi et al. [16], is a variational quantum algorithm designed to solve combinatorial optimization problems. It can be understood as a parameterized Trotterization of the quan-tum adiabatic algorithm [17], where the continuous adiabatic evolution is discretized into p alternating layers. 
+
+1) Problem Formulation: QAOA operates on binary opti-mization problems of the form 
+
+x∗ = arg min  
+
+> x∈{ 0,1}n
+
+f (x), (2) where f : {0, 1}n → R is the objective function. The algorithm encodes the objective values as energy levels of a 
+
+cost Hamiltonian 
+
+HC = X
+
+> x∈{ 0,1}n
+
+f (x) |x⟩ ⟨ x| , (3) which is diagonal in the computational basis. The goal is to find the ground state of HC , corresponding to the optimal solution x∗.
+
+2) Circuit Structure and Optimization: The QAOA cir-cuit is initialized in the equal superposition state |+⟩⊗n =
+
+H⊗n |0⟩⊗n, followed by p alternating layers of two unitary operators: 
+
+|β, γ⟩ = UM (βp) UC (γp) · · · UM (β1) UC (γ1) |+⟩⊗n , (4) where β and γ are free parameters to be optimized classically by minimizing ⟨HC ⟩. The cost unitary UC (γ) = e−iγH C
+
+encodes the objective function as a phase, while the mixer unitary UM drives transitions between computational basis states and is typically chosen as the standard transverse-field mixer (X-Mixer) 
+
+UM (β) = e−iβH M =
+
+> n
+
+O
+
+> k=1
+
+R(k) 
+
+> X
+
+(2 β), (5) where HM = − Pni=1 σxi . As p → ∞ , the output state is guaranteed to converge to the optimal solution for suitable parameter choices such as βi = 1 − i/p and γi = i/p [16], [18]. 
+
+3) Handling Constraints: For constrained optimization problems, a standard approach augments the cost Hamilto-nian with a quadratic penalty term λ · p(x) that penalizes constraint violations, converting the constrained problem into an unconstrained one [14]. However, this introduces an addi-tional hyperparameter λ and can complicate the optimization landscape [19]. Alternative approaches include oracle-based methods that encode constraint satisfaction directly into the cost unitary without modifying the underlying energy spec-trum [20] and constraint-preserving mixer operators [21] that restrict the quantum evolution to the feasible subspace, the latter of which is adopted in the presented experiments. III. R ELATED WORK 
+
+Most prior quantum work on routing problems has focused on the TSP rather than the GTSP. On the annealing side, several studies developed QUBO or closely related Ising formulations for Hamiltonian-cycle and TSP variants, showing how routing problems can be mapped to quantum optimization hardware [9]. Experimental studies further demonstrate that quantum annealers and related Ising-type machines can pro-duce meaningful results on small instances, but their scalability is strongly limited by embedding overhead and available qubit resources [10]. On the gate-based side, QAOA has become a central approach for routing-type optimization. Chander et al. [11] study the QAOA for the TSP and show that while variational quantum heuristics are feasible on small instances, constraint enforcement, circuit depth, and qubit scaling quickly become limiting factors. Follow-up work has therefore focused on improved formulations and mixer design. In particular, Qian et al. [22] compare several QAOA variants for TSP and show that problem-specific mixers, such as the XY-mixer, can improve feasibility and performance over standard transverse-field mix-ers. Padmasola et al. [12] further highlight the importance of hardware connectivity and noise for solution quality as instance size increases. A complementary line of work aims to reduce quan-tum resource requirements through alternative encodings and subspace-reduction techniques, as demonstrated by Madhus 
+
+et al. [23], who propose an edge-based encoding combined with subspace reduction. Similarly, Glos et al. [24] introduce a higher-order binary optimization formulation that reduces qubit usage, alongside hybrid encodings tailored for QAOA. Their work highlights the fundamental trade-off between qubit count and circuit depth, emphasizing the need to balance these resources in the design of variational quantum algorithms. Bak´ o et al. [25] introduce Prog-QAOA, addressing another key challenge in the implementation of quantum algorithms, namely the high entry barrier associated with requiring de-tailed knowledge of low-level quantum computing concepts to formulate real-world problems as QUBO instances or corre-sponding Hamiltonians. Prog-QAOA is a framework in which quantum circuits are generated directly from classical pseu-docode descriptions, rather than relying on standard QUBO formulations. While this approach enables more structured circuit design and can reduce qubit count, circuit depth, and gate complexity for problems such as Max-K-Cut and the Traveling Salesman Problem, these improvements depend on problem-specific constructions, which may limit generality and hinder direct comparability with existing encoding-based methods. Taken together, these studies provide the main building blocks for quantum (G)TSP approaches, but evidence for GTSP remains limited compared with the much broader body of work on TSP. IV. M ETHODOLOGY 
+
+In this section, we present our purely quantum and hybrid quantum solver implementations alongside a preprocessing pipeline designed to address scalability challenges in GTSP optimization. To mitigate the limited problem sizes supported by current Noisy Intermediate-Scale Quantum (NISQ) hard-ware, we introduce a classical preprocessing strategy based on the Nearest Nodes to Clusters approach [26] for instance reduction. These techniques enable an evaluation of the max-imum instance sizes tractable on current quantum hardware, independent of solution quality. 
+
+A. Quadratic-unconstrained-binary-optimization Generalized Traveling Salesman Problem (Q-GTSP) 
+
+In this subsection, we explore how the GTSP can be solved using quantum annealing. For this, we construct a suitable QUBO formulation by expanding on well-known QUBO for-mulations of the standard TSP [27]. 
+
+1) QUBO formulation: We use a one-hot encoding for the GTSP with N · K many binary decision variables (where K
+
+denotes the number of clusters and N the number of nodes). For this, let xc,i ∈ { 0, 1}, where c ∈ { 0, . . . , K − 1} and 
+
+i ∈ { 0, . . . , N − 1}, such that xc,i = 1 encodes that node i is visited in c-th position. Let wij be the edge weight from node i to node j. The objective is to minimize the tour cost over consecutive steps (cyclically): 
+
+Ecost (x) = 
+
+> K−1
+
+X 
+
+> c=0
+> N−1
+
+X 
+
+> i=0
+> N−1
+
+X
+
+> j=0
+
+wij xc,i x(c+1) mod K, j . (6) Furthermore, exactly one node must be visited at each step 
+
+c ∈ { 0, . . . , K − 1}, which can be described with the penalty term 
+
+p0(x) := λ
+
+> K−1
+
+X 
+
+> c=0
+> N−1
+
+X
+
+> i=0
+
+xi,c − 1
+
+!2
+
+. (7) Additionally, for each cluster Cm, exactly one node within that cluster is visited throughout the entire sequence, as ensured by the penalty term 
+
+p1(x) := λ X
+
+> m
+> K−1
+
+X
+
+> c=0
+
+X
+
+> i∈Cm
+
+xi,c − 1
+
+!2
+
+. (8) Finally, we penalize transitions between nonexistent edges through 
+
+p2(x) := λ X
+
+> (i,j )∈E zero
+
+xixj , (9) where Ezero := {(i, j ) : Di,j = 0 , i ̸ = j}.2) Penalty Weight: Let wij denote the edge weights of the graph and let 
+
+w1 ≥ w2 ≥ · · · ≥ w|E|
+
+be all edge weights sorted in non-increasing order. This allows us to straightforwardly define the penalty weight λ via 
+
+λ := 
+
+> K
+
+X
+
+> k=1
+
+wk + 1 , (10) which serves as a trivial upper bound for any valid solution cost. As any invalid solution is then penalized by at least this penalty factor, the cheapest invalid solution is provably more expensive than the most expensive valid solution. 
+
+B. Constrained QAOA with One-Hot Preserved XY-Mixer (C-QAOA) 
+
+Aiming for a balance between NISQ-friendliness and constraint-satisfaction, our QAOA implementation employs the same basic QUBO formulation that was proposed in Sec-tion IV-A, while enforcing the one-hot constraint represented by p0(x) using XY-mixers. For this, variables belonging to the same step t form a one-hot partition Pt. To minimize the required circuit depth, we apply a XY-mixer within each partition using a low-depth ring topology. To further ensure the lightest possible hardware demands for the initial state preparation, we initialize in a single feasible (randomly selected) one-hot computational basis state rather than the theoretically desired uniform superposition over all feasible states. Formally, the mixer Hamiltonian and its corresponding unitary can be written as 
+
+HM = X
+
+> t
+
+X
+
+> (u,v )∈Et
+
+(XuXv + YuYv ) (11) and UM (β) = e−iβH M , where Et denotes the edges within partition Pt. Note, however, that only one of the three con-straints is addressed with this circuit depth-minimal con-struction. We still need to use the penalty terms p1(x) and 
+
+p2(x) for the other constraints, as no short circuit depth mixer construction is known that could also address these in combination with p0(x).
+
+C. Instance Preprocessing for Quantum Solvers: Extended Nearest Nodes to Clusters 
+
+Since one of the main limitations of our solvers is the restricted number of available qubits, we apply a preprocessing technique to reduce the size of the GTSP instances before solving them on quantum hardware. This preprocessing is based on the Nearest Nodes to Clusters (NN2C) approach [26], which was originally proposed for symmetric GTSP instances. The original NN2C algorithm selects, for each cluster, nodes that are closest to other clusters and removes the other nodes, since they are less likely to be part of a good tour, thereby reducing the instance dimension. To address the challenges posed by asymmetric GTSP instances in the GTSPLIB dataset [28], we extend the NN2C approach by explicitly retaining at least one entry node and  
+
+> Fig. 1. Example illustrating the application of the NN2C extended prepro-cessing method: Here, for cluster B, the best entry node (blue) and best exit node (orange) are selected. All not selected nodes (red X) are removed. This step is repeated for all clusters.
+
+one exit node per cluster. Entry nodes are defined as nodes that minimize incoming distances from other clusters, while exit nodes minimize outgoing distances to other clusters. In cases where multiple nodes share the same minimal cost, a secondary selection criterion based on the average cost in the opposite direction is applied. This ensures a deterministic and stable node selection. In our extended version of the NN2C algorithm (see Algorithm 1), we iterate over all clusters and evaluate all nodes within each cluster. For every node, we compute the minimum distance to any other node in a different cluster. Among all nodes in the cluster, we retain the node with the smallest such incoming cost as the best entry node. Analogously, we identify the best exit node by selecting the node with the minimum outgoing distance to any other cluster. This procedure is illustrated in Figure 1. If multiple nodes have identical minimal incoming costs, we compare their overall outgoing costs and select the node with the smaller average outgoing distance, as this node is potentially more suitable in a global tour. Conversely, if multiple nodes have identical minimal outgoing costs, the node with the smaller average incoming distance is selected. As a result, for each cluster, exactly one best entry node and one best exit node are chosen. The same node may fulfill both roles. Each cluster is reduced in nodes, and a new GTSP instance is constructed from the resulting reduced clusters. The resulting reduced instances contain at most twice as many nodes as clusters and, in the best case, reduce the GTSP to a TSP if each cluster is represented by a single node. Despite this reduction, the generated instances still represent complete tours, similar to the original GTSPLIB instances, and preserve several of their structural characteristics. We note as limitation to this approach, that there is no guar-antee that the optimal tour of the original GTSPLIB instance is preserved in the reduced instance. However, the substantially reduced problem size enables these instances to be solved using quantum solvers. Moreover, this preprocessing makes it possible to study GTSPLIB instances that would otherwise be too large for current quantum hardware. The reduced instances are therefore not intended to approximate optimal solutions of the original problem, but to enable feasibility studies and comparative evaluations on quantum hardware. Algorithm 1: NN2C extended 
+
+Input: GTSP instance I = ( V, C, w )
+
+Output: Reduced instance I′ = ( V ′, C′, w ′) 
+
+> 1
+
+for each cluster Ci ∈ C do  
+
+> 2
+
+for each node v ∈ Ci do  
+
+> 3
+
+compute BEST IN( V) 
+
+> 4
+
+compute BEST OUT( V) 
+
+> 5
+
+end  
+
+> 6
+
+break ties in BEST IN, BEST OUT and form C′
+
+> i
+
+from resulting nodes  
+
+> 7
+
+end  
+
+> 8
+
+return I′
+
+V. E XPERIMENTAL SETUP 
+
+A. Optimizing Variational- and Hyperparameters a) Quantum Annealing Approach (Q-GTSP): The Quan-tum Annealing approach of this work uses the default param-eters provided by D-Wave [29] except for the num reads 
+
+parameter which is set to 1500. This ensures that the probabil-ity distribution of the resulting quantum system is thoroughly sampled. Minor embedding is handled automatically by the function EmbeddingComposite .
+
+b) Gate-Based Approach (C-QAOA): Aiming for a par-ticularly NISQ-friendly approach, the variational parameters 
+
+(γ, β ) are optimized using grid search. This circumvents the computation of exact gradients, which can be very expensive on quantum hardware, since the number of shots scales quadratically with the desired maximal error. We evaluate a 
+
+10 × 10 grid over γ ∈ [0 .05 , π ] and β ∈ [0 .05 , π/ 2] , using a batch size of one and 1500 shots per circuit evaluation. Each C-QAOA run is limited to a timeout of 300 seconds per instance. These parameters were concluded after testing the algorithms with different configurations. As well as cross-checking other works. 
+
+B. QPU Usage 
+
+The quantum annealing runs were executed on D-Wave Systems’ Advantage2 QPU, which features a Zephyr topology with over 4,400 superconducting qubits and enhanced connec-tivity [30]. QAOA experiments were implemented using the Aer simulator through the Qiskit interface, as our available QPU time on IBM Quantum hardware was insufficient for a full experimental evaluation including parameter optimization. The target devices would have been from the Heron processor family, which offer around 156 qubits in a heavy-hex lat-tice, with multiple revisions improving coherence and error rates [31]. However, initial tests on IBM QPUs confirmed that the algorithm is in principle compatible with real quantum hardware, and a full QPU-based evaluation remains a natural direction for future work. 
+
+C. Dataset 
+
+To ensure representative benchmarking on reasonably hard problem instances, we evaluated our approaches on established benchmark instances from GTSPLIB [28]. These instances provide realistic cluster structures and cost patterns. They are widely used in literature and therefore enable meaningful com-parisons with existing methods and expedite reproducibility. Because of the limitations of current quantum hardware, we were only able to solve relatively small instances. In our experiments, the purely quantum solvers can handle instances with at most 25 nodes. This strongly restricts the number of GTSPLIB instances that can be solved directly. To expand on the feasibly usable GTSPLIB instances, we apply the following cluster subset sampling strategy to obtain smaller instances that remain compatible with quantum solvers. 
+
+D. Cluster Subset Sampling 
+
+To generate smaller GTSP instances from large GTSPLIB benchmarks, we use a single-stage cluster sampling strategy analogous to [32]. We iteratively select entire clusters at ran-dom until a target number of nodes is approximately reached. From the selected clusters, we then construct a new GTSP instance, in which all of the other clusters are simply discarded completely. This method, which we refer to as Cluster Subset Sampling , preserves the cluster structure of the GTSP and enables the creation of various benchmark sub-instances with controllable sizes. Even though the resulting instances are reduced in size, they can still retain characteristics of realistic GTSP problems (most importantly the number of nodes per cluster and the pairwise connections between the clusters) while being compatible with the strict limitations of current quantum hardware. We run our experiments on two datasets generated via subset sampling: Subsample Small (3–5 nodes; Table I) and Subsample Medium (3–20 nodes; Table II).                                   
+
+> Tab. I. Dimension, original dimension, number of clusters, and qubits for each instance in the experiment group Subsample Small .Instance Dimension Clusters Qubits 12ftv55 nodes 3 32616pr76 nodes 3 3266fri26 nodes 3 32616eil76 nodes 4 4284ulysses16 nodes 4 4285ulysses22 nodes 4 4312 6fri26 nodes 4 4312 20gr96 nodes 5 5420 9ftv44 nodes 5 5210 9p43 nodes 5 5315
+
+In addition, we conduct experiments on symmetric and asymmetric original GTSPLIB datasets. For these experiments, all solvers receive original GTSPLIB instances, for which the quantum solvers employ the NN2C extended preprocessing de-scribed in Section IV. The resulting instances can be grouped into two categories: Preprocess Small (original instances with 14–22 nodes, reduced to 3–5 nodes; Table III) and Preprocess Medium (original instances with 14–100 nodes, reduced to 3–20 nodes; Table IV). Tab. II. Dimension, original dimension, number of clusters, and qubits for each instance in the experiment group Subsample Medium .Instance Dimension Clusters Qubits 5ulysses22 nodes 3 3 3 99p43 nodes 5 5 3 15 10att48 nodes 7 7 3 21 10hk48 nodes 10 10 3 30 14st70 nodes 11 11 2 22 11ft53 nodes 13 13 4 52 20kroD100 nodes 15 15 4 60 20gr96 nodes 16 16 7 112 12brazil58 nodes 18 18 6 108 20rd100 nodes 20 20 7 140 Tab. III. Dimension, original (OG) dimension, number of clusters, and qubits for each instance in the experiment group Preprocess Small .Instance Dimension OG Dimension Clusters Qubits 3burma14 3 14 3 94br17 4 17 4 16 4gr17 4 17 4 16 4ulysses16 4 16 4 16 5gr21 5 21 5 25 5gr24 5 24 5 25 5ulysses22 5 22 5 25 Tab. IV. Dimension, original (OG) dimension, number of clusters, and qubits for each instance in the experiment group Preprocess Medium .Instance Dimension OG Dimension Clusters Qubits 3burma14 3 14 3 96bayg29 6 29 6 36 7ftv33 12 34 7 84 8ftv38 13 39 8 104 14st70 14 70 14 196 10ftv47 15 48 10 150 9ftv44 15 45 9 108 16pr76 16 76 16 256 12ftv55 20 56 12 240 20kroA100 20 100 20 400 
+
+E. Classical Baseline 
+
+For a meaningful baseline, we utilize the classical state-of-the-art algorithm for the GTSP: GLNS, which is an adaptive large neighborhood search algorithm as presented in [33]. For the problem sizes explored, we could verify that GLNS (also called CGLNS later on, to stress that this is a classical method) always found the global optimum using the industrial standard optimization software Gurobi [34]. VI. E VALUATION 
+
+This chapter evaluates the performance of the implemented solvers on the GTSP, comparing solution quality across clas-sical, quantum annealing, and gate-model-based approaches. Our core metrics are the feasibility ratio, i.e., the percentage of solutions that satisfy all given constraints of the optimization problem, and the approximation ratio to measure solution quality, which we define as the quotient between the costs of the optimal solution and the costs of the solution identified by the solver. Similar to the feasibility ratio, an approximation 12ftv55_nodes_3 (66.90%) 
+
+> 6fri26_nodes_3 (48.40%)
+> 16pr76_nodes_3 (41.00%)
+> 16eil76_nodes_4 (28.70%)
+> 6fri26_nodes_4 (91.60%)
+> 4ulysses16_nodes_4 (38.00%)
+> 5ulysses22_nodes_4 (89.10%)
+> 9ftv44_nodes_5 (88.10%)
+> 20gr96_nodes_5 (72.60%)
+> 9p43_nodes_5 (49.20%)
+> Instance
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Approximation Ratio
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> % Feasible Solutions
+
+Fig. 2. Distribution of solution quality achieved by Q-GTSP on the Subsample Small dataset with 3 to 5 nodes. The violins show the approximation ratio distribution over sampled feasible solutions, while the instance labels report the feasible-shot rate. 5ulysses22_nodes_3 (22.73%) 
+
+> 9p43_nodes_5 (50.87%)
+> 10att48_nodes_7 (45.47%)
+> 10hk48_nodes_10 (19.13%)
+> 14st70_nodes_11 (23.33%)
+> 11ft53_nodes_13 (0.07%)
+> 20kroD100_nodes_15 (0.20%)
+> Instance
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Approximation Ratio
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> % Feasible Solutions
+
+Fig. 3. Distribution of solution quality achieved by Q-GTSP on the Subsample Medium dataset with 3 to 20 nodes. The violins show the approximation ratio distribution over sampled feasible solutions, while the instance labels report the feasible-shot rate. 12ftv55_nodes_3 (36.90%) 
+
+> 6fri26_nodes_3 (35.80%)
+> 6fri26_nodes_4 (7.70%)
+> 4ulysses16_nodes_4 (18.00%)
+> 5ulysses22_nodes_4 (10.60%)
+> 9ftv44_nodes_5 (51.30%)
+> 20gr96_nodes_5 (4.60%)
+> 9p43_nodes_5 (15.30%)
+> Instance
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Approximation Ratio
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> % Feasible Solutions
+
+Fig. 4. Distribution of solution quality achieved by C-QAOA on the Subsam-ple Small dataset with 3 to 5 nodes. The violins show the approximation ratio distribution over sampled feasible solutions, while the instance labels report the feasible-shot rate. 5ulysses22_nodes_3 (7.40%) 
+
+> 9p43_nodes_5 (12.73%)
+> 10att48_nodes_7 (21.80%)
+> 11ft53_nodes_13 (7.27%)
+> 20kroD100_nodes_15 (9.20%)
+> 12brazil58_nodes_18 (0.20%)
+> 20rd100_nodes_20 (0.07%)
+> Instance
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Approximation Ratio
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> % Feasible Solutions
+
+Fig. 5. Distribution of solution quality achieved by C-QAOA on the Subsam-ple Medium dataset with 3 to 20 nodes. The violins show the approximation ratio distribution over sampled feasible solutions, while the instance labels report the feasible-shot rate. 4br17 (92.47%) 
+
+> 4gr17 (90.60%)
+> 4ulysses16 (87.07%)
+> 3burma14 (98.13%)
+> 5gr21 (70.00%)
+> 5ulysses22 (67.80%)
+> 5gr24 (65.47%)
+> Instance
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Approximation Ratio
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> % Feasible Solutions
+
+Fig. 6. Distribution of solution quality achieved by Q-GTSP on the Preprocess Small dataset (3–5 nodes), where the corresponding original GTSPLIB instances range from 14 to 24 nodes. The violins show the approximation ratio distribution over sampled feasible solutions, while the instance labels report the feasible-shot rate. 
+
+ratio of 1 marks a perfect result, while worse solutions rank at lower approximation ratios, with the worst possible solution ranked at a value that is at least slightly above zero. 
+
+A. Best-Shot Evaluation 
+
+Figure 7 shows that on most instances, both approaches (QAOA and quantum annealing) consistently find optimal or near optimal solutions until a node count of 13 and above. However, expanding the instance sizes to up to 20 nodes decreases the solvers’ performance drastically, in particular, the feasibility ratio drops below 50% on all instances, almost reaching 0% on the 11ft53 instance with 13 nodes. Addi-tionally, the mean is below the random threshold in 4 of the instances, meaning that the majority of sampled solutions are worse than random guessing. Analogous to similar problems, we suspect that the multitude of constraints makes it very hard for the purely QUBO-based quantum annealing approach to find feasible solutions. Similarly, not all constraints are provably satisfied for our QAOA implementation, as the XY-mixers only ensure the satisfaction of the step-wise one-hot constraint but leave open infeasible solutions based on the other two constraints, which are represented by penalty terms instead. For the QAOA in particular, the restriction of 
+
+p = 1 further restricts the solution quality for larger problem instances massively. Future work should especially investigate the scaling performance of the quantum solvers based on their time to solution with rising annealing time and QAOA layer depth, respectively. 
+
+B. Q-GTSP (Quantum Annealing) 
+
+As depicted in Figure 2, the quantum annealing based ap-proach consistently finds optimal solutions on the Subsample Small dataset. For reference, we show the solution distribution over all samples as a color heat map (feasibility) and the landscape of all feasible instances in gray in the background. The bold lines mark the mean solver cost and the dashed lines mark the mean random cost. Notably, the quantum annealer almost always improves the distribution by shifting more probability mass towards the top. In some cases however, e.g., the instance 11ft53 with 13 nodes as shown in Figure 3, we see can see mean of Q-GTSP drop below the mean of for random guessing. This is likely due to a low feasibility ratio, where the few sampled feasible instances are worse than the mean random by chance. Considering the feasibility ratio, indicated by the color and the percentage written behind the instance name, we can see that there is a rather large variance in how many feasible solutions are found. Especially for the larger datasets, we can observe a severe drop, as evident in Figure 3. For example, 91% of the solutions sampled for the instance 6fri26 are feasible, while only 28% feasible solutions were found for instance 16eil76 . This highlights problems regarding the way QUBO deals with constraints. Analogous to other constraint optimization problems, this motivates a quantum solver that can intrinsically reduce the (effective) search space to the space of feasible solutions (cf., e.g., Ref. [35]). 
+
+C. C-QAOA 
+
+As depicted in Figure 4, C-QAOA is able to sample optimal or near-optimal tours for most instances of the Subsample Small dataset, as the upper tails of the distributions fre-quently reach normalized approximation ratio values close to 1. However, the distributions are often broad and partly bimodal. Several instances exhibit probability mass both near the optimum and below the random baseline, indicating that high-quality solutions are reachable but not sampled consis-tently. Inconsistencies in the solution quality are also partially reflected by the mean values, which remain below the mean of the random baseline for some instances despite the pres-ence of optimal samples. This phenomenon can be explained analogously to the same effect present for quantum annealing (cf. Section VI-B). As visualized in Figure 5, the results for the Subsample Medium dataset show a clear degradation in sampling stability. While some instances still contain high-quality samples, the 12ftv55_nodes_3 
+
+> (n=3)
+> 16pr76_nodes_3
+> (n=3)
+> 6fri26_nodes_3
+> (n=3)
+> 16eil76_nodes_4
+> (n=4)
+> 4ulysses16.tsp_nodes_4
+> (n=4)
+> 5ulysses22.tsp_nodes_4
+> (n=4)
+> 6fri26_nodes_4
+> (n=4)
+> 20gr96_nodes_5
+> (n=5)
+> 9ftv44_nodes_5
+> (n=5)
+> 9p43_nodes_5
+> (n=5)
+> Instance
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Approximation Ratio  Optimal (AR = 1)
+> C-QAOA
+> Q-GTSP
+> CGLNS
+
+(a) Subsample Small dataset. 3burma14  
+
+> (n=3)
+> 4br17
+> (n=4)
+> 4gr17
+> (n=4)
+> 4ulysses16.tsp
+> (n=4)
+> 5gr21
+> (n=21)
+> 5ulysses22.tsp
+> (n=22)
+> 5gr24
+> (n=24)
+> Instance
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Approximation Ratio  Optimal (AR = 1)
+> C-QAOA
+> Q-GTSP
+> CGLNS
+
+(b) Preprocessing Small dataset. 5ulysses22.tsp_nodes_3 
+
+> (n=3)
+> 9p43_nodes_5
+> (n=5)
+> 10att48_nodes_7
+> (n=7)
+> 10hk48_nodes_10
+> (n=10)
+> 14st70_nodes_11
+> (n=11)
+> 11ft53_nodes_13
+> (n=13)
+> 20kroD100_nodes_15
+> (n=15)
+> 20gr96_nodes_16
+> (n=16)
+> 12brazil58_nodes_18
+> (n=18)
+> 20rd100_nodes_20
+> (n=20)
+> Instance
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Approximation Ratio  Optimal (AR = 1)
+> C-QAOA
+> Q-GTSP
+> CGLNS
+
+(c) Subsample Medium dataset. 3burma14  
+
+> (n=3)
+> 6bayg29
+> (n=6)
+> 7ftv33
+> (n=12)
+> 8ftv38
+> (n=39)
+> 9ftv44
+> (n=45)
+> 10ftv47
+> (n=48)
+> 12ftv55
+> (n=56)
+> 14st70
+> (n=70)
+> 16pr76
+> (n=76)
+> 20kroA100
+> (n=100)
+> Instance
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Approximation Ratio
+> Optimal (AR = 1)
+> C-QAOA
+> Q-GTSP
+> CGLNS
+
+(d) Preprocessing Medium dataset. Fig. 7. Solution quality of the best shot measured in approximation ratio at 1500 shots. 
+
+distributions become less concentrated and the mean normal-ized approximation ratio is more often close to or below the random baseline. In addition, the feasible-shot rate remains low and drops to 0% for the largest instances. Consequently, C-QAOA frequently fails to provide reliable feasible tours within the fixed shot budget as the instance size increases. An important reason for this phenomenon is likely that the number of utilized QAOA shots (in our case, 1500) is high enough to sample from the complete search space for small problem instances, but it quickly fails to cover the search space when the problem size increases. Overall, Figures 4 and 5 indicate that C-QAOA can produce competitive solutions on very small GTSP instances up to 5 nodes, but its performance is limited by low and instance-dependent feasibility rates as well as unstable sampling distributions. The main bottleneck is therefore not only the quality of feasible samples, but the probability of observing feasible and high-quality tours within the available number of shots. A similar trend is observed in the preprocessed datasets displayed in Figure 8: while feasible solutions are found for the smaller instances, feasibility degrades rapidly with growing problem size. 
+
+D. Comparing Feasibility Ratios 
+
+The results presented so far strongly indicate that the main bottleneck is not only the quality of feasible samples but also the probability of observing feasible tours within the fixed shot budget. Larger instances frequently yield very low feasible-shot rates, as evidenced by Tables V and VI. 
+
+Tab. V. Percentage of feasible shots per instance for experiment group 
+
+Subsample Medium . A shot is feasible if it encodes a valid GTSP tour. Cells without shot data show the failure reason. Instance n C-QAOA (%) QUBO (%) 5ulysses22 nodes 3 3 7.4 22.7 9p43 nodes 5 5 12.7 50.9 10att48 nodes 7 7 21.8 45.5 10hk48 nodes 10 10 Invalid tour 19.1 14st70 nodes 11 11 Invalid tour 23.3 11ft53 nodes 13 13 7.3 0.1 20kroD100 nodes 15 15 9.2 0.2 20gr96 nodes 16 16 Invalid tour Invalid tour 12brazil58 nodes 18 18 0.2 Invalid tour 20rd100 nodes 20 20 0.1 Invalid tour Tab. VI. Percentage of feasible shots per instance for experiment group 
+
+Preprocess Medium . A shot is feasible if it encodes a valid GTSP tour. Cells without shot data show the failure reason. Instance n C-QAOA (%) QUBO (%) 3burma14 3 22.7 95.4 6bayg29 6 0.5 26.3 7ftv33 12 0.3 0.1 8ftv38 13 Invalid tour Invalid tour 14st70 14 Invalid tour Invalid tour 10ftv47 15 Invalid tour Invalid tour 9ftv44 15 Invalid tour Invalid tour 16pr76 16 Invalid tour Could not embed 12ftv55 20 Invalid tour Could not embed 20kroA100 20 Invalid tour Could not embed 7ftv33 (0.33%)           
+
+> 3burma14 (22.67%)
+> 6bayg29 (0.47%)
+> Instance
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Approximation Ratio
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> % Feasible Solutions Fig. 8. Distribution of solution quality achieved by C-QAOA on the Preprocess Medium dataset (3–20 nodes), where the corresponding original GTSPLIB instances range from 14 to 100 nodes. The violins show the approximation ratio distribution over sampled feasible solutions, while the instance labels report the feasible-shot rate.
+
+Most importantly, quantum annealing performed compara-tively better than the QAOA in terms of feasibility ratio. This is likely an artifact of the very low layer depth of the QAOA (p = 1 ), in contrast to the standard annealing time available for the quantum annealing based solver. We strongly expect that the QAOA could outperform the quantum annealing solver qualitatively, given more layers and suitable mixers to enforce not just one, but all three constraints. 
+
+E. Impact of Preprocessing 
+
+Figure 6 indicates that Q-GTSP, consistently achieves ap-proximation ratios that are above the average of the sampled solution landscape for the Preprocess Small instances with 3 to 5 nodes. Across all considered instances, it also shows a high feasibility rate, ranging from approximately 65% up to 98%. This is notably higher than the feasibility rates observed for the Subsample Small instances with the same number of nodes (3 to 5), cf. Figure 2. It should be noted, however, that the preprocessed instances are derived from original GTSPLIB instances and retain the same number of clusters, while only the number of nodes is reduced. Consequently, solutions obtained for preprocessed instances with 3 to 5 nodes correspond to solutions on the original instances, which typically contain between 17 and 24 nodes. This difference should be taken into account when interpreting the results. In comparison, for the Subsample Medium dataset with 3 to 20 nodes 3, Q-GTSP is only able to find feasible solutions up to instances with 15 nodes, with feasibility rates not exceeding 50%. Overall, these observations suggest that preprocessing can improve the ability of Q-GTSP to handle larger underlying problem instances while also increasing the likelihood of obtaining feasible solutions. Although Q-GTSP with preprocessing still yields approximation ratios above the average of the sampled solution landscape for instances with up to 29 nodes, the feasibility rate decreases noticeably as the instance size increases. One possible explanation for the reduced performance of both solvers on larger preprocessed instances, compared to subsampled instances of similar size, is the higher number of clusters. This structural property, inherited from the original GTSPLIB instances, may increase the problem complexity and negatively affect the solution behavior of the solvers. In contrast, C-QAOA does not appear to benefit from preprocessing to the same extent. Based on the evaluation, preprocessing can even have a negative impact on C-QAOA performance. While Subsample Small instances of 5 nodes occasionally complete successfully, their Preprocess Small equivalents of the same dimension consistently fail completely, as can be seen in Figure 8 and Table VI. More information on the feasibility rates of datasets Sub-sample Small and Preprocess Small can be found in Ap-pendix A (Tables VII and VIII). Here we can see that across both small datasets, QUBO consistently achieves higher and more stable feasibility rates than C-QAOA, with preprocessing further increasing QUBO feasibility to up to 98% while pushing C-QAOA to timeout on all 5-node instances. VII. D ISCUSSION 
+
+As instance size grows, a consistent decline in solution quality and feasibility can be observed across both quantum approaches. For C-QAOA specifically, feasibility rates drop steeply beyond 5–7 nodes, falling to below 1% at 13–15 nodes, with timeouts and transpilation failures dominating at larger scales (cf. Tables V and VI). For the quantum annealing based approach, a similar pattern emerges: feasibility rates remain competitive on small instances – occasionally exceeding 90% – but degrade sharply beyond 15 nodes, where infeasibility as well as embedding failures become the dominant issues (cf. Tables V and VI). Notably, the quantum annealing based solver also encounters embedding failures on preprocessed medium instances, where the number of required logical qubits grows as large as 400, far exceeding current hardware capacity. Reflecting on the results of both quantum optimization approaches, we find that future quantum solvers must address infeasibility as their main priority. Based on our results, we estimate that the option to address constraints via penalty terms in a QUBO-based approach does not scale in practice. This issue can likely best be addressed by gate-model based approaches such as constraint mixers in the QAOA. VIII. C ONCLUSION 
+
+The Generalized Traveling Salesman Problem arises in a wide range of industrial applications, including logistic routing, scheduling or the optimization of subtask sequences in manufacturing robotics. While there exists substantial prior research on quantum approaches for the TSP, corresponding work on the GTSP is still scarce. In this paper, we introduce a novel method for directly constructing QUBO formulations from GTSP instances, which, to the best of our knowledge, has not been previously described in the literature. We fur-ther propose a constrained QAOA solver that expands on this QUBO formulation by implementing one of its one-hot constraints using XY-mixers. We focus on presenting our two quantum GTSP optimizers with current quantum hardware sizes and their limitations in mind. We evaluate on instances derived from the GTSPLIB benchmark, which we generate via a cluster subset sampling. In addition, we introduced a preprocessing algorithm that reduces the size of GTSPLIB instances before they are passed to the quantum solvers. The experimental results show a clear distinction between small and larger instances. For small instances (3 to 5 nodes), the quantum solvers frequently produced solution sets that include the optimal solution or solutions very close to it, indicating performance comparable to classical state-of-the-art solvers. However, as instance size increases, both solution quality and feasibility decrease, and beyond a certain problem size (around 15 nodes and 4 clusters), valid solutions are no longer found reliably. The proposed preprocessing improves feasibility for the quantum annealing based solver to address larger underlying instances, but its benefits diminish with increasing instance size – likely due to the higher structural complexity of the preprocessed instances. Overall, these find-ings are consistent with results reported in existing literature on quantum optimization, where competitive solution quality is often observed for small instances, but scalability remains a major challenge unless constraints can be properly integrated into the quantum solver. Future work should focus on improving scalability through proper constraint handling, but also enhanced preprocessing techniques, more efficient encodings, and problem-specific embeddings that better exploit the cluster structure of the GTSP. ACKNOWLEDGMENT 
+
+This work has been supported by the LMU Sustainability Fund (EfOiE), the BMFTR (QuCUN, QuaRDS, CAQAO), the Munich Quantum Valley (K5, K7), and the Bavarian StMWi (6GQT). The sole responsibility for the report’s contents lies with the authors. APPENDIX 
+
+A. Additional Metrics 
+
+Tab. VII. Percentage of feasible shots per instance for experiment group 
+
+Subsample Small . A shot is feasible if it encodes a valid GTSP tour. Cells without shot data show the failure reason. Instance n C-QAOA (%) QUBO (%) 12ftv55 nodes 3 3 36.9 66.9 16pr76 nodes 3 3 Invalid tour 41.0 6fri26 nodes 3 3 35.8 48.4 16eil76 nodes 4 4 Invalid tour 28.7 4ulysses16 nodes 4 4 18.0 38.0 5ulysses22 nodes 4 4 10.6 89.1 6fri26 nodes 4 4 7.7 91.6 20gr96 nodes 5 5 4.6 72.6 9ftv44 nodes 5 5 51.3 88.1 9p43 nodes 5 5 15.3 49.2 Tab. VIII. Percentage of feasible shots per instance for experiment group 
+
+Preprocess Small . A shot is feasible if it encodes a valid GTSP tour. Cells without shot data show the failure reason. Instance n C-QAOA (%) QUBO (%) 3burma14 3 22.5 98.1 4br17 4 2.6 92.5 4gr17 4 2.9 90.6 4ulysses16 4 1.9 87.1 5gr21 5 Timeout 70.0 5gr24 5 Timeout 65.5 5ulysses22 5 Timeout 67.8 
+
+REFERENCES [1] Petric˘ a C. Pop, Ovidiu Cosma, Cosmin Sabo, and Corina Pop Sitar. A comprehensive survey on the generalized traveling salesman problem. 
+
+European Journal of Operational Research , 314(3):819–835, 2024. [2] Gilbert Laporte, Ardavan Asef-Vaziri, and Chelliah Sriskandarajah. Some applications of the generalized travelling salesman problem. 
+
+Journal of the Operational Research Society , 47(12):1461–1467, 1996. [3] Pouya Baniasadi, Mehdi Foumani, Kate Smith-Miles, and Vladimir Ejov. A transformation technique for the clustered generalized traveling salesman problem with applications to logistics. European Journal of Operational Research , 285(2):444–457, 2020. [4] Daniel Karapetyan and Gregory Gutin. Efficient local search algorithms for known and new neighborhoods for the generalized traveling salesman problem. European Journal of Operational Research , 219(2):234–251, 2012. [5] Francisco Su´ arez-Ruiz, Teguh Santoso Lembono, and Quang-Cuong Pham. Robotsp - a fast solution to the robotic task sequencing problem, 2017. [6] Harnaik Dhami, Kevin Yu, Troi Williams, Vineeth Vajipey, and Pratap Tokekar. Gatsbi: An online gtsp-based algorithm for targeted surface bridge inspection. In 2023 International Conference on Unmanned Aircraft Systems (ICUAS) , page 1199–1206. IEEE, June 2023. [7] Michael A. Nielsen and Isaac L. Chuang. Quantum Computation and Quantum Information: 10th Anniversary Edition . Cambridge University Press, 2010. [8] Amira Abbas, Andris Ambainis, Brandon Augustino, Andreas B¨ artschi, Harry Buhrman, Carleton Coffrin, Giorgio Cortiana, Vedran Dunjko, Daniel J Egger, Bruce G Elmegreen, et al. Challenges and opportunities in quantum optimization. Nature Reviews Physics , 6(12):718–735, 2024. [9] Jonas N¨ ußlein, Thomas Gabor, Claudia Linnhoff-Popien, and Sebastian Feld. Algorithmic qubo formulations for k-sat and hamiltonian cycles. In Proceedings of the genetic and evolutionary computation conference companion , pages 2240–2246, 2022. [10] Carla Silva, Ana Aguiar, Priscila Lima, and Inˆ es Dutra. Mapping a logical representation of tsp to quantum annealing. Quantum Information Processing , 20(12), 2021. [11] Siddarth Chander, Naren Sathishkumar, Affan Hussain, and Kostas Blekos. Solving the traveling salesperson problem with quantum approximate optimization algorithms. Preprint , 2024. [12] Venkat Padmasola, Zhaotong Li, Rupak Chatterjee, and Wesley Dyk. Solving the traveling salesman problem via different quantum computing architectures. arXiv preprint arXiv:2502.17725 , 2025. [13] Fred Glover, Gary Kochenberger, and Yu Du. A tutorial on formulating and using qubo models, 2019. [14] Andrew Lucas. Ising formulations of many np problems. Frontiers in Physics , 2, 2014. [15] M Born and V Fock. Beweis des Adiabatensatzes. Zeitschrift f¨ ur Phys. ,51(3):165–180, 1928. [16] Edward Farhi, Jeffrey Goldstone, and Sam Gutmann. A quantum approximate optimization algorithm. arXiv preprint arXiv:1411.4028 ,2014. [17] Edward Farhi, Jeffrey Goldstone, Sam Gutmann, and Michael Sipser. Quantum computation by adiabatic evolution. arXiv preprint quant-ph/0001106 , 2000. [18] Stefan H Sack and Maksym Serbyn. Quantum annealing initialization of the quantum approximate optimization algorithm. quantum , 5:491, 2021. [19] Tatsuhiko Shirai and Nozomu Togawa. Compressed space quantum approximate optimization algorithm for constrained combinatorial op-timization. IEEE Transactions on Quantum Engineering , 2025. [20] David Bucher, Jonas Stein, Sebastian Feld, and Claudia Linnhoff-Popien. Penalty-free approach to accelerating constrained quantum optimization. 
+
+Physical Review A , 112(6):062605, 2025. [21] Stuart Hadfield, Zhihui Wang, Bryan O’gorman, Eleanor G Rieffel, Davide Venturelli, and Rupak Biswas. From the quantum approximate optimization algorithm to a quantum alternating operator ansatz. Algo-rithms , 12(2):34, 2019. [22] Wenyang Qian, Robert AM Basili, Mary Mehrnoosh Eshaghian-Wilner, Ashfaq Khokhar, Glenn Luecke, and James P Vary. Comparative study of variations in quantum approximate optimization algorithms for the traveling salesman problem. Entropy , 25(8):1238, 2023. [23] Anandu Kalleri Madhu, Chi-Kwong Li, Jami R¨ onkk¨ o, Mikio Nakahara, and Ray-Kuang Lee. An edge-based and subspace reduction encoding scheme to solve the traveling salesman problem in quantum computers. 
+
+arXiv e-prints , pages arXiv–2512, 2025. [24] Adam Glos, Aleksandra Krawiec, and Zolt´ an Zimbor´ as. Space-efficient binary optimization for variational quantum computing. npj Quantum Information , 8(1):39, 2022. [25] Bence Bak´ o, Adam Glos, ¨Ozlem Salehi, and Zolt´ an Zimbor´ as. Prog-qaoa: Framework for resource-efficient quantum optimization through classical programs. Quantum , 9:1663, 2025. [26] Mehdi El Krari, Bela¨ ıd Ahiod, and Youssef Bouazza El Benani. Apre-processing reduction method for the generalized travelling salesman problem. Operational Research , 21(4):2543–2591, 2021. [27] Haoqi He. Quantum annealing and gnn for solving tsp with qubo. In Smita Ghosh and Zhao Zhang, editors, Algorithmic Aspects in Informa-tion and Management , Singapore, 2024. Springer Nature Singapore. [28] Alexei Zverovich. GTSPLIB – gtsp instances library. https://www.cs. rhul.ac.uk/home/zvero/GTSPLIB/, 2002. Accessed: 2026-01-26. [29] D-Wave Quantum. What is quantum annealing?, 2026. Accessed: 2026-01-27. [30] D-Wave Quantum Inc. The advantage™ quantum computer. https: //www.dwavequantum.com/solutions-and-products/systems/, 2026. Ac-cessed: 2026-01-30. [31] IBM Quantum Documentation. Processor types. https://quantum.cloud. ibm.com/docs/en/guides/processor-types, 2026. Accessed: 2026-01-30. [32] Mark Bun, J¨ org Drechsler, Marco Gaboardi, Audra McMillan, and Jayshree Sarathy. Controlling privacy loss in sampling schemes: An analysis of stratified and cluster sampling. arXiv preprint arXiv:2007.12674 , 2020. [33] Stephen L. Smith and Frank Imeson. Glns: An effective large neighbor-hood search heuristic for the generalized traveling salesman problem. 
+
+Computers & Operations Research , 87:1–19, 2017. [34] Gurobi Optimization, LLC. Gurobi Optimizer Reference Manual, 2026. [35] Andreas B¨ artschi and Stephan Eidenbenz. Grover mixers for qaoa: Shifting complexity from mixer design to state preparation. In 2020 IEEE International Conference on Quantum Computing and Engineer-ing (QCE) , pages 72–82, 2020.

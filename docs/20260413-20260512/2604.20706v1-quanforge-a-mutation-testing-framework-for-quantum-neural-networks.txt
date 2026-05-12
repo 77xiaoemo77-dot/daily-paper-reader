@@ -1,0 +1,630 @@
+Title: QuanForge: A Mutation Testing Framework for Quantum Neural Networks
+
+URL Source: https://arxiv.org/pdf/2604.20706v1
+
+Published Time: Thu, 23 Apr 2026 01:09:38 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# QuanForge: A Mutation Testing Framework for Quantum Neural Networks 
+
+MINQI SHAO, Kyushu University, Japan 
+
+SHANGZHOU XIA, Kyushu University, Japan 
+
+JIANJUN ZHAO ∗, Kyushu University, Japan With the growing synergy between deep learning and quantum computing, Quantum Neural Networks (QNNs) have emerged as a promising paradigm by leveraging quantum parallelism and entanglement. However, testing QNNs remains underexplored due to their complex quantum dynamics and limited interpretability. Developing a mutation testing technique for QNNs is promising while requires addressing stochastic factors, including the inherent randomness of mutation operators and quantum measurements. To tackle these challenges, we propose QuanForge, a mutation testing framework specifically designed for QNNs. We first introduce statistical mutation killing to provide a more reliable criterion. QuanForge incorporates nine post-training mutation operators at both gate and parameter levels, capable of simulating various potential errors in quantum circuits. Finally, a mutant generation algorithm is formalized that systematically produces effective mutants, thereby enabling a robust and reliable mutation analysis. Through extensive experiments on benchmark datasets and QNN architectures, we show that QuanForge can effectively distinguish different test suites and localize vulnerable circuit regions, providing insights for data enhancement and structural assessment of QNNs. We also analyze the generation capabilities of different operators and evaluate performance under simulated noisy conditions to assess the practical feasibility of QuanForge for future quantum devices. CCS Concepts: • Software and its engineering → Software testing and debugging .Additional Key Words and Phrases: Quantum Computing, Quantum Neural Network, Mutation Testing 
+
+ACM Reference Format: 
+
+Minqi Shao, Shangzhou Xia, and Jianjun Zhao. 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks. Proc. ACM Softw. Eng. 3, FSE, Article FSE128 (July 2026), 23 pages. https://doi.org/10.1145/ 3808135 
+
+1 Introduction 
+
+Quantum computing has made rapid progress in recent years, both in terms of hardware capabili-ties and algorithmic development. One of the most promising areas is quantum machine learning (QML) [ 8], which combines quantum computing with machine learning to improve mutual perfor-mance. In QML, quantum neural networks (QNNs) [ 12 ] have attracted attention for their ability to integrate quantum properties, such as superposition and entanglement, into neural networks. These properties offer potential advantages, including speedup in time complexity [ 10 ]. QNNs have achieved initial success in tasks such as image classification [ 32 ], generative models [ 14 ], and natural language processing [44]. 
+
+> ∗
+
+Corresponding author. Authors’ Contact Information: Minqi Shao, Kyushu University, Fukuoka, Japan, shao.minqi.229@s.kyushu-u.ac.jp; Shangzhou Xia, Kyushu University, Fukuoka, Japan, xia.shangzhou.218@s.kyushu-u.ac.jp; Jianjun Zhao, Kyushu University, Fukuoka, Japan, zhao@ait.kyushu-u.ac.jp. 
+
+This work is licensed under a Creative Commons Attribution 4.0 International License. 
+
+© 2026 Copyright held by the owner/author(s). ACM 2994-970X/2026/7-ARTFSE128 https://doi.org/10.1145/3808135 Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026.  
+
+> arXiv:2604.20706v1 [cs.SE] 22 Apr 2026 FSE128:2 Minqi Shao, Shangzhou Xia, and Jianjun Zhao
+
+To develop practical applications of QNNs on future quantum devices, concerns about their correctness and reliability, such as adversarial robustness [ 37 ], have become increasingly prominent. These issues highlight the need for systematic testing and verification techniques specifically designed for QNNs. However, such testing frameworks are currently lacking. Designing them is challenging due to the black-box nature of QNN internals and the limited interpretability arising from complex quantum dynamics. To make initial efforts, it is natural to consider adapting mature testing techniques from traditional software. Mutation testing (MT) [ 26 ] is a widely used method for assessing the quality of test data. It can provide a systematic way to generate faulty variants and assess whether a test suite can detect injected behavioral deviations. MT has been transferred to deep neural networks (DNNs), where various mutation operators [ 23 , 28 , 38 ] have been proposed at different levels, including source code, neurons, and layers. Meanwhile, several mutation analysis tools [ 16 , 40 , 51 ] have also been developed for quantum programs (QPs), focusing on quantum-specific mutation characteristics such as gate-level, circuit-level, and algorithm-level transformations. As an intersection of DNNs and QPs, MT should hold significant promise for improving the behaviors and robustness of QNNs. Compared with the raw accuracy metric, MT can not only quantify the fault-detection capability of a test suite but also reveal fragile regions of the model where small mutations can cause significant changes in output. The MT results could further provide insights for strengthening data quality in a targeted manner and improving model robustness. Despite its promise, applying MT to QNNs remains challenging. Mutation strategies for DNNs are broadly categorized into pre-training and post-training paradigms. Since QNNs lack a unified paradigm for overall architecture and data encoding, devising a generalizable pre-training strategy is challenging. Moreover, MuFF [ 28 ] indicates that the post-training paradigm exhibits superior performance with respect to both resource efficiency and mutant stability. Considering the high experimental cost of QNNs, we prioritize adopting the post-training strategy. However, due to structural differences between DNNs and QNNs, existing post-training mutation methods cannot be directly applied. On the other hand, mutation techniques for QPs mainly focus on structural changes to circuits, which are insufficient for parameterized gates in QNNs. Manually configuring mutation operators [ 40 ] is also inefficient for scalable QNNs. Besides operator design, existing approaches lack a systematic analysis of mutant quality, i.e., whether mutants are unkillable (cannot be killed by any dataset) or trivial (killed even by the weakest dataset), leading to low-quality mutants and inaccurate results. Moreover, test oracles [ 5 ] based on a single input-output pair can yield aggressive mutant killing for QNN mutants due to their larger-scale datasets. Another key challenge is the stochasticity of mutation testing involved in the quantum context, which arises from two aspects: (1) randomness of operator application (e.g., which gates to mutate) and (2) randomness of the measurement process, where repeated executions of a QNN on the same dataset may yield different outcomes. The latter is unique to quantum computing and directly impacts mutation killing and mutation scores. Taking these factors into account, there is a pressing need to develop an efficient and reliable mutation testing framework for QNNs. To address these challenges, we propose QuanForge , a post-training mutation testing framework to evaluate the quality of test data and the structural robustness of QNNs in a statistical way. First, we define three mutant evaluation metrics to account for measurement randomness and obtain reliable judgments. Second, by analyzing the functional roles of quantum gates, we design nine mutation operators (MOs) at both gate and parameter levels, covering diverse perspectives and granularity. These operators introduce various structural faults or parameter deviations into the circuits, which could, to some extent, simulate several realistic errors and noise during quantum compilation and execution. Finally, QuanForge incorporates stability checking and effectiveness analysis into the mutant generation algorithm to ensure high-quality mutants. It also employs a binary search  
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:3
+
+strategy to automatically adjust operator configurations, maximizing effective mutant generation while avoiding suboptimal manual settings. To validate effectiveness, we conducted extensive experiments using benchmark datasets and diverse QNN architectures. QuanForge demonstrates its utility in evaluating the quality of test suites and identifying structural weaknesses by exposing different circuit parts to mutation. Based on observations, several insights are provided for future model enhancement. We further analyzed the capabilities of different operators to generate mutants and conduct a sensitivity analysis of two hyperparameters. Additionally, to simulate more realistic quantum execution, we evaluated QuanForge on noisy simulators to provide evidence for its practical value. Our contributions include: 
+
+• We introduce statistical mutation killing for QNNs to address the randomness of quantum measurement and provide a more reliable mutant analysis. 
+
+• We design nine gate-level and parameter-level mutation operators based on quantum gate and circuit characteristics. These post-training operators enable efficient mutation and simulate various errors during circuit design, compilation, and execution. 
+
+• We implement a comprehensive mutant generation framework that automatically adjusts operator configurations and integrates a two-step checking procedure to select killable and non-trivial mutants. 
+
+• We validate QuanForge through extensive experiments on benchmark datasets and QNNs. The results demonstrate its effectiveness in evaluating the quality of the test suite and analyzing the model robustness by mutating different target regions and gate types. 
+
+2 Background and related work 2.1 Quantum Computing 
+
+Qubits. A quantum bit, or qubit, is the fundamental unit of information in quantum computing. Unlike classical bits, qubits can exist in a superposition of computational basis states. A pure state is written as |𝜙 ⟩ = 𝛼 |0⟩ + 𝛽 |1⟩ with 𝛼, 𝛽 ∈ C as probability amplitudes. Upon measurement, the qubit collapses to |0⟩ with probability |𝛼 |2 and to |1⟩ with probability |𝛽 |2.
+
+Quantum gates and circuits. Quantum gates are essential components in quantum programs that perform rotation or change entanglement on qubits. Quantum circuits consist of sequences of qubits and gates, and realize functionalities by modifying the selection and parameterization of quantum gates, the choice of target qubits, and the order of gate execution. 
+
+Quantum measurement. Quantum measurement projects a superposition into a definite classical state according to probability amplitudes, with the state collapsing irreversibly. This operation is conventionally performed at the terminal stage of a quantum circuit with specific basis. Due to the probabilistic nature, reliable evaluation of a quantum circuit often requires multiple measurements. 
+
+2.2 Quantum Neural Networks 
+
+QNNs, inspired by DNNs, are typically built from parameterized quantum circuits (PQCs) with predefined structures and tunable gate parameters. A typical QNN consists of three components: a data encoding layer that maps classical data to quantum states, a parameterized circuit layer that extracts features via quantum state transformations, and a measurement layer that extracts classical information from closed quantum systems. Various QNN variants have been proposed [ 12 , 24 , 42 , 49 ] recently. Based on circuit functionality, current QNNs can be categorized into three types: circuit-body QNNs [12 , 42 ], which use medium-sized PQCs as the backbone; circuit-kernel QNNs [ 20 ], which employ PQCs as convolutional kernels sliding for feature extraction; and hybrid QNNs [49 ], which integrate PQCs with classical layers, where PQCs serve as either a preprocessing or output layer.  
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:4 Minqi Shao, Shangzhou Xia, and Jianjun Zhao
+
+For the data encoding layer, two approaches are commonly used. Amplitude encoding encodes data features as amplitudes of a quantum state, which require relatively few qubits but deep circuits to implement. Angle encoding encodes features as rotation-gate parameters, enabling efficient implementation but consuming more qubits. For the parameterized circuit layer, two representative designs are block stacking [42 ], which repeatedly stacks the same block, and hierarchical structures 
+
+[ 12 ], which reduce circuit freedom by measuring subsets of qubits as circuit deepens. Finally, given a finite number of shots, measurement collapses the quantum state, and expectation values on selected qubits are used as QNN outputs [24]. 
+
+2.3 Mutation Testing for Classical Neural Networks 
+
+In recent years, various mutation testing techniques [ 23 , 28 , 38 ] have been proposed for DNNs, which assess test adequacy by injecting artificial faults to create mutants and evaluate test effectiveness. One category is the post-training mutation [ 28 , 38 , 48 ], which directly modifies the weights or neurons of the trained models. DeepMutation [ 38 ] defines model-level operators that target DNN structures such as neurons and layers. It is efficient but may introduce large changes, leading to significant performance degradation. Moreover, weight- or neuron-level operators have limited interpretability and cannot mimic real faults in DL systems. With manually defined operator pa-rameters, the variability and instability of mutants have posed a threat. To address these, MuFF [ 28 ]introduces a stability check mechanism and two novel operators to generate stable and sensitive mutants. Another category is the pre-training mutation [ 23 ], where faults are injected into source programs before training. It targets various components involved during the training pipeline, including training data, hyperparameters, activation function, and loss function. Beyond mutation operator design, Jahangirova and Tonella [ 25 ] proposed statistical methods for mutation killing, taking into account the nondeterminism of model training. To cover more configurations of operator parameters, some works [ 23 , 25 ] further treated each configuration as a potential killing target and computed the killed configurations with respect to the training data. While both are used to assess test adequacy, MT for QNNs differs from that for DNNs in: 
+
+• Operator scope. In DNNs, post-training operators defined for model internals are not directly transferable to QNNs, since components such as neurons, layers, and activation functions do not have clear counterparts in PQC-based QNNs. Meanwhile, source-level or pre-training mutations are often impractical, as each mutant requires retraining from scratch, which is costly and can be unstable under stochastic quantum execution. 
+
+• Evaluation. QNNs involve additional stochastic factors due to probabilistic measurement and hardware-related noise (e.g., coherent errors), so mutation killing cannot rely solely on a single prediction. Instead, it needs to consider more general model behavior (e.g., accuracy) under repeated sampling. Correspondingly, mutant-quality evaluation (e.g., filtering unkillable or trivial mutants) needs to be redefined for QNNs to prevent budget waste and improve testing efficiency. 
+
+2.4 Mutation Analysis and Testing for Quantum Programs 
+
+Testing quantum programs has attracted increasing attention recently. Previous work on quantum program testing has examined the basic challenges of this field [ 41 ], proposed systematic testing frameworks [35], and developed various testing techniques [22, 27, 31, 33, 34, 36, 54, 55, 59, 62]. Mutation analysis has been adopted to assess the quality of test suites for quantum programs. Muskit [ 40 ] defines gate-level mutation operators, focusing on the number and location of the gate manually defined. QMutPy [ 16 ] targets Qiskit programs and defines operators for measurement and gate construction, using syntactically equivalent gates. A large-scale empirical study [ 51 ] compares the detection of faults and the cost effectiveness of various mutation strategies across circuit types and algorithms. QCRMut [ 19 ] proposes four types of operators that preserve circuit structure, 
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026.
+
+QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:5 Mutation Operators        
+
+> •Gate -level operators
+> •Parameter -level operators
+> pQubit range
+> pDepth range
+> pGate type
+> Mutant Generation
+> Mutant Generator Stability Checker
+> (RSE)
+> Search Bound
+> Checker
+> random
+> mutants
+> stable mutants
+> Mutant Analyzer
+> (isKilled, isNontrivial)
+> Reference Data
+> QNN
+> Effective Mutants
+> select
+> apply configuration
+> update
+> configuration
+> update
+> configuration
+> Output
+
+Fig. 1. The overall workflow of effective mutant generation in QuanForge. 
+
+using gate equivalence and randomized mutation to generate meaningful but minimally disruptive changes. For mutation killing, two test oracles [ 5 ] are widely used in QP testing: WOO (Wrong Output Oracle), which checks whether the native output changes, and OPO (Output Probability Oracle), which considers probabilistic behaviors by repeated execution. Compared to these QP-oriented approaches, MT for QNNs differs in: 
+
+• Purpose. Both lines of work are commonly used to assess test adequacy. MT for QPs generates faulty variants by injecting code-level bugs in program implementations, and is often used to evaluate the fault-detection capability of testing techniques. MT for QNNs injects perturbations to emulate model-level weaknesses arising from training data quality, circuit architecture, and optimization dynamics, and can also help identify sensitive regions for model enhancement [18]. 
+
+• Mutant generation. Gate-level mutation for QPs typically supports insertion, deletion, and replacement, and some approaches also mutate measurements. The latter is unsuitable for QNNs because QNN outputs are directly derived from measurements, whose mutation destroys the output definition rather than injecting internal faults. Additionally, finer-grained parameter-level mutations can lead to significant behavioral changes in QNNs due to their parameter-learning mechanism. Therefore, MT for QNNs should include a more diverse gate-level and parameter-level operators with automatically adjusted configurations. 
+
+• Evaluation. QP mutation killing is often decided by per-input oracle judgments [ 5 ]. For dataset-driven QNNs, relying only on a single input-output pair may overestimate the killing capability of datasets. Mutation killing should be defined based on general model behavior, such as accuracy, while accounting for measurement randomness in QNN outputs. Moreover, beyond mutation score, richer metrics are needed to characterize structural sensitivity (e.g., to gate type, circuit depth, or circuit region) and to provide actionable insights for model improvement. 
+
+3 Method 
+
+Figure 1 illustrates the overall workflow of QuanForge, which consists of two major modules: (1) the Mutation Operators module (Section 3.2) contains nine gate-level and parameter-level mutation operators, together with user-specified configurations for the following process, and (2) the Mutant Generation module (Section 3.3) contains the process of mutant initialization, checking, and analysis. Specifically, the mutant generator first takes the original QNN and the defined operators as input and initially produces a batch of random mutants. Based on the Relative Standard Error (RSE) criterion, stable mutants are obtained by a stability checker . Subsequently, the mutant analyzer evaluates these mutants in terms of killability and nontriviality and selects effective mutants. During the checking and analyzing procedures, the specific configuration of an operator parameter is updated based on the evaluation results of mutants at the same time. The updated configuration is then 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:6 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+passed to a search-bound checker , which decides whether the generation process should proceed or terminate by returning all effective mutants so far. 
+
+3.1 Mutant Evaluation Metrics 
+
+As illustrated in [ 23 , 28 ], the training process of DNNs is inherently nondeterministic, and this still holds for QNNs due to their similar training procedures. However, unlike DNNs whose outputs are deterministic during inference, QNNs exhibit an additional aspect of randomness arising from quantum measurement. In each measurement, a qubit collapses probabilistically to a definite basis state, and the average over multiple measurements corresponds to the expectation value, which constitutes the QNN outputs. With few measurements, the value is more likely to deviate from the theoretical value computed by matrix simulation. To ensure the output reliability, we calculate the number of measurements required to achieve a specific confidence level and an error bound based on Hoeffding’s inequality [ 21 ]. A QNN output obtained with 𝑠 measurements is considered as one 
+
+prediction . However, repeated predictions on the same input can still exhibit varying performance in subsequent task-specific processing, making it unreliable to determine whether a mutant should be killed based on a single input. Hence, the test oracle for QPs that focuses on a single input-output pair may lead to overestimation when applied to large-scale datasets. To address this, we incorporate 
+
+reference data , which are independent of the test data, into the evaluation of mutant performance. Ideally, such data should achieve high accuracy with the original model while remaining sensitive to the decision boundary, enabling it to distinguish the original model from its mutants. Considering this, we adopt training data as reference data. In this section, we propose three metrics for evaluating mutants with respect to their stability, killability, and non-triviality. Due to the inherent randomness of the mutation operator (e.g., the random selection of target gates), even mutants generated from the same operator and configuration can exhibit unstable performance. As a result, among a fixed number of mutants, many might experience significant accuracy degradation, undermining generation efficiency. To address this instability, we adapt the Relative Standard Error (RSE) [ 28 ] to quantify the variance in performance across a batch of mutant instances. Let 𝑀 𝑠 denote a set of random mutants generated with a given mutation operator configuration. By evaluating each mutant 𝑀 in 𝑀 𝑠 using reference data, we obtain accuracies 
+
+𝐴 𝑀 𝑠 = ⟨𝐴 ′
+
+> 1
+
+, ..., 𝐴 ′|𝑀 𝑠 | ⟩ with mean 𝜇 and standard deviation 𝛿 . RSE score is defined as:      
+
+> 𝑅𝑆𝐸 =𝛿 𝜇 √︁ |𝑀 𝑠 |(1)
+
+RSE measures the variability of an estimate relative to its mean, where a smaller value indicates better stability. As 𝜇 and 𝛿 are bounded, the RSE score converges toward zero with the increasing number of mutants, thereby ensuring the eventual acquisition of a stable mutant set. To achieve a smaller RSE score, we can explore the generation space of a configuration more adequately by collecting more mutants compared to fixed settings. 
+
+Definition 3.1 (Stable mutants ). A set of mutants is considered stable if, on reference data, their RSE score is smaller than a threshold 𝜏 𝑅𝑆𝐸 .The randomness of MO application may not only generate mutants with degraded performance, but also lead to mutants that show minimal differences from the original model. Such mutants can lead to inefficiencies in the testing process since they cannot be killed by any dataset. Therefore, we employ the killable mutant metric to filter out mutants that exhibit only minor variations. Given the inherent unreliability of a single prediction arising from quantum measurement, we perform the evaluation based on the performance distributions obtained from repeated predictions. We adopt a generalized linear model (GLM) to evaluate whether a significantly different distribution  
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:7
+
+is introduced by the mutant based on the 𝑝 -value, and use Cohen’s 𝑑 to quantify the effect size. Specifically, the dependent variable is the model accuracy and the independent variable is whether the model is original or mutated. We fit a GLM with a Gaussian exponential family and identity link. The null hypothesis is that the regression coefficient is zero, i.e., the original and mutated models have similar performance. Formally, given the original model 𝑂 , a mutant 𝑀 , reference dataset 𝐷 , and two thresholds ( 𝛼 ,𝛽 ), the prediction is repeated in 𝑂 and 𝑀 for 𝑛 times, respectively, generating two accuracy distributions, 𝐴 𝑂 = ⟨𝐴 1, ..., 𝐴 𝑛 ⟩ and 𝐴 𝑀 = ⟨𝐴 ′
+
+> 1
+
+, ..., 𝐴 ′ 
+
+> 𝑛
+
+⟩. Then, the statistical mutation killing 𝑖𝑠𝐾𝑖𝑙𝑙𝑒𝑑 is defined as follows, which means that a mutant can be killed only if its accuracy distribution is significantly different from the original:                
+
+> 𝑖𝑠𝐾𝑖𝑙𝑙𝑒𝑑 (𝑂, 𝑀, 𝐷, 𝑛 )=
+> 
+> True ,if 𝑝 _𝑣𝑎𝑙𝑢𝑒 (𝐴 𝑂 (𝐷 ), 𝐴 𝑀 (𝐷 )) <𝛼
+> and 𝑒 𝑓 𝑓 𝑒𝑐𝑡𝑆𝑖𝑧𝑒 (𝐴 𝑂 (𝐷 ), 𝐴 𝑀 (𝐷 )) ≥ 𝛽
+> False ,otherwise (2)
+
+Definition 3.2 (Killable mutant ). A mutant is considered killable if it can be killed by reference data according to 𝑖𝑠𝐾𝑖𝑙𝑙𝑒𝑑 .An opposite issue to killable mutants is that some mutants may exhibit vast differences from the original model. Such mutants can be detected by almost all data, which makes them ineffective in assessing the quality of different test data. We use the non-trivial mutant metric to filter out such mutants with overly large deviations, depending on their average accuracy over multiple predictions. Formally, given a mutant 𝑀 , reference dataset 𝐷 , and a threshold 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙 , after obtaining the accuracy distribution 𝐴 𝑀 = ⟨𝐴 ′
+
+> 1
+
+, ..., 𝐴 ′ 
+
+> 𝑛
+
+⟩, the 𝑖𝑠𝑁𝑜𝑛𝑡𝑟𝑖𝑣𝑖𝑎𝑙 is defined as:          
+
+> 𝑖𝑠𝑁𝑜𝑛𝑡𝑟𝑖𝑣𝑖𝑎𝑙 (𝑀, 𝐷, 𝑛 )=
+> (
+> True ,if 1
+> 𝑛
+> Í𝑛 𝑖 =1𝐴 ′
+> 𝑖 ≥𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙
+> False ,otherwise (3)
+
+Definition 3.3 (Non-trivial mutant ). A mutant is considered non-trivial if its average accuracy is larger than a threshold 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙 .In summary, mutant stability characterizes the general performance of a batch of mutants and can be further regarded as a property of the mutation operator. It reflects the capability of this operator to generate stably behaving mutants with a specific configuration. The killability and non-triviality are properties evaluated for each individual mutant instance. We define mutants that simultaneously satisfy both killable and non-trivial properties as effective mutants . Such mutants exhibit sufficient differences to be detected by test data while also distinguishing the quality of different test suites. 
+
+3.2 Post-training Mutation Operators for QNNs 
+
+Mutation operators (MOs) have been widely studied for DNNs, but cannot be directly applied to QNNs due to the intrinsic properties of quantum computing. Unlike DNNs composed of neurons connected by weights, QNNs are constructed from qubits and quantum gates, endowed with the properties of superposition and entanglement. The novel structure of quantum circuits renders the neuron- and weight-based mutation operators in DNNs inapplicable. Moreover, the inefficiency and resource overhead of retraining QNNs also prevent a direct adaptation of source-level mutation strategies from DNNs. To accommodate the unique structure of QNNs, we extend the QP-oriented MT techniques and propose two granularities of MOs at the gate and parameter levels. These oper-ators enable a more fine-grained mutation of quantum gates with respect to positional information, parameter values, and control dependencies. Furthermore, we leverage some configurations to impose constraints when applying MOs. Qubit range (which qubits can be mutated) and depth range (the gate sequence length along the qubits) 
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026.
+
+FSE128:8 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+Table 1. Common quantum gates used in QNNs 
+
+Criteria Type Name Gate Function Controlled CX, CZ, CNOT, CRX, CRY, CRZ, ControlledPhaseShift Hadamard Hadamard Pauli PauliX, PauliY, PauliZ, CX, CZ Phase PhaseShift, ControlledPhaseShift Rotation RX, RY, RZ, Rot, U3, CRX, CRZ, CRY Swap SWAP, CSWAP Gate Size Single Hadamard, PauliX, PauliY, PauliZ, PhaseShift, RX, RY, RZ, Rot, U3 Two CX, CZ, CNOT, SWAP, CRX, CRY, CRZ, ControlledPhaseShift Multi CSWAP RX( 0.125 )      
+
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RZ( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> (a) Random Gate Addition
+> XRX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RZ( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> (b) Random Gate Deletion
+> RX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RY( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> (c) Gate Replacement
+> RX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RY( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> (d) Gate Position Modification
+> RX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RY( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> (e) Gate Size Modification (f) Gate Re -targeting
+> RX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RY( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> (h) Parameter Sign Flip (i) Parameter Switch
+> RX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( −0.142 )
+> RZ( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> RX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RZ( 0.472 )
+> RZ( 0.102 )
+> RZ( 0.103 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.018 )
+> RX( 0.125 )
+> RX( 0.113 )
+> RX( 0.089 )
+> RX( 0.071 )
+> RZ( 0.142 )
+> RY( 0.472 )
+> RZ( 0.018 )
+> RZ( 0.103 +0.039 )
+> RX( 0.009 )
+> RX( 0.018 )
+> RX( 0.193 )
+> RX( 0.102 )
+> (g) Parameter Fuzzing
+
+Gate -level mutation operators 
+
+Parameter -level mutation operators 
+
+Fig. 2. Examples of mutants generated by different mutation operators. 
+
+are utilized to describe a target mutation scope in QNNs, ensuring that mutation occurs solely within this scope. Gate type restricts mutations to specific types of gates as categorized in Table 1, and gate percentage determines the total number of gates to mutate. 
+
+3.2.1 Gate-level mutation operators. Quantum gates, as the fundamental building blocks of quan-tum circuits, enable the construction of QNNs with substantially different functionalities by applying them to different qubits at various positions. Thus, during inference, the misuse of quantum gates can induce noticeable performance degradation, typically manifested as an accuracy drop. Beyond syntactic programming mistakes, gate-level mutations can serve as a proxy for quantum-unique faults in realistic execution, which can disrupt the model behavior. For example, SWAP insertion [ 30 ] may be introduced by hardware connectivity constraints and compilation, and additional gates could be brought by suboptimal decompositions [ 13 ]. To simulate these issues, we propose the following six gate-level mutation operators: 
+
+Random Gate Addition (RGA): This operator adds a fixed number of gates, selected from the specified types, at random positions within the defined mutation scope. For parameterized gates, parameters are randomly generated from a predefined distribution, such as a Gaussian or exponential distribution. Figure 2(a) shows an X gate added to qubit 0 at position 2. 
+
+Random Gate Deletion (RGD): This operator removes a fixed number of gates at random positions within the defined mutation scope. Figure 2(b) shows an example in which a CNOT gate is deleted on qubits (1, 2) at position (2, 1). 
+
+Gate Replacement (GR): Combining the notions of gate equivalence [ 17 , 19 ], this operator replaces a gate with another of the same size and parameter count to preserve the circuit structure 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:9 
+
+and the position of the gate. GR ensures the syntactic validity and circuit structural similarity of the generated mutant, while introducing variations in gate functions. Figure 2(c) shows the RX gate on qubit 1 at position 4 replaced with an RY gate, keeping the rotation parameter unchanged. 
+
+Gate Position Modification (GPM): Since the arrangement of quantum gates can also affect the execution results, this operator shifts a gate to a different location along its assigned qubit, while keeping the applied qubit unchanged. From a model perspective, GPM disrupts the non-commutative structure of QNNs and changes how parameters affect the output. Figure 2(d) shows an RX gate on qubit 3 moved from position 3 to position 1. 
+
+Gate Size Modification (GSM): This operation modifies the size of the original gate by adding or removing the control relations of the qubit. GSM directly affects the structure of QNN entanglement, thereby affecting the entangled features and the overall trainingability of the model [ 6]. Figure 2(e) shows a new CRX gate on qubit 1 at position 3 with an additional control relation of qubit 0. 
+
+Gate Re-targeting (GRT): This operator modifies the target qubit(s) of a quantum gate. Since each qubit encodes distinct features and participates in different entanglement patterns, GRT can disrupt inter-qubit interactions and shift feature extraction behaviors. Figure 2(f) shows a CNOT gate on qubits (1, 2) at position (2, 1) re-targeted to qubits (1, 3), with gate type preserved. 
+
+3.2.2 Parameter-level mutation operators. The parameters of parameterized gates are the only trainable components in a QNN and play a crucial role in feature extraction and the formation of decision boundaries, much like weights in DNNs. Parameter-level mutation simulates optimization issues such as underfitting or overfitting due to suboptimal parameters, which are especially relevant in QNNs that suffer from barren plateaus [ 39 ]. Moreover, it can provide an abstraction of realistic hardware noise, where limited control precision can induce inaccurate gate operations [ 53 ]. To retain the circuit structure while exerting a non-negligible influence on the model behavior, we propose the following three finer-grained parameter-level mutation operators: 
+
+Parameter Fuzzing (PF): This operator perturbs a gate by injecting random noise into its parameter, sampled from predefined distributions such as Gaussian, uniform, or exponential. The injected noise induces deviations in gate operations, impairing feature extraction. The effectiveness of mutants depends on the noise scale. With mild noise, the killability of mutants cannot be ensured, whereas strong noise may result in trivial mutants. Figure 2(g) shows an RZ gate on qubit 3 at position 4 with its parameter perturbed by 0.039. 
+
+Parameter Sign Flip (PSF): This operator flips the parameter sign of the target gate, thereby reversing its functional effect on the qubit. From the perspective of quantum computing, PSF induces a rotation of the quantum state in the opposite direction, which thus differs from the perturbation introduced by PF. In Figure 2(h), the parameter of the RZ gate is flipped to -0.142. 
+
+Parameter Switch (PS): This operator switches the parameters of two gates belonging to the same category, analogous to Neuron Switch [ 38 ] in DNNs. PS perturbs the original non-commutative structure of the QNN, thereby affecting feature transformation. Figure 2(i) shows the parameter switch between an RZ gate on qubits 2 and an RX gate on 3. 
+
+3.3 Mutant generation 
+
+Based on the concepts of mutant evaluation metrics in Section 3.1 and MOs in Section 3.2, in this section, we introduce the Mutant Generation module, which aims to produce effective mutants for future evaluation and analysis. 
+
+Mutant Generator: Given the target QNN model and a preselected MO strategy, this module generates a substantial set of random mutants within the mutation scope defined by related configurations. The generated mutants are subjected to further property analysis, from which the subset of effective mutants will be identified.  
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:10 Minqi Shao, Shangzhou Xia, and Jianjun Zhao
+
+Algorithm 1: Generate Effective Mutants                                                                                                            
+
+> Input: Original model 𝑂 , reference dataset 𝐷 , mutation operator 𝑀𝑂 , max iteration 𝑘 max , number of mutants generated each iteration 𝑖 , search range for gate percentage [𝑙𝑏, 𝑢𝑏 ]
+> Output: Effective mutants 𝑟𝑒𝑠𝑢𝑙𝑡𝑠
+> 1𝑟𝑒𝑠𝑢𝑙𝑡𝑠 ← ∅
+> 2def GenerateEffectMutants( 𝑙𝑏, 𝑢𝑏, 𝑖 ):
+> 3𝑚𝑖𝑑 ← ( 𝑙𝑏 +𝑢𝑏 )/ 2;𝑘 ←0;𝑚𝑢𝑡 _𝑙𝑖𝑠𝑡 ← ∅
+> 4while 𝑘 ≤𝑘 max and 𝑅𝑆𝐸 (𝑚𝑢𝑡 _𝑙𝑖𝑠𝑡, 𝐷 )>𝜏 𝑅𝑆𝐸 // Stability Checker
+> 5do
+> 6𝑘 ←𝑘 +1
+> 7𝑚𝑢𝑡𝑎𝑛𝑡𝑠 ←GenerateMutant (𝑂, 𝑀𝑂, 𝑖, 𝑚𝑖𝑑 )
+> 8𝑚𝑢𝑡 _𝑙𝑖𝑠𝑡 ←𝑚𝑢𝑡 _𝑙𝑖𝑠𝑡 ∪𝑚𝑢𝑡𝑎𝑛𝑡𝑠
+> 9if 𝑅𝑆𝐸 >𝜏 𝑅𝑆𝐸 then
+> 10 𝑢𝑏 ←𝑚𝑖𝑑 ;𝑖 ←1.5×𝑖
+> 11 else
+> 12 𝑚𝑢𝑡 _𝑎𝑐𝑐 _𝑙𝑖𝑠𝑡 ←𝐶𝑎𝑙𝑐𝑢𝑙𝑎𝑡𝑒𝐴𝑐𝑐 (𝑚𝑢𝑡 _𝑙𝑖𝑠𝑡, 𝐷 )
+> 13 𝑜𝑟𝑖 _𝑎𝑐𝑐 _𝑙𝑖𝑠𝑡 ←𝐶𝑜𝑝𝑦 (𝐶𝑎𝑙𝑐𝑢𝑙𝑎𝑡𝑒𝐴𝑐𝑐 (𝑂, 𝐷 ) )
+> 14 if 𝑖𝑠𝑆𝑒𝑡𝐾𝑖𝑙𝑙𝑒𝑑 (𝑜𝑟𝑖 _𝑎𝑐𝑐 _𝑙𝑖𝑠𝑡, 𝑚𝑢𝑡 _𝑎𝑐𝑐 _𝑙𝑖𝑠𝑡 )// whether the config generates killable mutants
+> 15 then
+> 16 𝑢𝑏 ←𝑚𝑖𝑑
+> 17 𝑟𝑒𝑠𝑢𝑙𝑡𝑠 ←𝑟𝑒𝑠𝑢𝑙𝑡𝑠 ∪𝑆𝑒𝑙𝑒𝑐𝑡𝐸 𝑓 𝑓 𝑒𝑐𝑡𝑖𝑣𝑒𝑀𝑢𝑡𝑎𝑛𝑡𝑠 (𝑂, 𝐷, 𝑚𝑢𝑡 _𝑙𝑖𝑠𝑡 )// Mutant Analyzer
+> 18 else
+> 19 𝑙𝑏 ←𝑚𝑖𝑑
+> 20 if [𝑙𝑏, 𝑢𝑏 ]cannot be refined // Search Bound Checker
+> 21 then
+> 22 return 𝑟𝑒𝑠𝑢𝑙𝑡𝑠
+> 23 else
+> 24 return GenerateEffectMutants( 𝑙𝑏, 𝑢𝑏, 𝑖 )
+
+Stability Checker: This module aims to generate a stable collection of mutants using RSE. Since RSE decreases with the number of mutants as in Equation 1, we adopt an iterative generation process during which new random mutants are gradually produced until RSE falls below 𝜏 𝑅𝑆𝐸 or a maximum iteration limit is reached. Once RSE reaches the threshold, the resulting set of mutants is considered stable and used for subsequent analysis and selection. 
+
+Mutant Analyzer: The mutant analyzer selects effective mutants from stable mutants. For each mutant, we perform multiple predictions on the reference data and obtain its accuracy distribution. With the accuracy distribution of the original model as a reference, the killability and nontriviality of the mutant are evaluated based on Equations 2 and 3, respectively. The mutant will be retained only if the two conditions are both satisfied. 
+
+Search Bound Checker: The gate percentage directly affects mutant behaviors as a mutation-strength configuration. A large percentage injects more errors with stronger randomness, resulting in more unstable and trivial mutants, while a small one keeps mutants close to the original model, but increases the risk of unkillable mutants. To balance this trade-off, we employ binary search to automatically adjust the search bounds. The search goal is to approach a configuration that can generate killable mutants while remaining close to a boundary that renders most mutants unkillable. Updates are guided by feedback from the Stability Checker and Mutant Analyzer. In terms of stability, if a stable RSE cannot be achieved within the maximum iterations, the current configuration is aggressive, and the upper bound is reduced to weaken the mutation impact. For the 
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026.
+
+QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:11 
+
+Table 2. Dataset and QNN architectures                                                                
+
+> Dataset Task Target classes QNN Gates Output qubits #gate Acc (%) MNIST Binary classification digits 0 and 1 QCL RX, RZ, CNOT 0, 1 150 100 QCNN PauliX, RX, RY, RZ, U3, CRX, CRZ, CNOT 0, 2 134 100 HCQC RY, CNOT 764 100 DRNN RX, RZ, CRZ 0, 1 120 99.29 Ternary classification digits 0, 1 and 2 QCL -0, 1, 2 150 91.86 digits 4, 5 and 7 QCNN -0, 2, 4 134 90.16 FashionMNIST Binary classification T-shirt and Trouser QCL -0, 1 150 92.50 QCNN -0, 2 134 93.00 HCQC -764 94.25 DRNN -0, 1 120 92.21 Ternary classification T-shirt, Trouser and Pullover QCL -0, 1, 2 150 89.67 Trouser, Pullover and Dress QCNN -0, 2, 4 134 91.50
+
+analyzer, the bounds are reduced if current mutants are killable, promoting a smaller configuration for harder-to-kill mutants; otherwise, they are set to larger values to find a more likely killable configuration. Finally, after updating, the checker determines whether new bounds allow for further generation. If not, the algorithm terminates and returns all effective mutants generated so far. Algorithm 1 presents the recursive mutant generation process. The inputs include the original model 𝑂 , reference data 𝐷 , and a mutation operator 𝑀𝑂 . The search space for the gate percentage is restricted by a lower bound 𝑙𝑏 and an upper bound 𝑢𝑏 . 𝑘 𝑚𝑎𝑥 specifies the maximum iterations for generating stable mutants, and 𝑖 denotes the number of mutants generated in each iteration. Initially, the configuration of the gate percentage is set as the middle point of the search bounds (line 3). In each iteration, 𝑖 new mutants are appended to the mutant set by applying 𝑀𝑂 with the current configuration (lines 7-8). The loop terminates until the RSE is less than 𝜏 𝑅𝑆𝐸 or 𝑘 𝑚𝑎𝑥 is reached (line 4). An RSE above the threshold reflects the instability of the current configuration, and the search range is narrowed to explore a smaller-value one (line 10). Also, due to the current configuration yielding no stable mutants, the number of mutants generated 𝑖 is increased to 1.5 times (line 10) for the next generation iteration to ensure a sufficient number of mutants in the end. If RSE is stable enough, the algorithm proceeds to the analysis phase. Before analyzing individual mutants, to further improve efficiency, it checks whether the current configuration can generate killable mutants by slightly adapting isKilled metric (line 14). Each element in the mutant accuracy list 𝑚𝑢𝑡 _𝑎𝑐𝑐 _𝑙𝑖𝑠𝑡 represents the average accuracy over multiple predictions of a mutant (line 12). The original accuracy is replicated into multiple copies to match the length of the mutant accuracy list (line 13). The 𝑜𝑟𝑖 _𝑎𝑐𝑐 _𝑙𝑖𝑠𝑡 and 𝑚𝑢𝑡 _𝑎𝑐𝑐 _𝑙𝑖𝑠𝑡 are assigned as 𝐴 𝑂 and 𝐴 𝑀 , respectively. If true, the upper bound is updated to the middle point, and effective mutants are selected (lines 16-17). Otherwise, the lower bound is set to a larger value (line 19). The search process terminates when the search bounds can no longer be refined (line 20). Finally, we can obtain a set of effective mutants that cover different configurations of gate percentage. 
+
+4 Evaluation 
+
+We implement QuanForge using PennyLane 0.42 [ 7 ] and Pytorch 2.8 [ 45 ]. All experiments are conducted on systems equipped with Intel Xeon E5-1650 (6 cores, 32GB) and Ubuntu 22.04. To evaluate the effectiveness of QuanForge, we aim to address the following research questions: 
+
+• RQ1 : How effective is QuanForge in assessing the quality of a test suite? 
+
+• RQ2 : How sensitive are different parts of QNNs to mutation operators? 
+
+• RQ3 : What is the impact of mutating different types of quantum gates on the model performance? 
+
+4.1 Target Datasets and Models 
+
+We choose two datasets commonly used in prior QML works for image classification: MNIST and FashionMNIST. The MNIST dataset [ 29 ] contains 70,000 grayscale images of handwritten digits (0–9), each with a resolution of 28 × 28 . The FashionMNIST dataset [ 60 ] has the same format but comprises images from ten categories of clothing items, such as T-shirts and trousers. 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:12 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+To evaluate a more diverse set of QNNs, we select four representative architectures with different block-stacking and hierarchical-structure strategies. 
+
+Quantum Circuit Learning (QCL) [42 ] is a classical–quantum hybrid model designed to approximate nonlinear functions through parameterized quantum circuits. QCL belongs to a block-stacking structure and employs amplitude encoding. 
+
+Quantum Convolutional Neural Network (QCNN) [ 12 ] is inspired by classical CNNs, imple-menting convolution, pooling, and fully connected operations using quantum circuits. It is effective in mitigating the barren plateau problem [ 47 ]. QCNN is hierarchical and employs amplitude encod-ing. 
+
+Hierarchical Circuit Quantum Classifier (HCQC) [ 24 ] is another hierarchical model that reduces the circuit’s degrees of freedom as depth increases, using translationally stacked, invariant ansatz blocks. Here we use the ansatz U_SO4 with amplitude encoding. 
+
+Data Re-uploading Neural Network (DRNN) [46 ] re-uploads data features as rotation angles to multiple qubits, combined with extra trainable parts to form a universal classifier. It addresses the limited expressivity of a single qubit with fewer quantum computational resources. DRNN adopts a block-stacking structure and angle encoding. Considering the time overhead, we adjust the image size of the DRNN to 8 × 8 and configure it with 6 qubits, while the other QNNs are set to 8 qubits and images are downsampled to 16 × 16 .To obtain reliable QNN outputs, we need to estimate the minimum number of measurements 𝑠 to achieve an error bound 𝜖 with a confidence level of 𝛿 . Let 𝑃 𝑖 = {𝑋 (1) 
+
+> 𝑖
+
+, . . . , 𝑋 (𝑠 ) 
+
+> 𝑖
+
+} be the outcomes of 
+
+𝑠 measurements on 𝑖 -th qubit where 𝑋 ( 𝑗 ) 
+
+> 𝑖
+
+is bounded and independent of each other. The average estimate is ˆ𝜇 = 1
+
+> 𝑠
+
+Í𝑠 𝑗 =1 𝑋 ( 𝑗 ) 
+
+> 𝑖
+
+. The precise QNN outputs are defined as the expectation value of measurement results, denoted as 𝜇 . Based on Hoeffding’s inequality, for each qubit, we can obtain 
+
+𝑃𝑟 (| ˆ𝜇 −𝜇 | ≥ 𝜖 ) ≤ 2exp (− 2𝑠𝜖 2). Then the union bound is applied to all qubits and the total probability is bounded by 1 − 𝛿 , producing 2𝑞 exp (− 2𝑠𝜖 2) ≤ 1 − 𝛿 . Finally, we obtain 𝑠 ≥ 12𝜖 2 log ( 2𝑞  
+
+> 1−𝛿
+
+), indicating that measurement times scale logarithmically with the number of output qubits, and a similar cost for QNNs with the same output qubits. Given that 𝑞 is 2 and 3 for binary and ternary classification, respectively, we set 𝑠 = 1000 for a prediction to achieve a 𝜖 of 0.05 and a 𝛿 of 0.95. 
+
+4.2 Metrics 
+
+To provide a quantitative measure of the dataset’s ability to detect injected faults, we adopt mutation score based on statistical killing. To enable a more fine-grained evaluation of test suites, the killing criterion is further refined at the class level [ 38 ]. Better-quality test suites are expected to achieve higher mutation scores as they are more sensitive to the mutated decision boundary of mutants. The mutation score is calculated as follows:         
+
+> 𝑀𝑢𝑡𝑎𝑡𝑖𝑜𝑛𝑆𝑐𝑜𝑟𝑒 =
+> Í𝑚 𝑖 ∈𝑀 𝑒 |𝑘𝑖𝑙𝑙𝑒𝑑𝐶𝑙𝑎𝑠𝑠𝑒𝑠 (𝑇 , 𝑚 𝑖 )| |𝑀 𝑒 | × 𝑐 (4)
+
+where 𝑇 = {𝑇 1, ...,𝑇 𝑐 } denotes the 𝑐 subsets of test data corresponding to the 𝑐 classes, 𝑘𝑖𝑙𝑙𝑒𝑑𝐶𝑙𝑎𝑠𝑠𝑒𝑠 
+
+is the set of killed classes of mutant 𝑚 𝑖 by 𝑇 , and 𝑀 𝑒 is the set of effective mutants. To evaluate the impact of mutating different circuit regions and operator strategies on model performance, we define two metrics: KillabilityRate (KR) and NontrivialityRate (NR), which denote the proportion of killable or nontrivial mutants among all mutants, respectively. Under a fixed test suite 1, a higher KR or a lower NR indicates that a larger proportion of mutants exhibit statistically significant performance deviations from the original model, generally suggesting a stronger muta-tion impact and suboptimal model robustness. The mean accuracies of all effective mutants also  
+
+> 1On the other hand, by using a fixed set of mutants, KR and NR can also be used to assess the quality of test suites. Since the following experiments mainly focus on evaluating the model sensitivity, we keep the test suite fixed and vary the mutants. Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:13
+
+provide additional insight into the sensitivity of different model regions to mutation. Combined with KR and NR, it allows a more comprehensive analysis of mutation effects. 
+
+4.3 Test Data Preparation and Mutant Generation 
+
+4.3.1 Test Data of Varying Quality. To evaluate the effectiveness of QuanForge in measuring test adequacy, we construct suites with varying quality. As a reference, the original suite, denoted as 
+
+Ori , contains 100 random inputs per class. To focus on deviations introduced by mutations rather than on those inherent to the original model itself, as in [ 38 ], these samples are correctly classified by the original QNN, thereby improving the interpretability of mutation testing. We then categorize these suites into two groups. Strong suites introduce more challenging inputs, including (1) LConf ,low-confidence inputs close to the decision boundary [ 23 , 25 ], (2) OOD , out-of-distribution inputs drawn from unseen classes during training [ 9 ], (3) Aug , augmented inputs via affine transformations, random cropping, brightness adjustment, blurring, sharpening and additive Gaussian and salt-and-pepper noise and (4) Adv , adversarial inputs produced by quantum FGSM algorithm 2 [ 37 ]. Similar to Ori, we select inputs that remain correctly classified by the original model, i.e., the attack fails. For OOD and Adv, half of the original inputs are replaced with abnormal ones. These suites contain naturally or artificially hard-to-classify patterns and are thus more likely to trigger misbehaviors of mutants. In contrast, weak suites exhibit limited or biased distributions, including (1) HConf ,high-confidence inputs far from the decision boundary, (2) Skewed , class-imbalanced inputs with ratios of 10:1 for binary tasks and 10:1:1 for ternary tasks, and (3) Small , a half-size suite. Except for Small, all suites have the same size as Ori. 
+
+4.3.2 Configuration and Threshold Settings. In the mutant generation algorithm, the gate per-centage is dynamically adjusted during search. The initial bounds for the binary search are set as 
+
+𝑙𝑏 = 0, 𝑢𝑏 = 0.5 since overly aggressive upper bounds like 1 will introduce a drastic impact and cause many trivial mutants during the initial search. 𝑘 𝑚𝑎𝑥 and 𝑖 are set as 10. For the mutation scope, the qubit range is set to include all qubits, and the depth range is set to [0%, 100%] , meaning that mutations can occur across the entire circuit by default. For thresholds, 𝜏 𝑅𝑆𝐸 is 0.05 following [ 28 ], and 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙 is 75% following [ 38 ] to filter out mutants whose performance degrade significantly. The effects of threshold configurations are discussed in Section 4.7.2. Finally, for the PF mutation operator, noise 𝑥 is sampled from a Gaussian distribution N with a mean of 0 and a variance of 1. 
+
+4.4 RQ1: Effectiveness in Assessing Test Data Quality 
+
+Test data are essential for evaluating model performance and improving robustness, ultimately determining the generalizability and reliability of neural networks in real-world applications. High-quality test suites are typically more diverse and more likely to expose model imperfections. Since mutation operators introduce faults that alter the decision boundary, inputs near the original boundary are particularly sensitive and prone to revealing faults. Consequently, high-quality test suites are expected to achieve higher mutation scores. To validate this hypothesis, we employ the eight test suites constructed in Section 4.3.1 to evaluate the effectiveness of QuanForge in assessing data quality. Specifically, we generate effective mutants using different MOs, and compute the average mutation scores across all MOs for all suites, respectively. The experimental results in Table 3 show several observations. (1) Taking the original suite as the baseline, all strong suites have consistently achieved higher mutation scores while weak suites have lower scores, which aligns with expectations. Strong suites are more sensitive to the shifts of the decision boundary brought by mutations, therefore equipped with a strong ability to kill mutants. The opposite holds for the weak suites. (2) Within the weak suites, HConf suites 
+
+> 2We estimate gradients using NES [57] for gradient-based attacks under finite shots. The step is configured as 50. Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026.
+
+FSE128:14 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+Table 3. Average mutation scores over all MOs obtained from the original, strong, and weak test suites. Underline and Bold indicate the lowest and highest scores for a QNN among all suites, respectively.                                                                                                           
+
+> Dataset QNN Ori Weak Group Strong Group HConf Skewed Small LConf OOD Aug Adv MNIST QCL 0.7592 0.5523 0.6958 0.6656 0.8369 0.8474 0.8921 0.8469 QCNN 0.7327 0.4857 0.6292 0.6433 0.7816 0.7938 0.8419 0.7675 HCQC 0.6523 0.3081 0.5101 0.5491 0.7435 0.7786 0.7714 0.7612 DRNN 0.6251 0.4506 0.5905 0.5536 0.7016 0.7654 0.6953 0.8249
+> QCL-ternary 0.6123 0.5226 0.5782 0.5859 0.6595 0.6835 0.6775 0.6714 QCNN-ternary 0.7425 0.4658 0.6535 0.6633 0.7618 0.7739 0.7614 0.7158 FashionMNIST QCL 0.6445 0.3999 0.5655 0.5657 0.6574 0.7049 0.6805 0.7185
+> QCNN 0.5879 0.3070 0.5362 0.5848 0.6221 0.6810 0.6418 0.6551 HCQC 0.6469 0.3008 0.6159 0.6211 0.6960 0.6243 0.7009 0.6613 DRNN 0.6321 0.3531 0.5534 0.5839 0.6602 0.7404 0.6893 0.7789
+> QCL-ternary 0.5587 0.3490 0.4926 0.5094 0.5931 0.6073 0.6009 0.6084
+> QCNN-ternary 0.5124 0.3054 0.4541 0.4786 0.5647 0.5024 0.5648 0.5745
+
+attain the lowest scores, despite their more uniform distributions than Skewed ones and larger scales than Small ones. This is attributed to the fact that Skewed and Small suites still contain some samples near the boundary that possess the potential to kill mutants, whereas HConf is constructed by filtering for highly confident predictions, which are less sensitive to decision boundaries. (3) 
+
+Among the strong suites, LConf suites yield slightly lower scores than the other three suites in many cases. This is intuitive since LConf samples are naturally located far from the boundary, while the other suites are artificially strengthened by injected noise or crafted perturbations. Overall, results indicate a positive correlation between test suite quality and mutation score across all operators and models, demonstrating the effectiveness of QuanForge in distinguishing the quality of test data. To improve the quality of test suites and expose more model misbehaviors, developers can include more inputs near the decision boundary. In practice, these samples could be collected either naturally, e.g., ambiguous samples with low-confidence predictions, or artificially, e.g., by injecting lightweight noise or adversarial perturbations. Moreover, since the strong suite that achieves the highest score can vary across different QNNs, it may be beneficial to prioritize suites with higher scores. Also, for model security, the mutation-based approach shows promise for detecting adversarial and backdoor samples [52] which tend to locate abnormally. 
+
+Answer to RQ1: QuanForge is effective in evaluating the quality of the test data. Test suites with higher quality and diversity consistently achieve higher mutation scores. 
+
+4.5 RQ2: Sensitivity of Different Regions in QNNs to Mutation 
+
+In addition to measuring test quality, mutation testing can also probe internal model behaviors by targeting specific regions of the network [ 48 ]. Inspired by this, here we investigate whether QuanForge can serve a similar role in analyzing quantum circuits and assessing structural robustness. Specifically, we vary the scope, depth, and qubit ranges of the mutation to systematically scan different parts of the circuit. This enables a fine-grained analysis of how mutations at various depths or on different qubits affect QNN performance. We report the mean accuracy of all effective mutants, KillabilityRate, and NontrivialityRate. As mentioned before, after mutating different parts, we adopt the same test suite to compute metrics, with focus on differences in model robustness. Generally, a higher KR or a lower NR indicates that more killable or trivial mutants are generated and thus the model is less robust to the target region. For presentation, we categorize MOs as Add, Delete, Replace, Modify (gate), and Modify (param), where Modify (gate) denotes the average 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:15 
+
+(a) Effect of mutating different circuit depths on performance. 
+
+(b) Effect of mutating different qubits on performance. 
+
+Fig. 3. Mean accuracy of effective mutants generated over different circuit regions (MNIST). Table 4. KillabilityRate and NontrivialityRate of mutants at different depths (MNIST).                                                                                                  
+
+> operator depth range QCL QCNN HCQC DRNN KR (%) NR (%) KR (%) NR (%) KR (%) NR (%) KR (%) NR (%) Add 0%-50% 86.61 42.56 76.80 53.50 74.54 80.33 98.90 51.63 50%-100% 85.71 71.55 79.63 62.38 65.44 81.84 93.72 64.29 Delete 0%-50% 90.75 51.50 92.48 45.68 86.64 50.36 98.20 59.88 50%-100% 90.50 53.50 78.88 63.97 75.90 58.54 85.45 70.72 Replace 0%-50% 86.15 41.15 85.79 45.35 79.02 53.38 89.11 50.02 50%-100% 70.48 68.47 93.57 63.51 84.62 56.70 89.06 66.56 Modify (gate) 0%-50% 91.26 39.41 90.57 45.07 84.46 56.30 97.82 48.64 50%-100% 84.37 43.26 88.23 49.77 87.58 57.58 97.27 70.36 Modify (param) 0%-50% 91.96 46.31 89.62 47.38 84.57 60.11 97.75 69.16 50%-100% 86.03 63.53 92.26 61.78 81.27 62.16 97.50 69.18
+
+results of all gate-level modification operators (i.e., GPM, GSM, and GRT) and Modify (param) denotes the average results of all parameter-level operators. 
+
+4.5.1 RQ2.1. Mutation at Different Circuit Depths. The mean accuracies on MNIST are shown in Figure 3(a). By varying the depth range on the same QNN, we observe that mutations introduced at shallow depths (0–50%) tend to produce greater performance degradation compared to deeper ones (75–100%), as indicated by the lower accuracies at shallow depths in general. For example, on QCL with RGA operator, shallow mutation at 0–25% reduces accuracy to 90.25% (a 9.75% drop), whereas deep mutation at 75–100% causes only a 3.18% drop. As shown in Table 4, shallow-depth mutations achieve higher KRs and lower NRs, meaning that more killable or trivial mutants are generated and thus have a greater impact on the model performance. This observation is consistent with previous findings in DNNs [ 48 ], where shallow layers are crucial for early feature extraction. In QNNs, shallow-depth gates similarly extract coarse-grained features and establish early quantum correlations. As the circuit deepens, additional transformations build on this foundation, propagating information through more complex interactions. Thus, early mutations are amplified through the circuit, whereas deep mutations exert more localized effects. 
+
+4.5.2 RQ2.2. Mutation at Different Qubits. In current QNN designs, model outputs are typically defined by the expectation values measured on specific qubits. It is intuitive to consider that mutating these output qubits might have a more direct and significant impact on model behavior, 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:16 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+Table 5. KillabilityRate and NontrivialityRate of mutants targeting at output and non-output qubits (MNIST).                                                                                                  
+
+> operator qubit range QCL QCNN HCQC DRNN KR (%) NR (%) KR (%) NR (%) KR (%) NR (%) KR (%) NR (%) Add output 89.27 40.98 76.86 50.98 69.61 66.67 94.29 52.65 non-output 85.79 44.21 57.00 59.40 58.18 85.16 91.67 65.83 Delete output 92.96 41.85 96.36 42.95 80.88 45.96 94.34 43.68 non-output 96.67 34.33 82.97 45.13 84.81 62.22 86.00 100 Replace output 82.75 40.75 92.18 49.38 57.33 64.67 97.55 40.41 non-output 78.95 54.79 87.20 48.40 53.33 82.08 90.56 91.11 Modify (gate) output 86.50 37.00 91.79 48.93 79.63 41.09 96.91 41.27 non-output 93.75 32.75 92.55 35.74 79.11 72.05 95.78 100 Modify (param) output 89.41 52.56 92.22 54.07 68.57 73.93 98.89 58.52 non-output 93.64 56.00 93.22 50.32 88.25 76.00 100 100
+
+Fig. 4. Accuracy distribution of mutants generated by MNIST and RGA operator at different depths. 
+
+causing mutants more likely to deviate from the original model. To investigate this, we consider two settings for qubit range, i.e., qubits used as QNN outputs (e.g., qubits 0 and 1 for a binary task) and an equally sized random subset selected from the remaining qubits (e.g., qubits 2 and 5). The depth range is fixed to [0%, 100%] here. Results of mean accuracies and two rates are shown in Figure 3(b) and Table 5, respectively. The experimental results indicate that the sensitivity to output-qubit mutations depends on specific circuit structures. For QCL and QCNN, the effect of such mutations varies across operators without a consistent pattern. In some cases, mutations on non-output qubits cause even greater degradation (e.g., QCL with RGD). In contrast, HCQC and DRNN are more sensitive to output-qubit mutations, resulting in lower mutant accuracy for most operators. This trend is also reflected in NRs. For instance, on DRNN with Delete, output-qubit mutations yield a NR of 43.68% compared to that of 100% for non-output mutations, indicating that output-qubit changes disturb the decision boundary more easily and generate more trivial mutants. The difference arises mainly from the circuit scale and encoding methods. HCQC adopts a small-scale circuit with a single output qubit (see Table 2), where limited entanglement concentrates information on the output qubit, amplifying mutation effects. The sensitivity of DRNN comes from angle encoding. It maps each input feature to qubit rotations with a constant circuit depth [ 56 ], so output-qubit mutations directly distort encoded states. In contrast, amplitude encoding (used in QCL and QCNN) distributes features globally across 2𝑛 basis states through an exponentially deep circuit [ 24 ], making few-qubit mutations less impactful. Their deeper, highly entangled circuits also spread local perturbations across qubits, narrowing the gap between output- and non-output-qubit mutations. 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:17 
+
+Table 6. Evaluation results of mutants targeted at different gate types. Acc, KR, and NR denote mean accuracy, KillabilityRate, and NontrivialityRate, respectively. ’N/A’ denotes the cases where this type of gate does not exist, or the MO does not apply to the gates in the given QNN. Underline indicates the highest sensitivity across different gate types for a specific QNN and operator.                                                                                                                                                                                                                                         
+
+> operator gate type QCL QCNN HCQC DRNN Acc KR NR Acc KR NR Acc KR NR Acc KR NR Add Controlled 88.17 89.63 46.67 92.73 91.11 52.59 94.67 95.76 67.88 94.92 95.00 59.17 Hadamard 88.58 94.86 45.14 90.8 89.75 63.16 90.09 77.29 54.17 94.03 98.00 42.25 Pauli 91.68 88.89 36.19 92.44 82.41 61.35 95.63 58.52 82.96 94.63 96.82 47.05 Phase 99.95 26.00 100 94.01 94.14 68.97 95.87 84.14 81.38 99.81 85.00 100 Rotation 97.72 93.68 61.58 93.78 90.00 61.03 96.19 85.00 75.29 99.68 76.00 100 Swap 89.77 92.08 37.92 92.20 95.81 41.61 94.88 89.42 51.15 91.56 95.88 47.35 Delete Controlled 91.14 100 35.42 91.45 97.39 46.21 97.00 94.19 60.00 94.74 95.56 70.31 Pauli N/A N/A N/A 87.87 50.95 70.95 N/A N/A N/A N/A N/A N/A Rotation 94.45 94.41 40.88 94.63 83.57 48.81 94.13 85.34 64.65 93.21 95.71 64.76 Replace Controlled 88.57 87.33 55.33 92.40 84.87 51.15 93.53 75.28 58.82 93.44 96.67 57.04 Pauli N/A N/A N/A 97.71 65.00 87.31 N/A N/A N/A N/A N/A N/A Rotation 92.45 74.17 49.79 92.49 84.70 51.18 93.67 78.82 59.17 92.97 96.51 51.86 Modify (gate) Controlled 89.09 99.43 24.00 92.47 91.45 39.64 94.92 93.32 59.60 94.16 94.61 59.23 Pauli N/A N/A N/A 93.08 86.15 46.03 N/A N/A N/A N/A N/A N/A Rotation 91.59 82.17 44.35 93.47 84.03 48.38 95.31 77.36 62.60 93.64 96.17 50.00 Modify (param) Controlled N/A N/A N/A 97.85 64.69 89.07 N/A N/A N/A 97.41 96.67 95.56 Pauli N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A Rotation 93.20 95.20 57.20 94.38 92.98 64.46 93.80 82.80 61.00 94.78 100 83.89
+
+After identifying the sensitive regions, we further examine what kinds of errors are induced by mutations by collecting per-class accuracies of all mutants. Figure 4 indicates that shallow-depth mutants exhibit more severe accuracy degradation on class 0, suggesting an output bias towards class 1. The bias still exists, but is less pronounced for deep-depth mutants. Generally, these findings suggest that QuanForge can be used not only for testing data quality but also for analyzing model internals. Vulnerable regions identified by specified-region mutation could inform future model development and enhancement. Other techniques in classical models, including fault localization [ 18 ], weight ranking [ 58 ], and performance recovery [ 50 ], could also be extended to quantum circuits in future research. From a quantum-specific perspective, the ansatz architecture design (e.g., more trainable gates) within these regions can be refined to investigate their correlation with model expressivity [15] and generalization [61]. 
+
+Answer to RQ2: Mutations at shallow depths have a greater impact on QNN performance, as early-stage gates extract foundational features whose perturbations propagate and amplify through the circuit. The sensitivity of QNNs to qubit-level mutations is affected by the specific circuit scale, encoding schema and entanglement complexity. 
+
+4.6 RQ3: Impact of Mutating Different Quantum Gates on Model Performance 
+
+Quantum gates differ in their functional roles. Some gates, such as Hadamard and controlled gates, have strong, rigid effects that significantly alter entanglement or transform basis states. Others, like phase gates, apply more subtle modifications. To analyze how gate types influence model behavior under mutation, we configure the parameter gate type for each mutation operator and perform controlled mutations. Note that the Add operator can insert gates of any specified type, while other operators can only mutate gates already present in the circuit. For Delete, Replace, and Modify operators, we reduce the initial 𝑢𝑏 of the search algorithm to ensure that the number of target gates remains comparable in early-stage mutants under different gate types. This is because QNNs usually contain an imbalanced distribution of different gate types, with rotation gates typically occupying a larger proportion. Hence, mutants could disproportionally involve rotation gates under 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:18 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+Table 7. Comparison between MOs in the capability of generating killable and nontrivial mutants (MNIST). On each QNN, bold indicates the highest KillabilityRate or NontrivialityRate across all MOs.                                                                                        
+
+> type name QCL QCNN HCQC DRNN KR (%) NR (%) KR (%) NR (%) KR (%) NR (%) KR (%) NR (%) Add RGA 83.49 47.44 69.39 56.12 68.95 68.68 90.95 54.05 Delete RGD 94.32 41.35 94.38 45.83 84.20 53.40 96.18 52.56 Replace GR 87.11 41.84 85.85 51.22 76.04 55.81 88.79 53.33 Modify (gate) GPM 96.94 37.50 87.41 46.29 80.82 53.15 91.89 45.68 GSM 91.84 48.42 87.41 46.30 87.14 55.71 97.84 41.35 GRT 91.05 44.47 92.29 36.25 86.44 53.56 92.55 42.34 Modify (param) PF 98.75 53.75 93.92 61.79 81.75 61.75 98.82 71.18
+> PSF 91.74 41.96 83.58 50.75 80.00 64.47 98.92 46.22 PS 84.20 46.80 91.14 37.14 89.47 51.84 99.05 42.86
+
+the same configuration compared to other types, leading to unfair comparison. Also, similar to RQ2, we use the same test suite to compute metrics for the same QNN and MO. The results in Table 6 show that different gate types have markedly different impacts on model performance, depending on both the gate category and the operator applied. For the Add operator, adding Hadamard and SWAP gates tends to cause the most significant performance degradation, in general, indicated by lower mean accuracies, higher KRs, and lower NRs. To explain this, the Hadamard gate transforms a basis state into a superposition state, introducing abrupt entanglement. The SWAP gate, which exchanges the states of two qubits, also ranks high in terms of impact. In contrast, phase and rotation gates have relatively mild effects. The limited impact of rotation gates is partially attributed to the inherent robustness of quantum circuits to noise [ 11 ], while phase gates modify the relative phase of a state but do not affect its amplitude, which is less tied to the measurement results. For operators that delete or modify existing gates, amplitude-encoding QNNs tend to be more sensitive to controlled gates. This behavior is primarily due to the entangling nature of these gates. Altering or removing them disrupts multi-qubit correlations, which are essential to the QNN’s ability to encode and process information. Since these correlations are distributed non-locally, such mutations often induce significant changes in model behavior. A special case is QCNN with Modify (gate) operators, where QCNN is more sensitive to rotation gates. This is because rotation gates in QCNN are implemented as U3 gates, whose all 3 parameters are subject to mutation, thus causing a stronger impact on the model. Angle-encoding DRNN is also sensitive to rotation gates. In DRNN, these gates serve as both feature encoders and extractors, playing a more dominant role in the circuit. Moreover, DRNN adopts the CRZ gate as a controlled operation, which, according to our categorization, also belongs to the rotation type. The observed sensitivity to different quantum gates also provides practical implications for circuit design. Developers could adjust the positions and counts of specific gate types and assess their relationships with model properties, including expressivity, trainability, and robustness. 
+
+Answer to RQ3: For the Add operator, the Hadamard and SWAP gates cause the most significant performance degradation due to their strong, non-local transformations. In contrast, phase and rotation gates have milder effects. For the Delete and Modify operators, controlled gates have a high impact because they disrupt entanglement and non-local correlations. 
+
+4.7 Discussion 
+
+4.7.1 Performance of different operators in generating effective mutants. Mutation operators affect QNNs through heterogeneous faults, introducing noisy transformations, loss of entanglement, 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:19 
+
+Table 8. Effective mutants, mutation scores, and region sensitivity under different 𝜏 𝑅𝑆𝐸 and 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙 .                                                                                               
+
+> Parameter configurations # Effective mutants number Mutation score KR (%) NR (%) Acc (%) Ori HConf LConf Aug depth 0-25% depth 75-100% depth 0-25% depth 75-100% depth 0-25% depth 75-100% MNIST and QCL
+> 𝜏 𝑅𝑆𝐸
+> 1% 0----------3% 97 0.5795 0.3636 0.7841 0.8295 50.80 50.83 80.81 90.83 90.97 94.26 5% 75 0.7312 0.3855 0.8067 0.8667 80.69 79.56 38.60 85.21 89.99 95.87 10% 23 0.6739 0.5000 0.7174 0.7826 89.33 88.41 43.33 56.89 89.98 93.15 FashionMNIST and QCL
+> 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙
+> 60% 111 0.7388 0.5991 0.7982 0.7928 64.06 63.10 62.19 87.24 78.61 90.91 75% 81 0.5274 0.3642 0.5432 0.6111 70.93 70.63 46.56 75.59 88.49 92.40 90% 42 0.6667 0.2500 0.6547 0.7381 72.50 68.00 40.94 59.14 95.12 97.13 95% 23 0.6074 0.2174 0.7174 0.6521 74.19 61.84 38.06 61.32 95.95 97.23
+
+Table 9. Mutation scores of different test suites for MNIST and noisy HCQC_TTN.                                                  
+
+> operator Ori Weak group Strong group HConf Skewed Small LConf OOD Aug Adv Add 0.7701 0.3834 0.5822 0.7123 0.9112 0.7923 0.7922 0.9403
+> Delete 0.6046 0.1792 0.5633 0.5384 0.8823 0.7564 0.8412 0.8974
+> Replace 0.5534 0.1292 0.5323 0.5104 0.6681 0.8428 0.8292 0.9514
+> Modify (gate) 0.7153 0.2500 0.6633 0.5400 0.8533 0.7833 0.8567 0.9486
+> Modify (param) 0.5371 0.1736 0.5914 0.5593 0.7272 0.7650 0.7657 0.8550
+
+and changes in transformation flow. As a result, their influence on model performance differs. Aggressive operators are more likely to generate trivial mutants with lower NRs, while moderate ones tend to produce more unkillable mutants with lower KRs. Here, we investigate the generation capabilities of different operators under the same settings as in RQ1. The KRs and NRs of different operators are reported in Table 7. We observe that the Add operator is relatively mild in mutation strength. It generally exhibits a lower KR and a higher NR. This finding is consistent with a previous study [ 51 ]. Currently, QuanForge adopts a single MO per mutant. Based on the performance of MOs, future work can explore combinations of different MOs to produce mutants with greater complexity and diversity. Moreover, a prioritization strategy for MOs could be developed to improve the generation efficiency of effective mutants, e.g., reducing the weight of MOs that tend to produce trivial mutants. 
+
+4.7.2 Sensitivity to parameter choice. The choices of 𝜏 𝑅𝑆𝐸 and 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙 directly determine how strictly QuanForge enforces mutant stability and accuracy. To conduct a sensitivity analysis by varying the two thresholds across multiple configurations, respectively, we repeat the experiments in RQ1 and RQ2.1 and report the corresponding metrics. As in Table 8, under a smaller 𝜏 𝑅𝑆𝐸 , more effective mutants are generated since it imposes a stricter stability threshold, which requires accumulating more mutants for a smaller RSE. Note that, for some extreme settings such as 1%, sufficiently stable mutants may even become unavailable under the given budget. On the other hand, a larger 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙 imposes a higher accuracy constraint, i.e., mutants should remain closer to the original model’s performance, thereby reducing the number of effective mutants. Despite quantitative changes in the metrics, the main findings remain consistent with the original experiments across configurations. Strong suites still achieve higher scores than the weak ones. Also, shallow-depth mutations manifest higher KRs, lower NRs, and lower accuracies than deep-depth ones. To ensure a sufficient yield of effective mutants, we recommend avoiding overly strict settings like very small 𝜏 𝑅𝑆𝐸 or very large 𝜏 𝑡𝑟𝑖𝑣𝑖𝑎𝑙 .
+
+4.7.3 Evaluation on noisy models. Real quantum systems suffer from unwanted interactions with the outside world, appearing as noise that can distort quantum evolution and degrade execution fidelity [ 43 ]. The existence of quantum noise inevitably introduces perturbations into QNN outputs, 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:20 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+thereby impairing the accuracy of mutation testing. To assess the robustness and effectiveness of QuanForge under noisy conditions, we evaluate it against several representative noise channels on the default.mixed simulator of PennyLane, including depolarizing, bit flip, phase flip, phase damping, amplitude damping, crosstalk, drift, and thermal relaxation, with reference to APIs [ 4] or noise models [ 2]. They are inserted at random positions with a probability of 1% to approximate real hardware conditions, and detailed parameters are selected referring to Qiskit documents [ 1 , 3 ]. To alleviate computational overhead, we train a smaller-scale HCQC using the ansatz U_TTN. All other algorithmic and mutation operator settings are consistent with RQ1. The results in Table 9 show that, compared to the original suites, strong suites have still achieved higher scores than weak ones under all operators. Under all operators, HConf and Adv suites yield the lowest and highest scores, respectively. This illustrates the effectiveness of QuanForge in distinguishing the quality of test suites under noisy quantum conditions. 
+
+4.8 Threats to Validity 
+
+External Validity. Experiments are conducted on a limited set of datasets and QNN architectures. Additional architectures and larger-scale circuits could be explored to improve generalizability and scalability. Additionally, the simulated noise may differ from noise on real quantum hardware, which is device-specific and unpredictable. The parameter selections for different channels constitute another threat, which is alleviated by referring to examples used in open-source implementations. 
+
+Internal Validity. We employ GLM and Cohen’s 𝑑 to judge the mutation killing, which is commonly used in mutation testing for neural networks [ 23 , 25 ]. Adversarial examples are generated using NES-based black-box gradient estimation. Alternative gradient estimators may lead to different perturbations. Redundant or equivalent mutants are not explicitly excluded. To mitigate this risk, we generate mutants by applying the same operator to different gate positions, thereby increasing structural diversity. Randomness in gate selection, input sampling, noise injection, and model training may introduce variability, which we mitigate by running repeated experiments and using fixed random seeds. 
+
+5 Conclusion 
+
+In this paper, we proposed QuanForge, a post-training mutation testing technique tailored for QNNs, to support the evaluation of both test data quality and model structural sensitivity. By introducing multi-granularity mutation operators, diverse faults are injected into parameterized quantum circuits, simulating both logical and physically realistic errors. Combined with statistical mutation killing, QuanForge utilizes stability checking and effectiveness analysis to ensure the mutant quality. It addresses the challenges posed by randomness in operator application and quantum measurement. Extensive experiments demonstrated the effectiveness of QuanForge in assessing the test data quality and revealing fragile regions in QNNs. We further analyzed the sensitivity to various gate types and the generation capability of different operators, which guide future mutation design. To approach more realistic quantum execution, the effectiveness of QuanForge was finally evaluated against multiple simulated noise. 
+
+Data Availability 
+
+Our framework is publicly available at https://github.com/MinqiShao/QuanForge. 
+
+Acknowledgments 
+
+This work was supported by JST SPRING Grant No. JPMJSP2136, JST BOOST Grant No. JPMJBS2406, and JSPS KAKENHI Grants No. JP26K02892 and No. JP24K14908. 
+
+> Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026.
+
+QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:21 
+
+References 
+
+[1] 2024. IBM: Quantum noise and error mitigation . https://quantum.cloud.ibm.com/learning/en/courses/utility-scale-quantum-computing/error-mitigation [2] 2025. Implementations of quantum noise . https://github.com/KangHaiYue/partial-QEC-QVC [3] 2026. IBM: Build noise models . https://quantum.cloud.ibm.com/docs/en/guides/build-noise-models [4] 2026. PennyLane: NoiseModel . https://docs.pennylane.ai/en/stable/code/api/pennylane.NoiseModel.html [5] Shaukat Ali, Paolo Arcaini, Xinyi Wang, and Tao Yue. 2021. Assessing the effectiveness of input and output coverage criteria for testing quantum programs. In 2021 14th IEEE Conference on Software Testing, Verification and Validation (ICST) . IEEE, 13–23. [6] Utkarsh Azad and Animesh Sinha. 2023. qLEET: visualizing loss landscapes, expressibility, entangling power and training trajectories for parameterized quantum circuits. Quantum Inf. Process. 22, 6 (2023), 256. https://doi.org/10. 1007/S11128-023-03998-Z [7] Ville Bergholm, Josh A. Izaac, Maria Schuld, Christian Gogolin, and Nathan Killoran. 2018. PennyLane: Automatic differentiation of hybrid quantum-classical computations. CoRR abs/1811.04968 (2018). arXiv:1811.04968 http: //arxiv.org/abs/1811.04968 [8] Jacob D. Biamonte, Peter Wittek, Nicola Pancotti, Patrick Rebentrost, Nathan Wiebe, and Seth Lloyd. 2017. Quantum machine learning. Nat. 549, 7671 (2017), 195–202. https://doi.org/10.1038/NATURE23474 [9] Gilles Blanchard, Gyemin Lee, and Clayton Scott. 2011. Generalizing from Several Related Classification Tasks to a New Unlabeled Sample. In Advances in Neural Information Processing Systems 24: 25th Annual Conference on Neural Information Processing Systems 2011. Proceedings of a meeting held 12-14 December 2011, Granada, Spain , John Shawe-Taylor, Richard S. Zemel, Peter L. Bartlett, Fernando C. N. Pereira, and Kilian Q. Weinberger (Eds.). 2178–2186. https://proceedings.neurips.cc/paper/2011/hash/b571ecea16a9824023ee1af16897a582-Abstract.html [10] Marco Cerezo, Guillaume Verdon, Hsin-Yuan Huang, Lukasz Cincio, and Patrick J. Coles. 2022. Challenges and opportunities in quantum machine learning. Nat. Comput. Sci. 2, 9 (2022), 567–576. https://doi.org/10.1038/S43588-022-00311-3 [11] Jeremy Cohen, Elan Rosenfeld, and J. Zico Kolter. 2019. Certified Adversarial Robustness via Randomized Smoothing. In Proceedings of the 36th International Conference on Machine Learning, ICML 2019, 9-15 June 2019, Long Beach, California, USA (Proceedings of Machine Learning Research) , Kamalika Chaudhuri and Ruslan Salakhutdinov (Eds.). PMLR, 1310–1320. http://proceedings.mlr.press/v97/cohen19c.html [12] Iris Cong, Soonwon Choi, and Mikhail D. Lukin. 2018. Quantum convolutional neural networks. Nature Physics 15 (2018), 1273 – 1278. [13] Evandro Chagas Ribeiro da Rosa, Eduardo Inacio Duzzioni, and Rafael de Santiago. 2025. Optimizing Gate Decomposi-tion for High-Level Quantum Programming. Quantum 9 (2025), 1659. https://doi.org/10.22331/Q-2025-03-12-1659 [14] Pierre-Luc Dallaire-Demers and Nathan Killoran. 2018. Quantum generative adversarial networks. CoRR abs/1804.08641 (2018). arXiv:1804.08641 http://arxiv.org/abs/1804.08641 [15] Yuxuan Du, Zhuozhuo Tu, Xiao Yuan, and Dacheng Tao. 2022. Efficient measure for the expressivity of variational quantum algorithms. Physical Review Letters 128, 8 (2022), 080506. [16] Daniel Fortunato, José Campos, and Rui Abreu. 2022. Mutation testing of quantum programs: A case study with Qiskit. 
+
+IEEE Transactions on Quantum Engineering 3 (2022), 1–17. [17] Daniel Fortunato, José Campos, and Rui Abreu. 2022. QMutPy: a mutation testing tool for Quantum algorithms and applications in Qiskit. In ISSTA ’22: 31st ACM SIGSOFT International Symposium on Software Testing and Analysis, Virtual Event, South Korea, July 18 - 22, 2022 , Sukyoung Ryu and Yannis Smaragdakis (Eds.). ACM, 797–800. https: //doi.org/10.1145/3533767.3543296 [18] Ali Ghanbari, Deepak-George Thomas, Muhammad Arbab Arshad, and Hridesh Rajan. 2023. Mutation-based Fault Localization of Deep Neural Networks. In 38th IEEE/ACM International Conference on Automated Software Engineering, ASE 2023, Luxembourg, September 11-15, 2023 . IEEE, 1301–1313. https://doi.org/10.1109/ASE56229.2023.00171 [19] Sinhué García Gil, Luis Llana Díaz, and José Ignacio Requeno Jarabo. 2024. QCRMut: Quantum Circuit Random Mutant generator tool. CoRR abs/2410.01415 (2024). https://doi.org/10.48550/ARXIV.2410.01415 arXiv:2410.01415 [20] Maxwell Henderson, Samriddhi Shakya, Shashindra Pradhan, and Tristan Cook. 2020. Quanvolutional neural networks: powering image recognition with quantum circuits. Quantum Mach. Intell. 2, 1 (2020), 1–9. https://doi.org/10.1007/ S42484-020-00012-Y [21] Wassily Hoeffding. 1963. Probability inequalities for sums of bounded random variables. Journal of the American statistical association 58, 301 (1963), 13–30. [22] Shahin Honarvar, Mohammad Reza Mousavi, and Rajagopal Nagarajan. 2020. Property-based testing of quantum programs in Q#. In Proceedings of the IEEE/ACM 42nd International Conference on Software Engineering Workshops .430–435. Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. FSE128:22 Minqi Shao, Shangzhou Xia, and Jianjun Zhao 
+
+[23] Nargiz Humbatova, Gunel Jahangirova, and Paolo Tonella. 2021. DeepCrime: mutation testing of deep learning systems based on real faults. In ISSTA ’21: 30th ACM SIGSOFT International Symposium on Software Testing and Analysis, Virtual Event, Denmark, July 11-17, 2021 , Cristian Cadar and Xiangyu Zhang (Eds.). ACM, 67–78. https: //doi.org/10.1145/3460319.3464825 [24] Tak Hur, Leeseok Kim, and Daniel K. Park. 2022. Quantum convolutional neural network for classical data classification. 
+
+Quantum Mach. Intell. 4, 1 (2022). https://doi.org/10.1007/S42484-021-00061-X [25] Gunel Jahangirova and Paolo Tonella. 2020. An Empirical Evaluation of Mutation Operators for Deep Learning Systems. In 13th IEEE International Conference on Software Testing, Validation and Verification, ICST 2020, Porto, Portugal, October 24-28, 2020 . IEEE, 74–84. https://doi.org/10.1109/ICST46399.2020.00018 [26] Yue Jia and Mark Harman. 2011. An Analysis and Survey of the Development of Mutation Testing. IEEE Trans. Software Eng. 37, 5 (2011), 649–678. https://doi.org/10.1109/TSE.2010.62 [27] Tiancheng Jin, Shangzhou Xia, and Jianjun Zhao. 2025. NovaQ: Improving Quantum Program Testing through Diversity-Guided Test Case Generation. arXiv preprint arXiv:2509.04763 (2025). [28] Jinhan Kim, Nargiz Humbatova, Gunel Jahangirova, Shin Yoo, and Paolo Tonella. 2025. MuFF: Stable and Sensitive Post-training Mutation Testing for Deep Learning. CoRR abs/2501.09846 (2025). https://doi.org/10.48550/ARXIV.2501.09846 arXiv:2501.09846 [29] Yann LeCun, Léon Bottou, Yoshua Bengio, and Patrick Haffner. 1998. Gradient-based learning applied to document recognition. Proc. IEEE 86, 11 (1998), 2278–2324. https://doi.org/10.1109/5.726791 [30] Gushu Li, Yufei Ding, and Yuan Xie. 2019. Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices. In 
+
+Proceedings of the Twenty-Fourth International Conference on Architectural Support for Programming Languages and Operating Systems, ASPLOS 2019, Providence, RI, USA, April 13-17, 2019 , Iris Bahar, Maurice Herlihy, Emmett Witchel, and Alvin R. Lebeck (Eds.). ACM, 1001–1014. https://doi.org/10.1145/3297858.3304023 [31] Gushu Li, Li Zhou, Nengkun Yu, Yufei Ding, Mingsheng Ying, and Yuan Xie. 2020. Projection-based runtime assertions for testing and debugging quantum programs. Proceedings of the ACM on Programming Languages 4, OOPSLA (2020), 1–29. [32] Weikang Li, Zhide Lu, and Dong-Ling Deng. 2022. Quantum Neural Network Classifiers: A Tutorial. CoRR 
+
+abs/2206.02806 (2022). https://doi.org/10.48550/ARXIV.2206.02806 arXiv:2206.02806 [33] Yuechen Li, Kai-Yuan Cai, and Beibei Yin. 2025. Preparation and Utilization of Mixed States for Testing Quantum Programs. ACM Transactions on Software Engineering and Methodology 34, 8 (2025), 1–44. [34] Peixun Long and Jianjun Zhao. 2024. Equivalence, identity, and unitarity checking in black-box testing of quantum programs. Journal of Systems and Software 211 (2024), 112000. [35] Peixun Long and Jianjun Zhao. 2024. Testing multi-subroutine quantum programs: From unit testing to integration testing. ACM Transactions on Software Engineering and Methodology 33, 6 (2024), 1–61. [36] Peixun Long and Jianjun Zhao. 2025. A black-box testing framework for oracle quantum programs. arXiv preprint arXiv:2505.07243 (2025). [37] Sirui Lu, Lu-Ming Duan, and Dong-Ling Deng. 2020. Quantum Adversarial Machine Learning. CoRR abs/2001.00030 (2020). arXiv:2001.00030 http://arxiv.org/abs/2001.00030 [38] Lei Ma, Fuyuan Zhang, Jiyuan Sun, Minhui Xue, Bo Li, Felix Juefei-Xu, Chao Xie, Li Li, Yang Liu, Jianjun Zhao, and Yadong Wang. 2018. DeepMutation: Mutation Testing of Deep Learning Systems. In 29th IEEE International Symposium on Software Reliability Engineering, ISSRE 2018, Memphis, TN, USA, October 15-18, 2018 , Sudipto Ghosh, Roberto Natella, Bojan Cukic, Robin S. Poston, and Nuno Laranjeiro (Eds.). IEEE Computer Society, 100–111. https: //doi.org/10.1109/ISSRE.2018.00021 [39] Jarrod R. McClean, Sergio Boixo, Vadim N. Smelyanskiy, Ryan Babbush, and Hartmut Neven. 2018. Barren plateaus in quantum neural network training landscapes. CoRR abs/1803.11173 (2018). arXiv:1803.11173 http://arxiv.org/abs/1803. 11173 [40] Eñaut Mendiluze, Shaukat Ali, Paolo Arcaini, and Tao Yue. 2021. Muskit: A Mutation Analysis Tool for Quantum Software Testing. In 36th IEEE/ACM International Conference on Automated Software Engineering, ASE 2021, Melbourne, Australia, November 15-19, 2021 . IEEE, 1266–1270. https://doi.org/10.1109/ASE51524.2021.9678563 [41] Andriy Miranskyy and Lei Zhang. 2019. On testing quantum programs. In 2019 IEEE/ACM 41st International Conference on Software Engineering: New Ideas and Emerging Results (ICSE-NIER) . IEEE, 57–60. [42] Kosuke Mitarai, Makoto Negoro, Masahiro Kitagawa, and Keisuke Fujii. 2018. Quantum circuit learning. Physical Review A (2018). [43] Michael A Nielsen and Isaac L Chuang. 2010. Quantum computation and quantum information . Cambridge university press. [44] Shyambabu Pandey, Nihar Jyoti Basisth, Tushar Sachan, Neha Kumari, and Partha Pakray. 2023. Quantum machine learning for natural language processing application. Physica A: Statistical Mechanics and its Applications 627 (2023), 129123. Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026. QuanForge: A Mutation Testing Framework for Quantum Neural Networks FSE128:23 
+
+[45] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Desmaison, Andreas Köpf, Edward Z. Yang, Zachary DeVito, Martin Raison, Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala. 2019. PyTorch: An Imperative Style, High-Performance Deep Learning Library. In Advances in Neural Information Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019, December 8-14, 2019, Vancouver, BC, Canada , Hanna M. Wallach, Hugo Larochelle, Alina Beygelzimer, Florence d’Alché-Buc, Emily B. Fox, and Roman Garnett (Eds.). 8024–8035. https://proceedings.neurips.cc/paper/2019/hash/bdbca288fee7f92f2bfa9f7012727740-Abstract.html [46] Adrián Pérez-Salinas, Alba Cervera-Lierta, Elies Gil-Fuster, and José I. Latorre. 2020. Data re-uploading for a universal quantum classifier. Quantum 4 (2020), 226. https://doi.org/10.22331/Q-2020-02-06-226 [47] Arthur Pesah, Marco Cerezo, Samson Wang, Tyler J. Volkoff, Andrew T. Sornborger, and Patrick J. Coles. 2020. Absence of Barren Plateaus in Quantum Convolutional Neural Networks. CoRR abs/2011.02966 (2020). arXiv:2011.02966 https://arxiv.org/abs/2011.02966 [48] Weijun Shen, Jun Wan, and Zhenyu Chen. 2018. MuNN: Mutation Analysis of Neural Networks. In 2018 IEEE International Conference on Software Quality, Reliability and Security Companion, QRS Companion 2018, Lisbon, Portugal, July 16-20, 2018 . IEEE, 108–115. https://doi.org/10.1109/QRS-C.2018.00032 [49] Mingrui Shi, Haozhen Situ, and Cai Zhang. 2024. Hybrid quantum neural network structures for image multi-classification. Physica Scripta 99, 5 (2024), 056012. [50] Bing Sun, Jun Sun, Long H. Pham, and Tie Shi. 2022. Causality-Based Neural Network Repair. In 44th IEEE/ACM 44th International Conference on Software Engineering, ICSE 2022, Pittsburgh, PA, USA, May 25-27, 2022 . ACM, 338–349. https://doi.org/10.1145/3510003.3510080 [51] Eñaut Mendiluze Usandizaga, Tao Yue, Paolo Arcaini, and Shaukat Ali. 2023. Which Quantum Circuit Mutants Shall Be Used? An Empirical Evaluation of Quantum Circuit Mutations. CoRR abs/2311.16913 (2023). https://doi.org/10. 48550/ARXIV.2311.16913 arXiv:2311.16913 [52] Jingyi Wang, Guoliang Dong, Jun Sun, Xinyu Wang, and Peixin Zhang. 2019. Adversarial sample detection for deep neural network through model mutation testing. In Proceedings of the 41st International Conference on Software Engineering, ICSE 2019, Montreal, QC, Canada, May 25-31, 2019 , Joanne M. Atlee, Tevfik Bultan, and Jon Whittle (Eds.). IEEE / ACM, 1245–1256. https://doi.org/10.1109/ICSE.2019.00126 [53] Ruixia Wang, Peng Zhao, and Haifeng Yu. 2022. Universality of universal single-qubit-gate decomposition with coherent errors. arXiv preprint arXiv:2211.00365 (2022). [54] Xinyi Wang, Paolo Arcaini, Tao Yue, and Shaukat Ali. 2021. Application of combinatorial testing to quantum programs. In 2021 IEEE 21st International Conference on Software Quality, Reliability and Security (QRS) . IEEE, 179–188. [55] Xinyi Wang, Paolo Arcaini, Tao Yue, and Shaukat Ali. 2021. Generating failing test suites for quantum programs with search. In International symposium on search based software engineering . Springer, 9–25. [56] Maxwell T. West, Shu Lok Tsang, Jia Shun Low, Charles D. Hill, Christopher Leckie, Lloyd C. L. Hollenberg, Sarah M. Erfani, and Muhammad Usman. 2023. Towards quantum enhanced adversarial robustness in machine learning. Nat. Mac. Intell. 5, 6 (2023), 581–589. https://doi.org/10.1038/S42256-023-00661-1 [57] Daan Wierstra, Tom Schaul, Tobias Glasmachers, Yi Sun, Jan Peters, and Jürgen Schmidhuber. 2014. Natural evolution strategies. J. Mach. Learn. Res. 15, 1 (2014), 949–980. https://doi.org/10.5555/2627435.2638566 [58] Huanhuan Wu, Zheng Li, Zhanqi Cui, and Jianbin Liu. 2022. GenMuNN: A mutation-based approach to repair deep neural network models. Int. J. Model. Simul. Sci. Comput. 13, 2 (2022), 2341008:1–2341008:17. https://doi.org/10.1142/ S1793962323410088 [59] Shangzhou Xia, Jianjun Zhao, Fuyuan Zhang, and Xiaoyu Guo. 2025. Quantum Concolic Testing. Proc. ACM Softw. Eng. 2, ISSTA (2025), 1146–1166. https://doi.org/10.1145/3728926 [60] Han Xiao, Kashif Rasul, and Roland Vollgraf. 2017. Fashion-MNIST: a Novel Image Dataset for Benchmarking Machine Learning Algorithms. CoRR abs/1708.07747 (2017). arXiv:1708.07747 http://arxiv.org/abs/1708.07747 [61] Jiaqi Yang, Wei Xie, and Xiaohua Xu. 2025. Stability and Generalization of Quantum Neural Networks. CoRR 
+
+abs/2501.12737 (2025). https://doi.org/10.48550/ARXIV.2501.12737 arXiv:2501.12737 [62] Jiaming Ye, Shangzhou Xia, Fuyuan Zhang, Paolo Arcaini, Lei Ma, Jianjun Zhao, and Fuyuki Ishikawa. 2023. QuraTest: Integrating Quantum Specific Features in Quantum Program Testing. In 38th IEEE/ACM International Conference on Automated Software Engineering, ASE 2023, Luxembourg, September 11-15, 2023 . IEEE, 1149–1161. https://doi.org/10. 1109/ASE56229.2023.00196 
+
+Received 2026-02-25; accepted 2026-03-24 
+
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE128. Publication date: July 2026.

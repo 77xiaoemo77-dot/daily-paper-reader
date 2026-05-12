@@ -1,0 +1,901 @@
+Title: cuNNQS-SCI: A Fully GPU-Accelerated Framework for High-Performance Configuration Interaction Selection withNeural Network QQantum States
+
+URL Source: https://arxiv.org/pdf/2604.15768v1
+
+Published Time: Mon, 20 Apr 2026 00:32:58 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# cuNNQS-SCI: A Fully GPU-Accelerated Framework for High-Performance Configuration Interaction Selection with Neural Network Quantum States 
+
+# Daran Sun ∗
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China sundaran24s@ict.ac.cn 
+
+# Bowen Kan ∗
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China kanbowen17@163.com 
+
+# Haoquan Long ∗
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China longhaoquan25@mails.ucas.ac.cn 
+
+# Hairui Zhao 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China zhaohairui@ict.ac.cn 
+
+# Haoxu Li 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China lihaoxu21@mails.ucas.ac.cn 
+
+# Yicheng Liu 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China liuyicheng25@mails.ucas.ac.cn 
+
+# Pengyu Zhou 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China zhoupengyu19@mails.ucas.ac.cn 
+
+# Ankang Feng 
+
+University of Science and Technology of China Hefei, China fak0615@mails.ustc.edu.cn 
+
+# Wenjing Huang 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China huangwenjing23@mails.ucas.ac.cn 
+
+# Yida Gu 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China guyida@ict.ac.cn 
+
+# Zhenyu Li 
+
+University of Science and Technology of China Hefei, China zyli@ustc.edu.cn 
+
+# Honghui Shang 
+
+University of Science and Technology of China Hefei, China shh@ustc.edu.cn 
+
+# Yunquan Zhang 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China zyq@ict.ac.cn 
+
+# Dingwen Tao 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China taodingwen@ict.ac.cn 
+
+# Ninghui Sun 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China snh@ict.ac.cn 
+
+# Guangming Tan 
+
+Institute of Computing Technology, Chinese Academy of Sciences Beijing, China tgm@ict.ac.cn 
+
+## Abstract 
+
+AI-driven methods have demonstrated considerable success in tack-ling the central challenge of accurately solving the Schrödinger equation for complex many-body systems. Among neural network quantum state (NNQS) approaches, the NNQS-SCI (Selected Con-figuration Interaction) method stands out as a state-of-the-art tech-nique, recognized for its high accuracy and scalability. However, its application to larger systems is severely constrained by a hybrid CPU-GPU architecture. Specifically, centralized CPU-based global de-duplication creates a severe scalability barrier due to commu-nication bottlenecks, while host-resident coupled-configuration generation induces prohibitive computational overheads. We in-troduce cuNNQS-SCI, a fully GPU-accelerated SCI framework de-signed to overcome these bottlenecks. cuNNQS-SCI first integrates a distributed, load-balanced global de-duplication algorithm to min-imize redundancy and communication overhead at scale. To address compute limitations, it employs specialized, fine-grained CUDA 
+
+> ∗
+
+Daran Sun, Bowen Kan, Haoquan Long contributed equally to this work. 
+
+This work is licensed under a Creative Commons Attribution 4.0 International License. 
+
+HPDC ’26, Cleveland, OH, USA 
+
+© 2026 Copyright held by the owner/author(s). ACM ISBN 979-8-4007-2640-8/2026/07 https://doi.org/10.1145/3806645.3807583 
+
+kernels for exact coupled configuration generation. Finally, to break the single-GPU memory barrier exposed by this full acceleration, it incorporates a GPU memory-centric runtime featuring GPU-side pooling, streaming mini-batches, and overlapped offloading. This design enables much larger configuration spaces and shifts the bot-tleneck from host-side limitations back to on-device inference. Our evaluation demonstrates that cuNNQS-SCI fundamentally expands the scale of solvable problems. On an NVIDIA A100 cluster with 64 GPUs, cuNNQS-SCI achieves up to 2.32 × end-to-end speedup over the highly-optimized NNQS-SCI baseline while preserving the same chemical accuracy. Furthermore, it demonstrates excellent distributed performance, maintaining over 90% parallel efficiency in strong scaling tests. 
+
+## CCS Concepts 
+
+• Computing methodologies → Massively parallel and high-performance simulations .
+
+ACM Reference Format: 
+
+Daran Sun, Bowen Kan, Haoquan Long, Hairui Zhao, Haoxu Li, Yicheng Liu, Pengyu Zhou, Ankang Feng, Wenjing Huang, Yida Gu, Zhenyu Li, Honghui Shang, Yunquan Zhang, Dingwen Tao, Ninghui Sun, and Guang-ming Tan. 2026. cuNNQS-SCI: A Fully GPU-Accelerated Framework for High-Performance Configuration Interaction Selection with Neural Net-work Quantum States. In The 35th International Symposium on High-Performance Parallel and Distributed Computing (HPDC ’26), July 13–16, 2026, Cleveland,   
+
+> arXiv:2604.15768v1 [cs.DC] 17 Apr 2026 HPDC ’26, July 13–16, 2026, Cleveland, OH, USA Sun, Kan, and Long et al.
+> OH, USA. ACM, New York, NY, USA, 13 pages. https://doi.org/10.1145/ 3806645.3807583
+
+## 1 Introduction 
+
+Electronic structure calculation based on quantum mechanics is an elementary tool for predicting the chemical and physical properties of matter. From a computational perspective, many problems related to material structures and physical properties can ultimately be reduced to the numerical solution of the Schrödinger equation [ 42 ]. In practice, however, this problem has long been constrained by ex-ponential computational complexity: the state space of many-body quantum systems grows rapidly with system size, rendering exact methods fundamentally unscalable [ 23 ].As a result, full configura-tion interaction (FCI) [ 22 ], which enumerates all possible electronic configurations, quickly becomes computationally intractable and is therefore limited to very small systems even with the best super-computers [24]. The advent of neural-network quantum states (NNQS) [ 21 , 29 ]has transformed computational quantum chemistry by harness-ing artificial neural networks to variationally encode many-body wave functions. Carleo and Troyer demonstrated that restricted Boltzmann machines (RBMs) can act as universal approximators of quantum states on lattice spin systems [ 3]. This approach offers strong representational capacity together with polynomial-time computational scaling. Since then, NNQS has been successfully applied to a wide range of multi-spin and fermionic systems, estab-lishing the feasibility and potential of AI-based ansatze [6, 21]. Building on this foundation, the Transformer architecture—owing to its strong representational capability across many domains—has been incorporated into NNQS, giving rise to the NNQS-Transformer paradigm [ 20 , 43 ]. Transformers [ 39 ] are particularly effective at modeling long-range dependencies and complex high-dimensional correlations, making them a powerful tool for enhancing ansatz expressiveness [ 32 ]. Prior work has proposed NNQS-Transformer frameworks [ 43 ] that reduce computational overhead through paral-lel batch sampling and distributed energy evaluation. Nevertheless, these approaches remain heavily dependent on probabilistic sam-pling, which can lead to uncontrolled growth of the sample space and introduce systematic approximation errors, ultimately limiting both accuracy and scalability at large scales [4, 5]. To further mitigate sampling-induced errors, subsequent studies integrated NNQS with Selected Configuration Interaction (SCI), resulting in NNQS-SCI [ 16 ]. This method stands out as a state-of-the-art technique, recognized for its superior accuracy and robust scalability. However, its practical application to larger systems is severely constrained by the non-AI elements of the workflow. As observed in broader AI-for-Science applications, a critical system-level bottleneck often emerges: while AI inference scales efficiently through data parallelism, the associated non-AI com-ponents—such as complex logic and data management—do not, creating significant scaling imbalances that hinder overall perfor-mance [14, 15, 34]. NNQS-SCI illustrates this imbalance clearly. One key charac-teristic of NNQS-SCI computation is that its scalability is severely constrained by host-side (CPU) limitations. The global deduplica-tion process requires maintaining a global index on a single node. To determine the ground-state energy of large-scale molecular systems, this index often reaches hundreds of gigabytes in size. Furthermore, this centralized deduplication consumes a disproportionate amount of cluster time and results in significant GPU underutilization; our experiments indicate that global deduplication can account for 30% of the total runtime in a 64-GPU configuration, making the CPU memory capacity and processing power of the master node the primary bottleneck hindering system scalability. Another pivotal characteristic of NNQS-SCI is the insufficient scaling efficiency of coupled-state generation. As the GPU count in-creases, the proportion of end-to-end runtime consumed by non-AI components escalates sharply from less than 10% to over 50%. The root cause lies in the architectural imbalance: while Transformer-based inference scales efficiently through data parallelism, the com-putations involving selected configuration interactions are still pre-dominantly executed on CPU. The frequent data transfer between the host and device, coupled with the widening performance gap between CPUs and GPUs, creates a severe performance bottleneck. These observations point to a clear systems-level objective: run the whole SCI workflow entirely on GPUs, thereby mitigating host-side involvement and transfer overheads. Under this design, the performance bottleneck shifts: GPU memory capacity becomes the primary constraint and, once the coupling step is accelerated, neural wavefunction inference becomes the dominant component of runtime. Our approach is driven by two pivotal observations: (1) distributed deduplication methods can effectively shift the memory bottleneck from a single CPU node to distributed GPU memory; and (2) the coupling calculation phase involves executing uniform operations on a vast set of elements, presenting significant potential for GPU-based parallel acceleration. To achieve this, three specific challenges must be addressed. First, to support large molecular systems, we must design a high-performance, distributed global GPU deduplication algorithm that ensures scalability and load balancing. Second, once deduplication is optimized, coupled state generation emerges as the subsequent bottleneck, necessitating the implementation of high-performance GPU-based coupled configurations calculations. Third, supporting a fully GPU-resident workflow requires fine-grained GPU memory management to mitigate peak memory usage, while the complex stage-wise dependencies of the calculation data introduce signifi-cant implementation hurdles. To address the above issues, this paper presents the NNQS-SCI Framework and makes the following contributions: 
+
+• A Novel Fully GPU-Accelerated NNQS-SCI Framework: 
+
+cuNNQS-SCI is a comprehensive parallel scheme that migrates the entire NNQS-SCI workflow, including coupled configuration generation and global deduplication. This framework eliminates the CPU-side scalability bottleneck and minimizes the overhead of frequent host-device data transfers. 
+
+• High-Performance Kernels and Distributed Deduplication: 
+
+We design specialized CUDA kernels for exact coupled compu-tations using fine-grained parallelism. To support large-scale configuration sets, we implement a distributed, sort-based global deduplication algorithm with hierarchical sampling, achieving deterministic load balancing across multi-GPU clusters. cuNNQS-SCI HPDC ’26, July 13–16, 2026, Cleveland, OH, USA 
+
+• GPU Memory-Centric Execution Model: We introduce a memory efficient management mechanism that treats GPU mem-ory as a first-class constraint. By integrating mini-batch stream-ing and overlapped offloading, our model resolves the peak mem-ory capacity constraints inherent in large-scale SCI simulations. 
+
+• Extensive Experimental Evaluation: We evaluate cuNNQS-SCI across a range of molecular systems. The results show up to 2.32 × end-to-end speedup over state-of-the-art hybrid implemen-tations,while improving scalability and shifting the performance bottleneck to GPU inference, thereby establishing a system-level foundation for tackling larger configuration spaces. 
+
+## 2 Background and Motivation 
+
+This section systematically reviews pivotal methodologies in quan-tum many-body simulations [ 7, 11 , 18 , 21 , 29 , 32 , 45 ]. And gives necessary background for HPC general audience about an AI-HPC combined algorithm called NNQS-SCI, which represent the current state of the art. We also outline the motivation behind cuNNQS-SCI’s design. 
+
+## 2.1 Selective CI Framework 
+
+We consider the problem of computing the ground-state energy of a quantum system, which can be formulated as the lowest-eigenvalue problem of a large Hermitian matrix, 𝐻 Ψ = 𝐸 Ψ.
+
+Rather than explicitly solving this eigenvalue equation, ground-state energy can be obtained by minimizing Rayleigh quotient [ 27 ]      
+
+> 𝐸 (Ψ)=Ψ†𝐻 ΨΨ†Ψ(1)
+
+which forms the basis of the methods discussed in this work. Here, 𝐻 ∈ C𝑑 ×𝑑 and Ψ ∈ C𝑑 , where 𝑑 is the number of all possible configurations. A configuration is represented by a bitstring of length 𝑚 with 𝑛 ones (e.g., 01100010 m=8 n=3), indicating which 𝑛 
+
+orbitals are occupied among the 𝑚 available orbitals.        
+
+> H={all bitstrings of length 𝑚 with 𝑛 ones }(2)
+
+=⇒ |H | = 𝐶 𝑛 𝑚 , 𝑑 = 𝐶 𝑛 𝑚 .
+
+The numerator expands to               
+
+> Ψ†𝐻 Ψ=∑︁
+> 𝑖 ∈H ∑︁ 𝑗 ∈H
+> 𝜓 ∗
+> 𝑖 𝐻 𝑖 𝑗 𝜓 𝑗 =∑︁
+> 𝑖 ∈H
+> 𝜓 ∗
+> 𝑖 ∑︁ 𝑗 ∈H
+> 𝐻 𝑖 𝑗 𝜓 𝑗 .(3)
+
+This corresponds to the full configuration interaction (FCI) ap-proach [ 17 ]. FCI yields the variationally exact energy and is there-fore widely used as a benchmark for assessing approximate methods (often referred to as "FCI-level" accuracy) [ 9]. However, empirical studies show that only about 1% of configurations contribute signif-icantly to the ground-state energy [ 31 ]. This redundancy motivates Selective Configuration Interaction (SCI) methods [ 8 ], which retain only the most important configurations while discarding negligible contributions. We define the SCI space as a subset S ⊂ H .A matrix element 𝐻 𝑖 𝑗 is non-zero if and only if configurations 
+
+𝑖 and 𝑗 differ in the positions of "1"s by at most two. For a fixed configuration 𝑖 , define the coupled set          
+
+> 𝐶 𝑖 ={𝑗 |𝐻 𝑖 𝑗 ≠0}.(4)
+
+To construct 𝐶 𝑖 , we record the indices of all "1"s in the bitstring of 𝑖 and enumerate all configurations obtained by moving one or two of these occupied positions. The resulting configurations are exactly the elements of 𝐶 𝑖 .∑︁            
+
+> 𝑖 ∈H
+> 𝜓 ∗
+> 𝑖 ∑︁ 𝑗 ∈H
+> 𝐻 𝑖 𝑗 𝜓 𝑗 ≈∑︁
+> 𝑖 ∈S
+> 𝜓 ∗
+> 𝑖 ∑︁ 𝑗 ∈𝐶 𝑖
+> 𝐻 𝑖 𝑗 𝜓 𝑗 .(5)
+
+This is how the general Selective CI method works. The advent of neural-network quantum states (NNQS) has transformed computa-tional quantum chemistry by harness-ing artificial neural networks to variationally encode many-body wave functions. In NNQS-SCI method [ 16 ], an AI model (NNQS-transformer) was used to repre-sent 𝜓 𝑖 , It takes the bitstring of configuration 𝑖 as input, and gives out a complex number 𝜓 𝑖 .
+
+## 2.2 NNQS-SCI workflow 
+
+> Figure 1: NNQS-SCI workflow. Green blocks denote CPU-side pre-processing and postprocessing, while NNQS inference and model updates are performed on the GPU.
+
+NNQS-SCI [ 16 ] is an iterative framework that optimizes a varia-tional wavefunction Ψ and estimates its energy 𝐸 (Ψ) by alternating between (i) energy evaluation and (ii) wavefunction optimization, the workflow of NNQS-SCI is illustrated in Figure 1. 
+
+Energy evaluation. Given a selected configuration set 𝑆 , NNQS-SCI enumerates all valid single and double electron moves for each 
+
+𝑖 ∈ 𝑆 to generate its coupled set 𝐶 𝑖 (Figure 1(a)). Materializing all 
+
+𝐶 𝑖 can incur a peak memory footprint of 𝑂 (| 𝑆 | · 𝑚 2𝑛 2) due to the large number of candidate excitations. To reduce redundant neural inference, NNQS-SCI performs a global de-duplication across {𝐶 𝑖 }
+
+to form a unique configuration set (indexed by 𝑗 ) while storing a reverse index mapping from each unique 𝑗 back to its originating 
+
+𝑖 . The NNQS-transformer evaluates amplitudes 𝜓 only on unique set (Figure 1(b)), followed by index remapping to recover per-𝑖 
+
+contributions and compute local and global energies (Figure 1(c)). 
+
+Wavefunction optimization. The NNQS-transformer parame-ters are updated by backpropagation using estimated energy. Mean-while, NNQS-SCI expands the variational space by selecting a subset of important configurations from the newly generated candidates (e.g., top-𝐾 ranked by inferred amplitudes 𝜓 ) and merging them into 
+
+𝑆 for the next iteration. The two phases repeat until convergence. While conceptually simple, this workflow involves frequent gen-eration, de-duplication, and index remapping of large configuration sets across iterations, which become major performance bottlenecks in distributed settings. HPDC ’26, July 13–16, 2026, Cleveland, OH, USA Sun, Kan, and Long et al. local      
+
+> Energy
+> local
+> Energy
+> (a) Couple Conf. Generation
+> local
+> unique
+> local
+> unique
+> local
+> unique
+> local
+> unique
+> Sampling global
+> group
+> all2all local
+> Unique
+> AI inference
+> (ψ estimation)
+> Remap
+> Offload to cpu memory
+> local
+> Energy
+> Reload
+> (b) Global De-duplication (c) AI Inference (d) Energy Ca lculation and Update
+> Global Top-k
+> SCI set
+> Configuration i :
+> binary string
+> ψi : wavefunction
+> amplitude
+> Color indicates value
+> local
+> Energy
+> Local
+> Reduce
+> Global
+> Reduce
+> Update for next iter
+> Update for next iter
+
+Figure 2: End-to-end GPU-accelerated cuNNQS-SCI pipeline with overlapped execution. The workflow consists of (a) GPU-based coupled configuration generation with local de-duplication, (b) global de-duplication and grouping across devices, (c) batched neural-network inference for wavefunction amplitude estimation, and (d) exact local-energy evaluation followed by reduction and parameter update. Color indicates configuration values and wavefunction amplitudes. 
+
+## 2.3 Motivation 
+
+Our analysis of the state-of-the-art NNQS-SCI framework reveals three critical bottlenecks that prevent it from scaling to massive chemical systems, we identify these critical bottlenecks as follows: 
+
+❶ The Scalability Barrier: Centralized CPU De-duplication. 
+
+As the number of GPUs increases, the inter-node redundancy of generated configurations grows rapidly. The baseline approach relies on a centralized CPU reduction, where a single root node gathers all data. This creates a severe communication bottleneck (𝑂 (𝑁 ) traffic) and memory pressure, causing parallel efficiency to drop significantly at scale (e.g., to 66% on 64 GPUs). We identify that quantum configuration data, being dense integers, is naturally suited for sorting rather than hashing. This motivates our first con-tribution: a distributed, sort-based de-duplication algorithm 
+
+that ensures load balance and minimizes communication overhead. 
+
+❷ The Compute Bottleneck: CPU-Bound Generation. With the de-duplication bottleneck removed, the computational cost shifts to the generation of coupled configurations. In the baseline, this step is performed on CPUs. Our profiling shows that as the system scales, this CPU-bound generation time begins to exceed the GPU inference time, violating the principle of accelerator-centric computing. This imbalance leads to underutilized GPUs and lim-its the attainable throughput even when sufficient accelerator re-sources are available. Recognizing that coupled configurations gen-eration involves massive, independent bitwise operations that are inherently amenable to fine-grained GPU parallelism, we propose to put this task on a custom GPU kernel, transforming it from a serial CPU bottleneck into a high-throughput GPU workload. 
+
+❸ The Capacity Constraint: GPU Memory Wall. Migrating both de-duplication and generation to the GPU creates a fully accel-erated pipeline but exposes the limited capacity of High-Bandwidth Memory (HBM). Large chemical systems (e.g., Cr 2 84 qubits) gener-ate intermediate configurations that far exceed the 40GB limit of a single A100 GPU, rendering standard in-core execution strategies physically impossible. To break "memory wall," we introduce a GPU memory-centric execution model . By treating GPU memory as a cache and implementing mini-batch processing with asynchronous offloading, we decouple the peak memory requirement from total problem size, enabling the simulation of previously intractable. 
+
+## 3 cuNNQS-SCI Overview 
+
+cuNNQS-SCI is a GPU-resident framework that integrates neural-network quantum states with high-precision selected configura-tion interaction. It follows the same iterate–expand–infer–select– optimize skeleton as NNQS-SCI [ 16 ], but redesigns the system pipeline 
+
+to (i) remove CPU-side bottlenecks, (ii) enable scalable, distributed de-duplication, and (iii) support memory-bounded execution via host staging. Figure 2 summarizes the end-to-end dataflow and the newly introduced components. The main iterative loop executes primarily on the GPU, which serves as the high-performance execu-tion engine. Large intermediate datasets that exceed GPU memory capacity are treated as cold data and are asynchronously staged to and from CPU host memory. This GPU memory-centric execution model breaks the single-GPU memory barrier while keeping data movement off the critical path. The workflow proceeds through three stages, corresponding to panels (a–b), (c), and (d) in Figure 2. 
+
+Stage 1: Massively Parallel Generation and Global Dedu-plication. Each iteration begins with a set of source configurations from the current SCI space, initialized from the Hartree–Fock ref-erence. This stage, shown in Figure 2(a–b), constitutes the core system contribution of cuNNQS-SCI and addresses the dominant scalability bottleneck in prior NNQS-SCI implementations. The source configurations are processed by a memory-efficient CUDA kernel that exploits fine-grained GPU parallelism to gen-erate a large number of coupled candidate configurations. To sup-press redundancy early and reduce downstream overheads, local uniqueness filtering is applied immediately after generation. The remaining candidates are then processed by a scalable global de-duplication algorithm (Section 4.1), producing a globally unique configuration set. By eliminating inter-node and inter-batch re-dundancy at scale, this stage ensures that subsequent inference is performed only on necessary data, significantly reducing GPU cuNNQS-SCI HPDC ’26, July 13–16, 2026, Cleveland, OH, USA 
+
+memory pressure and compute cost. Intermediate configuration data are staged to host memory when required, enabling memory-bounded execution without stalling GPU computation. 
+
+Stage 2: Batched Inference and Hierarchical Selection. In Stage 2, the globally unique configurations are streamed back to the GPU in memory-aware batches for wavefunction inference. A pre-trained NNQS-Transformer model evaluates the complex wavefunction amplitudes ( 𝜓 ) for each configuration. To identify the most significant configurations for SCI expansion while controlling GPU memory usage, cuNNQS-SCI employs a two-level hierarchical Top-𝐾 selection strategy (Figure 2(c)). Local, intra-batch selection is first applied, and the surviving candidates are incrementally merged into a running global Top-𝐾 set, effectively pruning the candidate space under a bounded memory footprint. 
+
+Stage 3: Energy Calculation and Network Optimization. 
+
+The final stage performs exact energy evaluation and neural net-work optimization. Using a stored original index, the inferred wave-function amplitudes 𝜓 are remapped to the original, non-unique configuration space, enabling accurate local energy computation. Reduction operations aggregate energy contributions, and the re-sulting loss signal drives network optimization via standard back-propagation (Figure 2(d)). Meanwhile, the Top-𝐾 configurations selected in Stage 2 are used to construct an updated SCI space for the next iteration. With both the SCI space and the neural net-work parameters refined in Stage 3, the algorithm proceeds to the subsequent iteration, forming a closed iterate–expand–infer–select– optimize loop. This process repeats until convergence is reached. In the following sections, we present the detailed system and algorithmic designs that enable scalable, memory-efficient execu-tion, with particular emphasis on the GPU-based coupled-state generation and global de-duplication in Stage 1. 
+
+## 4 Design 
+
+To enable scalable and high-throughput Selected Configuration In-teraction (SCI) simulations on GPU clusters, we propose a holistic framework that systematically addresses the bottlenecks of compu-tation, communication, and GPU memory capacity. Our methodol-ogy is organized into three synergistic components. First, to eliminate the communication overhead caused by data redundancy across nodes, Section 4.1 presents a distributed global de-duplication algorithm . By leveraging sort-based regular sampling, this approach ensures deterministic load balancing and strictly coalesced memory access. Second, in Section 4.2, we introduce a 
+
+fine-grained GPU kernel architecture co-designed with a compressed data layout. This design resolves the performance–memory trade-off, allowing for the massive generation of coupled configurations with minimal GPU memory footprint. Finally, Section 4.3 defines a GPU memory-centric execution paradigm . Through dependency analysis and asynchronous mini-batch pipelining, this model breaks the "memory wall," enabling the simulation of large-scale quantum systems that far exceed physical GPU memory limits. 
+
+## 4.1 Distributed Global De-duplication via Sort-Based Regular Sampling 
+
+Coupled configuration generation is a local operation that pro-duces redundant data across distributed nodes. Eliminating these Global       
+
+> Sample
+> Global
+> Spli tter
+> Rank0 Rank1 Rank2 RankN-1
+> Sample Sample Sample Sample
+> Local
+> unique
+> conf.
+> Global
+> Partial
+> Unique
+> Conf.
+> Alltoall
+
+..
+
+> gather
+> scatter
+> sampling
+> split
+> alltoall
+> unique
+
+.
+
+...
+
+...
+
+...
+
+...
+
+... 
+
+> Global
+> Partial
+> Unique
+> Conf.
+> Global
+> Partial
+> Unique
+> Conf.
+> Global
+> Partial
+> Unique
+> Conf.
+> Local
+> unique
+> conf.
+> Local
+> unique
+> Local
+> unique
+> conf. conf. step1
+> step2
+> step3
+
+Figure 3: Workflow of the distributed sort-based de-duplication. By sorting data and sampling at regular intervals, the algorithm ensures that the data volume assigned to each GPU is uniform, preventing load imbalance. 
+
+duplicates is essential to reduce the computational workload of the subsequent neural network inference stage. The baseline framework adopts a Centralized CPU-Based approach: nodes gather all local configurations to a single root node, which performs de-duplication using CPU memory before scattering results back, effectively creat-ing a serialization point that leaves other GPUs idle. While simple, this architecture poses fundamental scalability barriers for large-scale quantum simulations, stemming from two critical limitations: 
+
+The Memory Wall: The root node must hold the global dataset in host RAM, limiting the simulation scale to the capacity of a single server and making GPU-resident execution impossible. 
+
+Communication Bottleneck: The many-to-one gather opera-tion saturates the root node’s bandwidth, creating a serialization point that leaves the massive compute power of GPU cluster idle. To overcome these limitations, we propose a fully distributed, GPU-resident, de-duplication algorithm that guarantees load bal-ancing and minimizes communication. 
+
+4.1.1 Sort-Based Regular Sampling De-duplication . Our ap-proach leverages a deterministic Sort-Based Regular Sampling 
+
+strategy. By enforcing a global sorted order, we partition the work-load based on data volume (rank indices) rather than data values. The algorithm executes in 3 synchronized phases (Figure 3): 
+
+Step 1: Local Preparation and Sample Aggregation. Each GPU 𝑖 first sorts its local configuration buffer 𝐷 𝑖 using a GPU-optimized Radix Sort. To estimate the global data distribution, we perform regular sampling by selecting 𝑆 pivots at fixed intervals from the sorted data (specifically at indices 𝑘 × (| 𝐷 𝑖 |/ 𝑆 )). These local samples are gathered to the root node. This metadata, with a size of only 𝑃 ×𝑆 , provides a lightweight yet representative snapshot of the global dataset, enabling the calculation of optimal global splitters. HPDC ’26, July 13–16, 2026, Cleveland, OH, USA Sun, Kan, and Long et al. 
+
+Step 2: Global Partitioning Strategy. The root node sorts the collected samples to determine 𝑃 − 1 global splitters at equi-distant intervals. These splitters define the boundaries for 𝑃 global partitions and are broadcast back to all nodes. Each GPU then performs a binary search on its local sorted array to identify the data range destined for every other rank. 
+
+Step 3: AlltoAll Exchange and Local Finalization. With boundaries established, the cluster executes an MPI_Alltoallv 
+
+operation. Rank 𝑖 sends the data chunk belonging to Partition 𝑗 
+
+directly to Rank 𝑗 . Finally, each GPU performs a local merge and stream compaction. Since the data is globally sorted, duplicates are either adjacent locally or reside at the immediate boundary of neighboring ranks, ensuring complete uniqueness. Through this structured pipeline, the algorithm guarantees a strictly load-balanced distribution of unique configurations while transforming the irregular redundancy elimination task into effi-cient, coalesced streaming operations. 
+
+4.1.2 Algorithm Analysis and Design Justification . Our de-sign choice to utilize sort-based sampling over hash-based parti-tioning is driven by the specific characteristics of quantum config-uration data and the GPU architecture. 
+
+Efficiency of Radix Sort on GPUs: The quantum configura-tions are represented as dense arrays of uint64 bitmasks. This data format is ideally suited for GPU-optimized Radix Sort, which relies on coalesced memory access and bitwise operations. In contrast, hash-based methods require constructing large index tables with random memory access patterns. Handling collisions via atomic operations (e.g., atomicCAS ) on GPUs causes severe thread diver-gence and serialization, preventing the effective utilization of High-Bandwidth Memory, significantly limiting the overall throughput. 
+
+Robust Load Balancing via Regular Sampling: Achieving load balancing is critical for distributed performance. Hash parti-tioning is inherently sensitive to data skew; high-frequency con-figurations ("heavy hitters") map to the same bucket, creating hot spots. Mitigating this usually requires complex heuristics like "salt-ing" (adding random prefixes), which introduces computational and communication overhead. In contrast, our Regular Sampling 
+
+strategy adaptively captures the global data distribution at a negli-gible cost. By partitioning based on the sorted order and sampled pivots, the algorithm guarantees that each GPU receives an approx-imately equal slice of the workload, regardless of the underlying data distribution, effectively eliminating the straggler effect and maximizing resource utilization across the cluster. 
+
+Minimization of Communication: The sort-based layout en-ables Localized Resolution . The vast majority of duplicates are eliminated locally within a GPU’s partition without ever travers-ing the network. Inter-node redundancy checks are restricted to 
+
+𝑂 (𝑃 ) boundary elements. This contrasts sharply with hash-based schemes (or the centralized baseline), where communication volume often scales linearly with the total number of duplicates ( 𝑂 (𝑁 )), resulting in significant bandwidth savings for our approach. 
+
+## 4.2 GPU Kernel for Coupled Configurations Computation 
+
+With inter-node scalability resolved by distributed de-duplication, the bottleneck shifts to the CPU-resident coupled-configuration Hamiltonian matrix                                            
+
+> …………
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> d1d2djdk
+> d1
+> d2
+> di
+> ………
+> H11
+> Hij Hik
+> 0
+> 0
+> 00
+> 00
+> 0000
+> 000
+> (p,q)
+> (p→a) (pq→ab)
+> (a,H i1 )p(null ,0) ……
+> …
+> ………
+> ………
+> Double Excitation Tables
+> …
+> Hi1
+> H22
+> Hkk
+> Hi2
+> (p→b) (pq→cd)
+> ………
+> ………
+> Single Excitation Tables
+> Slater-condon
+> rules
+> (p,q) ((a,b),H ij )(null,0)
+> max_single_size
+> max_double_size
+> Figure 4: For a given source configurations 𝑑 𝑖 (with electrons in or-bitals p,q) only considers its connections to other configurations. 𝐻 𝑖 1:single excitation (p →a), 𝐻 𝑖 𝑗 : double excitation (pq →ab). Applying Slater-condon rules to Hamiltonian matrix to get single Excitation Table as 𝑇 𝑠𝑖𝑛𝑔𝑙𝑒 and double Excitation Table as 𝑇 𝑑𝑜𝑢𝑏𝑙𝑒 .
+
+generation, which starves the downstream GPU inference engine due to limited parallelism and PCIe overheads. To address this, we migrate this "massive-generation, sparse-selection" workload entirely to the GPU. However, this introduces a critical perfor-mance–memory trade-off: while densely padded structures maxi-mize throughput, they incur prohibitive memory footprints. Conse-quently, we design a kernel prioritized for strict memory efficiency, co-optimizing data layout and parallel decomposition to achieve substantial acceleration with a minimized footprint, even at the cost of non-coalesced access. 
+
+4.2.1 Data Layout Co-Design for Memory Efficiency . Gen-erating coupled configurations is computationally equivalent to probing the sparse, off-diagonal structure of the global Hamiltonian matrix, H. The Slater-Condon rules dictate that non-zero matrix elements 𝐻 𝑖 𝑗 only exist if configuration 𝑑 𝑗 is a single or double electronic excitation from 𝑑 𝑖 . Instead of storing this vast matrix, we pre-process its rules into two highly compressed Excitation Ta-bles : 𝑇 𝑠𝑖𝑛𝑔𝑙𝑒 and 𝑇 𝑑𝑜𝑢𝑏𝑙𝑒 (Figure 4). These tables store pre-calculated integrals, indexed by source and target orbitals. To illustrate the effectiveness of this compression, consider the N2 molecule (14 electrons, 56 orbitals). The full Hamiltonian ma-trix dimension would be 𝐶 (56 , 14 ) ≈ 4.3 × 10 12 , requiring exabytes of storage. In contrast, our compressed tables are constructed by padding all excitation lists to a uniform length (max_single_size=27, max_double_size=354). The total memory footprint for these tables is less than 400 KB, a reduction of over 15 orders of magnitude. This aggressive memory optimization comes with a deliberate cost: it enforces an unavoidable indirect addressing (gather) pattern when accessing the lookup tables, making the kernel memory-bandwidth-bound. We accept this as a principled trade-off to stay within real-istic device memory budgets and keep the workflow on GPUs. 
+
+4.2.2 Fine-Grained Kernel Architecture and Execution Flow .
+
+Our kernel design (Algorithm 1) transforms the heavy, monolithic CPU task into a fine-grained, two-level parallel workload perfectly suited for the GPU architecture, as depicted in Figure 5. 
+
+Parallel Decomposition. We employ a "one block per source configuration" mapping. This allows all threads within a block to cooperate on the same source data using low-latency __shared__ memory. Within each block, we assign "one thread per potential ex-citation". To amortize the significant CUDA kernel launch overhead, cuNNQS-SCI HPDC ’26, July 13–16, 2026, Cleveland, OH, USA 
+
+Algorithm 1: High-Level Structure of the Coupled-Configuration Generation Kernel  
+
+> 1
+
+Function __global__ coupledKernel( SourceDet* source_dets ,ExcitationTable* T_double , Result* output_buffer , int* g_counter) :
+
+// Persistent shared memory for one block  
+
+> 2
+
+__shared__ Result temp_results[BLOCK_SIZE]  
+
+> 3
+
+__shared__ int valid_mask[BLOCK_SIZE] 
+
+// Block-level grid-stride loop over source configurations  
+
+> 4
+
+for source_idx = blockIdx.x ; source_idx < num_sources ;
+
+source_idx += gridDim.x do 
+
+// Initialize shared memory for the current source configurations  
+
+> 5
+
+valid_mask[threadIdx.x] = 0  
+
+> 6
+
+syncThreads 
+
+// Thread-level loop over a virtual space of excitations  
+
+> 7
+
+for virtual_id = threadIdx.x ; virtual_id < 𝑁 double ;
+
+virtual_id += blockDim.x do 
+
+// Focus on double excitations for clarity  
+
+> 8
+
+pair_idx, target_idx ←
+
+DecomposeVirtualID(virtual_id)  
+
+> 9
+
+source_orbs(i,j) ←
+
+GetOrbitalPair(source_dets[source_idx], pair_idx)  
+
+> 10
+
+target_orbs(a,b) ←
+
+GetOrbitalPairFromTable(T_double, target_idx)  
+
+> 11
+
+H_element ← IndexedRead(T_double, source_orbs, target_orbs)  
+
+> 12
+
+if |H_element | > 𝜖 then  
+
+> 13
+
+new_det ←
+
+Generateconfigurations(source_dets[source_idx], i, j, a, b)  
+
+> 14
+
+valid_mask[threadIdx.x] = 1  
+
+> 15
+
+temp_results[threadIdx.x] = {new_det, H_element}  
+
+> 16
+
+end  
+
+> 17
+
+end  
+
+> 18
+
+syncThreads 
+
+// Filter and write valid results using a modular device function  
+
+> 19
+
+CompactFunc(temp_results, valid_mask, output_buffer, g_counter)  
+
+> 20
+
+syncThreads  
+
+> 21
+
+end 
+
+a persistent kernel with a two-level loop structure is used. An inner loop iterates over a virtualized space of excitations. We define a total number of virtual threads required to cover all possible single and double excitations for a configurations with 𝑛 𝑒𝑙𝑒𝑐 electrons: 
+
+𝑁 𝑠𝑖𝑛𝑔𝑙𝑒 = 𝑛 𝑒𝑙𝑒𝑐 × max_single_size . (6) 
+
+𝑁 𝑑𝑜𝑢𝑏𝑙𝑒 = 𝑛 𝑒𝑙𝑒𝑐 × ( 𝑛 𝑒𝑙𝑒𝑐 − 1)
+
+2 × max_double_size . (7) Each physical thread in the block processes multiple virtual threads in a loop. As shown in Algorithm 1 (lines 8-10), each thread decom-poses its virtual_id to determine the specific source orbitals (e.g., pair (𝑖, 𝑗 )) and target orbital index. It performs an indexed read from corresponding excitation table to retrieve the Hamiltonian matrix element, 𝐻 𝑒𝑙𝑒𝑚𝑒𝑛𝑡 , and computes new configurations via bitwise operations to minimize latency. 
+
+Execution Flow and High-Throughput Filtering. Each thread first computes its target excitation based on its virtual ID. The thread then performs an indexed read to fetch the corresponding Hamil-tonian element 𝐻 𝑒𝑙𝑒𝑚𝑒𝑛𝑡 (line 11). A critical challenge is that only a sparse subset of these generated configurations are valid (i.e., 
+
+|𝐻 𝑒𝑙𝑒𝑚𝑒𝑛𝑡 | > 𝜖 ). The configuration itself is represented as a bitmask (uint64_t array), allowing the creation of a new configurations to be a single, highly efficient bitwise XOR operation (line 13). To filter Global                                                      
+
+> Shared
+> memory
+> memory
+> blockblockblockblockblock
+> ...
+> ...
+> ...
+> ...
+> ...
+> configurationcoupling
+> VMCspace
+> ...
+> ...
+> block
+> ...............
+> 0.40.00.00.40.50.70.80.50.00.60.00.00.00.00.0......
+> ((a,b),Hik)…
+> ………
+> (null,0)…
+> ………
+> (a,Hi1)p(null,0)
+> ………
+> ………
+> block
+> …
+> 0.30.0
+> (p,q)
+> GridGridGridGridGridGrid
+> SCI space
+> MaskMaskMaskMask
+> 0.50.70.40.40.00.00.80.60.50.30.00.00.00.00.0......0.00.00.00.0
+> 0.00.0
+
+Figure 5: GPU-accelerated SCI algorithm with dual screening criteria (non-zero integrals + adaptive thresholds) enables efficient quantum state generation and rapid many-body Hamiltonian construction via hierarchical grid-block architecture. 
+
+these efficiently without the serialization penalty of atomicAdd, we implement an integrated parallel stream compaction. After the com-putation loop, threads with valid results collaboratively perform a fast, block-wide prefix sum on a valid_mask in shared memory (line 14). This gives each valid result a conflict-free destination index within a temporary shared buffer. Finally, the entire block performs a single, coalesced write to transfer its compacted results to global memory, using a single atomicAdd per block to reserve its destination slab. This design ensures that both the generation and the filtering stages are executed with maximum parallelism and minimal memory contention. 
+
+## 4.3 A GPU Memory-Centric Execution Paradigm for Scalable Scientific Computing 
+
+With computational and distributed bottlenecks addressed, the final barrier to simulating larger systems is the node-level memory wall. The working set of a single SCI iteration can easily exceed the ca-pacity of high-bandwidth device memory (HBM). To overcome this, we propose a generalizable GPU memory-centric execution para-digm tailored for large-scale AI for Science (AI4S) applications. Our approach systematically addresses the memory constraint through three principles: (1) rigorous data dependency analysis to identify synchronization barriers, (2) mini-batch processing to cap peak memory usage, and (3) asynchronous compute-transfer overlap to hide host-device communication latency. 
+
+4.3.1 Dependency Analysis and Stage Partitioning . A naive streaming approach is often precluded in scientific computing by global dependencies. We analyzed the intrinsic data flow of the SCI algorithm and identified two unavoidable global synchronization barriers that require a complete view of the global dataset, effec-tively partitioning the workflow into three distinct computational stages: The Global De-duplication Barrier: The uniqueness of a configuration cannot be determined until all candidate coupled configurations from all nodes have been generated and aggregated. This forces a synchronization point where the entire candidate set must be materialized (in host memory) before inference can begin. HPDC ’26, July 13–16, 2026, Cleveland, OH, USA Sun, Kan, and Long et al. 
+
+> Figure 6: Staged GPU workflow with overlapped host–device data movement. Generation, inference, and energy calculation are exe-cuted in GPU batches, while configuration offloading and preloading from CPU memory are overlapped across stages.
+
+The Selection & Restoration Barrier: Global Top-K selection requires the wavefunction amplitudes ( Ψ) of all unique configu-rations. Furthermore, mapping these unique Ψ values back to the original coupled set for energy calculation requires a complete re-verse index. Based on these barriers, we restructured the monolithic iteration into a three-stage macro-pipeline. This separation allows us to manage memory constraints independently for each stage. 
+
+4.3.2 Mini-Batch Processing for Peak Memory Reduction .
+
+To execute these stages within limited GPU memory, we treat the de-vice memory not as a storage medium but as a high-speed "scratch-pad" (cache) for the active working set. We implement a Mini-Batch Execution Model where large datasets are sliced into manageable chunks ( 𝐵 𝑠𝑖𝑧𝑒 ), processed sequentially to enforce memory ceiling. Instead of processing the entire dataset 𝐷 of size 𝑁 , we iterate through 𝑁 /𝐵 𝑠𝑖𝑧𝑒 batches. For instance, during the inference stage, rather than storing all output logits, we immediately perform a local reduction (e.g., local Top-K update) on the current batch and discard the raw data. This ensures that the peak GPU memory foot-print is determined solely by 𝐵 𝑠𝑖𝑧𝑒 and model weights, effectively decoupling it from the total problem scale 𝑁 .
+
+4.3.3 Hiding Latency via Asynchronous Compute-Transfer Overlap . While offloading "cold" data to host memory solves the ca-pacity issue, it introduces significant latency due to PCIe bandwidth bottlenecks. To mitigate this, we employ a multi-stream pipelining mechanism that overlaps data transfer with computation. We utilize separate CUDA streams for Host-to-Device (H2D) transfer, Kernel Computation (Compute), and Device-to-Host (D2H) transfer. By employing a double-buffering strategy, we pre-fetch batch 𝑖 + 1 and write back batch 𝑖 − 1 while the GPU computes batch 
+
+𝑖 . This 3-way overlap strategy hides the communication overhead associated with the frequent host-device data movement, ensuring that GPU execution units remain saturated even when processing massive out-of-core datasets. 
+
+4.3.4 Implementation: The Three-Stage Pipeline . Applying this paradigm, the memory management for each stage is as follows: 
+
+Stage 1 (Generation & De-duplication): As coupled config-urations are generated on the GPU in batches, cold data are im-mediately offloaded to host memory via an asynchronous D2H stream, while only inference-relevant data are retained on the GPU, preventing memory accumulation. Global de-duplication is then performed on the retained device data directly on the GPU. 
+
+Stage 2 (Inference & Batched Selection): Unique configura-tions are streamed onto the GPU (H2D) in batches for inference. To avoid storing all resulting Ψ values, we utilize a streaming reduction approach: a running, heap-based collection of the best candidates is maintained in GPU memory and progressively refined with each new batch, discarding non-essential amplitudes immediately. 
+
+Stage 3 (Energy Calculation & Restoration): To map Ψ values back, we process the original, non-unique configurations in batches. For each batch, we construct the required reverse index "just-in-time" by searching against the full unique set (streamed from host memory) on GPU. This strategy avoids ever materializing the entire, massive reverse index in GPU memory. 
+
+## 5 Experimental Evaluation 
+
+In this section, we present a comprehensive evaluation of cuNNQS-SCI to demonstrate both its numerical correctness and system-level efficiency. We begin by validating in Section ?? that the extensive system redesign and GPU-centric optimizations do not compromise the accuracy of the underlying NNQS-SCI methodology. In Section 5.3, we analyze the end-to-end performance gains and bottleneck shifts on a large-scale distributed GPU cluster, followed by a de-tailed scalability analysis in Section 5.5. Subsequently, Section 5.4 evaluates the robustness of our distributed global de-duplication algorithm, with a specific focus on load balancing and through-put across diverse chemical systems. Finally, Section 5.6 demon-strates the effectiveness of GPU memory-centric execution model in overcoming hardware memory constraints for memory-intensive workloads. 
+
+## 5.1 Evaluation Setup 
+
+Platforms The experimental evaluation is conducted on a hetero-geneous cluster consisting of up to 16 compute nodes. Each node is equipped with a Kunpeng-920 CPU (128 cores) and 256 GB of host memory. For acceleration, each node features four NVIDIA A100 GPUs (40GB) connected via PCIe. Inter-node communication is established through a high-speed Ethernet network. On the software side, cuNNQS-SCI is implemented using CUDA C++ for coupled configuration calculations, leveraging the CUB and Thrust libraries. The implementation is integrated as a PyTorch C++ extension. The framework utilizes PyTorch to manage the Transformer decoder and torch.distributed for parallelization. Ad-ditionally, CuPy is employed to compute local energies efficiently during the wave function optimization process. The designs of our distributed global de-duplication algorithm and coupled calculation kernel are platform-agnostic and can be implemented on different GPU platforms. In this work, we selected the NVIDIA A100 platform to evaluate these designs. 
+
+NNQS models and datasets The wave function ansatz in this work is configured as follows: for the amplitude part, we set the embedding dimension to 32, 4 decoder layers, and 4 attention heads. And for the phase part, we use 4-layer MLP with hidden dimensions [512, 512, 512]. We have used AdamW [21] as the gradient descent optimizer with learning rate setting to 3×10 −4. To comprehensively evaluate the accuracy and scalability of cuNNQS-SCI, we selected cuNNQS-SCI HPDC ’26, July 13–16, 2026, Cleveland, OH, USA 
+
+a diverse set of chemical systems ranging from simple molecules to complex, strongly correlated systems. These benchmarks are categorized into three tiers based on their qubit count: 
+
+• Small-scale Benchmarks ( ≤ 30 qubits): We utilize C2 and N2
+
+under the minimal STO-3G basis set, alongside LiH , LiF , LiCl ,and Li 2O. These systems serve as the primary baseline for verify-ing numerical correctness. The ground-state reference energies for these molecules are exactly computed using the Full Config-uration Interaction (FCI) method via the PySCF library [35]. 
+
+• Medium-scale Systems ( 30 ∼ 64 qubits): To evaluate perfor-mance on intermediate workloads, we select C2H4O and H2O, as well as C2 and N2 employing the more comprehensive cc-pVDZ basis set. The application of this larger basis set significantly expands the configuration space and required qubit count. The reference energies for these systems are similarly obtained from PySCF calculations. 
+
+• Large-scale Challenge (84 qubits): To stress-test the frame-work’s limits on strongly correlated systems, we study the Chromium dimer ( Cr 2), which requires 84 qubits. As FCI is computationally intractable at this scale, we adopt the result from the state-of-the-art NNQS-SCI [ 16 ] method as the reference ground-state energy. 
+
+## 5.2 Evaluation of Accuracy 
+
+This section verifies that cuNNQS-SCI’s fully GPU-accelerated framework maintains the numerical accuracy of the underlying SCI methodology. We benchmark against two distinct baselines: the sampling-based NNQS-Transformer and the state-of-the-art exact method, NNQS-SCI. First, we evaluate small-scale systems ( ≤ 30 qubits): C2 and N2
+
+(STO-3G), LiH , LiF , LiCl , and Li 2O. As Figure 7 shows, cuNNQS-SCI exhibits superior convergence, consistently stabilizing below the chemical accuracy threshold ( 1.6 × 10 −3 Hartree) across all molecules, whereas NNQS-Transformer struggles to reach compa-rable precision. Furthermore, upon convergence, the ground-state 0 10000 20000 30000                                
+
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> (a)
+> C2
+> 010000 20000 30000
+> 10 5
+> 10 3
+> 10 1
+> (b)
+> LiH
+> 010000 20000 30000
+> 10 4
+> 10 2
+> 10 0
+> (c)
+> LiF
+> 010000 20000 30000
+> 10 4
+> 10 2
+> 10 0
+> (d)
+> N2
+> 010000 20000 30000
+> 10 4
+> 10 2
+> 10 0
+> (e)
+> LiCl
+> 010000 20000 30000
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> (f)
+> Li 2O
+> E - E FCI  (Ha)
+> NNQS-Transformer
+> cuNNQS-SCI
+> NNQS-SCI
+> Chemical Accuracy
+
+Figure 7: Subfigures (a)–(f) present the absolute energy errors (with respect to full configuration interaction, FCI) as functions of iter-ation steps for C2 and N2 (sto3g), LiH, LiF, LiCl, Li2O, respectively, calculated using the NNQS-Transformer, NNQS-SCI and cuNNQS-SCI methods. The red dashed line denotes the chemical accuracy threshold ( 0.0016 hartree). 0 20 40 60 80 100    
+
+> Optimization Step
+> 0.075
+> 0.050
+> 0.025
+> 0.000
+> Energy (Hartree)  2.0863e3
+> Numerical Variation
+> MAE: 3.91e-04
+> RMSE: 5.34e-04
+> Max: 2.06e-03
+> cuNNQS-SCI
+> NNQS-SCI
+
+Figure 8: Step-by-step energy comparison on Cr 2 between cuNNQS-SCI and NNQS-SCI. The discrepancy is quantified by MAE (mean absolute error), RMSE (root mean square error), and Max (maximum absolute error). 
+
+energies computed by cuNNQS-SCI perfectly match those of the exact NNQS-SCI baseline, confirming that our GPU approach pre-serves the high fidelity of the original formulation. To assess accuracy at scale, we evaluate the strongly correlated 84-qubit Cr 2 system. Since this exceeds NNQS-Transformer’s com-putational limits, we compare exclusively against NNQS-SCI. Fig-ure 8 presents the step-by-step energy trajectories. Both methods exhibit nearly identical optimization paths, demonstrating that cuNNQS-SCI scales to massive systems without accuracy loss. Note that cuNNQS-SCI does not achieve strict bit-to-bit equiva-lence with the CPU-based NNQS-SCI. This deviation stems inher-ently from hardware execution differences rather than algorithmic flaws. Floating-point arithmetic is non-associative; while NNQS-SCI accumulates amplitudes and local energies sequentially on CPUs, cuNNQS-SCI employs massively parallel GPU reductions and atomic operations. The non-deterministic summation order of thousands of concurrent threads introduces micro-level round-ing differences. However, as quantified in Figure 8, the extremely low deviation (MAE of 3.91 × 10 −4 Hartree for the 84-qubit Cr 2)and the lack of error accumulation over iterations prove this vari-ance is benign. Thus, cuNNQS-SCI maintains rigorous SCI accuracy standards while delivering significant performance acceleration. 
+
+## 5.3 End-to-End Performance and Optimization Breakdown 
+
+To evaluate the practical efficacy of cuNNQS-SCI in large-scale high-performance computing scenarios, we conducted distributed experiments on a cluster of 64 NVIDIA A100 GPUs. We employed two representative systems with distinct computational characteris-tics selected to stress system bottlenecks: (1) Cr 2 System: A heavy-generation workload initialized with 32,000 source configurations, where each generates approximately 30,000 coupled configurations (totaling ∼ 10 9 candidates). (2) N2 System: A large-basis work-load (cc-pVDZ) initialized with 256,000 source configurations, each generates ∼ 4, 100 configurations. We compared our fully GPU-accelerated framework against the state-of-the-art NNQS-SCI baseline. To ensure a fair comparison, the neural network inference components in both setups are iden-tical and executed on GPUs. For the baseline’s CPU-dependent stages, we utilized a highly parallelized implementation running on 128-core Kunpeng-920 CPUs, representing the CPU performance. Figure 9 illustrates the step-by-step execution time breakdown, revealing how each optimization contributes to total speedup. HPDC ’26, July 13–16, 2026, Cleveland, OH, USA Sun, Kan, and Long et al. Original + Coupled                  
+
+> Conf. Opt
+> + Dedup
+> Opt
+> 0
+> 50
+> 100
+> 150
+> 200
+> 250
+> Execution Time (s)
+> 102.3 102.3 102.3
+> 21.0 21.0 22.8
+> 72.6 72.6
+> 43.2
+> Coupled Conf.
+> 432x
+> Dedup
+> 40x
+> Original + Coupled
+> Conf. Opt
+> + Dedup
+> Opt
+> 0
+> 20
+> 40
+> 60
+> 80
+> 25.6 25.6 25.6
+> 6.2 6.2 6.1
+> 37.0 37.0
+> 9.1
+> Coupled Conf.
+> 91x
+> Dedup
+> 22x
+> Coupled Conf. De-duplication Other Inference
+> Cr 2system N2system
+
+Figure 9: End-to-end execution time breakdown for Cr 2 and N 2 sys-tems under the 64-GPU distributed environment. 
+
+1. Baseline Bottlenecks (Original): As shown in the "Original" bars, the baseline suffers significantly from non-AI overheads. For the heavy-generation Cr 2 system, the coupled configuration generation takes 43.2 seconds, and the centralized de-duplication consumes 72.6 seconds. Together with other overheads, non-inference tasks account for 57% of the total runtime (239.1s), exceeding the AI infer-ence time (102.3s). Similarly, for N 2, the non-inference stages con-sume 67% of the total time (52.3s out of 77.9s), with de-duplication being the primary bottleneck (37.0s) due to the large number of source configurations, limiting further distributed scalability. 
+
+2. Optimization 1: GPU Coupled-Configuration Generation (+Cou-pled Conf. Opt): By offloading the generation task to our bitwise-optimized CUDA kernel, we observe an order-of-magnitude perfor-mance leap. For Cr 2, the generation time drops precipitously from 43.2s to 0.1s, achieving a 432 × speedup for this specific kernel. For N2, the generation time is reduced from 9.1s to 0.1s, a 91 × speedup .This effectively eliminates the generation phase as a bottleneck, as shown in the middle bars of Figure 9. 
+
+3. Optimization 2: Distributed Global De-duplication (+Dedup Opt): 
+
+The final step integrates our sort-based distributed de-duplication algorithm. This replaces the slow centralized CPU reduction with a high-bandwidth parallel exchange. For the communication-heavy Cr 2 system, the de-duplication time decreases from 72.6s to 1.8s (40 × speedup ). For N 2, it drops from 37.0s to 1.7s ( 22 × speedup ). 
+
+Conclusion: Bottleneck Shift and Total Gain Combining these optimizations, cuNNQS-SCI achieves total end-to-end speedup of 1.88 × for Cr 2 (239.1s to 127.0s) and 2.32 × for N 2 (77.9s to 33.5s). More importantly, the system behavior has fundamentally shifted. In the optimized workflow (the rightmost bars), the AI inference stage (blue) once again dominates the runtime—accounting for 81% 
+
+of the total time for Cr 2 and 76% for N 2. This confirms that cuNNQS-SCI successfully eliminates the scalability walls of traditional SCI components, allowing the system to fully utilize the massive tensor compute power of modern GPU clusters. 
+
+## 5.4 Evaluation of Distributed De-duplication 
+
+A scalable, load-balanced global de-duplication algorithm is critical for eliminating inter-node redundancy and ensuring high parallel efficiency. We evaluate the performance of our sort-based algo-rithm, which leverages a regular sampling strategy, across a variety of chemical systems and cluster sizes (32 and 64 NVIDIA A100 GPUs). We measure two key metrics to validate its design: (1) the load balance, quantified by the ratio of the maximum to minimum 
+
+Table 1: Load balance and throughput of the cuNNQS-SCI global de-duplication algorithm across various chemical systems and GPU counts. The consistently low Max/Min Ratios and Coefficients of Variation (CV) demonstrate the robustness of our data-aware regular sampling method. Throughput is measured in M items/sec. 
+
+System GPUs Max/Min CV Throughput (Unique Items) Count Ratio (M items/sec) 
+
+C2H4O (430.8 M) 32 1.10 × 0.021 1641.3 64 1.25 × 0.027 1391.1 N2 (320.4 M) 32 1.12 × 0.027 1175.4 64 1.20 × 0.025 1163.6 C2 (257.4 M) 32 1.11 × 0.024 985.9 64 1.02 × 0.010 1292.0 H2O (161.9 M) 32 1.11 × 0.022 693.8 64 1.03 × 0.012 695.5 Cr 2 (966.5 M) 32 1.01 × 0.011 237.5 64 1.01 × 0.012 235.7 
+
+items per GPU after data exchange and the coefficient of variation (CV). (2) the input throughput, defined as the total number of re-dundant items processed per second. The results, summarized in Table 1, demonstrate the exceptional robustness and efficiency of our approach, mitigating data skew across diverse workloads. First, our algorithm consistently achieves near-perfect load bal-ance. Across all five chemically diverse systems—ranging from small molecules to the challenging 84-qubit Chromium Dimer (Cr 2)system with nearly 1 billion unique configurations—the Max/Min Ratio remains consistently low. Notably, for the largest Cr 2 system, the ratio approaches an ideal 1.01x with a CV of approximately 0.01 at both 32 and 64 GPU scales. This empirically proves that our regular sampling method effectively captures the global data distribution without requiring complex statistical estimation. Such deterministic load balancing is fundamental for the predictable scalability of the cuNNQS-SCI framework, effectively preventing straggler nodes that would otherwise bottleneck the computation. Second, the algorithm maintains stable throughput across vary-ing scales. For medium-sized systems like C 2H4O, the algorithm sustains a throughput of over 1.3 billion items per second. Even for the computationally heavier Cr 2 system, it maintains consis-tent performance as the GPU count doubles. This efficiency stems from our design choices: the lightweight local sorting and sampling, the minimal overhead of gathering small sample sets (negligible compared to the data volume), and the highly optimized, single 
+
+MPI_AlltoAllv data exchange phase. In summary, this analysis validates our distributed de-duplication algorithm successfully meets its core design goals. It provides a robustly load-balanced and scalable solution that effectively re-moves the critical bottleneck of inter-node redundancy, even for large-scale systems with heavy workloads. 
+
+## 5.5 Scalability Studies 
+
+We conducted comprehensive scalability benchmarks using the N 2
+
+system on a cluster of up to 64 NVIDIA A100 GPUs. 
+
+Strong Scaling. For the strong scaling evaluation, we used a fixed, large-scale problem: the N2 molecule in a cc-pVDZ basis set cuNNQS-SCI HPDC ’26, July 13–16, 2026, Cleveland, OH, USA 2 4 8 16 32 64               
+
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> Time/Iteration (sec)
+> (a)
+> 24816 32 64
+> Number of GPUs
+> 0
+> 20
+> 40
+> 60
+> Time/Iteration (sec)
+> (b)
+> 0%
+> 25%
+> 50%
+> 75%
+> 100%
+> Parallel efficiency(%)
+> 100.0% 99.6% 99.3% 97.7% 94.9% 91.1%
+> 0%
+> 50%
+> 100%
+> 150%
+> 200%
+> Parallel efficiency
+> 100.0% 106.6% 115.9% 128.2% 143.1%
+> 163.7%
+> Global Deduplication
+> Network Inference
+> Local Energy
+> Coupled States
+
+Figure 10: Scalability of N 2: (a) Strong scaling (SCI space = 256,000), (b) Weak scaling (SCI space = 4000/GPU). 
+
+with a SCI space of 256,000 source configurations. We measured the time per iteration while increasing the number of GPUs from 2 to 64. As shown in Figure 10(a), cuNNQS-SCI demonstrates excellent strong scaling. The time per iteration decreases smoothly from 825 seconds on 2 GPUs to just 29 seconds on 64 GPUs. The parallel effi-ciency, plotted on the secondary y-axis, remains remarkably high, sustaining 91.06% at 64 GPUs. This result is a direct validation of our system design. The lightweight nature of our global de-duplication algorithm (purple bar) and other overheads is minimal, preventing communication costs from overwhelming the parallel speedup. This allows the dominant, perfectly parallelizable Network Inference stage to scale almost linearly with the number of processors. 
+
+Weak Scaling. For the weak scaling test, we defined the work-load per GPU to be 4,000 source configurations and scaled the total problem size proportionally with the number of GPUs. The results, presented in Figure 10(b), reveal a significant and important phe-nomenon: super-linear speedup. The time per iteration does not remain constant but decreases as the scale increases. This leads to an impressive parallel efficiency reaching 163.70% on 64 GPUs. This counter-intuitive result is not primarily due to hardware arti-facts like cache effects, but is a direct consequence of the interplay between the SCI problem’s intrinsic redundancy and our highly efficient global de-duplication algorithm. To illustrate this, Figure 11 plots the growth of the total generated coupled configurations versus the globally unique configurations during the weak scaling experiment. While the total number of generated configurations (the input workload) grows linearly with the number of GPUs, the number of globally unique configurations (the effective computa-tional workload) exhibits a distinct sub-linear growth. The widening gap between these two curves demonstrates that the global redundancy rate increases dramatically at larger scales. For example, at 64 GPUs, over 66% of the generated configura-tions are redundant. Because our global de-duplication algorithm efficiently eliminates all of this redundancy, the effective compu-tational workload that each GPU must process in the expensive Network Inference stage actually decreases as we add more nodes. This reduction in the true workload per node directly leads to a shorter execution time per iteration and, therefore, a measured 2 4 8 16 32 64 
+
+> Number of Nodes / GPUs
+> 0M
+> 500M
+> 1000M
+> 1500M
+> Number of Coupled States
+> Increasing Redundancy Rate
+> (Gap widens)
+> Total Redundancy
+> Total Generated States (Linear Growth)
+> Globally Unique States (Sub-linear Growth)
+
+Figure 11: Non-linear growth of unique configurations in weak scal-ing test. 
+
+parallel efficiency exceeding 100%. This finding powerfully under-scores that an efficient global de-duplication strategy is not merely an optimization for SCI simulations; it is a critical component that enables more favorable scaling dynamics at large scales. 
+
+## 5.6 Evaluation of Memory Management 
+
+The ultimate goal of our cuNNQS-SCI framework is to break the node-level memory wall, enabling simulations of systems that are too large to fit into a single GPU’s memory. To validate the ef-fectiveness of our three-stage execution model, we selected four representative chemical systems and configured them with 50,000 configurations in SCI space to create a memory-intensive workload. Theoretical Peak (Without Optimization): This represents the peak GPU memory required if all intermediate data for a full it-eration (e.g., all coupled configurations, reverse indices, and 𝑃𝑠𝑖 
+
+values) had to reside simultaneously in GPU memory. This value is calculated based on the data structures and serves as the baseline for a conventional, non-optimized implementation. cuNNQS-SCI Measured Peak (With Optimization): This is the actual, maximum GPU memory allocated during a full iteration of cuNNQS-SCI. We measure this using torch api. Since our custom CUDA kernels are integrated as PyTorch extensions and other com-ponents (like CuPy) are configured to use PyTorch caching allocator, this provides a reliable, holistic measurement of the peak memory usage for the entire workflow. All experiments were conducted on an NVIDIA A100 GPU with a 40 GB GPU memory capacity limit. Figure 12 powerfully demonstrates the efficacy of our design. For all four tested systems, the Theoretical Peak GPU memory (red line) significantly exceeds the 40 GB physical capacity limit of the GPU. For instance, the C 2H4O and N 2 systems would theoretically require 70 GB and 65 GB of GPU memory, respectively. This clearly indicates that these scientifically important calculations would be entirely infeasible with a conventional approach, leading to an immediate out-of-memory error. In stark contrast, the cuNNQS-SCI Measured Peak (blue bars) stays comfortably below the hardware limit in every case. Our three-stage pipeline, which intelligently stages data between host memory and device memory, successfully reduces the peak memory footprint to a manageable level. For C2H4O , the peak usage was reduced by 46.4% to just 37.5 GB. For N2, the reduction was 48.3%, bringing the peak down to 33.6 GB. Notably, the measured peaks are intentionally close to the 40 GB limit. This is not a sign of inefficiency, but rather a feature of our design: cuNNQS-SCI aims to maximize the utilization of available HPDC ’26, July 13–16, 2026, Cleveland, OH, USA Sun, Kan, and Long et al. 0       
+
+> 25
+> 50
+> 75
+> Peak VRAM Usage (GB)
+> 55
+> 70
+> 60 65
+> 35.6 37.5 34.4 33.6
+> GPU
+> Memory
+> Limit
+> 40 GB VRAM Capacity Limit
+> Theoretical Peak (Without Optimization)
+> cuNNQS-SCI Measured Peak (With Optimization)
+> H2OC2H4ONC22
+> Figure 12: Comparison of theoretical and cuNNQS-SCI-measured peak device memory usage, showing that cuNNQS-SCI keeps usage within hardware limits.
+
+GPU memory by creating the largest possible data batches for each stage. This ensures high computational memory usage while guaranteeing the process remains within physical memory bounds. 
+
+## 6 Related Works 
+
+Neural Network Quantum States (NNQS) Scaling. Since the introduction of the RBM ansatz by Carleo and Troyer [ 3], NNQS has evolved from small lattice prototypes to massive ab-initio simula-tions requiring leadership-class supercomputing. Early frameworks such as NetKet [ 2 ] primarily utilized MPI parallelism over Monte Carlo chains. With the rise of deep architectures like FermiNet [ 25 ]and PauliNet [ 10 ], the focus shifted toward GPU acceleration. Re-cent works exemplify this transition to large-scale GPU computing. Vicentini et al. [ 40 ] systematically integrated MPI-based distributed stochastic reconfiguration (SR) protocols into the NetKet 3 toolkit; Zhao et al. [ 45 ] employed batch autoregressive sampling, scaling to systems of 76 qubits. However, these approaches predominantly rely on variational Monte Carlo (VMC) sampling, which suffers from stochastic noise rooted in the fermionic sign problem [6, 23, 28]. In contrast, cuNNQS-SCI adopts a deterministic SCI strategy. Unlike sampling-based methods that heuristically infer the wave-function, our approach systematically constructs the Hilbert space. While this avoids sampling noise, it introduces irregular mem-ory access patterns and dynamic workload imbalance that strictly sampling-based frameworks (e.g., [20, 43]) do not address. 
+
+GPU-Accelerated Selected CI. Selected CI (SCI) methods, origi-nating from the CIPSI algorithm [ 13 ] and including modern variants such as Heat-bath CI (HCI) and Adaptive Sampling CI (ASCI) [ 33 ,36 ], reduce computational cost by filtering the configuration space. Traditional CI implementations, like NWChem [ 38 ], are largely CPU-bound due to the complex logic and irregular memory access patterns of Slater–Condon evaluations. Early GPU acceleration efforts offloaded only numerically intensive kernels [ 37 ], leaving configurations generation and management on the host, which made PCIe communication and CPU throughput scalability bot-tlenecks. NNQS-SCI [ 16 ] combines NNQS inference with SCI but retains a heterogeneous execution model that limits scalability to large candidate spaces. The fundamental challenge of GPU-based SCI lies in the highly irregular configuration expansion, leading to thread divergence, uncoalesced memory access, and severe workload imbalance, sim-ilar to GPU graph traversal and sparse matrix expansion. While optimizations for specific Hamiltonians exist [ 42 ], general-purpose GPU kernels for on-the-fly Slater–Condon evaluation remain scarce. cuNNQS-SCI addresses these challenges by moving the entire SCI workflow—generation, coupling, deduplication, and inference—onto the GPU and by redesigning data layouts for irregular workloads, drawing inspiration from high-performance graph analytics frame-works such as Gunrock [41] and the GAP Benchmark Suite [1]. 
+
+Memory-Centric System Design. Memory capacity is the pri-mary constraint for high-accuracy quantum simulations on GPUs. Standard approaches, particularly in tensor-network states like DMRG [ 30 ] or in full CI, are fundamentally limited by memory capacity and run out of memory (OOM) for large systems. In deep learning, techniques to overcome this include pipeline parallelism in GPipe [ 12 ] or memory optimization with CPU-offloading in ZeRO [ 26 ]. However, the random access nature of checking if a con-figuration exists in the selected space makes standard swapping in-efficient for SCI. Recent system-level optimizations for NNQS, such as those discussed in [ 44 ] and [ 32 ], focus on optimizing network weights memory. cuNNQS-SCI shifts the focus to the state memory. By implementing a memory-centric execution model that dynami-cally streams mini-batches of configurations, we treat GPU memory as a cache for the active Hilbert space. This allows cuNNQS-SCI to simulate system sizes that exceed the physical HBM capacity of a single device, extending the reach of GPU-accelerated SCI beyond what was possible with purely in-core approaches like NNBF [ 19 ]. 
+
+## 7 Conclusion and Future Work 
+
+cuNNQS-SCI overcomes the long-standing scalability bottleneck in high-precision quantum chemistry methods like SCI by addressing the node-level memory wall. Our memory-first design incorpo-rates: (1) memory-optimized CUDA kernels for core computation, (2) a load-balanced global de-duplication algorithm to eliminate redundancy, and (3) a three-stage out-of-core execution model that exceeds single-GPU memory limits. Evaluation demonstrates over 90% parallel efficiency on 64 GPUs and substantial speedups over SOTA heterogeneous solutions. Our future work will focus on further enhancing the scalability of cuNNQS-SCI by refining its core architectural components. We plan to investigate more sophisticated memory management strategies, to further reduce the memory pressure from large, intermediate data structures. Concurrently, we will explore advanced network communication methods, to minimize latency and improve parallel efficiency on ultra-large-scale clusters. These combined efforts will continue to push the boundaries of what is possible, enabling the application of cuNNQS-SCI to even more complex and scientifically significant large-scale systems. 
+
+## Acknowledgment 
+
+This work was supported by the National Natural Science Foun-dation of China (Grant Nos. 62032023 and T2125013), the Inno-vation Funding of ICT, CAS (Grant No. E461050), and the Na-tional Key Research and Development Program of China (Grant No. 2025YFB3003702). The AI-driven experiments, simulations and model training were performed on the robotic AI-Scientist platform of Chinese Academy of Sciences. cuNNQS-SCI HPDC ’26, July 13–16, 2026, Cleveland, OH, USA 
+
+## References 
+
+[1] Scott Beamer, Krste Asanović, and David Patterson. 2015. The GAP benchmark suite. arXiv preprint arXiv:1508.03619 (2015). [2] Giuseppe Carleo, Kenny Choo, Damian Hofmann, James ET Smith, Tom Wester-hout, Fabien Alet, Emily J Davis, Stavros Efthymiou, Ivan Glasser, Sheng-Hsuan Lin, et al . 2019. NetKet: A machine learning toolkit for many-body quantum systems. SoftwareX 10 (2019), 100311. [3] Giuseppe Carleo and Matthias Troyer. 2017. Solving the quantum many-body problem with artificial neural networks. Science 355, 6325 (2017), 602–606. [4] Ao Chen and Markus Heyl. 2024. Empowering deep neural quantum states through efficient optimization. Nature Physics 20, 9 (2024), 1476–1481. [5] Samuel Yen-Chi Chen, Chao-Han Huck Yang, Jun Qi, Pin-Yu Chen, Xiaoli Ma, and Hsi-Sheng Goan. 2020. Variational quantum circuits for deep reinforcement learning. IEEE access 8 (2020), 141007–141024. [6] Kenny Choo, Antonio Mezzacapo, and Giuseppe Carleo. 2020. Fermionic neural-network states for ab-initio electronic structure. Nature communications 11, 1 (2020), 2368. [7] Kenny Choo, Titus Neupert, and Giuseppe Carleo. 2019. Two-dimensional frus-trated J 1-J 2 model studied with neural network quantum states. Physical Review B 100, 12 (2019), 125124. [8] Pavlo O Dral. 2020. Quantum chemistry in the age of machine learning. The journal of physical chemistry letters 11, 6 (2020), 2336–2347. [9] Hong Gao, Satoshi Imamura, Akihiko Kasagi, and Eiji Yoshida. 2024. Distributed implementation of full configuration interaction for one trillion determinants. 
+
+Journal of Chemical Theory and Computation 20, 3 (2024), 1185–1192. [10] Jan Hermann, Zeno Schätzle, and Frank Noé. 2020. Deep-neural-network solution of the electronic Schrödinger equation. Nature Chemistry 12, 10 (2020), 891–897. [11] Jan Hermann, James Spencer, Kenny Choo, Antonio Mezzacapo, W Matthew C Foulkes, David Pfau, Giuseppe Carleo, and Frank Noé. 2023. Ab initio quantum chemistry with neural-network wavefunctions. Nature Reviews Chemistry 7, 10 (2023), 692–709. [12] Yanping Huang, Youlong Cheng, Ankur Bapna, Orhan Firat, Dehao Chen, Mia Chen, HyoukJoong Lee, Jiquan Ngiam, Quoc V Le, Yonghui Wu, et al . 2019. Gpipe: Efficient training of giant neural networks using pipeline parallelism. Advances in neural information processing systems 32 (2019). [13] Bernard Huron, JP Malrieu, and P Rancurel. 1973. Iterative perturbation calcula-tions of ground and excited state energies from multiconfigurational zeroth-order wavefunctions. The Journal of Chemical Physics 58, 12 (1973), 5745–5759. [14] Weile Jia, Han Wang, Mohan Chen, Denghui Lu, Lin Lin, Roberto Car, E Weinan, and Linfeng Zhang. 2020. Pushing the limit of molecular dynamics with ab initio accuracy to 100 million atoms with machine learning. In SC20: International conference for high performance computing, networking, storage and analysis . IEEE, 1–14. [15] Mohammed Abdul Lateef Junaid. 2025. Artificial intelligence driven innovations in biochemistry: A review of emerging research frontiers. Biomolecules and Biomedicine 25, 4 (2025), 739. [16] Bowen Kan, Yumeng Zhou, Daiyou Xie, Pengyu Zhou, Yunquan Zhang, and Honghui Shang. 2025. NNQS-SCI: Tackling Trillion-Dimensional Hilbert Space with Adaptive Neural Network Quantum States. In The International Conference for High Performance Computing, Networking, Storage and Analysis (SC ’25) (St. Louis, MO, USA). Association for Computing Machinery (ACM), New York, NY, USA, 13 pages. doi:10.1145/3712285.3759800 [17] Peter J Knowles and Nicholas C Handy. 1984. A new determinant-based full configuration interaction method. Chemical physics letters 111, 4-5 (1984), 315– 321. [18] Hannah Lange, Anka Van de Walle, Atiye Abedinnia, and Annabelle Bohrdt. 2024. From architectures to applications: A review of neural quantum states. Quantum Science and Technology (2024). [19] An-Jun Liu and Bryan K. Clark. 2024. Neural network backflow for ab initio 
+
+quantum chemistry. Physical Review B 110, 11 (2024), 115137. doi:10.1103/ PhysRevB.110.115137 [20] Huan Ma, Honghui Shang, and Jinlong Yang. 2024. Quantum embedding method with transformer neural network quantum states for strongly correlated materials. 
+
+npj Computational Materials 10, 1 (2024), 220. [21] Matija Medvidović and Javier Robledo Moreno. 2024. Neural-network quantum states for many-body physics. The European Physical Journal Plus 139, 7 (2024), 1–26. [22] Jeppe Olsen, Poul Jørgensen, and John N. Simons. 1990. Passing the one-billion limit in full configuration-interaction (FCI) calculations. Chemical Physics Letters 
+
+169, 6 (1990), 463–472. doi:10.1016/0009-2614(90)85633-N [23] Bryan O’Gorman, Sandy Irani, James Whitfield, and Bill Fefferman. 2022. In-tractability of Electronic Structure in a Fixed Basis. PRX Quantum 3, 2 (2022), 020322. doi:10.1103/PRXQuantum.3.020322 [24] Bryan O’Gorman, Sandy Irani, James Whitfield, and Bill Fefferman. 2022. In-tractability of electronic structure in a fixed basis. PRX Quantum 3, 2 (2022), 020322. [25] David Pfau, James S Spencer, Alexander GDG Matthews, and W Matthew C Foulkes. 2020. Ab initio solution of the many-electron Schrödinger equation with deep neural networks. Physical review research 2, 3 (2020), 033429. [26] Jie Ren, Samyam Rajbhandari, Reza Yazdani Aminabadi, Olatunji Ruwase, Shuangyan Yang, Minjia Zhang, Dong Li, and Yuxiong He. 2021. {Zero-offload }:Democratizing {billion-scale } model training. In 2021 USENIX Annual Technical Conference (USENIX ATC 21) . 551–564. [27] Yousef Saad. 2011. Numerical methods for large eigenvalue problems: revised edition . SIAM. [28] Anders W Sandvik. 2010. Computational studies of quantum spin systems. In 
+
+AIP Conference Proceedings , Vol. 1297. American Institute of Physics, 135–338. [29] Markus Schmitt and Markus Heyl. 2020. Quantum many-body dynamics in two dimensions with artificial neural networks. Physical Review Letters 125, 10 (2020), 100503. [30] Ulrich Schollwöck. 2011. The density-matrix renormalization group in the age of matrix product states. Annals of physics 326, 1 (2011), 96–192. [31] Jeffrey B Schriber and Francesco A Evangelista. 2017. Adaptive configuration interaction for computing challenging electronic excited states with tunable accuracy. Journal of chemical theory and computation 13, 11 (2017), 5354–5366. [32] Or Sharir, Yoav Levine, Noam Wies, Giuseppe Carleo, and Amnon Shashua. 2020. Deep Autoregressive Models for the Efficient Variational Simulation of Many-Body Quantum Systems. Physical Review Letters 124, 2 (2020), 020503. doi:10.1103/PhysRevLett.124.020503 [33] Sandeep Sharma, Adam A. Holmes, Guillaume Jeanmairet, Ali Alavi, and C. J. Umrigar. 2017. Semistochastic Heat-Bath Configuration Interaction Method: Selected Configuration Interaction with Semistochastic Perturbation Theory. 
+
+Journal of Chemical Theory and Computation 13, 4 (2017), 1595–1604. doi:10.1021/ acs.jctc.6b01028 [34] Rick Stevens, Valerie Taylor, Jeff Nichols, Arthur Barney Maccabe, Katherine Yelick, and David Brown. 2020. Ai for science: Report on the department of energy (doe) town halls on artificial intelligence (ai) for science . Technical Report. Argonne National Lab.(ANL), Argonne, IL (United States). [35] Qiming Sun, Timothy C Berkelbach, Nick S Blunt, George H Booth, Sheng Guo, Zhendong Li, Junzi Liu, James D McClain, Elvira R Sayfutyarova, Sandeep Sharma, et al . 2018. PySCF: the Python-based simulations of chemistry framework. Wiley Interdisciplinary Reviews: Computational Molecular Science 8, 1 (2018), e1340. [36] Norm M Tubman, C Daniel Freeman, Daniel S Levine, Diptarka Hait, Martin Head-Gordon, and K Birgitta Whaley. 2020. Modern approaches to exact diagonalization and selected configuration interaction with the adaptive sampling CI method. 
+
+Journal of chemical theory and computation 16, 4 (2020), 2139–2159. [37] Ivan S Ufimtsev and Todd J Martinez. 2009. Quantum chemistry on graphical processing units. 3. Analytical energy gradients, geometry optimization, and first principles molecular dynamics. Journal of Chemical Theory and Computation 5, 10 (2009), 2619–2628. [38] Marat Valiev, Eric J Bylaska, Niranjan Govind, Karol Kowalski, Tjerk P Straatsma, Hubertus Johannes Jacobus Van Dam, Dunyou Wang, Jarek Nieplocha, Edoardo Aprà, Theresa L Windus, et al . 2010. NWChem: A comprehensive and scalable open-source solution for large scale molecular simulations. Computer Physics Communications 181, 9 (2010), 1477–1489. [39] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. Advances in neural information processing systems 30 (2017). [40] Filippo Vicentini, Damian Hofmann, Attila Szabó, Dian Wu, Christopher Roth, Clemens Giuliani, Gabriel Pescia, Jannes Nys, Vladimir Vargas-Calderón, Nikita Astrakhantsev, et al . 2022. NetKet 3: Machine learning toolbox for many-body quantum systems. SciPost Physics Codebases (2022), 007. [41] Yangzihao Wang, Andrew Davidson, Yuechao Pan, Yuduo Wu, Andy Riffel, and John D Owens. 2016. Gunrock: A high-performance graph processing library on the GPU. In Proceedings of the 21st ACM SIGPLAN symposium on principles and practice of parallel programming . 1–12. [42] James Daniel Whitfield, Peter John Love, and Alán Aspuru-Guzik. 2013. Compu-tational complexity in electronic structure. Physical Chemistry Chemical Physics 
+
+15, 2 (2013), 397–411. [43] Yangjun Wu, Chu Guo, Yi Fan, Pengyu Zhou, and Honghui Shang. 2023. NNQS-Transformer: an Efficient and Scalable Neural Network Quantum States Approach for Ab initio Quantum Chemistry. In Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis (Denver, CO, USA) (SC ’23) . Association for Computing Machinery, New York, NY, USA, Article 42, 13 pages. doi:10.1145/3581784.3607061 [44] Tianchen Zhao, James Stokes, and Shravan Veerapaneni. 2023. Scalable neural quantum states architecture for quantum chemistry. Machine Learning: Science and Technology 4, 2 (2023), 025034. [45] Xuncheng Zhao, Mingfan Li, Qian Xiao, Junshi Chen, Fei Wang, Li Shen, Meijia Zhao, Wenhao Wu, Hong An, Lixin He, and Xiao Liang. 2022. AI for Quantum Me-chanics: High Performance Quantum Many-Body Simulations via Deep Learning. In SC22: International Conference for High Performance Computing, Networking, Storage and Analysis . 1–15. doi:10.1109/SC41404.2022.00053

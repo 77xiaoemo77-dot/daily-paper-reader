@@ -1,0 +1,647 @@
+Title: Distributed Variational Quantum Linear Solver
+
+URL Source: https://arxiv.org/pdf/2604.14435v1
+
+Published Time: Fri, 17 Apr 2026 00:15:41 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Distributed Variational Quantum Linear Solver 
+
+Chao Lu ∗, Pooja Rao †, Muralikrishnan Gopalakrishnan Meena ∗, Kalyana Chakaravarthi Gottiparthi ∗∗National Center for Computational Sciences , Oak Ridge National Laboratory , Oak Ridge, TN, USA 
+
+> †
+
+NVIDIA Corporation , Santa Clara, CA, USA Email: {luc1, gopalakrishm, gottiparthik }@ornl.gov; porao@nvidia.com 
+
+Abstract —The Variational Quantum Linear Solver (VQLS), a hybrid quantum-classical algorithm for solving linear systems, faces a practical scalability bottleneck: the Linear Combination of Unitaries (LCU) decomposition requires O(L2) circuit eval-uations per optimizer iteration, where L can grow as 4n for 
+
+n-qubit systems for the worst case scenario. We address this computational bottleneck through two complementary strategies. First, we present a distributed VQLS (D-VQLS) framework, built on NVIDIA CUDA-Q, that enables asynchronous, scalable distribution of the O(L2) cost-function evaluations. Second, a fast Walsh–Hadamard transform (FWHT)-based Pauli decomposition with 1% coefficient thresholding curbs the exponential growth of LCU terms, reducing L from O(2 n) to O(1) for n > 6 qubits and compressing the per-iteration circuit complexity from O(n·4n) to 
+
+O(n) for sparse, structured matrices. For a 10-qubit tridiagonal Toeplitz system, this yields a 256 × reduction—from 23 million to 90,112 circuits per iteration—while preserving over 99 .99% 
+
+solution fidelity. Additionally, to inform feasibility on early fault-tolerant QPUs, the paper provides resource estimates— gate counts, qubit requirements, and circuit evaluations per iteration—for VQLS applied to arbitrary matrices. The D-VQLS framework is validated on the NERSC Perl-mutter supercomputer using multi-node, multi-GPU ideal state-vector simulations, achieving over 99 .99% fidelity against clas-sical solutions on tridiagonal Toeplitz and Hele–Shaw flow benchmarks, with near-ideal strong scaling up to 24 GPUs and 
+
+95 .3% weak scaling efficiency at 96 GPUs processing 360,448 circuits per iteration for a 10-qubit system. Systematic profiling identifies the optimal resource allocation for distributed quantum circuit workloads, yielding a 2.52 × speedup for the configurations studied. 
+
+Index Terms —quantum linear solver, variational quantum linear solver, hybrid solver, multi-QPU, distributed algorithms, quantum simulation 
+
+I. I NTRODUCTION 
+
+Solving large-scale linear systems of the form Ax = b re-mains a central computational bottleneck across scientific and engineering disciplines, from Computational Fluid Dynamics (CFD) and structural analysis to weather forecasting and financial modeling. Classical solvers exploit matrix sparsity and structure through iterative methods and preconditioning, yet their complexity scales polynomially with respect to the system size N as O(N m) with m ∈ [1 , 2.3] depending on the algorithmic regime and matrix structure [1], [2]. As simulation fidelity demands grow and mesh resolutions increase, even the state-of-the-art classical linear solvers face fundamental scalability limitations, particularly when condition numbers grow rapidly with refinement or when many right-hand sides must be solved repeatedly across time steps. Quantum computing offers a fundamentally different paradigm for tackling these systems. The Harrow–Hassidim– Lloyd (HHL) algorithm [3] was the first to demonstrate a potential exponential speedup, achieving logarithmic scaling 
+
+O(log N ) with respect to the matrix dimension. However, the HHL algorithm’s reliance on deep and high-precision Quantum Phase Estimation (QPE) renders it impractical for the current “Noisy Intermediate-Scale Quantum” (NISQ) era [4]. Several recent approaches have sought to bridge this gap, including adiabatic-inspired solvers [5]–[7], eigenstate filtering techniques [8], parallelization of quantum circuits genera-tion [9], and the Quantum Singular Value Transformation (QSVT) framework [10], [11], which improved or mitigated the mentioned bottlenecks. While QSVT provides optimal asymptotic complexity, its circuit depth and block-encoding requirements [12], [13] remain challenging for near-term quan-tum computers. In response, the Variational Quantum Linear Solver (VQLS) has emerged as a promising hybrid quantum-classical alter-native [14]. The approach reformulates the linear system as a variational optimization problem, aimed at minimizing a cost function C(θ) to quantify the distance between the pre-pared state A |x(θ)⟩ and the target state |b⟩. VQLS leverages shallow, parameterized (gate operations are parameterized) circuits suitable for current NISQ devices. Previous work has demonstrated VQLS convergence for structured problems: the original work [14] showed successful numerical simulation for matrices up to 250 ×250 size and hardware execution on Rigetti devices for 210 ×210 systems. Subsequent studies have applied VQLS to advection–diffusion equations [15], hydrological systems [16], and incompressible fluid flows [17]–[19]. However, these demonstrations have largely been confined to matrices with analytically known unitary decompositions, which limits their applicability to real-world problems with arbitrary coefficient matrices. To encode general matrices into quantum circuits, a Linear Combination of Unitaries (LCU) decomposition is required, where the matrix is expressed as 
+
+A = PLl=1 clAl with each Al being a unitary operator. This decomposition introduces a severe computational bottleneck: evaluating the VQLS cost function requires computing O(L2)
+
+independent expectation values per iteration, each demand-ing a separate quantum circuit execution. As an example in fluid dynamics based on our experience, to simulate the two-dimensional (2D) Hele–Shaw flow problem with a small number of grid points, the number of linear terms grows rapidly with increasing problem size and results in tens of 
+
+> arXiv:2604.14435v1 [quant-ph] 15 Apr 2026 2(n+1)·L²
+> circuits
+
+⋮                           
+
+> Σ c l*c k⟨... ⟩
+> Σ c l*c k⟨... ⟩
+> Classical
+> Stage I: Async GPU dispatch Stage II
+> Global Reduction
+> MPI_Allreduce
+> Numerator:
+> Σall ranks (num terms)
+> Denominator:
+> Σall ranks (den terms)
+> C(θ k)
+> Stage III
+> Compute Node 0 (AMD EPYC 7763 + 4× A100)
+> MPI Ranks 0–15 (ntpn=16)
+> GPU 0
+> Rank 0 Rank 1
+> Rank 2 Rank 3
+> MPS (4 clients)
+> GPU 1
+> MPS (4 clients)
+> GPU 2
+> MPS (4 clients)
+> GPU 3
+> R12 R13
+> R14 R15
+> MPS (4 clients)
+> cudaq.observe_async( )
+> Rank 4 Rank 5
+> Rank 6 Rank 7
+> Rank 8 Rank 9
+> R10 R11
+> Compute Node N−1 (4× A100)
+> Ranks (N−1)·16 – N·16−1
+> Classical Optimizer
+> (COBYLA)
+> Initialize θ
+> Update θk+1
+> (Trust Region)
+> C< ε ?
+> Output :|x(θ*) ⟩
+> No
+> Circuit Generation
+> Hadamard-test circuits for
+> all (A l, A k) pairs
+> LCU Decomposition
+> A = Σ lclAl→LPauli terms
+> Cost function requires
+> 2(n+1)·L² circuits per iteration
+> FWHT + 1% pruning
+> L= 64 (for n > 6)
+> Yes
+> Quantum
+
+Fig. 1: Overview of the D-VQLS framework, demonstrated here on a HPC system. The classical optimizer proposes ansatz parameters θk, which are broadcast to all compute ranks. The LCU decomposition generates 2( n + 1) · L2 Hadamard-test circuits that are distributed across ranks via strided allocation (Stage I). Each rank submits its assigned circuits asynchronously to the available quantum processing backends (Stage II), and partial sums are reduced globally (Stage III) to yield the cost scalar CL(θk), which feeds back to the optimizer for the next iteration. thousands of circuits per iteration and millions of circuit executions across a full optimization trajectory. To address this scalability challenge with respect to the increasing LCU terms for the VQLS cost function, we present the Distributed VQLS (D-VQLS) framework that exploits the embarrassingly parallel structure of the LCU-based cost func-tion evaluation. The D-VQLS framework leverages NVIDIA CUDA-Q [20], an open-source platform for hybrid quantum-classical computing, in conjunction with MPI-based multi-node distribution. We demonstrate the framework on the Na-tional Energy Research Scientific Computing Center (NERSC) Perlmutter supercomputer. By distributing the O(L2) circuit evaluations across multiple GPUs and nodes, we achieve near-ideal strong scaling up to 24 GPUs for a 210 × 210 problem (11-qubit circuits) and demonstrate a weak scaling efficiency of 95.3% at 96 GPUs with 360,448 circuits per iteration. We further provide detailed profiling analysis using NVIDIA Nsight Systems to identify the optimal MPI task configuration. The major contributions of this work are: The major contributions of this work are summarized as follows: 
+
+• We present D-VQLS, the first scalable, distributed VQLS framework for arbitrary LCU-encoded matrices. Built on NVIDIA CUDA-Q, the framework is demonstrated on multi-node GPU systems but is applicable to any backend supporting parallel circuit execution, including future distributed QPU architectures. 
+
+• We apply an efficient O(n2 log n) FWHT-based Pauli decomposition with 1% coefficient thresholding to reduce LCU terms for sparse, structured matrices. For the 10-qubit tridiagonal Toeplitz system, this reduces L from 
+
+O(2 n) to O(1) , compressing the per-iteration circuit count from 23 million to 90,112—a 256 × reduction— while preserving over 99 .99% solution fidelity. 
+
+• We provide resource estimates—gate counts, qubit re-quirements, and circuit evaluations per iteration—for VQLS applied to arbitrary matrices up to 220 ×220 , quan-tifying the computational demands to inform feasibility on early fault-tolerant QPUs. 
+
+• The D-VQLS framework is validated on both a tridiago-nal Toeplitz system and a Hele–Shaw flow benchmark, achieving over 99 .99% fidelity against classical solu-tions. For the 10-qubit tridiagonal Toeplitz system, we demonstrate near-ideal strong scaling up to 24 GPUs and 
+
+95 .3% weak scaling efficiency at 96 GPUs on NERSC Perlmutter, establishing that VQLS with LCU-encoded matrices scales efficiently on current supercomputing resources. 
+
+• Through detailed NVIDIA Nsight Systems profiling, we characterize the optimal resource allocation on HPC sys-tems for our problem instances, identifying four CUDA MPS clients per A100 GPU as the optimal configuration on NERSC Perlmutter and achieving a 2.52 × speedup over the single-client-per-GPU baseline. The remainder of this paper is organized as follows. Sec-tion II presents the VQLS algorithm, the LCU decomposition strategy, the distributed execution framework, and the two benchmark applications used in this study. Section III reports the validation, scaling, and profiling results. Section IV dis-cusses the implications of these findings and outlines direc-tions for future work. II. M ETHODOLOGY 
+
+This section presents the algorithmic and systems-level techniques of the D-VQLS framework. We begin with the VQLS formulation and its cost function, describe the LCU decomposition strategy for encoding arbitrary matrices, detail the distributed asynchronous execution framework built on CUDA-Q and MPI, and conclude with the two benchmark applications used for validation and performance analysis. 
+
+A. Variational Quantum Linear Solver (VQLS) 
+
+The Variational Quantum Linear Solver (VQLS) is a hybrid quantum-classical algorithm designed to solve the linear sys-tem A⃗ x =⃗ b by mapping the problem onto a quantum Hilbert space [14]. The algorithm seeks to prepare a quantum state 
+
+|x(θ)⟩ = V (θ) |0⟩ such that A |x(θ)⟩ ∝ | b⟩, where A is a 
+
+2n × 2n matrix, |b⟩ is a normalized input state prepared by a fixed unitary Ub |0⟩ = |b⟩, and V (θ) is a quantum ansatz (a quantum circuit with gate operations parameterized by θ). To guide the optimization of the parameters θ, a cost function C(θ) quantifies the distance between the prepared state A |x(θ)⟩ and the target state |b⟩, defined as: 
+
+C(θ) = 1 − | ⟨ b| A |x(θ)⟩ | 2
+
+⟨x(θ)| A†A |x(θ)⟩ (1) To improve convergence and mitigate barren plateau issues in deep circuits, a local cost function is employed [14]: 
+
+CL(θ) = 1 − 1
+
+n
+
+> n
+
+X
+
+> j=1
+
+⟨x(θ)|A†UbPj U † 
+
+> b
+
+A|x(θ)⟩⟨x(θ)|A†A|x(θ)⟩ (2) where Ub denotes the state-preparation unitary satisfying 
+
+Ub |0⟩ = |b⟩, and Pj = I − 2 |j⟩ ⟨ j| is a projector derived from a Pauli-Z gate acting on the j-th qubit. This formulation guarantees CL(θ) = 0 if and only if |x(θ)⟩ is the exact solution up to a global normalization constant. In practice, the terms 
+
+⟨b| A |x(θ)⟩ and ⟨x(θ)| A†A |x(θ)⟩ are evaluated via Hadamard tests, requiring only single-qubit measurements. 
+
+B. Linear Combination of Unitaries (LCU) Decomposition 
+
+If A is an arbitrary matrix that cannot be easily encoded into the quantum circuit (does not have an analytically known unitary decomposition), evaluating the VQLS cost function requires decomposing the matrix A into a Linear Combination of Unitaries (LCU): 
+
+A =
+
+> L
+
+X
+
+> l=1
+
+clAl (3) where Al are unitary operators and cl are the corresponding complex coefficients. In the general case, the decomposed unitaries are Pauli strings drawn from the set {I, X, Y, Z }⊗n.The choice of decomposition strategy critically impacts the algorithm’s efficiency, as the number of terms L directly governs the number of quantum circuits required for each cost function evaluation. To avoid the severe scaling bottlenecks of a naive Pauli expansion, recent literature has explored domain-specific LCU strategies. Loaiza et al. [21] introduced low-rank tensor fac-torizations for electronic structure problems in quantum chem-istry, reducing the required number of unitaries at the cost of expensive classical preprocessing and deep state-preparation circuits. For differential equations, Hogancamp et al. [22] constructed LCU decompositions for discrete elliptic operators with linear scaling in the spatial dimension, independent of the discretization grid size, though this approach is constrained to specific operator classes. In this work, we adopt the fast Walsh–Hadamard transform (FWHT)-based Pauli decomposition [23], which achieves a classical time complexity of O(n2 log n) with fixed memory overhead beyond the input matrix storage, ensuring that the classical preprocessing does not become a bottleneck. Sub-stituting the LCU decomposition into the local cost function from Equation 2 yields the fully expanded form: 
+
+CL = 1 − 1
+
+n
+
+> n
+
+X
+
+> j=1
+
+PLl=1 
+
+PLk=1 c∗ 
+
+> l
+
+ck⟨x(θ)|A† 
+
+> l
+
+UbPj U † 
+
+> b
+
+Ak|x(θ)⟩
+
+PLl=1 
+
+PLk=1 c∗ 
+
+> l
+
+ck⟨x(θ)|A† 
+
+> l
+
+Ak|x(θ)⟩ .
+
+(4) This expression requires n · L2 terms to compute the numerator and L2 terms to compute the denominator, leading to (n + 1) · L2 distinct expectation values per iteration. Each expectation value is evaluated via a Hadamard test, which requires separate circuits for the real and imaginary components, yielding a total of 2( n+1) ·L2 circuit submissions per iteration. The circuit count per iteration therefore depends on both the number of LCU terms L and the number of qubits 
+
+n, establishing the computational scaling of the algorithm. 
+
+C. Distributed VQLS (D-VQLS) 
+
+The LCU-based cost function evaluation exposes a naturally embarrassingly parallel structure. The O(L2) expectation val-ues in Equation 4 are completely independent of one another and can therefore be evaluated concurrently. The D-VQLS framework exploits this parallelism through a distributed, asynchronous design that partitions circuit evaluations across available compute ranks, each backed by one or more quantum processing backends (QPUs or GPU-accelerated simulators). In this work, we implement D-VQLS using NVIDIA CUDA-Q [20], whose multi-QPU ( mqpu ) backend enables asyn-chronous circuit dispatch across multiple simulated QPUs within a node, with MPI handling inter-node coordination. The distributed execution model consists of three steps during each classical optimizer iteration: i. Asynchronous Submission: The L2 Pauli-string pair evaluations are distributed across available ranks us-ing a strided workload allocation. Within each rank, the assigned expectation-value circuits (both numerator and denominator terms) are submitted asynchronously to the local GPU-accelerated state-vector simulators via the cudaq.observe_async interface. Workloads are dispatched to available QPUs (or simulated QPUs) using a round-robin scheduling scheme. ii. Local Aggregation: Each rank waits for its asynchronous futures to resolve, then locally aggregates the expectation values—incorporating both real and imaginary compo-nents from the Hadamard tests—weighted by the corre-sponding complex coefficients c∗ 
+
+> l
+
+ck.iii. Global Reduction: A global synchronization step via 
+
+MPI_Allreduce aggregates the locally summed nu-merator and denominator terms across all compute nodes, yielding the total cost scalar CL.This three-step design ensures that the per-iteration runtime scales inversely with the number of available GPUs, enabling effective utilization of HPC resources. Figure 1 illustrates the complete end-to-end D-VQLS framework, showing the classical optimizer loop, LCU decomposition process, multi-TABLE I: Per-circuit gate counts for D-VQLS applied to arbitrary 2n × 2n matrices ( d = n ansatz layers, L = 4 n LCU terms). State preparation (SP) counts assume the worst-case Shende–Markov–Bullock general amplitude encoding ( 2n+1 − 2
+
+single-qubit, 2n − 2 two-qubit). Circuits/iter = 2( n + 1) · 16 n.                                                                                                                                                                                                               
+
+> Qubits (n)Matrix Size LCU (worst case) Circuit Qubits Each Circuit (circuit + SP) Circuits/Iter 1Q 2Q
+> 12×24212+2 4+0 6.4×10 1
+> 24×416 322+6 8+2 1.5×10 3
+> 38×864 432+14 12+6 3.3×10 4
+> 416 ×16 256 542+30 16+14 6.6×10 5
+> 532 ×32 1,024 652+62 20+30 1.3×10 7
+> 664 ×64 4,096 762+126 24+62 2.3×10 8
+> 7128 ×128 16,384 872+254 28+126 4.3×10 9
+> 8256 ×256 65,536 982+510 32+254 7.7×10 10
+> 9512 ×512 262,144 10 92+1,022 36+510 1.4×10 12
+> 10 1024 ×1024 1,048,576 11 102+2,046 40+1,022 2.4×10 13
+> 11 2048 ×2048 4,194,304 12 112+4,094 44+2,046 4.2×10 14
+> 12 4096 ×4096 16,777,216 13 122+8,190 48+4,094 7.3×10 15
+> 13 8192 ×8192 67,108,864 14 132+16,382 52+8,190 1.3×10 17
+> 14 16384 ×16384 268,435,456 15 142+32,766 56+16,382 2.2×10 18
+> 15 32768 ×32768 1,073,741,824 16 152+65,534 60+32,766 3.7×10 19
+> 16 65536 ×65536 4,294,967,296 17 162+131,070 64+65,534 6.3×10 20
+> 17 131072 ×131072 17,179,869,184 18 172+262,142 68+131,070 1.1×10 22
+> 18 262144 ×262144 68,719,476,736 19 182+524,286 72+262,142 1.8×10 23
+> 19 524288 ×524288 274,877,906,944 20 192+1,048,574 76+524,286 3.0×10 24
+> 20 1048576 ×1048576 1,099,511,627,776 21 202+2,097,150 80+1,048,574 5.1×10 25
+
+node GPU dispatch with CUDA MPS, and the global reduction pathway. Algorithm 1 presents the complete D-VQLS procedure. At the start of each iteration, the current ansatz parameters θ and matrix data are broadcast to all ranks. Each Hadamard-test circuit is built from a d-layer hardware-efficient ansatz V (θ)
+
+acting on n system qubits, followed by a controlled Pauli-string operator and ancilla measurements. With d ansatz layers each contributing 3n single-qubit and n two-qubit (CNOT) gates, and the controlled Pauli string requiring at most n
+
+additional two-qubit gates plus n phase-correction single-qubit gates, each circuit requires (3 d+1) n+2 single-qubit gates and 
+
+(d + 1) n two-qubit gates on n + 1 qubits total (Section II-E). 
+
+D. Applications 1) Tridiagonal Toeplitz Linear System: Tridiagonal Toeplitz matrices arise frequently in the finite-difference discretization of second-order ordinary differential equations and have broad applications across scientific computing [24]. The matrix A ∈
+
+RN ×N takes the form: 
+
+A =
+
+
+
+a b 0 · · · 0
+
+c a b . . . ...
+
+0 c a . . . 0
+
+... . . . . . . . . . b
+
+0 · · · 0 c a
+
+
+
+(5) where a, b, and c are scalar constants on the main diagonal, super-diagonal, and sub-diagonal, respectively. Although the FWHT-based Pauli decomposition is efficient at the classical preprocessing stage, the resulting number of Pauli terms can be large. To manage the circuit count, we apply a coefficient thresholding strategy: Pauli terms whose coefficients contribute less than 1% of the total ℓ2-norm of 
+
+Algorithm 1 The D-VQLS Framework 
+
+Input: Matrix A ∈ R2n×2n
+
+, vector b, ansatz depth d,tolerance ε
+
+Output: Approximate solution state |x(θ∗)⟩ = V (θ∗)|0⟩
+
+Step 1: Decompose A = PLl=1 clAl via FWHT-based Pauli decomposition 
+
+Step 2: Apply coefficient thresholding to prune negligible LCU terms 
+
+Step 3: Initialize θ0 randomly; distribute {cl, A l} to all ranks 
+
+while C(θk) > ε do Step 4a — Asynchronous Circuit Dispatch: 
+
+Distribute (l, l ′) pairs across ranks; each rank submits: Numerator circuits: ⟨x|A† 
+
+> l
+
+Pj Al′ |x⟩, j = 1 , . . . , n 
+
+Denominator circuits: ⟨x|A† 
+
+> l
+
+Al′ |x⟩
+
+Step 4b — Local Aggregation: 
+
+Eloc ← P 
+
+> (l,l ′)∈rank
+
+c∗ 
+
+> l
+
+cl′ (Re + i Im )num 
+
+Ψloc ← P 
+
+> (l,l ′)∈rank
+
+c∗ 
+
+> l
+
+cl′ (Re + i Im )den 
+
+Step 4c — Global Reduction: 
+
+(E, Ψ) ← Allreduce (Eloc , Ψloc )
+
+C(θk) ← 12 − 12
+
+  En·Ψ
+
+
+
+θk+1 ← Optimizer (θk, C (θk)) 
+
+end while Step 5: return |x(θ∗)⟩ = V (θ∗)|0⟩
+
+the decomposition are discarded. This pruning preserves the dominant operator structure while significantly reducing the number of circuit evaluations. For the tridiagonal Toeplitz system, the pruned decomposition yields 2n Pauli terms when 
+
+n ≤ 6 qubits and saturates at 64 terms for n > 6.2) Hele–Shaw Flow: As a physically motivated benchmark, we consider the pressure-driven Hele–Shaw flow, a canonical two-dimensional creeping flow confined between two closely spaced parallel plates. The governing equations reduce to a set of Poisson equations for the velocity ( u) and pressure ( p)fields, given by 
+
+∇2u = ∇p (6) 
+
+∇2p = 0 (7) subject to appropriate Dirichlet and Neumann boundary con-ditions. Discretizing this equation on a uniform grid via second-order finite differences yields a sparse, symmetric positive-definite linear system Ax = b, where x represents the unknown pressure values at interior grid points. This problem has been previously studied in the context of quantum linear solvers [17], [25]–[27] and serves as a representative benchmark for evaluating VQLS on physically relevant linear systems with non-trivial structure. 
+
+E. Resource Estimation 
+
+Table I provides per-circuit gate-count estimates for the D-VQLS Hadamard-test circuit applied to an arbitrary 2n × 2n
+
+input matrix, for n = 1 to 20 qubits. Each circuit requires n+1 
+
+qubits ( n system qubits plus one ancilla for the Hadamard test). The gate count is derived from two contributions: (i) the hardware-efficient ansatz V (θ) with d = n layers, where each layer applies 3n single-qubit rotation gates ( Ry , Rz ) and n
+
+CZ gates; and (ii) the controlled Pauli-string operator (A† 
+
+> l
+
+Ak),which contributes at most n two-qubit controlled gates, plus 2 Hadamard gates on the ancilla. For an arbitrary (unstructured) dense matrix, the full Pauli basis requires L = 4 n LCU terms for the worst case, giving 2( n + 1) · 16 n total circuits per optimizer iteration. This exponential scaling in the number of circuits count underscores the critical importance of LCU pruning: reducing L from 4n to a manageable number of terms transforms the iteration cost from super-exponential to linear in n. Circuit depth is excluded from Table I as it depends on the specific ansatz architecture and compiler optimizations; the counts above represent quantum resource requirements for the worst-case scenarios of the matrix and vector input. In the worst case of an arbitrary input vector b, state preparation of |b⟩ = Ub|0⟩ requires a general-purpose am-plitude encoding circuit. Using the Shende–Markov–Bullock decomposition [28], an exact n-qubit state preparation requires 
+
+2n+1 −2 single-qubit and 2n −2 two-qubit gates—both scaling exponentially with n. For n = 10 , this amounts to 2,046 single-qubit and 1,022 two-qubit gates, which exceeds the combined gate count of the ansatz and Pauli-string components by roughly 20 ×. This exponential state-preparation overhead is a known fundamental bottleneck for quantum linear solvers applied to general vectors. III. R ESULTS 
+
+All experiments were conducted on the NERSC Perlmutter supercomputer. Each compute node is equipped with one 
+
+Fig. 2: Hardware-efficient quantum ansatz used in all exper-iments. Trainable parameters are encoded in the Ry and Rz
+
+single-qubit rotation gates, while CNOT gates provide inter-qubit entanglement. This ansatz structure balances expressibil-ity with trainability for NISQ-era state-vector simulation. AMD EPYC 7763 CPU (64 cores) and four NVIDIA A100-SXM4-40GB GPUs. The software environment comprises Python 3.12, CUDA-Q version 0.12, and SciPy 1.16 within an Anaconda virtual environment and uses the Limited-memory Broyden-Fletcher-Goldfarb-Shanno with Bound constraints (L-BFGS-B) optimizer for the ideal convergence performance. CUDA-Q provides the multi-QPU simulation backend, mqpu ,enabling the embarrassingly parallel evaluation of VQLS cir-cuits across distributed GPU resources. We specifically used a popular quantum ansatz for a desired expressibility and trainability, depicted in Figure 2. 
+
+A. Validation 
+
+To verify the correctness of the D-VQLS framework, we solved two benchmark problems: (i) a tridiagonal Toeplitz linear system and (ii) a canonical Hele–Shaw flow on a
+
+4 × 4 interior grid (4 qubits). For each problem, we compared the quantum solution |x(θ∗)⟩ recovered from the optimized ansatz against the classical solution obtained via direct matrix inversion, computing the state fidelity F (|ψ⟩, |ϕ⟩) = |⟨ ψ|ϕ⟩| 2.All benchmark problems achieve near-zero cost at con-vergence, corresponding to solution fidelity results exceed-ing 0.9999 compared with classical solution, confirming that the D-VQLS framework successfully implements the VQLS algorithm. Figure 3 shows the tridiagonal Toeplitz solution; the optimizer converges within approximately 100 function evaluations. Figures 4 and 5 present the Hele–Shaw velocity and pressure field results. The velocity field converges within 3,000–4,000 function evaluations, while the pressure field requires up to 10,000 function evaluations. This is because the Hele–Shaw pressure Laplacian matrix usually has large condition number, leading to more complex convergence dif-ficulties. In all cases, the L-BFGS-B optimizer successfully converges with the desired cost values. 
+
+B. Scalability 
+
+We evaluate the scalability of the D-VQLS framework through strong and weak scaling analyses, using the tridiagonal Toeplitz system as the benchmark problem. We perform the analyses on a matrix size of 1024 × 1024 matrix (10 qubits). 0000      
+
+> 0001
+> 0010
+> 0011
+> 0100
+> 0101
+> 0110
+> 0111
+> 1000
+> 1001
+> 1010
+> 1011
+> 1100
+> 1101
+> 1110
+> 1111
+> Computational Basis State
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> State Vector Amplitude
+> Solution Comparison (4 qubits)
+> Classical
+> VQLS
+> 0100 200 300 400 500
+> Function Evaluation
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> Cost Function Value
+> Optimizer Learning Curve
+
+Fig. 3: Solution comparison and optimizer learning curve for the 4-qubit tridiagonal Toeplitz system. Left: state vector amplitude comparison between the VQLS output and the clas-sical solution. Right: cost function convergence; the optimizer reaches near-zero cost within ∼100 function evaluations. 0 1 2 3 4     
+
+> U/Umax
+> 0.000
+> 0.333
+> 0.667
+> 1.000
+> y
+> x=0.0 x=0.3 x=0.7 x=1.0
+> Analytical
+> VQLS
+> 05000 10000
+> Function Evaluation
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Cost Function Value
+
+Fig. 4: Hele–Shaw velocity field validation. Left: Hele–Shaw velocity plot with 4 × 4 grid points; VQLS results agree with the analytical solution with over 99 .99% fidelity. Right: cost function convergence; the cost drops sharply within 3,000– 4,000 evaluations and plateaus near zero. 0.000 0.333 0.667 1.000    
+
+> x
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> P/Pmax
+> y=0.0
+> y=0.3
+> y=0.7
+> y=1.0
+> Analytical
+> VQLS
+> 05000 10000 15000
+> Function Evaluation
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Cost Function Value
+
+Fig. 5: Hele–Shaw pressure field validation. Left: Hele–Shaw pressure profile with 4×4 grid points; VQLS results reproduce the analytical linear pressure distribution. Right: cost function convergence; the pressure field requires ∼9,000–10,000 func-tion evaluations. 4 8 12 16 20 24 28 32 
+
+> Number of GPUs
+> 10 2
+> Time per step (seconds)
+> Actual VQLS Time
+> Ideal Time
+
+Fig. 6: Strong scaling of the D-VQLS framework for a 10-qubit tridiagonal Toeplitz system (90,112 circuits per iteration) from 4 to 32 GPUs on Perlmutter. Near-ideal scaling is observed up to 24 GPUs. 
+
+1) Strong Scaling: For the strong scaling study, we fix the problem size for the 1024 × 1024 matrix at 64 pruned LCU terms, resulting in 90,112 circuits per optimizer iteration. We vary the number of GPUs from 4 (1 node) to 32 (8 nodes), using 16 MPI tasks per node (the optimal configuration identified in Section III-C). Figure 6 presents the average wall-clock time per D-VQLS iteration as a function of GPU count. The framework exhibits near-ideal strong scaling up to 24 GPUs, at which point each GPU processes approximately 3,755 circuits per itera-tion. Beyond this threshold, a distinct performance inflection occurs: execution times increase when scaling to 28 and 32 GPUs. This degradation is attributable to the communication overhead of inter-node MPI_Allreduce operations, which begins to dominate the reduced per-GPU compute workload. When fewer than approximately 2,800 circuits remain per GPU, the collective synchronization cost across the multi-node interconnect exceeds the time savings from further paralleliza-tion. 
+
+2) Weak Scaling: For the weak scaling analysis, we in-crease both the problem size (number of LCU terms, con-trolled by the LCU pruning tolerance) and the allocated GPU resources proportionally, maintaining a constant per-GPU workload. Table II summarizes the configuration space: the LCU pruning tolerance ranges from ϵ = 0 .1 (4 terms) to ϵ = 0 .005 (128 terms) — the total number of circuits per iteration spanning three orders of magnitude from 352 to 360,448. We use the 6-node (24 GPU), 64-term configuration as the baseline, where each GPU processes 3,755 circuits. For configurations that cannot be perfectly mapped to integer node counts at the baseline per-GPU workload, we compute the normalized time as tnorm = tactual · Nactual /N ideal , where Nactual 
+
+and Nideal are the actual and ideal GPU allocations, respec-tively. This normalization accounts for the discrete allocation TABLE II: Pauli-term counts and per-iteration circuit requirements for the D-VQLS algorithm applied to a 1024 × 1024 
+
+tridiagonal Toeplitz matrix at varying LCU pruning tolerances. The normalization factor ρ indicates the fraction of the baseline workload per GPU; cases with ρ < 1 have under-saturated GPUs and their wall times are normalized to the baseline.                                            
+
+> Error Tolerance ( ϵ)LCU Terms ( L)Total Circuits (n= 10 )Allocated GPUs Circuits per GPU Normalization Factor ( ρ)Actual Time (s) Normalized Time (s)
+> 0.1 4352 488 0.023 2.671 113.97 0.05 81,408 4352 0.094 6.83 72.86 0.03 16 5,632 41,408 0.375 23.87 63.65 0.02 32 22,528 82,816 0.75 45.504 60.67 0.01 64 90,112 24 3,755 1.000 (Baseline) 61.85 61.85 0.005 128 360,448 96 3,755 1.000 64.92 64.92
+
+constraints of the computing system. Figure 7 presents the weak scaling results. At small problem sizes (4 and 8 LCU terms), the normalized execution times significantly exceed the ideal scaling line. This behavior is an expected artifact of hardware under-utilization: with only 88 or 352 circuits per GPU, the fixed overheads of CUDA context initialization, kernel launch latencies, and operating system scheduling dominate the execution time. As the problem size grows and the per-GPU workload saturates the available compute capacity. For the three configurations with saturated GPU workloads (16, 32, and 64 LCU terms, corresponding to 5,632 to 90,112 total circuits), the normalized execution times align closely with the ideal weak scaling line, demonstrating that the distributed framework introduces minimal overhead as both the problem size and compute resources grow in tandem. At the largest configuration with 128 LCU terms—distributing 360,448 circuits across 96 GPUs—the measured time of 64.9 s yields a scaling efficiency of 95.3% relative to the baseline. These results confirm that the communication and scheduling overhead of the distributed framework remains negligible at scale. 
+
+C. MPI Task Density and Load Balancing 
+
+To identify the optimal MPI task configuration for the CUDA-Q D-VQLS workload, we profile four configura-tions of --ntasks-per-node (ntpn ∈ { 4, 8, 16 , 32 }) on a single Perlmutter node equipped with four A100 GPUs. Each configuration uses CUDA Multi-Process Service (MPS), mapping ntpn /4 MPI ranks (MPS clients) per GPU. All runs are instrumented with NVIDIA Nsight Systems, and quantitative metrics are extracted from the cuda_api_sum ,
+
+cuda_gpu_kern_sum , and cuda_gpu_mem_time_sum 
+
+reports. 
+
+1) Wall-Clock Performance: Table III summarizes the key performance and convergence metrics across configurations. The L-BFGS-B optimizer reports the average wall-clock time per iteration, where each iteration distributes 64 LCU circuit evaluations across all MPI ranks and aggregates the cost func-tion via MPI_Allreduce . Configuration ntpn =16 achieves the lowest per-evaluation time of 17.15 s—a 2.52 × speedup over the baseline ntpn =4 and 4% faster than ntpn =32. The transition from ntpn =16 to ntpn =32 causes a regression from 1,760 
+
+> 7,040
+> 28,160
+> 112,640
+> 450,560
+> 1,802,240
+
+Total Circuits (problem size) 
+
+0
+
+25 
+
+50 
+
+75 
+
+100 
+
+125    
+
+> Normalized Time (s)  4 GPUs
+> 4 GPUs
+> 4 GPUs 8 GPUs 24 GPUs 96 GPUs
+
+Normalized Time 
+
+Ideal (61.9 s) 
+
+Fig. 7: Weak scaling performance of the D-VQLS framework. Normalized execution time per iteration is plotted against the number of LCU terms (proportional to GPU count). The dashed line indicates ideal weak scaling. For under-saturated GPU configurations (4 and 8 LCU terms), fixed overheads inflate the normalized time; at saturation (16–128 terms), the results track the ideal line closely, achieving 95.3% efficiency at 96 GPUs. TABLE III: Performance and convergence metrics across 
+
+--ntasks-per-node configurations on a single Perlmutter node (4 × A100-SXM4-40GB). Best values in bold.                 
+
+> Metric ntpn=4 ntpn=8 ntpn=16 ntpn=32
+> Wall time / iteration (s) 43.23 25.17 17.15 17.83 Speedup vs. ntpn=4 1.00 ×1.72 ×2.52 ×2.42 ×
+> MPS clients / GPU 1248
+
+17.15 s to 17.83 s per iteration, confirming that ntpn =16 represents the throughput optimum for this workload. Figure 8 visualizes the speedup saturation: the curve flattens between ntpn =16 and ntpn =32, with a slight regression indi-cating that the overhead from doubling the MPS client count outweighs the benefit of additional parallelism. 
+
+2) GPU Kernel Analysis: The cuda_gpu_kern_sum 
+
+report reveals that the dominant GPU kernel is 
+
+custatevec::constMatApplKernel , which ntpn=4 ntpn=8 ntpn=16 ntpn=32      
+
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Wall time per feval (s)
+> 43.23 s
+> 25.17 s
+> 17.15 s 17.83 s
+> ntpn=4 ntpn=8 ntpn=16 ntpn=32
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> Speedup vs. ntpn=4
+> 1.00×
+> 1.72×
+> 2.52× 2.42×
+
+Fig. 8: Average wall-clock time per function evaluation (left) and speedup relative to ntpn =4 (right). ntpn =16 achieves the minimum wall time (17.15 s); ntpn =32 regresses due to MPS contention. TABLE IV: Average GPU kernel execution time for 
+
+constMatApplKernel across configurations. Kernel times are invariant to MPS client count.        
+
+> ntpn=4 ntpn=8 ntpn=16 ntpn=32
+> Avg kernel time ( μs) 8.21 8.18 8.22 8.19
+
+implements unitary matrix application for cuStateVec gate operations. Table IV shows the average per-kernel execution time across configurations. The kernel times are virtually identical (8.18–8.22 μs), confirming that the GPU hardware performs identical computations regardless of MPS client count. While individual kernel execution is invariant, the kernel timeline density still differs between configurations: ntpn =8 retains residual idle gaps between dispatch bursts whereas ntpn =16 achieves near-continuous saturation (Figure 10). The wall-time differences therefore arise from both reduced GPU idle time and lower CPU-side dispatch overhead. Figure 9 decomposes the per-iteration wall time into GPU compute and CPU/API overhead. The GPU compute contribu-tion is approximately constant at 3.1–3.7 s across all configu-rations. The CPU/API overhead dominates the total runtime, dropping from 39.5 s at ntpn =4 to 13.9 s at ntpn =16 before rising to 14.6 s at ntpn =32. This decomposition confirms that the performance gains from increasing MPI task density derive entirely from more efficient CPU-side dispatch, not from faster GPU execution. 
+
+3) CUDA API Overhead and MPS Contention: The 
+
+cuda_api_sum report provides direct evidence of CUDA MPS server saturation at ntpn =32. Table V reports the av-erage call latency for four critical CUDA API functions. The most dramatic effect is observed in cudaMemGetInfo ,which increases 11 .1× from ntpn =16 to ntpn =32 (130 μs →
+
+1,439 μs). This function requires exclusive access to the MPS server’s device-management lock; its latency grows super-linearly when 8 clients contend for the same GPU. Simi-larly, cudaLaunchKernel latency grows 4.4×, reflecting increased queuing delay at the MPS command buffer. Figure 11 presents the latency trend on a logarithmic scale, ntpn=4 ntpn=8 ntpn=16 ntpn=32 
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Time per feval (s)
+> GPU compute
+> CPU/API overhead
+
+Fig. 9: Decomposition of per-iteration wall time into GPU compute and CPU/API overhead. GPU compute time is con-stant ( ≈3.1–3.7 s); the 2.5× speedup from ntpn =4 to ntpn =16 is entirely due to reduced CPU-side dispatch overhead. TABLE V: Average CUDA API call latency (μs) across configurations. The 11 × increase in cudaMemGetInfo at ntpn =32 is the primary driver of the wall-time regression.                          
+
+> API Call ntpn=8 ntpn=16 ntpn=32 32/16 ×32/8 ×
+> cudaMemGetInfo 68 130 1,439 11.1 ×21.2 ×
+> cudaLaunchKernel 9.4 25.5 111.8 4.4 ×11.9 ×
+> cudaDeviceSynchronize 331 657 1,329 2.0 ×4.0 ×
+> cudaStreamSynchronize 90.5 172.9 320.3 1.9 ×3.5 ×
+
+clearly showing the contention threshold between 4 and 8 MPS clients per GPU. This threshold is consistent with the A100 architecture: while each GPU can nominally support up to 48 MPS clients, the MPS server serializes certain device-management operations (memory queries, context switches) through a single control channel. At 4 clients, the serialization overhead remains small relative to kernel execution time; at 8 clients, the queuing delay for these serialized operations exceeds the compute savings from additional parallelism. 
+
+4) Nsight Systems Timeline Analysis: Figure 10 presents the GPU kernel timelines for all four configurations. The traces confirm all key findings from the quantitative analysis, including the visual distinction between ntpn =8 and ntpn =16. The timelines confirm the full ordering of GPU utilization across all four configurations. In the ntpn =4 trace, the CUDA HW Kernel rows show sparse, discontinuous blocks of activity with large idle gaps between launches, confirming that a single MPS client per GPU is insufficient to saturate the device. The ntpn =8 trace shows substantially denser kernel activity but retains residual idle gaps between dispatch bursts, placing it at intermediate saturation. The ntpn =16 trace achieves near-continuous, densely packed kernel activity across all four GPUs with gaps effectively eliminated—establishing it as the point of full GPU saturation for this workload. At the other extreme, the ntpn =32 trace exhibits a noticeably fragmented kernel pattern with irregular gap widths and heightened CUDA API activity, visually confirming the MPS contention-driven scheduling delays quantified in Table V. (a) ntpn =4 (1 MPS client/GPU): sparse kernel activity with large idle gaps between dispatches. 
+
+(b) ntpn =8 (2 MPS clients/GPU): substantially denser kernel activity than ntpn =4; indicating a more efficient configuration compared with the ntpn =4 scenario. 
+
+(c) ntpn =16 (4 MPS clients/GPU): near-continuous, densely packed kernel activity with gaps effectively eliminated, marking the point of full GPU saturation for this workload. 
+
+(d) ntpn =32 (8 MPS clients/GPU): fragmented kernel rows with wider gaps and irregular API jitter from MPS contention. 
+
+Fig. 10: NVIDIA Nsight Systems GPU kernel timeline traces for all four --ntasks-per-node configurations on a single Perlmutter node. ntpn =4 shows severe under-utilization with large idle gaps; ntpn =8 shows improved but incomplete GPU saturation with residual gaps; ntpn =16 achieves near-continuous, gap-free kernel activity representing full GPU saturation; ntpn =32 shows fragmented kernel activity and irregular API jitter caused by MPS driver contention. ntpn=4 ntpn=8 ntpn=16 ntpn=32          
+
+> 10 2
+> 10 3
+> Avg latency (μs)
+> cudaMemGetInfo
+> ntpn=4 ntpn=8 ntpn=16 ntpn=32
+> 10 1
+> 10 2
+> Avg latency (μs)
+> cudaLaunchKernel
+> ntpn=4 ntpn=8 ntpn=16 ntpn=32
+> 10 3
+> 3 × 10 2
+> 4 × 10 2
+> 6 × 10 2
+> Avg latency (μs)
+> cudaDeviceSynchronize
+> ntpn=4 ntpn=8 ntpn=16 ntpn=32
+> 10 2
+> 6 × 10 1
+> 2 × 10 2
+> 3 × 10 2
+> Avg latency (μs)
+> cudaStreamSynchronize
+
+Fig. 11: CUDA API call latency (log scale) across configu-rations. The transition from ntpn =16 to ntpn =32 crosses an MPS contention threshold, with cudaMemGetInfo explod-ing 11 × and cudaLaunchKernel growing 4.4×.Notably, the ntpn =8 and ntpn =16 traces are visually distin-guishable: the residual gaps in the ntpn =8 kernel rows account for part of its 1.47 × wall-time deficit relative to ntpn =16 (25.17 s vs. 17.15 s). The remainder is explained by CPU-side dispatch overhead: the compute-vs-overhead decomposition in Figure 9 shows that CPU/API overhead drops from ∼16 s at ntpn =8 to ∼13.9 s at ntpn =16, while GPU kernel execution time remains constant at ≈8.2 μs (Table IV). The Nsight timelines thus provide visual corroboration consistent with the wall-clock and API profiling data: ntpn =16 is the first configuration to achieve near-complete GPU saturation, and the last before MPS contention causes fragmentation. The profiling analysis establishes ntpn =16 (4 MPS clients per A100 GPU) as the optimal configuration for the CUDA-Q D-VQLS workload on Perlmutter. This configuration achieves the lowest wall time per function evaluation (17.15 s, 
+
+2.52 × speedup), correct optimizer convergence, and op-erates at the last stable point before MPS driver con-tention causes performance degradation. The 11 × explosion in cudaMemGetInfo latency at ntpn =32 provides defini-tive evidence that 4 MPS clients per GPU is the maximum sustainable concurrency for this workload class on the A100 architecture. IV. C ONCLUSION AND DISCUSSION 
+
+This work presented the D-VQLS framework, the first scal-able, distributed Variational Quantum Linear Solver (VQLS) that addresses the primary practical bottleneck of the algo-rithm: the massive circuit execution overhead arising from the Linear Combination of Unitaries (LCU) decomposition. By exploiting the embarrassingly parallel structure of the LCU-based cost function, we developed an asynchronous, MPI-based framework built on NVIDIA CUDA-Q that distributes circuit evaluations across multi-node, multi-GPU HPC re-sources. Our principal findings are as follows. First, the D-VQLS framework achieves near-ideal strong scaling up to 24 GPUs for a 10-qubit, 90,112-circuit workload, with performance degradation beyond this point attributable to inter-node com-munication overhead exceeding per-GPU compute savings. Second, weak scaling analysis demonstrates 95.3% parallel efficiency at 96 GPUs processing 360,448 circuits per iteration, confirming that the framework introduces minimal overhead as both problem size and compute resources grow propor-tionally. Third, detailed Nsight Systems profiling identifies the optimal intra-node MPI task density as 16 tasks per node (4 MPS clients per A100 GPU), achieving a 2.52 ×
+
+speedup over the single-client baseline. The 11 × explosion in cudaMemGetInfo latency at 8 MPS clients per GPU provides a quantitative contention threshold that is broadly applicable to other CUDA-Q workloads on A100-class hard-ware. From a practical standpoint, these results establish that VQLS with general LCU-encoded matrices scales efficiently on current HPC systems when sufficient parallel resources are available. The key insight is that the VQLS circuit overhead, while substantial, is structurally amenable to distribution— each expectation value evaluation is independent, stateless, and uniform in cost. This property makes VQLS an ideal candidate for GPU-accelerated quantum simulation at scale, in contrast to algorithms like VQE where circuit heterogeneity can create load-balancing challenges. Several important limitations and directions for future work remain. The current framework uses state-vector simulation, where memory requirements scale exponentially as 2n × 16 
+
+bytes; simulating systems beyond approximately 30 qubits on current hardware will require tensor-network or other compressed simulation backends. The L-BFGS-B optimizer, while avoiding gradient computation overhead, may not be optimal for the convergence performance. Additionally, the coefficient pruning strategy employed here is specific to struc-tured matrices. For dense, unstructured coefficient matrices remain as an open question for efficient LCU decompositions. As quantum hardware continues to advance toward early fault tolerance, the D-VQLS framework provides a natural pathway for transitioning from simulation to hardware exe-cution. The asynchronous submission interface is hardware-agnostic: replacing the GPU-accelerated state-vector simulator with QPU backends requires no modification to the distri-bution logic. This positions D-VQLS as a practical tool for benchmarking VQLS on both current simulators and emerging quantum processors. For other quantum variational quantum algorithm where it requires multiple circuits per iteration (parameter-shifting techniques to calculate gradient), the D-VQLS framework will also provide guidance for distributed quantum-HPC systems with performance evaluation. V. A CKNOWLEDGEMENT 
+
+This research used resources of the National Energy Re-search Scientific Computing Center, a DOE Office of Science User Facility supported by the Office of Science of the U.S. Department of Energy under Contract No. DE-AC02-05CH11231 using NERSC awards ASCR-ERCAP0034931 and ASCR-ERCAP0036194. This research used resources of the Oak Ridge Leadership Computing Facility at the Oak Ridge National Laboratory, which is supported by the Office of Science of the U.S. Department of Energy under Contract No. DE-AC05-00OR22725. VI. A CKNOWLEDGEMENT OF AI-G ENERATED CONTENT 
+
+Portions of this manuscript were prepared with the as-sistance of large language model (LLM) tools, specifically Anthropic’s Claude, which were used to support drafting, editing, grammar refinement, and stylistic improvements of the text. The authors also used these tools to assist with formatting LaTeX source, polishing figure captions, and organizing prose for clarity and conciseness. All AI-generated content was reviewed, verified, and edited by the authors, who take full responsibility for the technical accuracy, scientific claims, experimental results, data analysis, and conclusions presented in this work. No AI tools were used to generate or fabricate experimental data, numerical results, figures, or citations; all references were independently verified by the authors. REFERENCES [1] D. Coppersmith and S. Winograd, “On the asymptotic complexity of matrix multiplication,” SIAM Journal on Computing , vol. 11, no. 3, pp. 472–492, 1982. [Online]. Available: https://doi.org/10.1137/0211038 [2] L. N. Trefethen and D. Bau, Numerical linear algebra . SIAM, 2022. [3] A. W. Harrow, A. Hassidim, and S. Lloyd, “Quantum algorithm for linear systems of equations,” Physical review letters , vol. 103, no. 15, p. 150502, 2009. [Online]. Available: https://doi.org/10.1103/ PhysRevLett.103.150502 [4] J. Preskill, “Quantum computing in the NISQ era and beyond,”                                                                                             
+
+> Quantum , vol. 2, p. 79, 2018. [Online]. Available: https://doi.org/10. 22331/q-2018-08-06-79 [5] Y. Subas ¸ı, R. D. Somma, and D. Orsucci, “Quantum algorithms for systems of linear equations inspired by adiabatic quantum computing,”
+> Physical review letters , vol. 122, no. 6, p. 060504, 2019. [Online]. Available: https://doi.org/10.1103/PhysRevLett.122.060504 [6] D. An and L. Lin, “Quantum linear system solver based on time-optimal adiabatic quantum computing and quantum approximate optimization algorithm,” ACM Transactions on Quantum Computing , vol. 3, no. 2, pp. 1–28, 2022. [Online]. Available: https://doi.org/10.1145/3498331 [7] P. C. Costa, D. An, Y. R. Sanders, Y. Su, R. Babbush, and D. W. Berry, “Optimal scaling quantum linear-systems solver via discrete adiabatic theorem,” PRX quantum , vol. 3, no. 4, p. 040303, 2022. [Online]. Available: https://doi.org/10.1103/PRXQuantum.3.040303 [8] L. Lin and Y. Tong, “Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems,” Quantum ,vol. 4, p. 361, 2020. [Online]. Available: https://doi.org/10.22331/ q-2020-11-11-361 [9] C. Lu, M. Gopalakrishanan Meena, and K. C. Gottiparthi, “LuGo: an Enhanced Quantum Phase Estimation Implementation,” arXiv preprint arXiv:2503.15439 , 2025. [Online]. Available: https://arxiv.org/abs/2503. 15439 [10] A. Gily´ en, Y. Su, G. H. Low, and N. Wiebe, “Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics,” in Proceedings of the 51st annual ACM SIGACT symposium on theory of computing ,2019, pp. 193–204. [Online]. Available: https://doi.org/10.1145/3313276.3316366 [11] S. Chakraborty, A. Gily´ en, and S. Jeffery, “The power of block-encoded matrix powers: improved regression techniques via faster hamiltonian simulation,” arXiv preprint arXiv:1804.01973 ,2018. [Online]. Available: https://arxiv.org/abs/1804.01973 [12] D. Camps, L. Lin, R. Van Beeumen, and C. Yang, “Explicit quantum circuits for block encodings of certain sparse matrices,” SIAM Journal on Matrix Analysis and Applications , vol. 45, no. 1, pp. 801–827, 2024. [Online]. Available: https://doi.org/10.1137/22M1484298 [13] C. S¨ underhauf, E. Campbell, and J. Camps, “Block-encoding structured matrices for data input in quantum computing,” Quantum ,vol. 8, p. 1226, 2024. [Online]. Available: https://doi.org/10.22331/ q-2024-01-11-1226 [14] C. Bravo-Prieto, R. LaRose, M. Cerezo, Y. Subasi, L. Cincio, and P. J. Coles, “Variational quantum linear solver,” Quantum , vol. 7, p. 1188, 2023. [Online]. Available: https://doi.org/10.22331/q-2023-11-22-1188 [15] R. Demirdjian, D. Gunlycke, C. A. Reynolds, J. D. Doyle, and S. Tafur, “Variational quantum solutions to the advection–diffusion equation for applications in fluid dynamics,” Quantum Information Processing ,vol. 21, no. 9, p. 322, 2022. [Online]. Available: https://doi.org/10.1007/s11128-022-03667-7
+
+[16] J. Golden, D. O’Malley, and H. Viswanathan, “Quantum computing and preconditioners for hydrological linear systems,” Scientific Reports , vol. 12, no. 1, p. 22285, 2022. [Online]. Available: https://doi.org/10.1038/s41598-022-25727-9 [17] M. Gopalakrishnan Meena, Y. Zhang, W. Jiang, Y. Lin, S. G¨ unther, and X. Gao, “Towards a quantum algorithm for the incompressible nonlinear navier-stokes equations,” in 2024 IEEE International Conference on Quantum Computing and Engineering (QCE) , vol. 1. IEEE, 2024, pp. 662–668. [Online]. Available: https://doi.org/10.1109/QCE59457.2024. 10821279 [18] C.-C. Ye, N.-B. An, T.-Y. Ma, M.-H. Dou, W. Bai, D.-J. Sun, Z.-Y. Chen, and G.-P. Guo, “A hybrid quantum-classical framework for computational fluid dynamics,” Physics of Fluids , vol. 36, no. 12, 2024. [Online]. Available: https://doi.org/10.1063/5.0238193 [19] F. S. D. Bosco, R. Lineswala, A. Chopra et al. , “Demonstration of scalability and accuracy of variational quantum linear solver for computational fluid dynamics,” arXiv preprint arXiv:2409.03241 , 2024. [Online]. Available: https://arxiv.org/abs/2409.03241 [20] J.-S. Kim, A. McCaskey, B. Heim, M. Modani, S. Stanwyck, and T. Costa, “Cuda quantum: The platform for integrated quantum-classical computing,” in 2023 60th ACM/IEEE Design Automation Conference (DAC) . IEEE, 2023, pp. 1–4. [Online]. Available: https://doi.org/10.1109/DAC56929.2023.10247886 [21] I. Loaiza, A. Sankar Brahmachari, and A. F. Izmaylov, “Majorana tensor decomposition: A unifying framework for decompositions of fermionic hamiltonians to linear combination of unitaries,” Quantum Science and Technology , vol. 10, no. 3, p. 035035, 2025. [Online]. Available: https://doi.org/10.1088/2058-9565/adb427 [22] T. Hogancamp, R. Demirdjian, and D. Gunlycke, “A linear combination of unitaries decomposition for the laplace operator,” arXiv preprint arXiv:2601.06370 , 2026. [Online]. Available: https://arxiv.org/abs/2601. 06370 [23] T. N. Georges, B. K. Berntson, C. S¨ underhauf, and A. V. Ivanov, “Pauli decomposition via the fast walsh-hadamard transform,” New Journal of Physics , vol. 27, no. 3, p. 033004, 2025. [Online]. Available: https://doi.org/10.1088/1367-2630/adb44d [24] S. Noschese, L. Pasquini, and L. Reichel, “Tridiagonal toeplitz matrices: properties and novel applications,” Numerical linear algebra with applications , vol. 20, no. 2, pp. 302–326, 2013. [Online]. Available: https://doi.org/10.1002/nla.1811 [25] M. Gopalakrishnan Meena, K. C. Gottiparthi, J. G. Lietz, A. Georgiadou, and E. A. Coello P´ erez, “Solving the Hele–Shaw flow using the Harrow–Hassidim–Lloyd algorithm on superconducting devices: Astudy of efficiency and challenges,” Physics of Fluids , vol. 36, no. 10, 2024. [Online]. Available: https://doi.org/10.1063/5.0231929 [26] C. Lu, Z. Hu, B. Xie, and N. Zhang, “Quantum CFD simulations for heat transfer applications,” in ASME International Mechanical Engineering Congress and Exposition , vol. 84584. American Society of Mechanical Engineers, 2020, p. V010T10A050. [Online]. Available: https://doi.org/10.1115/IMECE2020-23915 [27] L. Lapworth, “A hybrid quantum-classical CFD methodology with benchmark HHL solutions,” arXiv preprint arXiv:2206.00419 , 2022. [Online]. Available: https://arxiv.org/abs/2206.00419 [28] V. V. Shende, I. L. Markov, and S. S. Bullock, “Synthesis of quantum-logic circuits,” IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems , vol. 25, no. 6, pp. 1000–1010, 2006. [Online]. Available: https://doi.org/10.1109/TCAD.2005.855930
