@@ -10,25 +10,60 @@ except Exception:  # pragma: no cover - 兼容 package 导入路径
 
 
 def get_query_paper_sources(query: Dict[str, Any]) -> List[str]:
+    """
+    Return the paper sources used by one query.
+
+    If the query is malformed or does not specify paper_sources,
+    fall back to arxiv for backward compatibility.
+    """
     if not isinstance(query, dict):
         return [ARXIV_SOURCE_KEY]
+
     sources = normalize_source_list(query.get("paper_sources"))
     return sources or [ARXIV_SOURCE_KEY]
 
 
 def group_queries_by_source(queries: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Expand queries by paper source.
+
+    Example:
+        query.paper_sources = ["arxiv", "iclr", "neurips"]
+
+    becomes:
+        grouped["arxiv"]   -> query with active_source="arxiv"
+        grouped["iclr"]    -> query with active_source="iclr"
+        grouped["neurips"] -> query with active_source="neurips"
+    """
     grouped: Dict[str, List[Dict[str, Any]]] = {}
+
     for query in queries or []:
         if not isinstance(query, dict):
             continue
-        for source_key in get_query_paper_sources(query):
+
+        paper_sources = get_query_paper_sources(query)
+
+        for source_key in paper_sources:
             copied = dict(query)
             copied["active_source"] = source_key
+
+            # Keep a normalized paper_sources field for downstream merging/debugging.
+            copied["paper_sources"] = paper_sources
+
             grouped.setdefault(source_key, []).append(copied)
+
     return grouped
 
 
 def build_query_merge_key(query: Dict[str, Any]) -> Tuple[str, str, str, str, str, str]:
+    """
+    Build a source-agnostic merge key.
+
+    Important:
+        We intentionally do NOT include active_source here.
+        This allows the same semantic query over arxiv/iclr/icml/neurips
+        to be merged into one final query result.
+    """
     return (
         str(query.get("type") or ""),
         str(query.get("tag") or ""),
@@ -40,14 +75,28 @@ def build_query_merge_key(query: Dict[str, Any]) -> Tuple[str, str, str, str, st
 
 
 def _merge_sim_scores(target: Dict[str, Any], incoming: Dict[str, Any]) -> None:
+    """
+    Merge paper similarity scores from one source into the final query.
+
+    If the same paper appears multiple times:
+      - keep the better rank, i.e. smaller rank number;
+      - keep the better score, i.e. larger score;
+      - preserve extra metadata fields.
+    """
+    if not isinstance(incoming, dict):
+        return
+
     for paper_id, meta in incoming.items():
         if paper_id not in target:
             target[paper_id] = dict(meta) if isinstance(meta, dict) else meta
             continue
+
         if not isinstance(meta, dict):
             target[paper_id] = meta
             continue
+
         existing = target.get(paper_id)
+
         if not isinstance(existing, dict):
             target[paper_id] = dict(meta)
             continue
@@ -69,13 +118,44 @@ def _merge_sim_scores(target: Dict[str, Any], incoming: Dict[str, Any]) -> None:
                 existing[key] = value
 
 
+def _merge_source_list(*values: Any) -> List[str]:
+    """
+    Normalize and merge multiple source lists while preserving order.
+    """
+    merged: List[str] = []
+    for value in values:
+        for source in normalize_source_list(value):
+            if source not in merged:
+                merged.append(source)
+    return merged
+
+
 def merge_pipeline_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Merge pipeline outputs from multiple paper sources.
+
+    Expected result format:
+        {
+            "queries": [...],
+            "papers": {...},
+            ...
+        }
+
+    Returns:
+        {
+            "queries": merged queries,
+            "papers": merged papers,
+            "total_hits": total matched paper-query pairs,
+            "non_empty_queries": number of queries with at least one hit,
+        }
+    """
     merged_queries: "OrderedDict[Tuple[str, str, str, str, str, str], Dict[str, Any]]" = OrderedDict()
     merged_papers: Dict[str, Any] = {}
 
     for result in results or []:
         if not isinstance(result, dict):
             continue
+
         for paper_id, paper in (result.get("papers") or {}).items():
             if paper_id not in merged_papers:
                 merged_papers[paper_id] = paper
@@ -83,20 +163,54 @@ def merge_pipeline_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         for query in result.get("queries") or []:
             if not isinstance(query, dict):
                 continue
+
             key = build_query_merge_key(query)
+
+            query_sources = normalize_source_list(query.get("paper_sources"))
+            active_source = query.get("active_source")
+            active_sources = _merge_source_list(
+                query_sources,
+                [active_source] if active_source else [],
+                query.get("active_sources"),
+            )
+
             if key not in merged_queries:
                 copied = dict(query)
                 copied["sim_scores"] = {}
-                copied["paper_sources"] = normalize_source_list(query.get("paper_sources"))
+                copied["paper_sources"] = active_sources
+                copied["active_sources"] = active_sources
                 merged_queries[key] = copied
 
             target = merged_queries[key]
-            _merge_sim_scores(target.setdefault("sim_scores", {}), query.get("sim_scores") or {})
-            merged_sources = normalize_source_list(target.get("paper_sources")) + normalize_source_list(query.get("paper_sources"))
-            target["paper_sources"] = normalize_source_list(merged_sources)
 
-    total_hits = sum(len((query.get("sim_scores") or {})) for query in merged_queries.values())
-    non_empty_queries = sum(1 for query in merged_queries.values() if query.get("sim_scores"))
+            _merge_sim_scores(
+                target.setdefault("sim_scores", {}),
+                query.get("sim_scores") or {},
+            )
+
+            target["paper_sources"] = _merge_source_list(
+                target.get("paper_sources"),
+                query.get("paper_sources"),
+                [active_source] if active_source else [],
+            )
+
+            target["active_sources"] = _merge_source_list(
+                target.get("active_sources"),
+                query.get("active_sources"),
+                [active_source] if active_source else [],
+            )
+
+    total_hits = sum(
+        len((query.get("sim_scores") or {}))
+        for query in merged_queries.values()
+    )
+
+    non_empty_queries = sum(
+        1
+        for query in merged_queries.values()
+        if query.get("sim_scores")
+    )
+
     return {
         "queries": list(merged_queries.values()),
         "papers": merged_papers,
