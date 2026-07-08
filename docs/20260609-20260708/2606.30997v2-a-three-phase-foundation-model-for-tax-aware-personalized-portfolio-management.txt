@@ -1,0 +1,722 @@
+Title: A Three-Phase Foundation Model for Tax-Aware Personalized Portfolio Management
+
+URL Source: https://arxiv.org/pdf/2606.30997v2
+
+Published Time: Tue, 07 Jul 2026 00:08:45 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# A Three-Phase Foundation Model for Tax-Aware Personalized Portfolio Management *Ramin Pishehvar 
+
+rpichevar@gmail.com 
+
+# Abstract 
+
+We present a three-phase deep reinforcement learning system for personalized portfolio management that ad-dresses three limitations shared by all prior financial RL work: 1) ticker lock-in (models trained on a fixed asset universe cannot generalize), 2) monolithic objec-tives (a single Sharpe reward [ 16 ] cannot serve hetero-geneous user goals), and 3) static user models (pref-erences are elicited once and never updated). Phase 1 pretrains a ticker-identity-free cross asset encoder via self-supervised learning on a multi-asset corpus, aug-mented by a frozen parallel branch using Chronos [ 2 ], a T5-based time series foundation model pretrained on over 100 billion data points, fused via a learned gating mechanism. To our knowledge, this is the first applica-tion of a time series foundation model to portfolio man-agement RL. The encoder generalizes to any publicly traded asset via a 50-dimensional observable metadata vector (sector, fundamentals, analyst consensus, options signals, earnings calendar, insider sentiment, institutional ownership) that requires no retraining for new tickers. Phase 2 fine-tunes a MoE (Mixture of Experts) portfolio actor critic with PPO under an objective-conditioned re-ward that simultaneously serves six distinct investment goals sampled per episode: short-term alpha, short-term gain, long-term gain, capital preservation, tax-loss har-vesting, and long-term-gains-only. A Mixture-of-Experts 
+
+architecture assigns each objective to a specialized ex-pert head (momentum, growth, defensive, tax-aware), and a learned intent router blends experts based on the active objective and current market regime, which elim-inates cross-objective gradient conflict. Phase 3 adds a lightweight personalization layer further adapted at infer-ence time to each individual via a 76-parameter LoRA  
+
+> *Patent Pending. U.S. Provisional Patent Application No. 64/101,198, filed June 29, 2026.
+
+module fine-tuned on real brokerage transaction history, inferring investment objectives from revealed trading be-havior rather than questionnaires. A natural language intent parser converts free-form goals such as “buy a house in 3 years” or “college fund, kid is 10” directly into structured investment objective parameters. The system is deployed as a FastAPI application with live brokerage integration, real-time price refresh, news and event cross-attention, and a trust-first interface that pre-views inferred preferences before applying any model adaptation. 
+
+# 1 Introduction 
+
+Personal portfolio management sits at the intersection of several hard problems: market prediction under non-stationarity, combinatorial action spaces over large ticker universes, heterogeneous user objectives (tax efficiency, risk tolerance, investment horizon), and the fundamental challenge of eliciting genuine preferences from users who do not think in terms of annualized Sharpe ratios [16]. 
+
+1.1 The Market Gap 
+
+Existing tools fall into two categories, neither of which serves the individual investor well. • Professional and high-frequency systems: Institu-tional quantitative trading platforms are engineered for professional analysts with programming exper-tise, access to expensive real-time data feeds, and portfolios measured in the hundreds of millions. These systems provide sophisticated factor models, alternative data integration, and execution infras-tructure, but require significant capital, technical overhead, and proprietary data subscriptions that 1
+
+> arXiv:2606.30997v2 [cs.AI] 2 Jul 2026
+
+place them out of reach for retail investors. They optimize for alpha generation and execution latency, sometimes at millisecond timescales, and assume a clean separation between the analyst who constructs a strategy and the execution system that trades it. After-tax consequences, individual holding periods, and personal financial goals are orthogonal to their design objectives. High-frequency trading systems operate at an even further extreme: pure latency arbitrage with no notion of a user objective whatso-ever. • Retail tools: optimize in the opposite direction: ex-treme simplicity at the cost of signal quality. Some products offer target-date rebalancing and basic tax-loss harvesting, but the underlying “AI” is a deter-ministic rules engine, not a learned policy. There is no market signal: the system does not know whether a specific ticker is up 200% on earnings momentum or whether rising credit spreads suggest reducing equity exposure. Some other products provide exe-cution with no guidance; the analytical burden falls entirely on the user. 
+
+The gap is a system that combines genuine learned mar-ket signal with the tax awareness and personalization that matter to an individual investor, without requiring insti-tutional data subscriptions, a quantitative background, or a bespoke technology stack. Table 1 summarizes this positioning. Table 1: Positioning relative to existing tools.                            
+
+> Dimension Institutional Retail Ours
+> Learned market signal ✓×✓
+> Tax-lot awareness partial basic ✓
+> User goal personalisation ×rule-based ✓
+> NL goal input ××✓
+> Live broker integration ✓✓✓
+> Required expertise High None None Data cost $$$ Free Free Latency target ms daily daily
+
+1.2 Prior Work 
+
+Financial RL has largely addressed sub-problems in iso-lation. [ 8 ] and [ 12 ] introduced end-to-end portfolio poli-cies but with fixed ticker universes and no personaliza-tion. [ 21 ] incorporated transaction costs, while [ 13 ] pro-vided a multi-environment benchmark. Tax-aware trad-ing has been studied in the operations research literature [5 ] but rarely integrated with learned policies. Robo-advisors [ 6] address personalization via questionnaires but lack market signal. 
+
+1.3 Novelty Positioning 
+
+The fundamental limitation shared by all prior financial RL systems is ticker lock-in : the model is trained on a fixed universe of N assets and cannot be applied to any other set without retraining. This is a critical prac-tical barrier: a user’s portfolio changes over time, new assets become relevant, and institutional methods that work on S&P 500 constituents are useless for portfo-lios of 5–20 individual positions with their own tax lots and behavioral histories. Our primary contribution is the elimination of ticker identity from the architecture entirely, replacing learned ticker embeddings with a 50-dimensional observable metadata vector computable for any publicly traded asset without retraining. A second gap is the treatment of the user as a static entity. Existing systems, both institutional optimizers and retail robo-advisors, elicit preferences once via ques-tionnaire and never update. We instead infer objectives dynamically from revealed trading behavior extracted from real brokerage transaction history, adapting via a 76-parameter LoRA module that can be updated in seconds on CPU. A third gap is the monolithic objective: virtually all prior RL policies optimize a single fixed reward (typically Sharpe ratio). We introduce an objective-conditioned reward under which a single policy simulta-neously serves six distinct investment goals sampled per episode, without requiring a separate trained model per objective. Finally, we integrate Chronos [ 2 ], a time series foun-dation model pretrained on over 100 billion time series data points, as a frozen parallel encoder branch. This adds universal temporal pattern recognition to a domain-specific SSL encoder. To our knowledge, this is the first application of a time series foundation model to portfolio management RL. We combine all four contributions (i.e., ticker-identity-free generalization, revealed-preference personalization, objective-conditioned training, and foundation model augmentation) into a single end-to-end system deployed with live brokerage integration. 2Our contributions are: • A ticker-identity-free architecture with a 50-dimensional observable metadata vector (sector, fundamentals, analyst consensus, options signals, earnings calendar, insider sentiment, institutional ownership) enabling zero-shot generalization to any publicly traded asset without retraining. This is the primary architectural novelty; to our knowledge no prior financial RL system achieves ticker-universe independence. • An objective-conditioned reward that shapes gra-dients differently per episode, training a single pol-icy to serve six investment objectives (short-term al-pha, short-term gain, long-term gain, capital preser-vation, tax-loss harvesting, LT-gains-only) sampled randomly per episode. • A Chronos foundation model branch : a frozen parallel encoder pretrained on 100B+ time series data points, fused via a learned gate, providing uni-versal temporal representations that complement domain-specific SSL pretraining. First application of a time series foundation model to portfolio man-agement RL. • A revealed-preference personalization system that infers investment objectives from real trans-action history and adapts via a 76-parameter LoRA module with a trust-first preview-before-apply UX, with no raw transaction data stored. • A learnable cash token that forces explicit cash allocation decisions. Cash competes with equities in the allocation softmax rather than accumulating passively through inaction, eliminating a common HOLD-trap failure mode. • An allocation-driven execution model that decou-ples portfolio weight targets from per-ticker actions. Rebalancing fires whenever allocation weights di-verge beyond a threshold δreb , preventing the action head from blocking trades via all-HOLD outputs. • A six-stage MoE expert curriculum (four spe-cialist experts, intent-conditional router with super-vised routing loss, and expert grafting) that achieves 
+
++3 .03% 14d EW alpha with clean diagonal routing (std > 0.37 ); • A Mixture-of-Experts portfolio policy (§2.4) with four specialized expert heads (momentum, growth, defensive, tax-aware) and a learned intent router that blends experts based on active objective and market regime, eliminating cross-objective gradient conflict that prevents a single head from serving all investment mandates simultaneously. • A shared-encoder MoE design in which all ex-perts share one cross asset encoder, jointly fine-tuned via PPO. This is more parameter efficient than per-expert encoders while it allows representation adaptation for all experts. • An inter-ticker contrastive loss in Phase 1 that prevents representation collapse. Without this loss, all tickers converge to identical embeddings (cosine similarity 0.96), making differentiated allocation impossible; the contrastive loss reduces similarity to 0.24. • A sixth training objective (ALPHA VS EW ) that directly optimizes alpha versus an equal-weight benchmark, with a concentration bonus 5σ(w) that incentivizes non-uniform weights. • A cash-drag and redeployment reward that ex-plicitly incentivizes completing the sell →buy cycle within a single step, with turnover exemption for round-trip rebalances. • A natural language intent parser mapping free-text goals (“buy a house in 3 years”, “college fund, kid is 10”) to structured investment objective param-eters. 
+
+# 2 System Architecture 
+
+Figure 1 shows the three-phase pipeline and Figure 2 details the encoder architecture. 
+
+2.1 Phase 1: Self-Supervised Encoder Pretrain-ing 
+
+The encoder is pretrained on a multi-asset corpus with three SSL objectives: 
+
+Next-bar Return Prediction. Given a window x ∈
+
+RT ×D of T bars and D normalized features (returns, moving-average ratios, RSI, MACD, volume z-score, etc.), predict the next-bar return rt+1 via a Huber regres-sion head [17]: 
+
+Lret = Huber δ(ˆ rt+1 , clip (rt+1 , −0.1, 0.1)) , δ = 0 .05 .
+
+(1) 3Phase 1 SSL Pretraining       
+
+> CrossAsset Encoder
+> + Chronos (frozen)
+> 50-dim Metadata
+> Phase 2 PPO Fine-tune
+> Portfolio ActorCritic
+> 6 Objectives per episode
+> Shaped Reward
+> Phase 3 Personalise
+> Persona + LoRA
+> Brokerage transactions
+> NL intent parser
+> Live recommendations: BUY |HOLD |SELL + weights
+> ticker-identity-free any Nat inference
+
+Figure 1: Three-phase pipeline. Solid arrows = training flow; dashed = conditioning inputs (Chronos, metadata, objectives, NL parser). Each phase is independently resumable from checkpoints. 
+
+Price window 
+
+(B, N, T, D )
+
+Close prices 
+
+(B, N, T )
+
+Metadata 
+
+(B, N, 50) 
+
+MarketEncoder (SSL, trained) 
+
+ChronosEncoder (frozen T5, 8M) 
+
+MetadataEncoder (74K trainable) 
+
+Gated Fusion 
+
+hssl + σ(W [hssl ; hc]) · hc
+
+Additive 
+
+h + hm
+
+Cross-Asset Attention 
+
+hfused ∈ RB×N ×d
+
+shared weights across all N tickers 
+
+frozen — no gradient 
+
+learned gate ∈ [0 , 1] 
+
+any N at inference 
+
+Figure 2: CrossAssetEncoder architecture. The SSL-trained MarketEncoder (price features) and frozen ChronosEn-coder (universal temporal patterns) are combined via a learned gating mechanism. Ticker metadata (50-dim) is injected additively after gated fusion, before cross-asset attention compares tickers against each other. All three branches operate on any number of tickers N at inference without retraining. 
+
+Masked Feature Recovery. A random subset of fea-ture channels is zeroed and the encoder must reconstruct the original values, encouraging complete use of the fea-ture set: 
+
+Lmask = ˆxmasked − xoriginal 22 . (2) 
+
+Market Regime Classification. Bars are labeled into four regimes (bull, bear, volatile, sideways) automatically via rolling statistics, and the encoder is trained to predict the current regime: 
+
+Lreg = CrossEntropy (ˆ yregime , y regime ). (3) The combined loss is: 
+
+LP1 = 0 .3 Lret +1 .0 Lmask +0 .5 Lreg +0 .5 Lcontrast . (4) 
+
+Inter-Ticker Contrastive Loss. A critical failure mode emerged during development: without an explicit differentiation objective, the cross asset encoder con-verged to a mean representation . All tickers produced nearly identical embeddings (mean cosine similarity 0.96), causing the allocation head to output uniform 1/N 
+
+weights regardless of input. We diagnose this as rep-resentation collapse in the cross-asset attention: with identical SSL targets per ticker, the attention learns to average rather than contrast. We address this with a contrastive loss applied to the per-ticker representations {hi} before pooling: 
+
+Lcontrast = 1
+
+BN (N − 1) 
+
+> B
+
+X
+
+> b=1
+
+X
+
+> i̸=j
+
+hb,i · hb,j 
+
+∥hb,i ∥ ∥ hb,j ∥ , (5) which minimizes the mean cosine similarity between all pairs of different tickers within each batch. After 460 epochs with λcontrast = 0 .5, mean inter-ticker cosine similarity dropped from 0.96 to 0.24 , enabling the allo-cation head to produce genuinely differentiated portfolio weights. 
+
+Path B: Cross Asset Encoder with Chronos Augmen-tation. For multi-asset pretraining, we use a three-stage encoder. Stage 1 applies a shared market encoder (trans-former) to each ticker’s price feature window indepen-dently, producing per-ticker representations hssl  
+
+> i
+
+∈ Rd.Stage 1.5 fuses two parallel branches and adds meta-data context: 
+
+˜hi = hssl  
+
+> i
+
++ σ Wg
+
+hssl  
+
+> i
+
+; hchr 
+
+> i
+
+ ⊙ hchr 
+
+> i
+
+| {z }
+
+> gated Chronos fusion
+
++ MetadataEnc (mi)
+
+| {z }
+
+> additive context
+
+, (6) where hchr  
+
+> i
+
+= Proj (Chronos (ci)) is the projected Chronos embedding of the raw closing price sequence ci,
+
+Wg is a learned gate, and σ is sigmoid. The gate σ(Wg[·]) 
+
+learns per-position how much universal temporal signal from Chronos should augment the SSL representation. 
+
+Chronos freezing and caching strategy. We use Chronos-T5-Small (46M parameters, pretrained on 100B+ time series) as a frozen feature extractor through-out Phase 1. Only the linear projection head ( R512 → Rd,74K parameters) and the gate ( Wg ∈ R2d×d, 8K parame-ters) are trained. This design keeps 99.97% of Chronos weights frozen, preventing catastrophic forgetting of uni-versal temporal patterns while allowing the projection to adapt to financial data. Crucially, we do not apply LoRA or any parameter-efficient fine-tuning to Chronos. The backbone is used strictly as a fixed feature extractor, similar to using a frozen BERT for NLP downstream tasks. LoRA adaptation in our system is reserved for the intent router in Phase 3, where a 76-parameter adapter shifts routing weights to match individual user prefer-ences (§2.5). Since the Chronos forward pass is computationally expensive relative to the SSL encoder, we precompute all embeddings for the training corpus once before Phase 2 begins, storing (ti, ticker ) → hchr  
+
+> i
+
+in an in-memory cache. This reduces the per-step Chronos overhead from 
+
+O(N · T ) transformer calls to O(1) cache lookups dur-ing the frozen phase. When the encoder is unfrozen, the cache is cleared and repopulated every 100 episodes to reflect updated projection weights. Stage 2 applies cross-asset transformer attention over 
+
+{˜hi}, allowing tickers to contextualise each other before the prediction heads. 
+
+2.2 Ticker-Identity-Free Design with Metadata 
+
+A central design choice is the complete elimination of fixed ticker identity embeddings. In prior work, an em-bedding table E ∈ RN ×d maps ticker indices to repre-sentations, tying the model to a fixed universe of size 
+
+N .We replace this with a 50-dimensional observable metadata vector, computable for any ticker including those not seen during training: 
+
+mi = ssector  
+
+> i
+
+, ccap  
+
+> i
+
+, f fund  
+
+> i
+
+, aanalyst  
+
+> i
+
+, ooptions  
+
+> i
+
+,
+
+eearn  
+
+> i
+
+, ttech  
+
+> i
+
+, kinsider  
+
+> i
+
+, ninst 
+
+> i
+
+ ∈ R50 , (7) where si ∈ { 0, 1}12 is sector one-hot, ci ∈ { 0, 1}6 is market-cap bucket, fi ∈ R10 covers fundamentals (P/E, P/B, ROE, profit margin, revenue growth, EPS growth, short interest, dividend yield, debt/equity, payout ratio), 
+
+ai ∈ R3 captures analyst consensus (rating normalised to 
+
+[−1, +1] , log coverage, mean price target upside), oi ∈
+
+R4 covers options signals (IV/hist vol, IV skew, put/call ratio, unusual activity flag), ei ∈ R3 encodes earnings calendar (days to next earnings, 8-quarter beat rate, post-earnings drift), ti ∈ R4 covers technical regime (distance from 52-week high/low, volume trend, relative strength vs. sector ETF), ki ∈ R2 captures insider activity (net buy/sell over 6 months, insider momentum), and ni ∈ R2
+
+covers institutional ownership (ownership percentage, quarter-over-quarter change). The model learns structured priors: “high-beta mega-cap tech with strong momentum deserves overweight in bull regimes” , without memorizing ticker names. New tickers at inference require only metadata computation, not retraining. 
+
+2.3 Phase 2: Objective-Conditioned Portfolio RL 
+
+Phase 2 fine-tunes a portfolio actor critic with PPO [ 15 ]. At each step, the policy jointly outputs: 5• Allocation weights w ∈ ∆N +1 (softmax over N
+
+equities plus a learnable cash token ) via allocation head • Per-ticker actions a ∈ {0, 1, 2}N
+
+(HOLD/BUY/SELL) via per ticker action head 
+
+Explicit cash allocation via a learnable cash token. 
+
+A persistent failure mode in early experiments was the policy drifting into implicit cash-holding: because HOLD never incurs transaction costs and benefits from market drift, the policy discovered that outputting zero allocation weights for all tickers while routing all reward through market returns was a local optimum. We address this by adding a learnable cash token c ∈ Rd (i.e., a train-able parameter that competes with equity representations in the allocation softmax): 
+
+wfull = softmax  AllocHead ([ c; h1, . . . , hN ])  ∈ RN +1 .
+
+(8) The first element w0 = wcash is the explicit cash alloca-tion. Equity weights are renormalised to sum to 1−wcash :
+
+weq  
+
+> i
+
+= wi+1 
+
+PNj=1 wj+1 
+
+· (1 − wcash ), i = 1 , . . . , N. (9) This forces the policy to make an active decision about cash allocation at every step, rather than allowing passive cash accumulation through inaction. 
+
+Allocation-driven execution. The per-ticker action head ( HOLD /BUY /SELL ) was originally intended as an additional confidence signal, but in practice caused zero-turnover collapse: the action head learned to output  
+
+> HOLD
+
+for all tickers unconditionally, overriding alloca-tion signals. We therefore decouple the two heads: the en-vironment executes a rebalance whenever |weq  
+
+> i
+
+−wcurr  
+
+> i
+
+| >δreb , regardless of the action head output. The action head now acts as a modifier rather than a gate: SELL forces a full exit; BUY allows larger-than-threshold buys; HOLD 
+
+permits partial rebalancing. We expose the rebalanc-ing threshold δreb as a hyperparameter (default 0.01) to control trading frequency. Execution follows a sell-first ordering to free cash before buys. 
+
+Objective-conditioned reward. At each episode, an objective o is sampled uniformly from six types. The reward function Ro is then shaped accordingly: 
+
+Ro = So
+
+|{z} 
+
+> obj.
+
+− λcHeq 
+
+| {z } 
+
+> conc.
+
+− λt ˜τ
+
+|{z} 
+
+> turnover
+
+− γd max(0 , c r − 0.05) 
+
+| {z }
+
+> cash drag
+
+− γs · 1[τ = 0 , t > 10] 
+
+| {z }
+
+> stale
+
++ δr · ρ
+
+| {z } 
+
+> redeploy
+
+,
+
+(10) where Heq is the equity Herfindahl index [ 10 ], ˜τ is turnover net of redeployed round-trips (defined below), 
+
+cr = C/ PV is the cash ratio, γd = 0 .3 penalises excess cash unconditionally (plus 0.2 · cr · rm when the mar-ket rises), γs = 0 .005 is a small stale-portfolio penalty that fires when no trades have occurred for more than 10 steps, and ρ ∈ [0 , 1] is the fraction of sell proceeds redeployed in the same step. The objective base So varies by type: 
+
+SMAX GAIN 1Y = ˆ σSharpe 
+
+SMAX GAIN 30D = 0 .3ˆ σ + 0 .7 · clip(50¯ r30 , −2, 2) 
+
+SCAP PRES = 0 .5ˆ σ − 3δt
+
+SINC HARV = ˆ σ + P
+
+> i
+
+q4(i) · 1[gi<0, h i<365] 
+
+SLT ONLY = ˆ σ − 0.15 P
+
+> i
+
+1[hi<365 at sell ]
+
+SALPHA VS EW = 50( rport − rEW ) + 5 σ(w),
+
+(11) where δt is current drawdown from peak, q4(i) is a Q4 multiplier (1.5 in Oct–Dec, 0.5 otherwise), gi is unre-alised gain, and hi is holding days. 
+
+Redeployment-aware turnover. Selling and immedi-ately buying constitutes one rebalance decision, not two trades. The net turnover excluding round-trips is: 
+
+˜τ = max 
+
+
+
+0, τ − (∆ csell + min(∆ b, ∆csell )) · ρ
+
+PV 
+
+
+
+,
+
+(12) where ∆csell is cash freed by sells, ∆b is cash deployed by buys, and PV is portfolio value. 
+
+Equity-only concentration. Cash is not concentrated equity. The concentration penalty applies only to the renormalized equity weights: 
+
+Heq = X
+
+> i
+
+w2 
+
+> i
+
+, H⋆ 
+
+> eq
+
+= 1
+
+|{ i : wi > 0.01 }| , (13) 62.4 Phase 2b: Mixture-of-Experts Portfolio Pol-icy 
+
+A key empirical finding during Phase 2 development was that a single allocation head cannot simultaneously serve conflicting investment objectives. A momentum strategy (overweight recent winners, 14-day horizon) requires high beta, high concentration, and frequent rebalanc-ing. A capital preservation strategy requires low beta, diversification, and minimal turnover. Training a single head with all six objectives produces gradient conflict: the policy converges to a compromise allocation that is suboptimal for all objectives. We address this with a Mixture-of-Experts (MoE) ar-chitecture in which each expert specializes in a distinct investment mandate, and an intent router learns to blend experts based on the active objective and current market regime. 
+
+Expert allocation heads. We define four expert heads, each an independent allocation head with identical ar-chitecture but trained on a distinct objective subset (see Table 2) 
+
+Intent router. The intent router receives the mean-pooled encoder output ¯h ∈ Rd (market state) and the one-hot intent vector eo ∈ { 0, 1}6 (active objective), and outputs mixture weights over experts: 
+
+α = softmax 
+
+ fθ([ ¯h; eo]) 
+
+τ
+
+
+
+∈ ∆E−1, (14) where fθ is a two-layer MLP and τ is a learnable temper-ature (initialised at 1.0). The final allocation is the router-weighted mixture of expert outputs: 
+
+wfull =
+
+> E
+
+X
+
+> e=1
+
+αe · Expert e
+
+ [c; h1: N ], s1: N , g, (15) where c is the cash token, s1: N is per-ticker state, and g
+
+is global portfolio state. 
+
+Regime-conditional routing. A key property of the router is that it can override the explicit intent based on market regime. For example, when the market en-ters a high-volatility regime (detectable from the en-coder’s regime classification head), the router may route 
+
+ALPHA VS EW intent partially through the defensive ex-pert, reducing drawdown risk at the cost of some alpha. This regime-conditional behaviour is learned implicitly from the reward signal without explicit regime labels. 
+
+Shared encoder, specialised experts. All four ex-perts share a single cross asset encoder, which is jointly fine-tuned with the MoE heads via PPO. This is more parameter-efficient than per-expert encoders and allows the encoder to adapt representations that are simultane-ously useful for all experts. The total parameter count is modest: one encoder (approx. 2M params) plus four lightweight expert heads (approx. 200K params each) and the router (approx. 50K params). 
+
+Connection to Phase 3 personalization. The router architecture naturally integrates with Phase 3 LoRA adaptation: user-specific preferences (risk tolerance, tax bracket, time horizon) update only the router weights via LoRA, leaving expert heads frozen. A conservative user shifts router weight toward the defensive expert; an ag-gressive user shifts toward momentum. This separation of what markets look like (shared encoder, shared experts) from how to weight strategies (personalized router) is a key design principle. 
+
+2.5 Phase 3: Tax-Aware Personalization with LoRA Adaptation 
+
+Phase 3 adapts the trained MoE policy to individual users without retraining any expert weights. We describe the architecture here; full empirical evaluation on real bro-kerage data is left to future work (§8). 
+
+Architecture. A tax-aware personalization layer adapts only the intent router weights via a lightweight LoRA module [11]: 
+
+ˆℓ = ℓbase + puAB , (16) where pu ∈ R16 is a user behaviour profile extracted from brokerage transaction history, and A ∈ R16 ×r,
+
+B ∈ Rr×3 are low-rank adapter matrices with r = 4 ,initialised with B = 0 so adaptation is an identity at deployment. Total adapter size: 76 parameters ( ≈ 1 KB). The shared encoder and all four expert heads remain frozen. 7Table 2: MoE expert mapping. Each expert receives gradients only from its assigned objectives, eliminating cross-objective gradient conflict. 
+
+Expert Name Objectives Horizon 
+
+0 Momentum ALPHA VS EW , MAX GAIN 30D 14–30 days 1 Growth MAX GAIN 1Y 1 year 2 Defensive CAPITAL PRESERVE any 3 Tax-aware INCOME HARVEST , LT GAIN ONLY 1 year+ 
+
+Revealed preference extraction. Transaction history is analysed to compute pu encoding median holding period, LT-sell fraction, loss-harvest score, disposition effect, and trade frequency. The inferred objective (e.g. LT GAIN ONLY for users who hold winners > 12 
+
+months) overrides the stated intent when confidence ex-ceeds 70%. 
+
+Personalization effect. The adapter shifts intent router mixture weights toward the expert most consistent with a user’s revealed behaviour: frequent short-term traders increase α0 (momentum expert); long-horizon holders increase α3 (tax-aware expert). This separation (i.e., shared encoder and experts capture what markets look like ; personalised router captures how to weight strate-gies ) makes adaptation cheap, interpretable, and privacy-preserving (only the 76-parameter adapter is persisted per user). 
+
+Qualitative illustration. Table 3 shows after-tax rec-ommendations for four canonical investor personas on AAPL at $190.38 (15 Nov 2023), using the Phase 3 tax-aware layer on top of the trained Phase 2 policy. The system correctly suppresses sells near the LT threshold (persona 2), identifies tax-loss harvesting opportunities (persona 3), and adapts position sizing to bracket-specific after-tax returns. 
+
+2.6 Natural Language Goal Specification 
+
+We implement a two-tier intent parser that converts free-text goals to investment objective parameters: 1. API tier : A language model parses the user’s nat-ural language goal into a structured intent object, including objective type, time horizon, return target, drawdown tolerance, and risk level, in under one second at negligible cost. 2. Rule tier : Keyword matching with regex-based year/month extraction, handles the 90% common cases with zero API dependency. Table 4 shows representative mappings. 
+
+# 3 News and Event Cross-Attention 
+
+For the news-fused Phase 2 variant, structured events and news articles are encoded as additional key-value tokens fed to a cross-attention layer: 
+
+hfused = CrossAttn 
+
+hprice 
+
+| {z } 
+
+> query
+
+,
+
+e1, . . . , eK
+
+| {z }
+
+> news
+
+, v1, . . . , vE
+
+| {z }
+
+> events
+
+
+
++ hprice .
+
+(17) Price is the query (“what explains what I see?”); news and events are keys and values. The architecture degrades gracefully: if news is unavailable, the residual connection passes price representations unchanged. The model tracks 55 types of market events. These include changes in analyst sentiment, such as upgrades, downgrades, and price target revisions, as well as earn-ings estimate changes, sector-level signals, and macroe-conomic data releases. Rather than reacting to any single analyst’s opinion, the model aggregates analyst signals over a recent window, which tends to be a more reliable indicator than individual rating actions. 
+
+# 4 Deployment Architecture 
+
+The system is deployed as a FastAPI application with the following components: 8Table 3: Phase 3 after-tax recommendations for four investor personas. AAPL @ $190.38, 15 Nov 2023. “LT saving” = tax saving from waiting for long-term treatment. “sh” is the number of shares held by a given investor. The system suppresses BUY/SELL actions that would reduce after-tax value.                          
+
+> Persona Objective Bracket Action After-tax now Wait LT
+> 30d trader, 20sh @ $161.82 MAX GAIN 30D 32%ST/15%LT HOLD $+388 $+485 LT investor, 50sh @ $133.26 (26d from LT) LT GAIN ONLY 24%ST/15%LT HOLD ⋆$+2,170 $+2,427 Loss position, 30sh @ $237.97 INCOME HARVEST 35%ST/20%LT HOLD $-1,428 $-1,428 Near-retirement, no position CAPITAL PRESERVE 22%ST/15%LT HOLD ——
+> ⋆Sell suppressed: 26d until LT conversion saves $257 in tax.
+
+Table 4: Example intent-to-objective mappings. 
+
+Intent Objective Risk Horizon 
+
+House in 3 years CAPITAL PRESERVE Moderate 756d College (kid age 10) LT GAIN ONLY Moderate 2016d Retiring in 2 years CAPITAL PRESERVE Conservative 504d Tax-loss harvesting INCOME HARVEST Moderate 252d Aggressive growth LT GAIN ONLY Aggressive 1764d Dividends, semi-ret. INCOME HARVEST Conservative 504d Emergency fund CAPITAL PRESERVE Conservative 252d 
+
+Brokerage integration. The system supports three bro-ker backends: a live/paper trading executor, a read-only position aggregator that connects to 50+ brokerages via OAuth, and a mock broker for local development. 
+
+Real-time data. The system fetches price data with a 15-minute cache TTL, ensuring recommendations during market hours use data at most 15 minutes stale. The endpoint bypasses even this cache for immediate refresh. News is cached at 30-minute TTL. 
+
+Trust-first adaptation UX. Transaction history is pro-cessed in two steps: first a preview that analyses the uploaded file and returns the inferred investor profile without making any changes, then a separate apply step that only runs after the user confirms. The raw file is never stored, only a compact 16-number profile vector is saved. 
+
+Safety guardrails. Every order is validated against three configurable limits before execution: daily portfolio loss limit (default 2%), maximum single-order value ($5,000), and maximum position concentration (20%). 
+
+# 5 Experimental Results 
+
+5.1 Phase 1 Pretraining 
+
+We pretrained the cross asset encoder on a 30-ticker S&P 500 sample (all 11 GICS sectors) using daily bars from 2015–2024. Table 5 reports validation losses for key configurations. Table 5 reveals a surprising finding: the no-Chronos encoder naturally differentiates tickers (sim 0.08) with-out any contrastive loss, because raw price and volume features vary substantially across assets (AAPL vs XOM have fundamentally different scales and distributions). Chronos, by contrast, normalizes price sequences before encoding (i.e., relative movements look similar across tickers) causing representation collapse (sim 0.81) for both tiny and small variants despite their different ca-pacities, confirming the bottleneck is the normalization rather than model size. Adding the contrastive loss cor-rects this collapse: from scratch (sim 0.11, val 0.305) or via warm-start from SSL pre-trained weights (sim 0.24, val 0.163). The warm-start protocol is superior as the encoder first learns meaningful temporal structure before the contrastive loss sculpts the embedding space, avoid-ing the objective conflict that raises val loss at random 9Table 5: Phase 1 ablation: validation losses and inter-ticker cosine similarity across encoder configurations (all 60 epochs). The no-Chronos encoder naturally differentiates tickers (sim 0.08) because raw price/volume features vary substantially across assets; Chronos normalises sequences before encoding, causing representation collapse (sim 0.81). The contrastive loss corrects this collapse while warm-starting from SSL pre-trained weights achieves the best val loss (0.163, sim 0.24). 
+
+Configuration Epochs Val loss Sim. Note 
+
+Path B, no Chronos 60 0.277 0.08 Baseline (raw features differentiate) Path B, Chronos-tiny 60 0.171 0.81 8M frozen params Path B, Chronos-small 60 0.171 0.81 46M frozen, no contrastive + Contrastive, scratch 60 0.305 0.11 From random init + Contrastive, warm-start 60 0.163 0.24 SSL pre-trained init initialization. This two-phase SSL → contrastive proto-col is used for all Phase 2 experiments and is documented as a standalone contribution in Section 2.1. Adding the inter-ticker contrastive loss (Section 2.1, 
+
+λcontrast = 0 .5) reduced mean cosine similarity from 0.96 to 0.24 in 60 epochs, enabling the allocation head to produce genuinely differentiated portfolio weights. 
+
+5.2 Phase 2 Portfolio Policy 
+
+Training directly on all six objectives simultaneously resulted in gradient conflict within 100 episodes. The policy converged to uniform 1/N weights with near-zero alpha as competing objectives canceled each other’s gra-dients. We therefore applied the six-stage MoE expert curriculum described in Section 5.3, training one special-ist expert per stage while freezing the others. 
+
+Redeployment reward validation. Over 100 ran-domised market seeds, the sell →immediately-buy action achieves mean reward +0 .025 vs. −0.018 for sell →hold-cash ( t = 111 .6, p ≪ 0.001 ), confirming the reward correctly incentivises completing the rebalance cycle. 
+
+5.3 Curriculum Learning for Phase 2 Conver-gence 
+
+Directly training a portfolio policy on all objectives si-multaneously proved unstable: the policy collapsed to uniform 1/N weights with near-zero alpha within 100 episodes, due to conflicting gradient signals from differ-ent investment objectives. We address this with a six-stage MoE curriculum, each of the first three stages training one specialist expert head while freezing the others, followed by router training, joint fine-tuning, and expert grafting: Each stage resumes from the previous checkpoint via shape-filtered state dict loading, preserving compatible expert weights while re-initializing incompatible router layers. The best-reward gate resets automatically when a new stage name is detected in the checkpoint note, preventing stale rewards from blocking checkpointing in subsequent stages. Stages 1–3 each train one expert exclusively on its designated mandate, producing specialists that achieve 
+
++3 .16% to +3 .37% 14d EW alpha independently. Stage 4 (router-only with frozen experts) fails due to a flat loss surface (router weights remain at 0.25, al-pha drops to +0 .44% ). Stage 5 resolves this with a redesigned intent router and supervised cross-entropy loss, achieving clean diagonal routing (std > 0.37 ) at episode 33. Stage 6 grafts the curriculum expert weights into the Stage 5 router, recovering +3 .03% 14d alpha with the best 90d result ( −2.11% ). 
+
+Hard turnover cap. In addition to the soft turnover penalty λτ ˜τ in the reward, we enforce a hard ceiling τcap 
+
+on per-step turnover in the environment. After sells and buys collectively exceed τcap · Vt (where Vt is portfolio value), further buys are physically blocked for that step. This prevents the policy from discovering degenerate high-turnover strategies that exploit the redeployment bonus, which caused instability in preliminary experi-ments without the cap. 
+
+Action entropy floor. To prevent the per-ticker action head from collapsing to all-HOLD , we add an entropy 10 Table 6: MoE expert curriculum stages. All stages use N = 10 tickers, βH = 0 .02 , λτ = 0 .05 , τcap = 0 .25 ,
+
+δreb = 0 .01 . Each stage trains one expert head exclusively while the remaining experts are frozen, preventing gradient interference. Stage 5 uses the redesigned IntentRouter with supervised routing loss. 
+
+Stage Expert / Goal Objective Ep. Frozen experts Enc. unfreeze 
+
+1 Momentum expert ALPHA VS EW 300 1,2,3 ep 50 2 Growth expert MAX GAIN 1Y 300 0,2,3 ep 50 3 Defensive expert CAPITAL PRESERVE 300 0,1,3 ep 50 4 Router-only All (experts frozen) 300 0,1,2,3 never 5 Joint + supervised router All 300 none ep 50 6 Grafted MoE S2/S3 experts + S5 router — — —floor term to the PPO loss: 
+
+LPPO = Lclip + cvLvalue − βH H(πθ)
+
+− 0.05 · max(0 , 0.5 − H(πθ)) , (18) where the last term provides an additional bonus when action entropy H drops below 0.5 nats (uniform over three actions has entropy ≈ 1.1 nats). This prevents de-terministic HOLD while allowing the policy to converge once it is genuinely exploring. 
+
+5.4 Backtest (14 trading days, June 2026) 
+
+Representation collapse diagnosis. An important em-pirical finding from our development process concerns encoder representation quality. We observed that despite achieving a competitive validation loss (0.171, Table 5), the cross asset encoder without contrastive loss produced embeddings with mean inter-ticker cosine similarity of 0.96, effectively a mean representation where all tickers look identical to the allocation head. This caused the pol-icy to output uniform 1/N allocation weights regardless of input, producing zero alpha by construction. We diagnose this as a systematic failure of standard SSL objectives for multi-asset representation learning: return prediction, masked reconstruction, and regime classification all treat each ticker independently, provid-ing no gradient signal for inter-ticker differentiation. The contrastive loss (Section 2.1) resolves this, reducing simi-larity to 0.24 and enabling the allocation head to produce differentiated weights. 
+
+Backtest results. Table 7 reports walk-forward back-test results across three policy configurations, all us-ing the contrastive encoder (cosine sim 0.24) and a 10-ticker universe (AAPL, MSFT, NVDA, AMZN, GOOGL, 0 10 20 30 40 50 60  
+
+> Training epoch
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Inter-ticker contrastive loss  0.792
+> 0.118
+> sim < 0.2 threshold
+> Phase 1: Contrastive loss during encoder training
+> (inter-ticker cosine similarity: 0.96 0.24)
+> Raw
+> Smoothed (w=5)
+
+Figure 3: Inter-ticker contrastive loss during Phase 1 encoder training (60 epochs). Loss drops from 0.792 at epoch 0 to 0.118 at epoch 59, crossing below 0.2 by epoch 13. The corresponding mean inter-ticker cosine similarity falls from 0.96 (collapsed representations) to 0.24 (differentiated), enabling the allocation head to pro-duce non-uniform portfolio weights. META, TSLA, JPM, XOM, V) with $100,000 initial cap-ital, zero transaction cost. The collapsed-representation encoder (cosine sim 0.96) produces uniform weights ( 1/N , weight std 0.000 )and negative alpha, confirming the representation col-lapse hypothesis. After adding the inter-ticker con-trastive loss (sim 0.24), the ALPHA VS EW single-head policy achieves +2 .90% alpha vs EW on the 14-day June 2026 window with differentiated weights (weight std 0.057). The Stage 6 grafted MoE improves this slightly to +2 .93% alpha vs EW — the highest of all configura-tions — with total return −5.07% vs −8.01% EW, and a higher daily win rate (42.9% vs 35.7%). The MoE policy with correct intent routing produces distinct top hold-11 Table 7: 14-day walk-forward backtest, June 2026. 10 tickers (AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, JPM, XOM, V), $100,000 initial capital, zero transaction cost. The single-head and MoE columns are evaluated on an identical window (EW return −8.01% , SPY return −2.76% ), so alpha is directly comparable. The collapsed-representation column is an earlier diagnostic run on a separate window (its own EW benchmark −5.21% )and is included to illustrate the representation-collapse failure mode; its SPY alpha is therefore not comparable and omitted. The MoE column is the Stage 6 grafted checkpoint. 
+
+Metric Collapsed repr. Single-head MoE (grafted) 
+
+(sim=0.96) ALPHA VS EW all objectives Total return −5.95% −5.11% −5.07% 
+
+Alpha vs EW −0.74% +2 .90% +2 .93% 
+
+Alpha vs SPY −3.53% −2.35% −2.31% 
+
+Ann. Sharpe −6.91 −6.47 −6.62 
+
+Max drawdown −5.87% −5.32% −5.25% 
+
+Win rate (daily) 35 .7% 35 .7% 42 .9% 
+
+Weight std 0.000 0.057 0.057 
+
+ings per expert — JPM (momentum), TSLA (growth), GOOGL (defensive), AMZN (tax-aware), confirming that the four specialist heads have learned meaningfully different allocation strategies. 
+
+Note on the SPY benchmark. Measured against SPY (the S&P 500 ETF) over the same window, both the single-head and grafted-MoE policies return roughly 
+
+−2.3% alpha (SPY declined −2.76% during this pe-riod, versus −8.01% for the equal-weight basket). This gap is structural rather than a failure of stock selection: SPY comprises 500 market-cap-weighted constituents, including defensive and dividend-paying names that held up better than our 10 growth-heavy names (NVDA, TSLA, META). Scaling to a broader universe is left to future work (§8); for a like-for-like comparison of stock-selection skill, alpha versus the equal-weight benchmark on the same universe is the appropriate metric. 
+
+Note on annualised Sharpe. The annualised Sharpe ratios in Table 7 are negative ( −6.47 for the single-head policy, −6.62 for the grafted MoE) despite positive alpha vs EW. This is expected and not a failure of the strategy. Annualised Sharpe is computed as: 
+
+ˆS = ¯rport − rf
+
+σport 
+
+· √252 , (19) where ¯rport is the mean daily return over the 14-day window. During this 14-day window our 10-stock equal-weight benchmark declined −8.01% , reflecting the growth-heavy composition of the universe (NVDA, TSLA, META) underperforming during this specific pe-riod, so ¯rport is negative for every configuration. A nega-tive Sharpe on a short window therefore reflects universe-specific drawdown rather than systematic underperfor-mance. Sharpe is a meaningful metric only over a full market cycle (1–2 years) that includes both bull and bear regimes. For short-window evaluation, alpha vs equal-weight is the appropriate metric, as it isolates stock selection skill from market direction. 
+
+Multi-window robustness and SPY benchmark. The 14-day positive alpha does not persist at longer hori-zons. Table 8 shows results from a systematic sweep across checkpoint epochs and window lengths, evaluated against both EW and SPY. Table 8 reveals a clear pattern of expert specialization across all three curriculum stages. The Stage 1 momen-tum expert achieves +3 .16% EW alpha at 14 days and, with adaptive rebalancing, also produces positive 30-day alpha ( +0 .21% at ep300) — suggesting the momentum signal persists beyond the 14-day window when positions are allowed to rebalance on drift. At 60 and 90 days the expert underperforms ( −3.29% , −2.10% ), as expected for a short-horizon mandate. The Stage 2 growth ex-pert further improves 14-day alpha to +3 .37% (ep100) and maintains positive 30-day alpha ( +0 .19% at ep300). 12 Table 8: Best-epoch alpha vs equal-weight (EW) and SPY across backtest windows and MoE curriculum stages. Window-adaptive rebalancing: reb=1.0 (14d), reb=0.05 (30d), reb=0.03 (60d), reb=0.02 (90d). Zero transaction cost. S4 (router-only, frozen experts) fails due to flat loss surface. S6 (Grafted MoE) combines Stage 5 router with curriculum expert weights, achieving the best 90d result ( −2.11% ) across all configurations. 
+
+Stage 14d (reb=1.0) 30d (reb=0.05) 60d (reb=0.03) 90d (reb=0.02) 
+
+EW SPY EW SPY EW SPY EW SPY S1: Momentum (best ep100) +3 .16% −2.08% +0 .21% −7.24% −3.29% −11 .33% −2.10% −5.44% 
+
+S2: Growth (best ep100) +3 .37% −1.88% +0 .19% −7.27% −4.12% −12 .16% −2.37% −5.70% 
+
+S3: Defensive (best ep100) +3 .18% −2.07% +0 .11% −7.35% −4.07% −12 .12% −2.42% −5.76% 
+
+S4: Router-only (ep300) +0 .44% −3.43% — — — — — —S6: Grafted MoE +3 .03% −4.07% +0 .17% −6.05% −4.20% −12 .24% −2.11% −5.97% 
+
+At 90 days it achieves the best specialist-expert result (−2.37% ); only the Stage-6 grafted MoE improves on it ( −2.11% ). This confirms the growth expert learns longer-horizon signals progressively across episodes. The 60-day window remains negative and is the crossover point between short-term momentum and long-horizon fundamentals. Stage 3 (defensive ex-pert, CAPITAL PRESERVE ) shows a clear specializa-tion pattern: 14-day alpha declines across episodes (+3 .18% ep100 → +2 .82% ep300), confirming the ex-pert is learning conservative allocation at the expense of short-horizon returns. The 60-day window improves to 
+
+−4.07% (vs −4.12% for the growth expert), and the 30-day window briefly crosses positive ( +0 .11% at ep100) before the conservative objective takes hold. This com-plementary behaviour (i.e., momentum for 14d, growth for 30d, defensive for 60d) is exactly the per-horizon specialization the MoE architecture is designed to ex-ploit through router weighting. The SPY gap reflects the structural 10-ticker universe limitation: SPY’s defen-sive and dividend-paying constituents outperformed the growth-heavy basket during this downturn period. 
+
+MoE router training. A key empirical finding is that the intent router does not learn to differentiate intents when all six objectives are sampled jointly with a single-head policy. It also fails when experts are frozen. The first four curriculum stages were: 1. Momentum expert ( ALPHA VS EW ), freeze experts 1–3. 2. Growth expert ( MAX GAIN 1Y ), freeze experts 0, 2–3. 3. Defensive expert ( CAPITAL PRESERVE ), freeze experts 0–1, 3. 4. Router-only (all experts frozen, all objectives). Stage 4 (router-only training) failed to produce differen-tiated routing: all router weights remained at αe ≈ 0.25 
+
+(std < 0.002 , Table 8), and 14-day alpha dropped from 
+
++3 .37% (Stage 2) to +0 .44% . The failure mode is a flat loss surface : with all expert heads frozen, the weighted mixture output is invariant to router weights, provid-ing no gradient signal for the router to learn intent-conditional routing. Stage 5 (joint training with all experts and router updat-ing simultaneously on all 6 objectives, and warm-starting from Stage 3) resolves the flat loss surface problem via three architectural changes: (i) the intent router was re-designed with an intent projection layer (R6 → Rd) giv-ing the intent signal equal representation to the 64-dim market embedding; (ii) a direct shortcut from intent to ex-pert logits, initialised as a diagonal mapping (intent i →
+
+expert i), provides a strong routing prior from episode 0; (iii) a supervised cross-entropy loss ( λsup = 1 .0) pe-nalises deviations from the correct intent-to-expert map-ping during PPO updates, with the router learning rate scaled 10 × relative to the expert heads. Table 9 shows the resulting routing at Stage 5 episode 33. All six intents route cleanly to their desig-nated expert (weight = 1 .00 ), and each expert produces a distinct top holding: JPM (momentum), TSLA (growth), GOOGL (defensive), AMZN (tax-aware). Router differ-entiation std > 0.37 for all experts (threshold: 0.05). 
+
+Expert grafting (Stage 6). Joint PPO training in Stage 5 degrades expert specialisation through gradi-13 ent interference: the momentum expert’s 14d EW al-pha drops from +3 .37% (Stage 2) to +0 .01% after 100 joint training episodes. We address this with ex-pert grafting : after Stage 5 establishes correct routing (std > 0.37 ), the expert head weights are replaced with the best curriculum checkpoints (Stages 2–3) while the Stage 5 router weights are preserved. This composi-tion recovers +3 .03% 14d EW alpha with correct intent-conditional routing, and achieves −2.11% 90d EW alpha, the best long-horizon result across all configurations. Ex-pert grafting requires no additional training, making it a lightweight alternative to continual learning approaches for MoE RL systems. 
+
+Key diagnostic findings. Several failure modes were discovered and resolved during development: 1. Representation collapse (cosine similarity 0.96 →
+
+0.24): standard SSL objectives provide no inter-ticker differentiation signal; fixed by inter-ticker contrastive loss. 2. Allocation head symmetry : gain=0.01 initializa-tion caused uniform softmax output regardless of encoder input; fixed by gain=1.0 with random bias initialization. 3. Frozen encoder static mapping : with a frozen en-coder and fixed 10-ticker universe, the allocation head converges to a static ticker ranking; fixed by unfreezing the encoder jointly with the MoE ex-perts. 4. MoE router uniform collapse : joint multi-objective training keeps all router weights at 0.25 because the router receives no contrastive signal across intents; fixed by 4-stage expert curriculum with per-expert objective isolation. 5. Router-only flat loss surface : freezing all experts during router training produces a loss surface in-variant to router weights — the weighted mixture output is identical regardless of routing. Stage 4 router weights remained at 0.25 (std < 0.002 ) and alpha dropped from +3 .37% to +0 .44% ; fixed by Stage 5 joint training resolves this: intent projec-tion, diagonal shortcut initialisation, and supervised cross-entropy loss achieve std > 0.37 routing dif-ferentiation at ep 33. 
+
+# 6 Related Work 
+
+Financial RL. [ 8] applied RNNs with RL to futures trading. [ 12 ] introduced the portfolio management frame-work with convolutional feature extraction. [ 21 ] added transaction cost modeling. [ 13 ] provides a comprehen-sive benchmark environment. Our work extends these by adding personalization, tax awareness, and natural language goal specification. 
+
+Multi-objective RL. [1 ] and [ 9] survey multi-objective RL methods. Our objective-conditioned reward is clos-est to [ 4] (successor features) but implemented as direct reward shaping rather than value decomposition, for sim-plicity of integration with existing PPO infrastructure. 
+
+Personalization in finance. Robo-advisors [ 6] person-alize asset allocation via risk questionnaires. We replace stated preferences with revealed preferences from trans-action history, following the behavioral finance literature [14] on the disposition effect. 
+
+Comparison to commercial robo-advisors. Leading retail robo-advisors share a common architecture: ETF-based diversification, mean-variance rebalancing with fixed drift thresholds, and rule-based daily tax-loss har-vesting. Personalization is limited to a one-time risk questionnaire or static goal presets. To our knowledge, none support dynamic strategy switching based on evolv-ing user intent, nor optimize after-tax rewards at the individual tax bracket level. Our approach introduces three capabilities not ob-served in these systems: (i) intent-conditional strategy routing via MoE: a user stating “I am buying a house in 18 months” triggers a shift to the defensive expert with-out manual re-enrollment; (ii) bracket-aware RL reward :the policy explicitly optimizes after-tax return given the user’s marginal ST/LT capital gains rates, not a fixed harvesting threshold; and (iii) continuous behavioral per-sonalization : the 76-parameter LoRA adapter updates from revealed transaction preferences rather than self-reported risk tolerance, which is known to diverge from actual behavior [14]. 
+
+Parameter-efficient fine-tuning. [ 11 ] introduced LoRA for large language models. We apply the same rank-decomposition idea to a 3-action classification head, 14 Table 9: Intent Router weights at Stage 5 episode 33 (joint training with supervised routing loss λsup = 1 .0, router LR scale 10 ×). Each intent routes cleanly to its designated expert. Distinct top holdings per expert confirm that the four heads have learned meaningfully different allocation strategies. 
+
+Intent Mom. Growth Def. Tax Dominant Top holding 
+
+ALPHA VS EW 1.00 0.00 0.00 0.00 Momentum JPM 10.7% 
+
+MAX GAIN 1Y 0.00 1.00 0.00 0.00 Growth TSLA 9.8% 
+
+CAPITAL PRES 0.00 0.00 1.00 0.00 Defensive GOOGL 9.7% 
+
+INCOME HARV 0.00 0.00 0.00 1.00 Tax-aware AMZN 10.1% 
+
+LT GAIN ONLY 0.00 0.00 0.00 1.00 Tax-aware AMZN 10.1% 
+
+MAX GAIN 30D 1.00 0.00 0.00 0.00 Momentum JPM 10.7% Std across intents (target > 0.05 ) 0.47 / 0.37 / 0.37 / 0.47 ✓
+
+yielding 76-parameter adapters that capture user-specific biases in seconds on CPU. 
+
+Foundation models for finance. [18 ] and [ 20 ] explore LLM-based financial agents. Our hybrid approach uses a domain-specific SSL encoder for market data (where structure is numerical) and LLMs only for natural lan-guage interface tasks (intent parsing, news summarisa-tion). 
+
+Time series foundation models. [ 2 ] introduced Chronos, a T5-based model pretrained on over 100 bil-lion time series data points from diverse domains. [ 7 ]and [ 19 ] explore related universal forecasting approaches. We are the first, to our knowledge, to apply a frozen time series foundation model as a parallel encoder branch in a portfolio RL system, using a learned gating mechanism to balance domain-specific SSL representations against universal temporal patterns. 
+
+Ticker universe independence. All prior financial RL systems we are aware of (including [ 12 ], [ 21 ], and [ 13 ]) use fixed ticker embeddings that tie the model to a spe-cific asset universe. Our 50-dimensional observable meta-data vector replaces these embeddings entirely, enabling zero-shot application to any publicly traded asset. The closest related idea is the use of fundamental factor mod-els in the quantitative finance literature [ 3], but these are hand-crafted linear models rather than learned represen-tations. 
+
+# 7 Discussion and Limitations 
+
+Training data. The training corpus is narrow: 30 tick-ers for Phase 1 pretraining and 10 for the Phase 2 RL universe. Representation diversity improves substan-tially with 50–500 tickers spanning multiple sectors and market-cap regimes. The ticker-identity-free design makes scaling straightforward. 
+
+Phase 2 convergence. Direct joint training on all six objectives collapses to uniform weights within 100 episodes; the six-stage curriculum (§5.3) is required for non-uniform allocation. Longer per-stage training (2000+ episodes) may further improve specialist quality. 
+
+Tax accuracy. Tax lot accuracy depends on broker API capabilities. Standard brokerage APIs typically return average cost basis rather than individual lot-level data, which limits after-tax optimization precision. Full lot-level accuracy requires either an institutional-grade API or manual lot tracking. 
+
+Out-of-distribution. The backtest period (June 2026) was broadly a down market ( −8.01% for the 10-ticker equal-weight basket). A fair evaluation requires multi-regime testing including bull markets, volatility spikes, and sector rotations. 
+
+Analyst data timeliness. Analyst consensus signals from yfinance may lag by 1–2 days. Production deploy-ment would benefit from real-time data feeds. 15 8 Future Work 
+
+Phase 3 empirical evaluation. The most immediate extension is a full empirical evaluation of Phase 3 per-sonalization on real brokerage data across diverse user profiles (aggressive, conservative, tax-aware, income-seeking). We plan to evaluate: (i) how quickly the 76-parameter LoRA adapter converges on synthetic transac-tion histories of varying length; (ii) whether the router shift direction matches the intended profile (e.g. momen-tum expert weight increases for frequent traders); and (iii) backtest alpha improvement from personalisation vs the generic MoE policy. 
+
+Multi-window MoE training. The current AL-PHA VS EW objective produces positive short-window alpha (+2.70%, 14 days) but negative alpha at longer horizons. Training the momentum expert explicitly on 14-day windows and the growth expert on 90-day win-dows, with separate rollout buffers per expert, should produce a router that routes to momentum for short-term queries and growth for long-term queries, addressing the multi-window degradation. 
+
+Online fine-tuning. A lightweight online fine-tuning mode that updates only the allocation head scorer on recent 90-day data (weekly, ∼20 episodes) would allow the policy to adapt to regime shifts without full retraining. The frozen encoder makes this tractable: only ∼200K parameters need gradient computation per online update. 
+
+Broader ticker universe and live trading. The cur-rent system is validated on 10 tickers. Scaling to the full S&P 500 (500 tickers) requires efficient cross-asset atten-tion (i.e., sparse attention or clustering tickers by sector before applying attention within clusters). Evaluating the scaled system on a live paper-trading account over a 6-month period would provide stronger evidence of generalisation. 
+
+News and event integration. The fused market en-coder with news cross-attention is implemented but not yet validated in Phase 2 training. Integrating analyst con-sensus upgrades, earnings surprises, and macro releases as attention keys should improve alpha on event-driven windows. 
+
+# 9 Conclusion 
+
+We presented a complete three-phase system for person-alized, tax-aware portfolio management using founda-tion model representations and reinforcement learning. Phase 1 introduces a cross asset encoder with Chronos augmentation and inter-ticker contrastive loss, resolving representation collapse (cosine similarity 0.96 → 0.24) that prevented ticker differentiation. Phase 2 introduces a MoE portfolio actor critic with four specialized ex-pert heads and a learned intent router that eliminates cross-objective gradient conflict, achieving +2 .93% al-pha vs equal-weight benchmark on a 14-day June 2026 walk-forward backtest. Phase 3 proposes a 76-parameter LoRA adapter that personalizes the intent router from revealed brokerage preferences without retraining the shared encoder or expert heads. The key architectural innovations are: ticker-identity-free metadata encoding (any universe without retrain-ing), objective-conditioned MoE routing (one policy for six investment mandates), redeployment-aware turnover penalty, and a trust-first preview-before-apply personali-sation UX. The system is deployed as a production-ready FastAPI application with live brokerage integration, real-time data, and natural language goal specification. Code is available at https://github.com/rpishehv/ PublicFinance-RL .
+
+# References 
+
+[1] Abels, A., Roijers, D., Lenaerts, T., Now ´e, A., & Steckelmacher, D. (2019). Dynamic weights in multi-objective deep reinforcement learning. ICML .[2] Ansari, A. F. et al. (2024). Chronos: Learning the language of time series. arXiv:2403.07815 .[3] BARRA. (1998). United States Equity (USE3) Model Handbook . BARRA Inc., Berkeley, CA. [4] Barreto, A., Dabney, W., Munos, R., Hunt, J. J., Schaul, T., van Hasselt, H., & Silver, D. (2017). Successor features for transfer in reinforcement learning. NeurIPS .[5] Bertsimas, D., & Kallus, N. (2022). From predic-tive to prescriptive analytics. Management Science ,68(1), 43–63. 16 [6] D’Acunto, F., & Rossi, A. G. (2019). New fron-tiers of robo-advising: Consumption, saving, debt management, and taxes. SSRN Working Paper .[7] Das, A., Kong, W., Sen, R., & Zhou, Y. (2023). A decoder-only foundation model for time-series forecasting. arXiv:2310.10688 .[8] Deng, Y., Bao, F., Kong, Y., Ren, Z., & Dai, Q. (2016). Deep direct reinforcement learning for fi-nancial signal representation and trading. IEEE Transactions on Neural Networks and Learning Systems , 28(3), 653–664. [9] Hayes, C. F. et al. (2022). A practical guide to multi-objective reinforcement learning and plan-ning. Autonomous Agents and Multi-Agent Systems ,36(1), 26. [10] Hirschman, Albert O. National Power and the Structure of Foreign Trade . University of California Press, Berkeley, 1945. [11] Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., & Chen, W. (2022). LoRA: Low-rank adaptation of large language models. 
+
+ICLR 2022 .[12] Jiang, Z., Xu, D., & Liang, J. (2017). A deep re-inforcement learning framework for the financial portfolio management problem. arXiv:1706.10059 .[13] Liu, X.-Y., Yang, H., Chen, Q., Zhang, R., Yang, L., Xiao, B., & Wang, C. D. (2021). FinRL: A deep reinforcement learning library for automated stock trading in quantitative finance. NeurIPS Workshop on Deep RL .[14] Odean, T. (1998). Are investors reluctant to realize their losses? Journal of Finance , 53(5), 1775–1798. [15] Schulman, J., Wolski, F., Dhariwal, P., Radford, A., & Klimov, O. (2017). Proximal policy optimization algorithms. arXiv:1707.06347 .[16] Sharpe, W. F. (1966). Mutual fund performance. 
+
+Journal of Business , 39(S1), 119–138. [17] Sun, Q., Zhou, W., & Fan, J. (2018). Adaptive Hu-ber regression. Journal of the American Statistical Association . arXiv:1706.06991. [18] Xie, Q., Han, W., Zhang, X., Lai, Y., Peng, M., Lopez-Lira, A., & Huang, J. (2023). PIXIU: A large language model, instruction data and evaluation benchmark for finance. arXiv:2306.05443 .[19] Woo, G., Liu, C., Kumar, A., Xiong, C., Savarese, S., & Sahoo, D. (2024). Unified training of univer-sal time series forecasting transformers. ICML .[20] Yang, H., Liu, X.-Y., & Wang, C. D. (2023). Fin-GPT: Open-source financial large language models. 
+
+arXiv:2306.06031 .[21] Ye, Y., Pei, H., Wang, B., Chen, P.-Y., Zhu, Y., Xiao, J., & Li, B. Reinforcement-learning based portfolio management with augmented asset movement pre-diction states. Proceedings of the AAAI Conference on Artificial Intelligence , 2020. 17

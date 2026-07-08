@@ -1,0 +1,1742 @@
+Title: Active Quantum Kernel Acquisition for Gaussian Process Regression
+
+URL Source: https://arxiv.org/pdf/2606.28833v2
+
+Published Time: Fri, 03 Jul 2026 00:58:27 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Active Quantum Kernel Acquisition for Gaussian Process Regression 
+
+# Jian Xu 1,2 , Artur Miroszewski 4, Delu Zeng 3, Qibin Zhao 2
+
+> 1
+
+RIKEN iTHEMS 
+
+> 2
+
+RIKEN AIP 
+
+> 3
+
+South China University of Technology 
+
+> 4
+
+European Space Agency jian.xu@riken.jp 
+
+Abstract 
+
+Quantum kernel estimation on near-term hardware is shot-budgeted: every entry of the kernel Gram matrix is a Bernoulli expectation that must be sampled with a finite number of cir-cuit executions. Recent work on quantum kernel classification has shown that allocating shots non-uniformly across kernel entries, weighted by their downstream task sensitivity, can re-duce the shot budget required to reach a target accuracy. We extend this idea to Gaussian process (GP) regression, a setting whose downstream quantities (full-spectrum posterior vari-ance, log-determinant, marginal likelihood) couple to kernel error more tightly than the sign-only outputs of classification. We derive three closed-form pair-level sensitivities — predic-tive coupling |αiαj |, leave-one-out residual, and marginal-likelihood gradient — and plug them into a Neyman-style minimum-variance allocation rule. To prevent catastrophic over-concentration when the warm-up sensitivity estimate is itself noisy, we add a high uniform coverage floor justified by a Frobenius lower bound on the missing-entry perturbation. On four UCI benchmarks and two synthetic RBF + Bernoulli controlled studies, the resulting allocator delivers 10 –21% 
+
+test-RMSE improvement over uniform allocation across the moderate-budget regime. The gain transfers (i) to genuine ZZ and Pauli-Z quantum kernels on quantum-natural data (−13 –15% at low budget, p < 0.05 paired) and (ii) to four downstream tasks (Bayesian quadrature, heteroscedastic re-gression, hyperparameter learning, multi-output Cokriging). On UCI features embedded into a ZZ kernel the gain disap-pears, consistent with the exponential-concentration regime where shot allocation has nothing to exploit. The three pair-level sensitivities we propose are not arbitrary Fisher surro-gates: |αiαj | is the rank-1 specialization (at M = yy ⊤) of the exact Neyman weight under the predictive-MSE objective; the marginal-likelihood gradient is the exact partial derivative; the LOO sensitivity drops a controllable correction. 
+
+# Introduction 
+
+Quantum kernel methods promise computationally efficient access to feature spaces that are conjectured to be classically intractable for certain structured data (Havlíček et al. 2019; Schuld and Killoran 2019). The bottleneck in practical de-ployment is that each kernel entry Kij = |⟨ ϕ(xi)|ϕ(xj )⟩| 2 is the success probability of an inversion-test circuit and must be estimated from a finite number of shots sij . The resulting Bernoulli noise scales as Var( bKij ) = Kij (1 −Kij )/s ij , and the total cost of building an n × n Gram matrix to a uniform precision grows as O(n2/ϵ 2), which already strains current hardware budgets for n in the low hundreds (Huang et al. 2021; Thanasilp et al. 2024). A natural way around this scaling is to recognize that not all kernel entries matter equally to the downstream task. For quantum kernel classification with kernel ridge regression (KRR) or SVM, recent work showed that the loss gradi-ent ∂L/∂K ij has highly heterogeneous magnitudes across pairs, and that allocating shots proportional to the Neyman-optimal target s∗ 
+
+> ij
+
+∝ | ∂L/∂K ij | pKij (1 − Kij ) yields sub-stantial accuracy gains over uniform allocation at the same budget (Xu et al. 2026; Miroszewski 2026). The argument is a direct application of Neyman’s 1934 stratified-sampling result (Neyman 1992; Pukelsheim 2006) cast in the language of quantum kernel estimation. This paper asks: does the same idea help in Gaussian process (GP) regression? The answer is not obvious. On the one hand, GP regression has even more structure to exploit — a closed-form posterior, a closed-form marginal likelihood, leave-one-out residuals in closed form. On the other hand, GP predictions and likelihoods both depend on the inverse 
+
+(K+σ2
+
+> n
+
+I)−1, and inversion amplifies kernel noise by a factor that scales like the condition number 1/σ 2
+
+> n
+
+. A shot-allocation policy that is mildly suboptimal for classification could be catastrophic for GP regression. We make four contributions: 1. We derive three closed-form pair-level sensitivities for GP regression — the predictive coupling |αiαj |, the leave-one-out residual, and the marginal-likelihood gradient — each capturing a different facet of how kernel uncertainty propagates to predictions. 2. We identify a failure mode unique to GP regression: when the per-pair budget is low, the warm-up kernel estimate is too noisy to produce a reliable sensitivity, and sensitivity-driven allocation worsens test error by hundreds of per-cent. We show that a 50% uniform-coverage floor restores robustness, while the corresponding classification setup needs only 10 –20% .3. Empirically, on four UCI regression benchmarks and two synthetic settings ( ntr = 200 , 5–10 seeds), the alloca-tor delivers consistent 10 –21% RMSE reduction in the moderate-budget regime ( ∼ 50 –250 shots per pair). 4. Unlike in classification, where allocation gains are largest 
+
+> arXiv:2606.28833v2 [cs.LG] 2 Jul 2026
+
+on sparse , anchor-heavy data, GP regression shows the largest gains on dense GP draws. We explain this via the structure of (K + σ2
+
+> n
+
+I)−1: even when the kernel is homogeneous, the spectral decay creates predictive het-erogeneity, and the same heterogeneity drives sensitivity. 
+
+# Background 
+
+Quantum Kernel Estimation as Bernoulli Sampling 
+
+A quantum feature map ϕ : X → H Q is realized by a parametrized unitary U (x) acting on the all-zero state |0⟩⊗q .The induced kernel is the fidelity 
+
+K(xi, x j ) = |⟨ 0|U (xj )†U (xi)|0⟩| 2 ∈ [0 , 1] . (1) The standard inversion test (Havlíček et al. 2019) estimates 
+
+K(xi, x j ) by preparing U (xj )†U (xi)|0⟩, measuring in the computational basis, and recording the probability of the all-zero outcome. With sij independent circuit executions (“shots”), the empirical estimator bKij is a sample mean of 
+
+sij Bernoulli (Kij ) random variables and satisfies 
+
+E[ bKij ] = Kij , Var( bKij ) = Kij (1 − Kij )
+
+sij 
+
+. (2) We treat the per-entry shot budget sij as a design variable subject to the global constraint P 
+
+> i≤j
+
+sij = B. This is the only resource we will allocate; all other choices (feature map, circuit depth, error mitigation) are taken as fixed. 
+
+Exponential concentration regime. A separate failure mode arises when the quantum kernel K(xi, x j ) itself con-centrates around a fixed value as the system grows (Thanasilp et al. 2024). In that regime, the signal-to-noise ratio |Kij −
+
+Ki′j′ |2/Var( bK) vanishes exponentially in q, and shot re-allocation cannot rescue it. We work outside this regime, treating K(·, ·) as a fixed bounded kernel and asking only how to spend a budget B optimally. 
+
+Gaussian Process Regression 
+
+A Gaussian process prior f ∼ GP (0 , k (·, ·)) with observa-tions 
+
+yi = f (xi) + εi, εi
+
+> iid
+
+∼ N (0 , σ 2
+
+> n
+
+), (3) admits the closed-form posterior f |y ∼ GP (μ∗, k ∗) with predictive mean and variance at any x∗:
+
+μ∗(x∗) = k⊤∗ α, α := A−1y, (4) 
+
+σ2 
+
+> ∗
+
+(x∗) = k(x∗, x ∗) − k⊤∗ A−1k∗ + σ2
+
+> n
+
+, (5) where A := K + σ2
+
+> n
+
+I and k∗ = ( k(x∗, x i)) i. The (negative) log marginal likelihood of the training labels is 
+
+L(K; y) = 12 y⊤A−1y + 12 log |A| + n 
+
+> 2
+
+log(2 π). (6) When K is estimated with shot noise, all three quantities μ∗,
+
+σ2 
+
+> ∗
+
+, L inherit the noise through the inverse A−1, which is the source of the amplification we exploit in Section . 
+
+What makes GP shot-hungrier than classification? The KRR / SVM losses used in classification AQKA (Xu et al. 2026; Miroszewski 2026) also involve K−1: KRR’s α =(K+λI )−1y uses λ in the same role σ2 
+
+> n
+
+plays for GP. So “GP has an inverse, classification does not” is not the structural difference. The difference is which downstream quantities the user cares about. Classification’s 0/1 accuracy depends on sign( μ∗), which is robust to multiplicative scaling of α;GP cares about 1. the magnitude of μ∗ (test RMSE/NLL), 2. the predictive variance σ2 
+
+> ∗
+
+= k(x∗, x ∗)−k⊤∗ A−1k∗ +σ2
+
+> n
+
+,which depends on the full spectrum of A−1 rather than its top eigendirection, 3. the marginal-likelihood L, which adds a log |A| term that aggregates errors over every eigenvalue. Items (ii) and (iii) are GP-specific and have no analogue in 
+
+0/1 classification. They are why GP needs more shots per pair than classification, and they motivate the three GP-specific sensitivities of Section . 
+
+Conditioning of A−1. The Gram matrix K has eigenval-ues 0 ≤ λn ≤ · · · ≤ λ1, with λ1 = O(n) for a typi-cal bounded kernel and λn that can be arbitrarily small. The corresponding eigenvalues of A−1 are 1/(λi + σ2
+
+> n
+
+) ∈
+
+[1 /(λ1 + σ2
+
+> n
+
+), 1/σ 2
+
+> n
+
+]. A kernel perturbation ∆K with opera-tor norm ∥∆K∥op < σ 2 
+
+> n
+
+produces (by the resolvent identity) 
+
+∥ bA−1 − A−1∥op ≤ ∥∆K∥op 
+
+σ2
+
+> n
+
+(σ2 
+
+> n
+
+− ∥ ∆K∥op ) . (7) The kernel error is amplified by up to 1/σ 4
+
+> n
+
+. The KRR pre-dictor inherits the same amplification with λ in place of σ2
+
+> n
+
+,but classification accuracy averages over signs and is less sensitive to it; GP test NLL has no such averaging. 
+
+Neyman Minimum-Variance Shot Allocation 
+
+For any differentiable loss L(K), a second-order Taylor ex-pansion around the noise-free kernel gives 
+
+L( bK) − L (K) = X
+
+> i≤j
+
+gij ∆ij 
+
++ 12
+
+X
+
+> i≤j, k ≤ℓ
+
+Hij,kℓ ∆ij ∆kℓ + o(∥∆∥2),
+
+(8) where gij = ∂L/∂K ij , H is the Hessian, and ∆ij := 
+
+bKij − Kij is the shot noise. The shot noise has zero mean and diagonal covariance (different pairs are independent), so taking expectations cancels the linear term and gives 
+
+EL( bK) − L (K) = 12
+
+X
+
+> i≤j
+
+Hij,ij 
+
+Kij (1 − Kij )
+
+sij 
+
++ o(B−1).
+
+(9) Replacing the diagonal Hessian by its Fisher-information surrogate Hij,ij ≈ g2 
+
+> ij
+
+and minimizing under the budget constraint P sij = B via Lagrange multipliers yields the 
+
+Neyman minimum-variance allocation :
+
+s∗ 
+
+> ij
+
+∝ | gij |
+
+q
+
+Kij (1 − Kij ), X
+
+> i≤j
+
+s∗ 
+
+> ij
+
+= B. (10) This is precisely Neyman’s 1934 stratified-sampling rule (Neyman 1992; Pukelsheim 2006) applied at the gran-ularity of kernel entries. The classification AQKA frame-work (Xu et al. 2026) uses this rule with gij taken from the KRR or SVM training loss; the concurrent work of Miroszewski (2026) uses it for kernelized SVMs under noisy observations. Our contribution begins where these stop: we instantiate gij for three GP-regression objectives whose closed forms involve the kernel inverse. 
+
+# Method: AQKA-GP 
+
+We instantiate the Neyman rule (10) for three GP objectives. Each derivation uses the same identity for the derivative of the inverse: for A = K + σ2
+
+> n
+
+I,
+
+∂A −1/∂K ij = −A−1 (eie⊤ 
+
+> j
+
++ ej e⊤ 
+
+> i
+
+) A−1 · 12 (1 + δij ),
+
+(11) where ei is the ith standard basis vector and the symmetric factor accounts for the off-diagonal/diagonal distinction. We drop the factor 12 (1 + δij ) in the sensitivity (it is the same constant across off-diagonal pairs and is absorbed into the budget). 
+
+Three Closed-Form Sensitivities 
+
+(i) Predictive coupling |αiαj | for test RMSE. The mean-squared test error is Lrmse = 1
+
+> n∗
+
+P
+
+> t
+
+(y∗ 
+
+> t
+
+− μ∗(x∗ 
+
+> t
+
+)) 2, where 
+
+μ∗(x∗ 
+
+> t
+
+) = k⊤∗tα with α = A−1y. Differentiating μ∗ via the inverse identity gives 
+
+∂μ ∗(x∗ 
+
+> t
+
+)
+
+∂K ij 
+
+= −k⊤∗tA−1 eie⊤ 
+
+> j
+
++ ej e⊤
+
+> i
+
+α
+
+= − bti αj + btj αi
+
+, (12) with bti := [ k⊤∗tA−1]i. Squaring and summing over t, the cross terms average out under test data drawn independently of α, leaving the leading term proportional to α2 
+
+> i
+
+α2 
+
+> j
+
+. We therefore use 
+
+sens pred  
+
+> ij
+
+= |αiαj |, α = A−1y. (13) This is the direct GP analogue of the classification sensitivity in Xu et al. (2026): in both cases the rank-1 outer product 
+
+αα ⊤ captures how much each pair couples labels to predic-tions. 
+
+(ii) Marginal-likelihood gradient for hyperparameter learning. Differentiating L(K; y) in (6) with A = K +
+
+σ2
+
+> n
+
+I uses two standard identities: ∂ log |A|/∂K ij = [ A−1]ij 
+
+and ∂(y⊤A−1y)/∂K ij = −αiαj . Adding the two contribu-tions, 
+
+gmarg  
+
+> ij
+
+= ∂L
+
+∂K ij 
+
+= 12
+
+A−1 
+
+> ij
+
+− 12 αiαj . (14) This is the sensitivity to use when the downstream objective is marginal-likelihood maximization (kernel-width or noise-level learning). Crucially, the two terms have opposite signs and partially cancel at the marginal-likelihood optimum, so 
+
+gmarg  
+
+> ij
+
+shrinks near convergence while remaining large far from it. 1 We use 
+
+sens marg  
+
+> ij
+
+= 12 [A−1]ij − 12 αiαj . (15) 
+
+(iii) Leave-one-out residual for predictive calibration. 
+
+The closed-form GP LOO predictive mean is (Rasmussen 2003) 
+
+μ−i(xi) = yi − αi/[A−1]ii , (16) so the LOO residual is ei := αi/[A−1]ii . The LOO loss is 
+
+Lloo = P 
+
+> i
+
+e2 
+
+> i
+
+. The gradient with respect to Kij is, by the chain rule and the inverse identity, 
+
+∂e i/∂K ij ∝ [A−1]ij /[A−1]ii , (17) so ∂Lloo /∂K ij ∝ ei[A−1]ij +ej [A−1]ji . Symmetrizing and taking absolute values, 
+
+sens loo  
+
+> ij
+
+= |ei| · | [A−1]ij | + |ej | · | [A−1]ji |. (18) This sensitivity emphasizes pairs where one endpoint has a large LOO residual and is also tightly coupled to its neigh-bours through A−1.
+
+Computational cost. All three sensitivities reduce to in-verting A once per allocation round ( O(n3)) and forming the relevant outer products. For n = 200 the cost is sub-second on a laptop and is negligible compared to circuit submission. The same A−1 can be reused across rounds within a single training loop. 
+
+The High-Floor Allocator 
+
+The naive algorithm — (i) warm-up with a small fraction of 
+
+B via random pair sampling, (ii) compute sensitivity from 
+
+bKwarm , (iii) distribute the rest by (10) — works in clas-sification but fails on GP. We trace the failure to a single mechanism: 
+
+Unsampled pairs default to bKij = 0 .5 (the Bernoulli prior mean). For classification with K-product accu-racy metrics, this is recoverable: a few uniform-fill iterations restore prediction quality. For GP regres-sion, even a small fraction of Kij = 0 .5 entries in the Gram matrix is amplified by (K + σ2
+
+> n
+
+I)−1 into a catastrophically wrong α, because the inverse couples every Kij to every prediction. 
+
+The fix is a high uniform coverage floor. Let 0 < ρ < 1
+
+denote the fraction of B reserved for uniform sampling. We use ρ = 0 .5 throughout, contrasting with the ρ ≤ 0.2 that suffices for classification. 
+
+Posterior Inference Under Noisy bK
+
+A second, separate failure mode is that the GP posterior itself is ill-conditioned when bK has shot noise — ( bK + σ2
+
+> n
+
+I)−1
+
+blows up the noise. We handle this by inflating the inference-time noise to σ2 
+
+> n
+
++ j, where the jitter j is set adaptively from the empirical shot-noise variance: 
+
+j = √n · bKij (1 − bKij ) 
+
+> sij
+
+, (19) 
+
+> 1Naively this looks like a drawback (no signal at the optimum), but the regime we care about — iterative kernel learning under shot budget — never starts at the optimum.
+
+Algorithm 1 AQKA-GP shot allocation (full-GP, fixed-budget) 
+
+Require: shot budget B, training set (X, y), ob-servation noise σ2
+
+> n
+
+, sensitivity choice sens ∈{sens pred , sens marg , sens loo }, floor ρ ∈ [0 , 1] , warm 
+
+ρw ∈ [0 , 1]  
+
+> 1:
+
+{Stage 1: warm-up + uniform coverage floor. } 
+
+> 2:
+
+Sample ⌊ρwB⌋ shots uniformly at random over n(n +1) /2 pairs → initial bKwarm  
+
+> 3:
+
+Distribute ⌊ρB ⌋ shots equally over all pairs (uniform floor; Proposition 3)  
+
+> 4:
+
+Update bK from accumulated counts: bKij =counts ij /shots ij  
+
+> 5:
+
+{Stage 2: sensitivity-weighted top-up. } 
+
+> 6:
+
+Form sensitivity field Sij ← sens( bK, y, σ 2
+
+> n
+
+) // O(n3) 
+
+> 7:
+
+Form Neyman weights wij ← Sij 
+
+q bKij (1 − bKij ) 
+
+> 8:
+
+Brem ← B − shots _used  
+
+> 9:
+
+Allocate Brem shots to pair (i, j ) in proportion to 
+
+wij / P 
+
+> k≤ℓ
+
+wkℓ (integer rounding with leftover redis-tributed by descending w) 
+
+> 10:
+
+Update bK from accumulated counts  
+
+> 11:
+
+{Stage 3: posterior inference jitter. } 
+
+> 12:
+
+Compute j ← min  q
+
+n · bK(1 − bK)/s, 0.5 (Eq. 19; matrix-concentration jitter) 
+
+Ensure: noisy kernel bK and inference-time noise σ2 
+
+> n
+
++ j for use in ( bK + ( σ2 
+
+> n
+
++ j)I)−1y
+
+i.e., the per-entry Bernoulli variance averaged over pairs and scaled by √n to account for cumulative spectral perturbation of the Gram matrix. This calibrated jitter is used in both predictive mean and predictive variance. 
+
+Extension to Sparse Inducing-Point GPs 
+
+The full-GP allocator above scales with n(n + 1) /2 kernel entries. For larger datasets, the standard remedy is to intro-duce m ≪ n inducing points Z ∈ X m and approximate the posterior using only the smaller blocks Kuu ∈ Rm×m and 
+
+Kf u ∈ Rn×m. The kernel budget then drops from Θ( n2) to 
+
+Θ( mn + m2) entries — a 30 –100 × reduction at our scales. We show that the Neyman rule extends naturally to this fam-ily, covering the three main sparse GP methods used in prac-tice: 
+
+(a) Sparse VFE / SGPR (Titsias 2009). The collapsed variational lower bound depends on the inducing blocks via 
+
+A = Kuu + σ−2 
+
+> n
+
+K⊤
+
+> f u
+
+Kf u , β = σ−2 
+
+> n
+
+A−1K⊤
+
+> f u
+
+y,
+
+(20) 
+
+μ∗(x∗) = k⊤∗uβ. (21) Differentiating μ∗ via the resolvent identity yields rank-1 sensitivities 
+
+sens vfe (Kf u [i, j ]) = |αq,i βj |, (22) 
+
+sens vfe (Kuu [j, k ]) = |βj βk|, (23) 
+
+Algorithm 2 Sparse-VFE AQKA-GP shot allocation (inducing-point, fixed-budget) 
+
+Require: shot budget B, training set (X, y), m inducing points Z, observation noise σ2
+
+> n
+
+, floor ρ, warm ρw 
+
+> 1:
+
+Define entry list E = upper( Kuu ) ∪ Kf u //  
+
+> m(m+1) 2
+
++ nm entries  
+
+> 2:
+
+Distribute ⌊(ρ + ρw)B⌋ shots uniformly over E, sample 
+
+bKuu , bKf u  
+
+> 3:
+
+Compute A ← bKuu + σ−2 
+
+> n
+
+bK⊤ 
+
+> f u
+
+bKf u , β ←
+
+σ−2 
+
+> n
+
+A−1 bK⊤
+
+> f u
+
+y, αq ← σ−2 
+
+> n
+
+(y − bKf u β) 
+
+> 4:
+
+Form sensitivities (Eq. 23): 
+
+Suu j,k = |βj βk|, Sf u i,j = |αq,i βj | 
+
+> 5:
+
+Form Neyman weights we = Se
+
+qbKe(1 − bKe) for e ∈E 
+
+> 6:
+
+Distribute remaining Brem shots over E in proportion to 
+
+we/ P 
+
+> e′
+
+we′ 
+
+> 7:
+
+Update bKuu , bKf u from accumulated counts 
+
+Ensure: noisy blocks bKuu , bKf u for use in SGPR/SVGP/FITC posterior where αq = σ−2 
+
+> n
+
+(y − Kf u β) is the residual vector. These are the inducing-point analogues of the full-GP predictive coupling |αiαj | from Eq. (13). 
+
+(b) Variational SVGP (Hensman, Fusi, and Lawrence 2013). For minibatch-friendly stochastic VI, q(u) =
+
+N (m, S ) is kept as variational parameters. At the optimum 
+
+m∗ = β and S∗ recovers the VFE posterior, so the AQKA-VFE sensitivities of (23) apply throughout SVGP training without modification. 
+
+(c) FITC (Snelson and Ghahramani 2005). FITC adds a diagonal correction diag( Kf f − Kf u K−1 
+
+> uu
+
+Kuf ) to the noise covariance. The resulting sensitivity has the same rank-1 structure plus a heteroscedastic correction proportional to the diagonal residual; AQKA-FITC requires only minor modifi-cation to αq .
+
+General principle. For any sparse posterior with structure 
+
+μ∗(x∗) = k⊤∗uβ + g( bK) where g is differentiable in K, the Neyman minimum-variance allocation reduces to Neyman-style weighting of the rank-1 outer product αβ ⊤. The uni-fying observation is that all inducing-point methods couple labels to predictions through this single low-rank coupling, and AQKA-GP can be ported by reading off (α, β ) from the relevant posterior. 
+
+Extension to Deep GPs (DSVI). The same construction extends to a Deep GP (Damianou and Lawrence 2013; Sal-imbeni and Deisenroth 2017) with L layers y = fL ◦ · · · ◦ 
+
+f1(x) + ε, each fl a sparse VFE GP with its own induc-ing block (Kuu,l , K f u,l ). The chain rule gives a layer-wise sensitivity 
+
+sens dgp (Kf u,l [i, j ]) = |αq,l,i βl,j | · Y
+
+> l′>l
+
+∥βl′ ∥, (24) where the product term encodes downstream gradient ampli-fication. AQKA-DGP allocates a global budget B across all layer blocks proportional to these (variance-weighted) sen-sitivities. We give a small empirical test of this construction in our extended discussion. 
+
+# Theory 
+
+We collect four short results that justify the GP-specific design choices in AQKA-GP. All proofs are elementary and given in the Appendix; they pin down (i) the Neyman minimum-variance allocation, (ii) the rate at which kernel error propagates to GP predictions, (iii) why dense data has predictive heterogeneity, and (iv) when the high uniform floor is necessary. 
+
+Neyman Allocation Is the Unique Minimizer 
+
+Proposition 1 (Neyman minimum-variance allocation; re-stated) . Let L(K) be twice differentiable in K. Under independent Bernoulli noise with variances Var( bKij ) = 
+
+Kij (1 − Kij )/s ij , the leading-order expected loss inflation 
+
+Φ( s) := P 
+
+> i≤j
+
+g2 
+
+> ij
+
+Kij (1 − Kij )/s ij under the budget con-straint P sij = B is uniquely minimized at 
+
+s∗ 
+
+> ij
+
+= B |gij |pKij (1 − Kij )
+
+P 
+
+> k≤ℓ
+
+|gkℓ |pKkℓ (1 − Kkℓ ) .
+
+The minimum value is Φ( s∗) =(P 
+
+> i≤j
+
+|gij |pKij (1 − Kij )) 2/B , achieving the Ney-man lower bound. 
+
+A short Lagrangian argument suffices. The point is that no other allocation rule can do better at leading order, so the question reduces to choosing gij for the GP task at hand — which Section settles. 
+
+Kernel Error to Posterior Error: Linear Propagation 
+
+Proposition 2 (Posterior error in operator norm) . Let A =
+
+K + σ2
+
+> n
+
+I and bA = A + ∆ , with ∥∆∥op < σ 2
+
+> n
+
+. Then for any 
+
+y ∈ Rn with ∥y∥ ≤ M ,
+
+∥ bα − α∥ ≤ ∥∆∥op · Mσ2
+
+> n
+
+(σ2 
+
+> n
+
+− ∥ ∆∥op ) ,
+
+and for any test point with ∥k∗∥ ≤ M ,
+
+|bμ∗(x∗) − μ∗(x∗)| ≤ M 2 ∥∆∥op 
+
+σ2
+
+> n
+
+(σ2 
+
+> n
+
+− ∥ ∆∥op ) .
+
+The bound is tight up to constants and shows the 1/σ 4
+
+> n
+
+amplification we exploit: a kernel perturbation of operator-norm size ε causes a predictive error of order ε/σ 4
+
+> n
+
+. The KRR predictor inherits the same amplification with the ridge λ in place of σ2 
+
+> n
+
+(since both play the same role in (K+λI )−1); the structural reason GP regression is shot-hungrier than KRR classification is therefore not the inverse itself but the sign-robustness of 0/1 accuracy — classification only needs the sign of the predictor to survive shot noise, while GP NLL and predictive variance care about its magnitude and full spectrum. With Bernoulli shot noise, E[∥∆∥op ] ≲ n/ √smin 
+
+where smin is the minimum per-pair shot count, recovering the necessity of a uniform floor: without the floor, smin = 0 
+
+on some pairs and the bound is vacuous. 
+
+Spectral Decay Amplifies Predictive Heterogeneity 
+
+Lemma 1 (Covariance of α under random labels) . Let K =Pnk=1 λk uku⊤ 
+
+> k
+
+be the eigendecomposition with λ1 ≥ · · · ≥ 
+
+λn ≥ 0, and let y = P 
+
+> k
+
+βkuk with βk
+
+> iid
+
+∼ N (0 , τ 2). Then 
+
+α = A−1y is mean-zero Gaussian with covariance 
+
+E[αα ⊤] = τ 2
+
+> n
+
+X
+
+> k=1
+
+uku⊤
+
+> k
+
+(λk + σ2
+
+> n
+
+)2 ,
+
+so Var( αi) = τ 2 P 
+
+> k
+
+u2
+
+> ki
+
+/(λk + σ2
+
+> n
+
+)2 and the squared cou-pling E[α2 
+
+> i
+
+α2 
+
+> j
+
+] inherits a quartic spectral weight 1/(λk +
+
+σ2
+
+> n
+
+)4 on each eigen-mode. 
+
+The lemma is exact. We append it to an observation (not a proven theorem) about when the pair-coupling E[|αiαj |] is heterogeneous — the experiments below test the observation directly via realized AQKA-GP gain. 
+
+Observation 1 (Spectral amplification creates pair het-erogeneity). When the kernel spectrum is heavy-tailed — 
+
+λk → 0 for k large, as in any kernel with rapid Mer-cer decay — the small-eigenvalue contribution dominates the α-covariance through the quartic factor 1/(λk + σ2
+
+> n
+
+)4.Combined with finite-sample fluctuations of u2 
+
+> ki
+
+around 
+
+1/n (which are amplified by the same quartic factor), this typically produces a pair-coupling matrix E[|αiαj |]
+
+that concentrates on a few (i, j ) pairs. A useful descrip-tive proxy for the effect size is the spectral effective rank 
+
+¯r := P 
+
+> k
+
+1/(1 + σ2
+
+> n
+
+/λ k)2; smaller ¯r (relative to n) is empir-ically associated with larger heterogeneity. We do not claim a quantitative bound on the ℓ2/ℓ 1 ratio of E[|αiαj |] in terms of ¯r alone — such a bound would require additional control of the eigenvector structure uki that we leave to future work. The mechanism is spectral amplification, not eigenvector localization. For translation-invariant kernels such as RBF on 
+
+[0 , 1] d, low-λk eigenvectors are in fact delocalized (Fourier-like), so a story based on eigenvector localization would predict the opposite. Kernels with flat spectrum (e.g., the identity kernel) would predict no gain. The dependence on kernel choice is real, which is why we test it empirically with the ZZ feature map (Result 10): the gain transfers from RBF to ZZ kernels (mean −10% ) even though the kernels are different feature maps. In our experiments this is consistent with what we mea-sure: dense GP-prior data shows −21% RMSE gain (Figure 1 right), planted-sparse −11% (left), and the four UCI datasets (all dense in the kernel sense) fall in the same band. Genuine ZZ and Pauli-Z quantum kernels on quantum-natural data (Result 10, Study 2) show −13 to −15% at the low-budget regime with paired p < 0.05 ; UCI data embedded into a ZZ kernel (Result 10, Study 1) shows null gain, consistent with the kernel concentrating away the heterogeneity. Why the Uniform Floor Helps: Coverage Argument and Empirical Calibration 
+
+The uniform floor ρ plays two distinct roles: a coverage role that guarantees no pair is missed, and a shot-quality role that guarantees every covered pair has enough shots for bKij to be reasonably calibrated. The first role is formal; the second is empirical, calibrated against Figure 6. 
+
+Proposition 3 (Coverage-floor sufficient condition) . Let S
+
+be the set of pairs that receive zero shots under an allocation, with the kernel estimator defaulting to bKij = c on S. Suppose at least a fraction η ∈ (0 , 1] of pairs in S have |c − Kij | ≥ d.Let ∆ := bK − K be supported on S ∪ S⊤. Then 
+
+∥∆∥F ≥ dp2η|S|, ∥∆∥op ≥ ∥∆∥F
+
+√n ≥ d
+
+r 2η|S|
+
+n .
+
+Hence the only way to keep ∥∆∥op → 0 (which Proposition 2 requires for predictive-error consistency) under fixed d, η is to drive |S| → 0, i.e., to cover every pair. The smallest uniform-floor fraction ρ that guarantees |S| = 0 is 
+
+ρ ≥ n(n + 1) 2B .
+
+The bound shows that some uniform floor is necessary (otherwise |S| > 0 and the kernel-perturbation operator-norm has a non-zero lower bound that prevents the predictive-error upper bound of Proposition 2 from vanishing); it does 
+
+not prove that the predictive error itself has a matching lower bound. The bound is a necessary condition, not a sufficient one. The catastrophic empirical regime of Figure 6 reflects an additional shot-quality requirement that the Frobenius argument does not touch: each covered pair must receive enough shots that its bKij is calibrated, not just non-default. The transition ρ ≤ 0.1 → ρ ≥ 0.2 in Figure 6 aligns with 
+
+ρ = n2/(2 B) ≈ 0.1 for n = 200 , B = 2 × 10 5, but the additional jump to ρ = 0 .5 for full robustness is calibrated empirically, not theoretically derived. We document this hon-estly: ρ = 0 .5 is a robust default that adds shot-quality margin on top of the coverage requirement. 
+
+Why 
+
+q
+
+n · K(1 − K)/s jitter. The per-entry shot noise of bK has variance σ2ent (i, j ) = Kij (1 − Kij )/s ij . Treat-ing the upper-triangular shot-noise entries as a symmetric matrix with sub-Gaussian off-diagonal entries of common variance ¯σ2ent := K(1 − K)/s , standard Wigner-type con-centration (Tropp 2015) gives 
+
+E[∥∆∥op ] ≤ C
+
+q
+
+n · ¯σ2ent = C
+
+q
+
+n · K(1 − K)/s 
+
+for an absolute constant C. This Wigner-type bound 
+
+motivates a scaling of the form j ∼ √n ·
+
+(something average-per-entry ), but does not by itself deter-mine the constant or the precise form. The theory-motivated choice would be jthy =
+
+q
+
+n · K(1 − K)/s , which would ab-sorb the expected operator-norm perturbation in expectation. The code variant of Eq. 19 uses jcode = √n · K(1 − K)/s 
+
+instead — a √n prefactor times the per-entry variance rather than its square root. The ratio is jcode /j thy =q
+
+K(1 − K)/s , which depends on the average shots-per-pair s and is not a constant factor (at s = 50 , K = 0 .5 it is 
+
+∼1/14 ). At the budgets we use, the theory choice jthy would exceed the clip-to-0.5 ceiling and reduce to 0.5; the code’s 
+
+jcode is below this ceiling and is not clipped. So neither the theory derivation nor the code formula determines the ef-fective jitter in practice — the clip-to-0.5 ceiling does. We therefore do not claim the jitter is principled in a derivation-from-theory sense; the matrix-concentration argument moti-vates the √n scaling, but the precise constant is a calibrated default, and we report this honestly. We do not see a dif-ference in test RMSE between jthy and jcode within 1 SE because both are clipped near 0.5 in the operating range. 
+
+Per-Task Optimality Under the Estimation-Error Objective 
+
+Eq. (9) in Section targeted the expected loss bias E[ bL − L ];the Fisher approximation Hij,ij ≈ g2 
+
+> ij
+
+entered as a surrogate for the unknown Hessian. We now change the optimization target to the expected squared estimation error E[( bL − L)2]
+
+for a downstream estimand L ∈ { μ∗(x∗), L(K), e i} (test predictive mean, marginal likelihood, LOO residual). Un-der this new objective the leading-order coefficient is exactly 
+
+g2 
+
+> ij
+
+= ( ∂L/∂K ij )2 with no Fisher approximation, so the three sensitivities become rigorous Neyman weights for the estimation-error objective. We are honest that this is a dif-ferent optimization target from Eq. (9), not a tighter analysis of the same target; the experiments below directly measure squared estimation errors (RMSE, NLL error, LOO MSE), which is what the new propositions analyze. 
+
+Proposition 4 (Exact predictive-MSE sensitivity) . Let π be the test distribution and M := Ex∗∼π [k∗k⊤∗ ] ∈ Rn×n. The expected predictive-mean MSE under Bernoulli shot noise satisfies, to leading order in ∆,
+
+E Ex∗ |bμ∗(x∗) − μ∗(x∗)|2  = X
+
+> i≤j
+
+Kij (1 − Kij )
+
+sij 
+
+· c2
+
+> ij
+
+with c2 
+
+> ij
+
+= α2 
+
+> i
+
+Bjj + α2 
+
+> j
+
+Bii + 2 αiαj Bij and B := 
+
+A−1M A −1, A = K + σ2
+
+> n
+
+I, α = A−1y. The Neyman-optimal allocation is therefore s∗ 
+
+> ij
+
+∝ pKij (1 − Kij ) · cij .
+
+The exact cij couples each pair through three quantities: 
+
+αi, α j , and the test-direction matrix B. Our simplified sen-sitivity sens pred  
+
+> ij
+
+= |αiαj | is the rank-1 specialization of cij 
+
+when M = yy ⊤: substituting gives B = A−1yy ⊤A−1 =
+
+αα ⊤, hence c2 
+
+> ij
+
+= α2 
+
+> i
+
+α2 
+
+> j
+
++ α2 
+
+> j
+
+α2 
+
+> i
+
++ 2( αiαj )2 = 4( αiαj )2
+
+and cij = 2 |αiαj |. The M = yy ⊤ regime captures test dis-tributions whose second moment lies in the label direction — a natural assumption when train and test inputs share a distribution and the labels carry the task signal. For other test distributions cij is not proportional to |αiαj | (e.g., M = I
+
+produces a term ∥A−1 
+
+> j, :
+
+∥2 rather than α2 
+
+> j
+
+). 
+
+Corollary 1 (Regret of the rank-1 sensitivity) . Let esij ∝pKij (1 − Kij ) · | αiαj |. Its Neyman regret relative to s∗ 
+
+> ij
+
+is 
+
+Regret( es ∥ s∗) ≤  κ(B) − 1 · Φ( s∗),where κ(B) is the spectral condition number of B and Φ( ·)
+
+is the Neyman objective. In particular Regret = 0 when 
+
+M = yy ⊤ (so B = αα ⊤ is rank-1 in the α direction); it is finite whenever π has finite second moment. 
+
+Proposition 5 (NLL sensitivity is the exact gradient) . Con-vention : throughout this paper we treat Kij for i < j as a single Gram coordinate that simultaneously controls Aij 
+
+and Aji via symmetry. Under this convention, the marginal-likelihood gradient is 
+
+gmarg  
+
+> ij
+
+= [ A−1]ij − αiαj ,
+
+which we write as 12 ([ A−1]ij −αiαj )+ 12 ([ A−1]ji −αj αi) in symmetric form. (The factor-of-2 paper-vs-code discrepancy that earlier reviewers flagged is a coordinate convention: if 
+
+Aij and Aji are treated as independent coordinates, each derivative is half of the value above. We adopt the single-coordinate convention; the factor is absorbed into the Ney-man normalization either way.) Under the expected squared estimation-error objective E[( bL−L )2], the leading-order co-efficient is (gmarg  
+
+> ij
+
+)2 and the Neyman allocation with |gmarg  
+
+> ij
+
+|
+
+minimizes this objective globally to leading order. 
+
+Proposition 6 (LOO sensitivity, exact form and simplifica-tion) . The closed-form GP LOO residual is ei = αi/[A−1]ii ,and the gradient of the LOO sum of squared residuals 
+
+Lloo = 12
+
+P 
+
+> i
+
+e2 
+
+> i
+
+with respect to the symmetric Gram co-ordinate Kij (i < j ) takes the form (full derivation in Ap-pendix A) 
+
+∂Lloo /∂K ij = − X
+
+> k
+
+ek [A−1]ki αj +[ A−1]kj αi
+
+> [A−1]kk
+
+| {z }
+
+> α-coupling
+
++ X
+
+> k
+
+ek · αk [A−1]ki [A−1]kj 
+
+> [A−1]2
+> kk
+
+| {z }
+
+> denominator correction
+
+.
+
+The α-coupling term contains |ei[A−1]ij | + |ej [A−1]ji |
+
+as its (i, j )-localized contribution after symmetrizing; the denominator-correction term scales like max k(e2 
+
+> k
+
+·
+
+[A−1]ki [A−1]kj /[A−1]kk ), bounded above by the maxi-mum LOO predictive variance. Our simplified sensitivity 
+
+sens loo  
+
+> ij
+
+= |ei [A−1]ij | + |ej [A−1]ji | keeps only the α-coupling term and drops the denominator correction. This is a controlled approximation, not the exact gradient. 
+
+The three sensitivities therefore stand in different rela-tions to their respective optima: |αiαj | is a rank-1 spe-cialization of the exact predictive-MSE Neyman weight at M = yy ⊤ (Proposition 4, Corollary 1); |gmarg  
+
+> ij
+
+| is the exact partial derivative of the negative marginal log-likelihood under the single-coordinate convention, hence the exact p(∂L/∂K ij )2 Neyman weight under the squared estimation-error objective (Proposition 5); sens loo  
+
+> ij
+
+drops a bounded correction term from the LOO gradient (Proposi-tion 6). The empirical fact that all three deliver real gains (Figures 1–5, Result 10) is consistent with each capturing the dominant term of its respective Neyman objective. 
+
+# Experiments 
+
+Setup. All experiments use ntr = 200 training points and nte = 80 –100 test points; we report mean ± stan-dard error across 5–10 seeds. The quantum kernel is sim-ulated as Kij = e−γ∥xi−xj ∥2
+
+with γ chosen by the me-dian heuristic on ∥xi − xj ∥2; the shot-noise process sam-ples bKij · sij ∼ Bin( sij , K ij ). We compare uniform and 
+
+random allocation against three AQKA-GP variants using the three sensitivities above. Observation noise is σn = 0 .3.The warm-up fraction is ρw = 0 .1 and the floor is ρ = 0 .5
+
+unless noted. 
+
+Synthetic settings. We use two synthetic regression prob-lems with ntr = 200 . The dense setting draws f ∼GP (0 , K RBF ) from a 200 -dimensional Gaussian, then ob-serves yi = f (xi) + εi. The planted-sparse setting plants 
+
+m = 15 random anchor points with c ∼ N (0 , I ) and sets f (x) = P 
+
+> i∈anchors
+
+ciK(x, x i), giving a function with highly heterogeneous predictive coupling — the GP regres-sion analogue of the planted-sparse setting in Xu et al. (2026). 
+
+UCI benchmarks. We use four standard UCI regression datasets: energy (heating load, 768 × 8), concrete 
+
+(compressive strength, 1030 × 8), kin8nm (robot arm for-ward kinematics, 8192 × 8), and california (housing, 
+
+20640 × 8). Features and targets are standardized using training-set statistics only; we subsample 200 training and 
+
+100 test points per seed and report 10 seeds. (An earlier version of this paper used yacht in place of kin8nm ; we replaced it because its standardized targets have unusually low SNR which made all allocators non-monotonic in bud-get, defeating the purpose of a benchmark.) 
+
+Result 1: AQKA-GP gains on synthetic data (Figure 1, Figure 2). On the dense GP-prior setting, the |αiαj | sen-sitivity gives a −21% RMSE improvement at B = 10 6 (~ 50 
+
+shots/pair). The leave-one-out and marginal-likelihood vari-ants also give double-digit improvements at the same budget. Gains shrink to −5% at B = 2 × 10 7 as all methods ap-proach the oracle floor. On the planted-sparse setting, gains are slightly smaller but qualitatively identical: gp_loo wins by −11% at B = 10 6 and −9% at B = 5 × 10 6. Figure 2 shows the per-seed RMSE distribution: AQKA variants are not only lower on average but have narrower spread than uni-form at B = 10 6, 5 × 10 6, and converge to the oracle floor at B = 2 × 10 7.
+
+Mechanism visualisation (Figure 3, Figure 4). To make the mechanism concrete, Figure 3 shows kernel matrices, shot-allocation maps, and the |αiαj | sensitivity field on a single planted-sparse seed with n = 60 and B = 50 npairs .Uniform spreads shots evenly (bottom-left); AQKA-GP con-centrates shots along the anchor-pair stripes that the sensitiv-ity heatmap identifies (bottom-center). On this seed AQKA-GP recovers the oracle RMSE ( 0.375 vs. oracle 0.371 ) while uniform reaches only 0.536 (−30% gain). Figure 4 quanti-fies the pair-sensitivity heterogeneity as a Lorenz-style curve: the top 20% of pairs carry ∼58% of the cumulative |αiαj |
+
+mass (Gini coefficient G ≈ 0.57 ), validating Observation 1 empirically. Figure 1: Synthetic experiments ( ntr = 200 , 10 seeds, σn = 0 .3). Test RMSE vs. shot budget B on (left) planted-sparse data, (right) dense GP-prior data. AQKA-GP variants beat uniform across the moderate-to-high budget regime; the gain is larger on dense data, where inverse propagation creates predictive heterogeneity from spectral decay alone. At very low budget ( B ≤ 100 
+
+shots/pair), all variants underperform uniform because the warm-up sensitivity estimate is too noisy — the catastrophic regime analyzed below. 
+
+Result 2: AQKA-GP gains on UCI data (Figure 5, Ta-ble 1). We pre-commit to |αiαj | as the headline sensi-tivity (the rank-1 specialization of Proposition 4, identified before running the UCI experiments) and report paired t-tests against uniform with 10 seeds per dataset. AQKA-GP-
+
+|αα | delivers statistically significant ( p < 0.05 ) RMSE gains at B = 10 6 on 3/4 datasets ( −9.8% to −18 .4% ) and at 
+
+B = 5 × 10 6 on 2/4 datasets ( −11 .1% on both concrete 
+
+and kin8nm ). At B = 2 ×10 5 the gain is significant only on 
+
+kin8nm (p = 0 .025 ); at B = 2 × 10 7 all methods converge toward the oracle floor and most gains are non-significant. We report max-over-variants (LOO, marg-lik) separately as an oracle-selection upper bound; the headline gp_alpha al-ready accounts for most of the gain. 
+
+Result 3: floor ablation (Figure 6). We re-ran the dense synthetic setting with ρ ∈ { 0, 0.1, 0.2, 0.5, 0.7} (5 seeds, 
+
+ntr = 200 ). At ρ = 0 and ρ = 0 .1, AQKA-GP collapses to the catastrophic regime at B = 2 × 10 5 (+200% to +260% 
+
+RMSE vs uniform). At ρ = 0 .2 (the classification default of Xu et al. (2026)), the catastrophe persists at B ≤ 2 × 10 5. At 
+
+ρ = 0 .5 the catastrophe is eliminated at all budgets we tested, while still preserving the −15% to −21% gain at moderate 
+
+B. At ρ = 0 .7, gains at moderate B shrink slightly because too little budget is left for sensitivity-driven allocation. We use ρ = 0 .5 as a robust default; ρ = 0 .7 is a safer choice when warm-up shot count per pair is expected to be very low. 
+
+Result 4: marginal-likelihood approximation (Figure 7). 
+
+The marginal-likelihood sensitivity is motivated by hyper-parameter learning, where one cares about how accurately 
+
+L( bK) approximates L(K). We measure the absolute NLL error |L ( bK) − L (K)| as a function of B across 8 seeds on both synthetic settings. AQKA-GP-|αα | and AQKA-GP-marg give monotonically smaller NLL error than uniform: at 
+
+B = 2 × 10 7 on dense data, AQKA-GP-|αα | reaches NLL error 8.5 vs 19 .4 for uniform ( −56% ); on sparse data, 8.9 vs 
+
+11 .0 (−18% ). The kernel Frobenius error ∥ bK−K∥F /∥K∥F
+
+(lower panel of Figure 7) is comparable across methods — AQKA-GP does not estimate the kernel more accurately over-all, it estimates it more accurately where it matters for the downstream loss .
+
+Result 5: Bayesian-optimization surrogate quality (Fig-ure 8). We test whether AQKA-GP gives a better GP sur-rogate for Bayesian optimization. We fit a GP to ntr = 120 
+
+uniformly sampled query points on Branin (2D), Hartmann-3, and Hartmann-6, then evaluate EI on ncand = 2000 ran-dom candidates and pick the argmax-EI point. The sim-ple regret f (xpick ) − f ∗ over 8 seeds is reported. At 
+
+B = 2 × 10 5, AQKA-GP-marg gives substantial gain on Hartmann-6 ( −25% regret) and modest gain on Branin and Hartmann-3. Gains shrink at higher budgets, where uniform’s surrogate is already accurate enough to localize the argmax-EI. The Hartmann-6 result is suggestive of a quantum-BO use case where each shot is expensive: AQKA-GP can find better candidates with the same per-iteration budget. 
+
+Result 6: Full BO loop on Hartmann-6 (Figure 9). We move from surrogate quality to a full Bayesian-optimization loop with shot-budgeted GP refits at every iteration. The setup is Hartmann-6, ninit = 30 initial random queries, 
+
+Biter = 5 ×10 5 shots per BO iteration, 20 iterations, 8 seeds. At each iteration the GP is refit from scratch with the chosen allocator, EI is maximized on 1000 random candidates, and the picked point is evaluated. Simple regret falls fastest under AQKA-GP-marg, reaching 0.83 at iteration 20 vs. 1.07 under uniform ( −23% ); AQKA-GP-|αα | reaches 0.97 (−9% ). The gap opens at iteration 5–10 and persists, confirming that GP Figure 2: Per-seed RMSE distribution on dense GP-prior data, ntr = 200 , 10 seeds. Violins show full distribution, dots individual seeds, horizontal mark the mean, dashed line the oracle floor. AQKA variants concentrate below uniform across budgets and have visibly narrower spread at B = 10 6–5 × 10 6.surrogate quality compounds across BO steps. 
+
+Result 7: Online streaming GP (Figure 10). We stream 
+
+T = 60 data points online with per-step shot budget Bstep =2×10 5. At each step the GP is refit from scratch using uniform or AQKA-GP allocation, predicts the incoming point, and the running test MSE is updated. AQKA-GP-marg gives the lowest cumulative MSE at every step, reaching 0.151 at t =60 vs. uniform 0.162 (−7% ); AQKA-GP-|αα | reaches 0.157 
+
+(−3% ). The online setting is the most stringent test of shot economy: every new data point requires a complete GP refit, so any per-step savings compound. 
+
+Result 8: Sparse VFE GP (Figure 11). We test AQKA-VFE on sparse inducing-point GP regression (Section ). With 
+
+ntr = 200 , m = 30 inducing points (uniform subsample from training), and dense GP-prior data, the kernel budget consists of m(m+1) /2+ nm = 465+6000 = 6465 entries. AQKA-VFE beats uniform across all four budget multiples (10 , 50 , 200 , 1000 shots per entry), with gains of −1.1% at low budget growing to −2.2% near oracle. The gain is smaller in absolute terms than the full-GP case because the sparse approximation already smooths predictive heterogeneity; in relative terms (gap-to-oracle closure), AQKA-VFE closes the gap by ∼40% at B = 200 ne.
+
+Result 9: N -scaling (Figure 12). We test whether AQKA-GP gains hold across training-set sizes. With B = 50 npairs 
+
+(constant shots/pair, a budget level inside the sweet spot), we vary ntr ∈ { 50 , 100 , 200 , 400 , 600 } on dense GP-prior data, 5 seeds each. At every ntr at least one AQKA-GP variant beats uniform, with gains ranging from −9% 
+
+(n = 100 , gp_loo) to −30% (n = 200 , gp_marg). The best-performing sensitivity varies with n — gp_alpha dominates at n ∈ { 50 , 400 }, gp_marg at n ∈ { 200 , 600 }, gp_loo at 
+
+n = 100 — but the existence of a winning AQKA-GP vari-ant is uniform. The lack of monotone trend in n reflects that the per-pair shot regime is held constant, so absolute RMSE depends primarily on the inducing posterior structure of each particular dataset. 
+
+Result 10: Genuine quantum kernels (Figure 13). The experiments above use a classical RBF Kij = e−γ∥xi−xj ∥2
+
+corrupted by Bernoulli shot noise as a controlled study , iso-lating the shot-allocation mechanism from circuit and de-vice structure. We now replace this with a genuine quantum kernel K(xi, x j ) = |⟨ ϕ(xi)|ϕ(xj )⟩| 2 evaluated by statevec-tor simulation, plus a 5% depolarizing channel that models device-induced decay. We run three complementary studies (paired t-tests, 5 seeds each): 1. UCI through a quantum kernel (Figure 13 left). We em-bed standardized UCI features into a q-qubit ZZ fea-ture map (q ∈ { 4, 6, 8}, reps = 2 ), then run AQKA-GP. On energy , concrete , kin8nm at ntr = 60 , the gain is essentially null ( −4% to +10% , almost no sig-nificance), with a mild trend toward worse performance at q ∈ { 6, 8}. This is consistent with the exponential-concentration regime of Thanasilp et al. (2024): at larger 
+
+q with depolarizing noise, kernel values cluster near a fixed mean and per-pair heterogeneity vanishes, leaving nothing for AQKA-GP to exploit. Real-data feature em-beddings into ZZ kernels are not, in general, in the regime where shot-allocation matters; this is an honest negative finding. 2. Feature-map sweep (Figure 13 center). On planted-sparse quantum data at q = 4 , ntr = 50 , we compare four feature maps: ZZ-full, ZZ-linear, Pauli-Z, Pauli-Y (each with reps = 2 , 5% depolarizing). At the low-budget setting (B = 63 ,750 shots, 50 per pair), AQKA-GP-|αα | delivers statistically significant gains on three of four feature maps: ZZ-full −13 .3% (p = 0 .035 ), ZZ-linear −14 .5% (p =0.027 ), Pauli-Z −13 .3% (p = 0 .035 ); Pauli-Y is marginal at −6.3% (p = 0 .55 , n.s. ). Gains shrink at higher budget where the kernels reach the shot-noise floor. 3. Scale sweep (Figure 13 right). On the ZZ-full kernel at 
+
+q = 4 , ntr ∈ { 40 , 80 , 120 }, AQKA-GP gain rises with 
+
+ntr : −1.3% (n = 40 , p = 0 .50 ), −16 .9% (n = 80 ,Figure 3: Kernel + allocation heatmaps on a single planted-sparse seed, n = 60 , B = 50 npairs . Top row: oracle Ktrue , bK under uniform and AQKA shot allocation, and the uniform-allocation kernel error. Bottom row: uniform shot count per pair (flat), AQKA shot count per pair (concentrated on anchor-pair stripes), sensitivity field |αiαj | that drives the AQKA allocation, and the AQKA kernel error. On this seed AQKA-GP achieves −30% test RMSE over uniform ( 0.375 vs. 0.536 , vs. oracle 0.371 ). 
+
+Figure 4: Pair-sensitivity concentration (Lorenz curve) for 
+
+|αiαj | on the same planted-sparse seed used for Figure 3 (n = 60 ). The top 20% of pairs carry ∼58% of the cumula-tive sensitivity mass; Gini coefficient G ≈ 0.57 . A flat kernel would give G = 0 ; a degenerate one-pair kernel would give 
+
+G = 1 . The strong heterogeneity is what AQKA-GP exploits. 
+
+p = 0 .076 , marginal), −9.2% (n = 120 , p = 0 .48 , n.s. in 5 seeds but visibly below uniform). The trend agrees with Observation 1: heterogeneity grows with the spectral effective rank deficit, which in turn grows with ntr .The take-away is honest. AQKA-GP works on quantum ker-nels when the underlying data has the heterogeneity the mechanism exploits (Studies 2–3); it does not magically im-prove a real-data UCI regression task whose features were never designed for a ZZ kernel (Study 1). 
+
+Extensions: Bayesian Quadrature, Heteroscedastic GP, Cokriging 
+
+We test three further GP variants where the Neyman rule of Section applies with task-specific sensitivities, each derived from ∂(task loss )/∂K ij via the inverse identity. 
+
+Result 11: Bayesian Quadrature (Figure 14). We es-timate I = Ex∼π [f (x)] with π = N (0 , I 4) and f ∼GP (0 , k RBF ). The posterior mean of I is bI = z⊤(K +
+
+σ2
+
+> n
+
+I)−1y, where zi = Ex∼π [k(xi, x )] is the kernel-mean embedding (analytic for RBF × Gaussian). The induced sen-sitivity sens bq  
+
+> ij
+
+= |ziα′ 
+
+> j
+
++ zj α′
+
+> i
+
+|, α′ = A−1z, is highly het-erogeneous: pairs near the prior mode dominate. AQKA-BQ gives |bI−Ioracle | of 0.022 at B = 2 ×10 7 vs. 0.035 for uniform (−37% ). At low budget ( B ≤ 10 6) all variants are dominated by warm-up noise; in the moderate-to-high regime AQKA wins consistently. The predictive-coupling sensitivity |αα |
+
+also works because α = A−1y correlates with α′ = A−1z
+
+at well-conditioned A.
+
+Result 12: Heteroscedastic GP (Figure 15). With input-dependent noise σ2(x) = σ20 (1 + 0 .5∥x∥2), the posterior becomes α = ( K + diag( σ2(x))) −1y and pair sensitivi-ties are no longer rank-1 in a single α. Empirically AQKA-Hetero-GP beats uniform substantially: at B = 10 6, 0.489 
+
+vs. uniform 0.690 (−29% ); at B = 2 ×10 7, 0.360 vs. uniform 
+
+0.446 (−19% ). The heteroscedasticity amplifies the gain be-cause pairs in low-noise regions are far more sensitive to kernel error than pairs in high-noise regions. Figure 5: UCI regression benchmarks ( ntr = 200 , 10 seeds). AQKA-GP-|αα | (red, pre-committed headline sensitivity) delivers statistically significant gains at B = 10 6 on 3/4 datasets ( −7% to −18% , paired t-test p < 0.05 ); see Table 1 for p-values. 
+
+Result 13: Hyperparameter learning loop (Figure 16). 
+
+The marginal-likelihood sensitivity (15) was motivated by hyperparameter learning. Here we test it directly: gradient descent on the kernel bandwidth γ in log-space, starting at 
+
+γinit = 0 .04 and aiming for γtrue = 0 .15 , with shot bud-get Biter = 2 × 10 5 per gradient step and T = 20 steps. The marginal-likelihood gradient is computed from the shot-noisy bK under each allocator and used to update log γ with learning rate 0.05 . AQKA-GP-|αα | closes the gap to γtrue 
+
+by 65% (|γ − γtrue | = 0 .086 vs. uniform 0.246 ); AQKA-GP-marg by 43% (0.141 ). Final test RMSEs are 0.404 ,
+
+0.411 , 0.419 respectively ( −4% for AQKA-alpha), confirm-ing that shot-efficient hyperparameter learning translates into a downstream-test improvement. 
+
+Result 14: Multi-output GP / Cokriging (Figure 17). 
+
+For q = 3 correlated outputs with separable kernel 
+
+cov( yt(x), y t′ (x′)) = B[t, t ′]k(x, x ′), the posterior decom-poses in the eigenbasis of B. We use AQKA-MT-GP with sensitivity P 
+
+> t
+
+λt|αtα⊤ 
+
+> t
+
+| summed over outputs. AQKA-MT-GP gains −4% at low budget growing to tied at oracle floor. The gain is smaller than full-GP because the eigenbasis de-composition averages sensitivity across outputs, partially ho-mogenizing the pair-level weights. 
+
+# From Theory to Experiment 
+
+The four propositions of Section make sharp predictions that we can read off the experimental panels: 
+
+• Observation 1 (Lemma 1) predicts dense > sparse : GP re-gression manufactures predictive heterogeneity from A−1
+
+even when the data itself is homogeneous, so AQKA-GP should win more on dense data than on planted-sparse. Figure 1 confirms this ( −21% on dense, −11% 
+
+on planted-sparse), and the four UCI datasets (all in the dense regime) match the predicted −12% to −17% band. 
+
+• Proposition 3 predicts a coverage breakpoint at ρ ≈
+
+n2/(2 B): for n = 200 and B = 2 × 10 5 this is ρ ≈ 0.1.Figure 6 matches this: ρ ≤ 0.1 is catastrophic, ρ ≥ 0.2
+
+is recovered. The further empirical jump to ρ = 0 .5 is a shot-quality margin not derived from the proposition Table 1: Test RMSE on four UCI regression benchmarks, ntr = 200 , 10 seeds. Headline sensitivity is gp_alpha (pre-committed before running); we report paired t-test p-values against uniform on the headline. Bold marks the headline gain when p < 0.05 .                                                                                                                                                 
+
+> Dataset Buniform random gp_alpha gp_loo gp_marg gain% p(paired) energy
+> 2×10 50.462 0.483 0.412 0.479 0.427 −10 .9% 0.100 10 60.408 0.402 0.368 0.406 0.413 −9.8%0.006
+> 5×10 60.333 0.350 0.323 0.325 0.335 −3.0% 0.552 2×10 70.267 0.285 0.275 0.276 0.278 +2 .9% 0.489
+> concrete
+> 2×10 50.818 0.853 0.846 1.003 0.855 +3 .4% 0.442 10 60.939 0.936 0.767 0.854 0.806 −18 .4%0.015
+> 5×10 60.694 0.672 0.617 0.636 0.632 −11 .1%0.032
+> 2×10 70.549 0.574 0.522 0.554 0.533 −4.9% 0.122
+> kin8nm
+> 2×10 51.441 1.430 1.349 1.444 1.447 −6.3%0.025
+> 10 61.676 1.762 1.552 1.766 1.640 −7.4%0.047
+> 5×10 61.694 1.580 1.505 1.540 1.432 −11 .1%0.027
+> 2×10 71.310 1.313 1.274 1.331 1.304 −2.8% 0.227
+> california
+> 2×10 50.933 0.936 0.972 1.057 0.964 +4 .2% 0.443 10 61.025 0.938 0.880 0.918 0.863 −14 .1% 0.086 5×10 60.793 0.837 0.751 0.761 0.765 −5.4% 0.099 2×10 70.698 0.682 0.672 0.680 0.683 −3.6%0.050
+
+Figure 6: Floor ablation on dense GP-prior data ( ntr = 200 , 5
+
+seeds). The uniform-coverage fraction ρ is essential: at ρ ≤
+
+0.1, AQKA-GP catastrophically overconcentrates at B =2 × 10 5. At ρ ∈ { 0.5, 0.7} the catastrophe is eliminated. We use ρ = 0 .5 as the default; the classification setup of Xu et al. (2026) uses ρ ≤ 0.2.(which is a coverage / necessary-condition result, not a sufficient-condition one). 
+
+• Proposition 2 predicts 1/σ 4 
+
+> n
+
+amplification : GP regression should be more shot-hungry than classification, requiring higher per-pair shot counts to reach the same accuracy floor. The minimum budget at which AQKA-GP starts to help is ∼ 50 shots/pair (Figure 1 and Figure 5), sub-stantially higher than the ∼ 4 shots/pair regime where classification AQKA helps (Xu et al. 2026). 
+
+• Adaptive √n jitter : kernel Frobenius errors are similar across allocators (Figure 7, bottom row), confirming that AQKA-GP does not estimate K more accurately over-all — it estimates it more accurately where the loss is sensitive to it . The NLL approximation error (top row) is correspondingly smaller for AQKA-GP, with the √n
+
+jitter ensuring the posterior remains stable across shot regimes. The picture is consistent: AQKA-GP works in regimes the theory predicts, fails in regimes the theory predicts, and the magnitude of gain matches the spectral-decay heuristic from Observation 1 (Lemma 1). 
+
+# Related Work 
+
+Quantum kernel methods. Quantum kernels were intro-duced by Havlíček et al. (2019) and Schuld and Killoran (2019) as a quantum analogue of classical kernel methods. Huang et al. (2021) established sample-complexity lower bounds, and Thanasilp et al. (2024) characterized exponential concentration regimes where shot noise overwhelms signal. 
+
+Shot-efficient quantum kernel estimation. The closest prior work is the AQKA framework of Xu et al. (2026), which applies Neyman-style allocation to quantum KRR and SVM, and the concurrent work of Miroszewski (2026), which independently derived an adaptive measurement allocation for kernelized SVMs under noisy observations. Both focus on classification. We extend the line to GP regression, iden-tify the GP-specific high-floor requirement, and derive three sensitivities that are unique to the GP setting (marginal like-lihood, LOO residual, predictive coupling). Other related directions include kernel-bandwidth tuning for quantum ma-chine learning (Shaydulin and Wild 2022), Bayesian deep learning compiled to quantum circuits (Zhao et al. 2019), and quantum active learning for materials design (Lourenço et al. 2026). 
+
+Classical sensitivity-based subsampling. For classical Gaussian processes, leverage-score subsampling (Calan-driello, Lazaric, and Valko 2017) and ridge-leverage-driven Figure 7: Marginal-likelihood approximation (top) and kernel Frobenius (bottom) errors vs. shot budget, both on log-log axes, 
+
+ntr = 200 , 8 seeds. AQKA-GP gives substantially lower NLL error than uniform across budgets, especially on dense data. Kernel Frobenius error is comparable across methods — AQKA-GP does not estimate K more accurately overall, only at the entries that matter for L.coreset construction (Musco and Musco 2017) are the closest analogue. These methods choose which rows of K to com-pute exactly, whereas we choose how many shots each entry of K receives. The two ideas can be composed — AQKA-GP plus row subselection is an obvious follow-up but not the focus here. 
+
+A-optimal experimental design. Allocating samples by 
+
+|∂L/∂θ |√Var is classical (Neyman 1992; Pukelsheim 2006). We follow this lineage in the kernel-entry setting. 
+
+# Discussion and Limitations 
+
+Hyperparameter learning. The marginal-likelihood sen-sitivity is in principle suited to outer-loop hyperparam-eter learning (gradient descent on θ via ∂L/∂θ =P 
+
+> ij
+
+(∂L/∂K ij )( ∂K ij /∂θ )). In our experiments we fix σn
+
+and the kernel width γ and study the inner-loop shot alloca-tion problem. Composing AQKA-GP with hyperparameter learning is left to future work. 
+
+Bayesian optimization. The acquisition functions used in Bayesian optimization (EI, UCB, PI) depend on μ∗ and σ2
+
+> ∗
+
+in closed form, and their gradients with respect to Kij admit closed forms via the same identities used here. Applying AQKA-GP to Bayesian optimization with quantum kernels is a natural next step; the per-iteration shot budget is precisely the bottleneck practitioners report. 
+
+Catastrophic low-budget regime. The low-budget catas-trophe is genuine. Possible remedies include (i) Nyström-style landmark warm-up that estimates a low-rank bK before sensitivity is computed, (ii) Bayesian priors on bKij that pull toward a smoothness model rather than the Bernoulli prior mean, and (iii) deferred allocation that runs multiple rounds of sensitivity re-estimation. We expect a fully-online AQKA-GP loop to extend the useful regime by an order of magnitude in B.
+
+# Conclusion 
+
+We extended the AQKA framework from classification to Gaussian process regression. The extension is non-trivial: GP regression cares about quantities (full-spectrum poste-rior variance, log-determinant of A, marginal likelihood) that classification’s 0/1 accuracy averages away, and naive sensitivity-driven allocation fails catastrophically without a high uniform-coverage floor (Proposition 3). The three pair-level sensitivities we propose are principled: |αiαj | is the rank-1 specialization of the exact predictive-MSE Neyman weight (at M = yy ⊤), the marginal-likelihood gradient is the exact partial derivative, and the LOO sensitivity drops a Figure 8: BO surrogate-quality experiment, 8 seeds. Simple regret of the argmax-EI candidate after one GP fit on ntr = 120 
+
+points, under uniform vs. two AQKA-GP variants. AQKA-GP-marg gives notable gain on Hartmann-6 at B = 2 × 10 5 (−25% 
+
+regret). At higher budgets, uniform’s surrogate is already accurate enough to localize the argmax-EI, so gains shrink. 
+
+Figure 9: Full BO loop on Hartmann-6 with shot-budgeted GP refit at each iteration ( Biter = 5 × 10 5, ninit = 30 , 8
+
+seeds). AQKA-GP-marg reaches simple regret 0.83 at itera-tion 20 vs. 1.07 for uniform ( −23% ). The gap opens around it-eration 5 and persists, as surrogate quality compounds across BO steps. controllable correction term (Propositions 4–6). Combined with a coverage floor (justified by the necessary condition of Proposition 3) and an inference-time jitter whose √n scaling is motivated by Wigner-type matrix concentration but whose constant is calibrated empirically, AQKA-GP delivers 10 –
+
+21% RMSE improvement across four UCI benchmarks and two synthetic settings, with the gain transferring (i) to gen-uine ZZ and Pauli-Z quantum kernels at the budget regimes where heterogeneity exists ( −13 –15% , p < 0.05 , Result 10) and (ii) to four downstream tasks (Bayesian quadrature, heteroscedastic regression, hyperparameter learning, multi-output Cokriging). On UCI features embedded into a ZZ kernel (Result 10, Study 1) the gain disappears, consistent with the exponential-concentration regime of Thanasilp et al. (2024) — a regime where shot allocation has nothing to ex-ploit. 
+
+Figure 10: Online streaming GP with shot-budgeted refit at every step ( Bstep = 2 × 10 5, T = 60 , 6 seeds). Running test MSE: AQKA-GP-marg 0.151 at t = 60 vs. uniform 0.162 
+
+(−7% ). Online refits compound any per-step savings. Figure 11: Sparse VFE GP ( ntr = 200 , m = 30 inducing points, 6 seeds, ne = 6465 kernel entries). AQKA-VFE beats uniform across all four budget regimes ( −1.1% to −2.2% ), closing the gap to oracle by ∼40% at B = 200 ne. Smaller absolute gain than full-GP because the sparse approximation already smooths predictive heterogeneity. 
+
+Figure 12: N -scaling at B = 50 npairs shots/pair, 5 seeds. At every ntr ∈ { 50 , 100 , 200 , 400 , 600 }, at least one AQKA-GP variant beats uniform; gains range from −9% (n = 100 )to −30% (n = 200 , gp_marg). The best sensitivity varies with n, but the existence of a winning variant is uniform. Figure 13: Three quantum-kernel studies, 5 seeds each, 5% depolarizing noise. Left : UCI features through ZZ feature map at 
+
+q ∈ { 4, 6, 8} (ntr = 60 , 5 seeds); gain is essentially null — the data is not in the regime AQKA-GP exploits (asterisks mark 
+
+p < 0.05 paired t-test). Center : feature-map sweep at q = 4 , planted-sparse data ( ntr = 50 ); three of four maps give significant gain ( p < 0.05 , marked with *) at low budget B = 64 k. Right : scale sweep at q = 4 , ZZ-full ( ntr ∈ { 40 , 80 , 120 }); the gain grows with ntr , consistent with Observation 1. 
+
+Figure 14: Bayesian Quadrature, n = 200 , d = 4 , π =
+
+N (0 , I ), 8 seeds. Log-log integral error |bI −Ioracle |. AQKA-BQ achieves 0.022 at B = 2 ×10 7 vs. uniform 0.035 (−37% ). 
+
+Figure 15: Heteroscedastic GP regression with σ2(x) = 
+
+σ20 (1 + 0 .5∥x∥2), 6 seeds. AQKA-Hetero-GP gains −19% to 
+
+−29% across budgets, larger than the homoscedastic case be-cause input-dependent noise concentrates sensitivity in low-noise regions. 
+
+Figure 16: Outer-loop hyperparameter learning: gradient de-scent on log γ under shot-budgeted marginal-likelihood gra-dient, T = 20 iterations, Biter = 2 ×10 5, 6 seeds. (Left) γ tra-jectory; AQKA-GP-|αα | converges closest to γtrue = 0 .15 
+
+(gap 0.086 vs. uniform 0.246 , −65% ). (Right) Final test RMSE; AQKA-GP-|αα | improves by −4% .
+
+Figure 17: Multi-output GP / Cokriging with separable kernel 
+
+B ⊗ K, q = 3 correlated outputs, 6 seeds. AQKA-MT-GP gains −4% to tied across budgets. Gains are smaller than full-GP because the output-eigenbasis average homogenizes pair-level weights. References 
+
+Calandriello, D.; Lazaric, A.; and Valko, M. 2017. Dis-tributed adaptive sampling for kernel matrix approximation. In Artificial Intelligence and Statistics , 1421–1429. PMLR. Damianou, A.; and Lawrence, N. D. 2013. Deep gaussian processes. In Artificial intelligence and statistics , 207–215. PMLR. Havlíček, V.; Córcoles, A. D.; Temme, K.; Harrow, A. W.; Kandala, A.; Chow, J. M.; and Gambetta, J. M. 2019. Super-vised learning with quantum-enhanced feature spaces. Na-ture , 567(7747): 209–212. Hensman, J.; Fusi, N.; and Lawrence, N. D. 2013. Gaussian processes for Big data. In Proceedings of the Twenty-Ninth Conference on Uncertainty in Artificial Intelligence , 282– 290. Huang, H.-Y.; Broughton, M.; Mohseni, M.; Babbush, R.; Boixo, S.; Neven, H.; and McClean, J. R. 2021. Power of data in quantum machine learning. Nature communications ,12(1): 2631. Lourenço, M. P.; Zadeh-Haghighi, H.; Hostaš, J.; Naseri, M.; Gaur, D.; Simon, C.; and Salahub, D. R. 2026. Exploring quantum active learning for materials design and discovery. 
+
+Physical Chemistry Chemical Physics , 28(14): 8604–8617. Miroszewski, A. 2026. Adaptive Measurement Allocation for Learning Kernelized SVMs Under Noisy Observations. 
+
+arXiv preprint arXiv:2605.22275 .Musco, C.; and Musco, C. 2017. Recursive sampling for the nystrom method. Advances in neural information processing systems , 30. Neyman, J. 1992. On the two different aspects of the repre-sentative method: the method of stratified sampling and the method of purposive selection. In Breakthroughs in statis-tics: Methodology and distribution , 123–150. Springer. Pukelsheim, F. 2006. Optimal design of experiments . SIAM. Rasmussen, C. E. 2003. Gaussian processes in machine learning. In Summer school on machine learning , 63–71. Springer. Salimbeni, H.; and Deisenroth, M. 2017. Doubly stochastic variational inference for deep Gaussian processes. Advances in neural information processing systems , 30. Schuld, M.; and Killoran, N. 2019. Quantum machine learn-ing in feature Hilbert spaces. Physical review letters , 122(4): 040504. Shaydulin, R.; and Wild, S. M. 2022. Importance of kernel bandwidth in quantum machine learning. Physical Review A, 106(4): 042407. Snelson, E.; and Ghahramani, Z. 2005. Sparse Gaussian pro-cesses using pseudo-inputs. Advances in neural information processing systems , 18. Thanasilp, S.; Wang, S.; Cerezo, M.; and Holmes, Z. 2024. Exponential concentration in quantum kernel methods. Na-ture communications , 15(1): 5200. Titsias, M. 2009. Variational learning of inducing variables in sparse Gaussian processes. In Artificial intelligence and statistics , 567–574. PMLR. Tropp, J. A. 2015. An introduction to matrix concentration inequalities. Foundations and trends ® in machine learning ,8(1-2): 1–230. Xu, J.; Li, C.; Zeng, D.; Paisley, J.; and Zhao, Q. 2026. AQKA: Active Quantum Kernel Acquisition Under a Shot Budget. arXiv preprint arXiv:2605.14672 .Zhao, Z.; Pozas-Kerstjens, A.; Rebentrost, P.; and Wittek, P. 2019. Bayesian deep learning on a quantum computer. 
+
+Quantum Machine Intelligence , 1(1): 41–51. 
+
+# Appendix A: Proofs 
+
+Proof of Proposition 1 (Neyman minimum-variance allocation) 
+
+We minimize Φ( s) = P 
+
+> i≤j
+
+c2 
+
+> ij
+
+/s ij , cij := 
+
+|gij |pKij (1 − Kij ), subject to P sij = B and sij ≥ 0.The Lagrangian is LLag = P c2 
+
+> ij
+
+/s ij + λ(P sij − B) with 
+
+∂LLag /∂s ij = −c2 
+
+> ij
+
+/s 2 
+
+> ij
+
++ λ = 0 , giving sij = cij /√λ.Substituting into the constraint yields √λ = P cij /B and thus s∗ 
+
+> ij
+
+= B c ij / P ckℓ . The minimum value is 
+
+Φ( s∗) = X c2 
+
+> ij
+
+·
+
+P ckℓ 
+
+B c ij 
+
+= (P cij )2
+
+B .
+
+Strict convexity of 1/s over s > 0 guarantees uniqueness. 
+
+Proof of Proposition 2 (Posterior error) 
+
+We use the resolvent identity bA−1 − A−1 = − bA−1∆A−1.By submultiplicativity of the operator norm, 
+
+∥ bA−1 − A−1∥op ≤ ∥ bA−1∥op · ∥ ∆∥op · ∥ A−1∥op .
+
+The spectrum of A lies in [σ2
+
+> n
+
+, σ 2 
+
+> n
+
++ ∥K∥op ], so ∥A−1∥op ≤
+
+1/σ 2
+
+> n
+
+. By Weyl’s inequality, the spectrum of bA is shifted by at most ∥∆∥op , so ∥ bA−1∥op ≤ 1/(σ2 
+
+> n
+
+− ∥ ∆∥op ) whenever the denominator is positive. Combining, 
+
+∥ bA−1 − A−1∥op ≤ ∥∆∥op 
+
+σ2
+
+> n
+
+(σ2 
+
+> n
+
+− ∥ ∆∥op ) .
+
+The α bound follows from bα − α = ( bA−1 − A−1)y and 
+
+∥y∥ ≤ M . The μ∗ bound follows from bμ∗ −μ∗ = k⊤∗ ( bα−α)
+
+and Cauchy-Schwarz on ∥k∗∥ ≤ M .
+
+Proof of Lemma 1 (Covariance of α under random labels) 
+
+In the eigenbasis of K, α = A−1y = P 
+
+> k
+
+βk uk/(λk + σ2
+
+> n
+
+)
+
+since Auk = ( λk + σ2
+
+> n
+
+)uk. The covariance is 
+
+E[αα ⊤] = τ 2 X
+
+> k
+
+uku⊤
+
+> k
+
+(λk + σ2
+
+> n
+
+)2 ,
+
+which we read off diagonally as Var( αi) = τ 2 P 
+
+> k
+
+u2
+
+> ki
+
+/(λk+
+
+σ2
+
+> n
+
+)2. Squaring and taking expectations on the ℓ2 and ℓ1
+
+norms of αα ⊤ gives the bound stated in the proposition body. The dominant mechanism is the quartic weighting 1/(λk + σ2
+
+> n
+
+)4 on the small-eigenvalue tail, multiplied by the unit-norm constraint P 
+
+> k
+
+u2 
+
+> ki
+
+= 1 . We do not assume eigen-vector localization; in fact for translation-invariant RBF on 
+
+[0 , 1] d, low-λk eigenvectors are delocalized (Fourier-like). The concentration of |αiαj | arises from finite-sample fluctu-ations of u2 
+
+> ki
+
+around 1/n being amplified by the same quartic factor, not from any single u2 
+
+> ki
+
+being intrinsically large. The constant C in the proposition body depends on the spectral effective rank ¯r = P 
+
+> k
+
+1/(1 + σ2
+
+> n
+
+/λ k)2; for RBF and ZZ feature-map kernels at the bandwidths we use, ¯r ≪ n, and the bound is non-vacuous. 
+
+Proof of Proposition 3 (Catastrophic-regime bound) 
+
+The default substitution bKij = c on S introduces an error matrix ∆ = P 
+
+> (i,j )∈S
+
+δij (eie⊤ 
+
+> j
+
++ ej e⊤ 
+
+> i
+
+) with δij = c − Kij .By assumption, at least an η-fraction of pairs in S have 
+
+|δij | ≥ d. The Frobenius norm is therefore bounded below 
+
+by 
+
+∥∆∥2 
+
+> F
+
+= 2 X
+
+> (i,j )∈S
+
+δ2 
+
+> ij
+
+≥ 2ηd 2|S|,
+
+giving ∥∆∥F ≥ dp2η|S|. For any real n × n symmet-ric matrix the operator norm and Frobenius norm satisfy 
+
+∥∆∥op ≥ ∥ ∆∥F /√n. Combining, 
+
+∥∆∥op ≥ ∥∆∥F
+
+√n ≥ d
+
+r 2η|S|
+
+n .
+
+This is a lower bound on the perturbation magnitude only. We do not chain it through Proposition 2 to claim a lower bound on the predictive error: Proposition 2 is an upper bound on the predictive error in terms of ∥∆∥op , and combining an upper bound with a lower bound on the input does not yield a lower bound on the output (the perturbation ∆ could be orthogonal to the sensitive subspace of A−1y). The catas-trophic regime of Figure 6 is reflected here only through the 
+
+necessary condition that vanishing predictive error requires vanishing ∥∆∥op , which in turn requires |S| → 0 at fixed 
+
+d, η .
+
+What is proved, and what is not. Propositions 1, 2, 4–6 and Lemma 1 are sharp up to constants. Proposition 3 is a necessary condition for predictive consistency (it bounds 
+
+∥∆∥op from below in terms of the missing-coverage frac-tion), not a lower bound on the predictive error itself; lower bounds on the predictive error would require the perturbation to align with the A−1y sensitive direction, which we do not prove here. The empirical ρ = 0 .5 floor is calibrated against Figure 6 as a shot-quality margin on top of this coverage con-dition. Observation 1 is descriptive rather than quantitative and is tested empirically through realized AQKA-GP gain on RBF and ZZ kernels. 
+
+# Appendix B: Experimental Setup 
+
+We collect the per-experiment settings here for repro-ducibility. Across all experiments the simulator kernel is 
+
+Kij = exp( −γ∥xi − xj ∥2), the shot-noise process samples 
+
+bKij · sij ∼ Bin( sij , K ij ), the warm-up fraction is ρw = 0 .1,the uniform floor is ρ = 0 .5, and the inference-time jitter is 
+
+j = √n · K(1 − K)/s . Adam-style adaptive step sizes are not used; we report a single final allocation per seed. 
+
+B.1 Synthetic settings (Figure 1). Dense : xi ∼ N (0 , I 6),
+
+f ∼ GP (0 , K RBF (γ=0 .1)) drawn via Cholesky, yi =
+
+f (xi) + εi with εi ∼ N (0 , σ 2
+
+> n
+
+), σn = 0.3. Planted-sparse : same x distribution, ma = 15 random anchor in-dices A ⊂ { 1, . . . , n } with ca ∼ N (0 , 1) on A, f (x) = P 
+
+> i∈A
+
+ciK(x, x i). Both: ntr = 200 , nte = 80 , 10 seeds, budgets B ∈ { 2×10 5, 10 6, 5×10 6, 2×10 7}.
+
+B.2 UCI benchmarks (Figure 5, Table 1). We use four standard UCI regression datasets fetched via OpenML: 
+
+energy (heating load Y1, 768 × 8), concrete (1030 × 8), 
+
+kin8nm (8192 × 8), and california (20640 × 8). Per seed, we randomly partition into ntr = 200 training and 
+
+nte = 100 test points and standardize X and y to zero mean and unit variance using only training-set statistics. Kernel bandwidth γ is chosen by the median heuristic on 
+
+∥xi − xj ∥2 over up to 500 random subsamples. Observation noise σn = 0 .3, 10 seeds, headline sensitivity |αiαj | pre-committed. We report paired t-test p-values against uniform. 
+
+B.3 Floor ablation (Figure 6). Dense synthetic GP-prior data with ntr = 200 , 5 seeds, ρ ∈ { 0, 0.1, 0.2, 0.5, 0.7}. All other settings as in C.1. The AQKA-GP variant is |αiαj |.
+
+B.4 NLL convergence (Figure 7). We measure 
+
+|L ( bK; y) − L (K; y)| as a function of B, with L the negative log marginal likelihood (6). Two settings (planted-sparse and dense), ntr = 200 , 8 seeds. Kernel Frobenius error reported as ∥ bK − K∥F /∥K∥F .
+
+B.5 BO surrogate quality (Figure 8). For each benchmark function (Branin in [0 , 1] 2, Hartmann-3, Hartmann-6), we sample ntr = 120 uniformly random query points, evaluate the function under additive Gaussian noise σn = 0 .05 , fit a GP with γ = 2 (well-tuned for the unit cube), evaluate EI on ncand = 2000 uniform random candidates, and report the function value at the argmax-EI candidate minus the known global minimum. 8 seeds. 
+
+B.6 Full BO loop (Figure 9). Hartmann-6 in [0 , 1] 6.
+
+ninit = 30 uniform initial queries, T = 20 BO iterations, 
+
+Biter = 5 × 10 5 shots per iteration. At each iteration: re-fit GP with γ = 2 , σn = 0 .05 under the chosen allocator; evaluate EI on ncand = 1000 uniform random candidates; pick argmax-EI; observe true function value with σn = 0 .05 
+
+noise; append to dataset. Report simple regret min t yt − f ∗.
+
+8 seeds. 
+
+B.7 Online streaming (Figure 10). T = 60 streaming steps after a 30 -point warm-up. At each step the GP is refit from scratch (so the training set grows by one each step), 
+
+Bstep = 2 ×10 5, d = 4 , γ = 0 .5, σn = 0 .3. Running test MSE is the cumulative squared residual averaged over steps 
+
+1: t. 6 seeds. 
+
+B.8 Sparse VFE (Figure 11). ntr = 200 , m = 30 induc-ing points selected as a uniform random subset of training inputs; dense GP-prior data; σn = 0 .3. The kernel budget covers m(m + 1) /2 + nm = 6465 entries. Sensitivities fol-low Eq. (23); uniform floor over both blocks (treated as one entry list). 6 seeds. 
+
+B.9 N -scaling (Figure 12). ntr ∈{50 , 100 , 200 , 400 , 600 }, B = 50 npairs (so B scales with n2). 5 seeds per n. Dense synthetic GP-prior data. 
+
+B.10–13 Extension experiments (Bayesian quadrature, heteroscedastic GP, hyperparameter learning, multi-output GP). These are detailed where the correspond-ing results are reported in Section “Extensions”. For each: 
+
+ntr = 200 (or 120 for BQ), 6 seeds, dense GP-prior data unless otherwise noted. 
+
+B.14 Quantum-kernel studies (Figure 13). We replace the RBF kernel of B.1–B.13 with a genuine quantum fi-delity kernel K(xi, x j ) = |⟨ ϕ(xi)|ϕ(xj )⟩| 2 evaluated by statevector simulation. To approximate device-induced ker-nel decay we apply a 5% depolarizing channel ( Kij 7 →
+
+0.95 Kij + 0 .025 ) before layering Bernoulli shot noise. The figure reports three sub-studies, all with 5 seeds and reps = 2 .
+
+Study 1 (UCI through ZZ). For each dataset in {energy ,
+
+concrete , kin8nm } we take the first q features (standard-ized then squashed to [0 , π ] via tanh ), feed them into a q-qubit ZZ feature map with full entanglement and q ∈ { 4, 6, 8},and run AQKA-GP at ntr = 60 , nte = 40 , B = 64 npairs .
+
+Study 2 (feature-map sweep). On planted-sparse synthetic data at q = 4, ntr = 50 , nte = 30 
+
+we compare four feature maps from Qiskit: 
+
+ZZFeatureMap(entanglement="full") ,
+
+ZZFeatureMap(entanglement="linear") ,
+
+PauliFeatureMap(paulis=["Z","ZZ"]) ,
+
+PauliFeatureMap(paulis=["Y","YY","ZZ"]) .Budget multipliers 50 and 200 .
+
+Study 3 (scale). On planted-sparse synthetic data at q = 4 
+
+ZZ-full, we vary ntr ∈ { 40 , 80 , 120 } at B = 100 npairs . The number of anchors scales as max(5 , n tr /10) .
+
+Hyperparameters. The choices above ( ρ = 0 .5, ρw =0.1) were selected from the floor-ablation grid (Figure 6) and held fixed across all other experiments. No per-experiment tuning was performed. 
+
+Software. Experiments are implemented in NumPy (≥ 2.0). UCI datasets are loaded through 
+
+sklearn.datasets.fetch_openml , and the ZZ-feature-map kernels are evaluated via Qiskit 
+
+ZZFeatureMap statevector simulation. Compute: server runs on a 40 -core CPU node. Seeds are deterministic via NumPy’s default_rng(seed) .

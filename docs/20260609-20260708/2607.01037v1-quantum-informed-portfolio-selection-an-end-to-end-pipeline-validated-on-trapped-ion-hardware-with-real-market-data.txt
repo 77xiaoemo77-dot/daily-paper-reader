@@ -1,0 +1,1046 @@
+Title: Quantum-Informed Portfolio Selection: An End-to-End Pipeline Validated on Trapped-Ion Hardware with Real Market Data
+
+URL Source: https://arxiv.org/pdf/2607.01037v1
+
+Published Time: Thu, 02 Jul 2026 01:26:27 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# Quantum-Informed Portfolio Selection: An End-to-End Pipeline Validated on Trapped-Ion Hardware with Real Market Data 
+
+Romina Yalovetzky §,1, ∗ Martin J. A. Schuetz §,2, 3 Zichang He, 1 Jiayu Shen, 1 Yue Sun, 1
+
+Rudy Raymond, 1 Shauna Sahay, 4 Kishore Perla, 4 Ruben S. Andrist, 2 Grant Salton, †
+
+Helmut G. Katzgraber, 5, † Roger Bongiovanni, ‡ Niraj Kumar, 1 and Rob Otter 1
+
+> 1
+
+Global Technology Applied Research, JPMorgan Chase, New York, NY 10017 USA 
+
+> 2
+
+Amazon Advanced Solutions Lab, Seattle, Washington 98170, USA 
+
+> 3
+
+AWS Center for Quantum Computing, Pasadena, CA 91125, USA 
+
+> 4
+
+JPMorgan Chase, New York, NY 10017 USA 
+
+> 5
+
+55 North Management ApS, København, Denmark 
+
+(Dated: July 2, 2026) Portfolio diversification—a cornerstone of modern investment management—can be formulated as a Maximum Independent Set (MIS) problem on asset correlation graphs. Solving this problem at scale is computationally challenging, motivating the exploration of quantum algorithms for prac-tical financial optimization. We propose an end-to-end pipeline leveraging qReduMIS, a recursive hybrid quantum-classical algorithm. Rather than using quantum optimization to directly produce a final solution, qReduMIS leverages independent set measurements from the Quantum Approxi-mate Optimization Algorithm (QAOA) to identify frozen nodes—vertices likely to belong to optimal solutions—thereby guiding and unblocking subsequent (provably optimal) classical reductions on the remaining graph. We benchmark qReduMIS on real financial data from four major market indices with up to 225 assets, executing experiments on Quantinuum’s 98-qubit trapped-ion Helios system, with QAOA circuits acting on kernels of up to 78 qubits and 1016 two-qubit gates. While standalone QAOA fails to find the optimal solution for two of the largest indices (S&P 100 and Nikkei 225), qReduMIS achieves success probabilities of 0.40 and 0.95 , respectively, with average approximation ratios ≥ 0.96 across all four indices. We perform a systematic benchmark on the Quantinuum H2-1 noisy emulator over 73 asset correlation graphs of varying size showing that, for p = 2 QAOA lay-ers, the optimal time-to-solution scaling exponent of qReduMIS is 3.2 times smaller than that of standalone QAOA. 
+
+I. INTRODUCTION 
+
+Diversified portfolio construction is fundamental to balancing risk and return in finance [1–3]. A central challenge is selecting a subset of assets from a vast and ever-changing universe such that the resulting portfolio is robust to market fluctuations and avoids excessive expo-sure to correlated risks [4–6]. A powerful abstraction for this task is the Maximum Independent Set (MIS) prob-lem, a paradigmatic NP-hard combinatorial optimization problem [4, 7–12]. In the resulting formulation—which we term the portfolio selection problem (PSP)—assets are represented as nodes in an asset correlation graph, with edges connecting pairs whose correlation exceeds a given threshold; the MIS then identifies the largest subset of mutually uncorrelated assets [4, 11, 12]. Crucially, these asset correlation graphs are dense, exhibit non-local con-nectivity, and have heterogeneous degree distributions— structural properties that differ fundamentally from the sparse, regular, or geometrically constrained graphs typ-ically studied in combinatorial optimization.     
+
+> ∗Corresponding author: romina.yalovetzky@jpmchase.com.
+> †Work performed while at Amazon Advanced Solutions Lab.
+> ‡Work performed while at JPMorgan Chase, New York, NY 10017 USA.
+> §These authors contributed equally.
+
+Traditional methods for solving MIS, including ex-act algorithms and heuristics, often struggle to scale to the non-local graphs arising in financial applications [13, 14], where edges encode pairwise correlations that do not respect any underlying local structure. Recent advances in quantum computing have opened new av-enues for tackling such hard combinatorial optimization problems. Quantum optimization algorithms such as Quantum Annealing (QA) [15–19] and Quantum Ap-proximate Optimization Algorithm (QAOA) [20, 21] of-fer potential speedups, but face significant challenges: both exhibit suppression of success probability with in-creasing instance hardness—of which problem size is one driver. While there has been great efforts in protect-ing quantum optimization algorithms with error miti-gation and correction [22–25], this is a challenge that persists even without hardware noise [26–28] and can drop to zero for hard problems [28, 29]. Previous exper-imental demonstrations of QAOA have spanned a range of hardware platforms and tackled a variety of com-binatorial problems—MaxCut on superconducting pro-cessors [30, 31], long-range Ising and weighted MaxCut problems on trapped-ion hardware [32–35], and MIS on unit-disk graphs using Rydberg atom arrays [28, 36], as well as more recent gate-based MIS demonstrations on superconducting processors [37]. Despite this breadth, the structure of most of the instances considered has been limited: the graph families considered are either 
+
+> arXiv:2607.01037v1 [quant-ph] 1 Jul 2026
+
+2hardware-native (e.g., unit-disk graphs on neutral-atom geometries) or low-density and regular (e.g., random 3-regular MaxCut). None of these classes captures the dense, non-local, heterogeneous-degree structure charac-teristic of correlation-based graphs arising in real-world applications such as portfolio selection. Hybrid quantum-classical algorithms have emerged as a promising alternative [38–41], combining classical logic with quantum subroutines that leverage the sam-pling capabilities of quantum hardware. For MIS, Finž-gar et al. [39] proposed the Quantum-Informed Recursive Optimization (QIRO) framework, and Wybo et al. [42] introduced a quantum-enhanced greedy algorithm for regular graphs, confining each quantum call to light-cone subgraphs of at most 10 qubits on a 20-qubit supercon-ducting device. Their approach exploits locality natu-rally suited to sparse graphs but does not readily extend to dense, non-local instances. The recently proposed qReduMIS algorithm [29] inte-grates exact classical reduction techniques with a Quan-tum Processing Unit (QPU) acting as a co-processor that identifies so-called “frozen” nodes—nodes with high (or low) marginal probability of belonging to a maximum in-dependent set—thereby unblocking subsequent classical reductions. This framework has demonstrated the po-tential to overcome the exponential suppression of suc-cess probability observed in QA and Simulated Annealing (SA) for MIS on random unit-disk graphs, though its ap-plicability to structured, real-world graphs remained an open question for two reasons: first, the original imple-mentation relied on quantum annealing hardware whose limited qubit connectivity [43] cannot natively embed the dense, non-local topology of real-world graphs such as market correlation networks [4]; and second, the perfor-mance of the frozen-node identification mechanism was validated only on synthetic unit-disk instances, whose ge-ometric structure and sparsity differ fundamentally from the heterogeneous, dense graphs arising in practical ap-plications. In this work, we directly address this gap by present-ing an end-to-end pipeline for quantum-informed portfo-lio selection that builds on and extends the qReduMIS framework to gate-based QAOA. We demonstrate this pipeline on real asset correlation data across four major stock indices with up to 225 assets, on Quantinuum’s 98-qubit trapped-ion Helios system—with QAOA circuits acting on kernels of up to 78 qubits. Our contributions are three-fold: 
+
+• End-to-end demonstration on hardware. We deploy the full pipeline—from asset correlation data to diversified portfolio selection—on trapped-ion hardware across four major stock indices. No-tably, standalone QAOA fails to find the optimal solution for the two largest indices, while qRedu-MIS (powered by QAOA) achieves success proba-bilities of up to 0.95 with average approximation ratios ≥ 0.96 across all four indices. 
+
+• Algorithmic extension to gate-based devices. 
+
+Market graphs exhibit dense, non-local connectiv-ity that exceeds the capabilities of typical quantum annealing hardware. At the algorithmic level, we extend qReduMIS from a quantum annealing algo-rithm [29] to gate-based QAOA. At the hardware level, we deploy the resulting pipeline on trapped-ion devices, whose all-to-all qubit connectivity is naturally suited for the non-local structure of mar-ket graphs—in contrast to Rydberg annealers with local (unit-disk) connectivity. 
+
+• Rigorous benchmark. We empirically evalu-ate the pipeline across multiple figures of merit on Quantinuum’s noisy emulator of the H2-1 device, demonstrating that qReduMIS scales significantly better with problem size than standalone QAOA— reducing the optimal TTS scaling exponent by 3.4
+
+times for p = 2 QAOA layers. The remainder of this paper is organized as follows. In Section II, we formalize the portfolio selection problem as the MIS problem, Section III introduces the quantum-informed pipeline to tackle these problems, Section IV discusses the main numerical results, Section V details the methodology, and Section VI concludes with a dis-cussion of implications and future directions.  
+
+> II. PROBLEM FORMULATION
+
+We first formalize our problem statement of select-ing multiple financial assets within the framework of the Maximum Independent Set (MIS), which is a well-known graph problem in theoretical computer science. 
+
+Definition: Portfolio Selection Problem (PSP). 
+
+For a given universe of N assets with inter-asset corre-lations C = [ cij ] ∈ RN ×N , and correlation sensitivity (or threshold) 0 ≤ λ ≤ 1, find the largest (diversified) basket of assets, with no correlation between any pair of selected assets exceeding, in absolute value, a maximum level λ.
+
+The use of the absolute value reflects the role of this step as diversification , not hedging: two strongly anti-correlated assets are not independent sources of return but mirror images of each other, and treating them sym-metrically with strongly positively correlated pairs en-sures that the selected basket carries genuinely indepen-dent information. If desired, it is straightforward to ad-just this choice in our pipeline as to allow the selection of anti-correlated assets in our basket. It is straightforward to see that solving PSP is equiv-alent to solving MIS on an unweighted graph G = ( V, E)
+
+derived from a market graph [11, 12, 44], where nodes 
+
+V represent financial assets and edges are determined by pairwise correlations. Specifically, an edge (i, j ) ∈ E is placed between assets i and j whenever their correlation 
+
+cij satisfies |cij | > λ , for a given threshold λ. Hereafter, we use “asset correlation graph,” “asset graph,” and “mar-3ket graph” interchangeably to refer to this unweighted graph. 
+
+The portfolio selection problem as MIS (PSP-MIS) on market graphs. Let xi = 1 if asset (node) 
+
+i = 1 , . . . , N is selected as part of the diversified basket, and xi = 0 otherwise. Given the market graph G, we can then formalize our PSP optimization problem as an op-timization problem in Quadratic Unconstrained Binary Optimization (QUBO) form, with a Hamiltonian that in-cludes a (soft) penalty to non-independent configurations as 
+
+H = − X
+
+> i
+
+xi + U X
+
+> (i,j )∈E
+
+xixj , (1) with a negative sign in front of the first term because the largest independent set is searched for within a min-imization problem, and where the penalty parameter U
+
+enforces the independence constraints. Throughout this paper, we take the same setup as Ref. [45] and set U = 1 .For U > 1 the ground state of H is guaranteed to be a MIS; at U = 1 the maximum independent sets re-main ground states but are degenerate with certain non-independent configurations. Since our post-processing step (Appendix E) repairs independence-constraint vio-lations, feasibility is enforced after sampling rather than through the penalty itself, making U = 1 a sufficient choice. By doing this, the PSP is formulated as the well-known (NP-hard) MIS problem [46], where the goal is to find the largest independent set in a graph (i.e., the largest subset of vertices such that no two vertices in this set are con-nected by an edge), with the independence constraint en-suring the absence of strongly correlated assets (relative to the threshold parameter λ) in the diversified basket. From now on, we refer to this problem as PSP-MIS. Note that the correlation among the assets can be es-timated by different methods. In this work, we focus on the pair-wise correlation of the daily returns, as explained in detail in Appendix B. 
+
+Portfolio management. The PSP framework en-ables risk diversification by identifying the largest sub-set of low-correlated assets for portfolio inclusion, which can be integrated into a multi-stage management pipeline where portfolio selection precedes composition [12]. Max-imizing this set can potentially enhance flexibility, al-lowing managers to optimize allocations, adjust sector exposures, and respond to market changes. The PSP solver also reduces the problem size for downstream op-timization, potentially addressing scales beyond stan-dard mixed-integer programming. Furthermore, we de-rive and discuss explicit bounds on the portfolio qual-ity for two allocation strategies—uniform and inverse variance—which are commonly used and have been val-idated by backtesting on real-world data in previous work [12]; see Theorem 1 in Appendix B.  
+
+> III. END-TO-END PIPELINE FOR QUANTUM-INFORMED PSP-MIS
+
+We introduce an end-to-end pipeline for quantum-informed PSP-MIS which consists of three components as shown in Fig. 1. First, the inputs are PSP-MIS in-stances, which are represented by market graphs. Given a universe of N assets, their correlations expressed in a matrix C, and a correlation sensitivity (or threshold) λ,the asset (or market) graph is constructed. This is in-put into the qReduMIS algorithm. The qReduMIS algo-rithm is a recursive algorithm to solve the MIS problem for general graphs. qReduMIS performs a number of iter-ations invoking iteratively the classical computer for the (exact) reduction and then executing QAOA circuits for the resulting kernel graphs on the QPU, in this case a trapped-ion quantum computer. Frozen nodes are sam-pled from the QAOA measurements and their removal updates the kernel graph that is input to the next algo-rithm iteration. The final output is an MIS containing m
+
+diversified assets. These constitute the largest basket of assets whose pairwise correlations are, in absolute value, below the sensitivity λ. One can find other alternative in-dependent sets (portfolios) via simple postprocessing for portfolio diversification through local search. In practice this may be interesting because we can generate different portfolios of the same quality with little overhead. These diversified baskets can then serve as input to downstream portfolio construction and allocation stages, as discussed above. 
+
+The qReduMIS algorithm. Throughout this paper we use specific terminology to distinguish the different execution levels within qReduMIS (e.g., trial , iteration ,
+
+QPU call , qshot ); precise definitions are provided in the glossary in Table II in Appendix A. A diagram illustrat-ing how qReduMIS solves the MIS problem on an exam-ple graph is shown in Fig. 2. qReduMIS begins by apply-ing the classical reduction techniques to the input graph 
+
+G, producing a smaller kernel graph K while maintaining sets of selected and removed nodes. We primarily use ex-posed corner node removal, a simple yet effective kernel-ization method that efficiently reduces G to an irreducible kernel by removing exposed corner nodes (also known as simplicial vertices), which are guaranteed to be part of some maximum independent set (MIS) [43, 47, 48]. This process preserves optimality and can be generalized heuristically for weighted problems [29]. In Fig. 2 (b), node 1 is a so-called corner node and it is selected. Thus, its neighbor (node 2) cannot be in the solution and it is added to the set of removed nodes. With this, the reduced kernel K is identified, indicated in orange in Fig. 2 (c). Then, this kernel is input to the quantum hardware, as indicated in violet in Fig. 2 (d). A quantum optimization algorithm, in this case QAOA, is executed to generate independent set measurements. In this ex-ample, the measurements (after postprocessing to fix up violations) are shown in the inset table, indicating the nodes belonging to each independent set (bitstrings) and 4Input generation                
+
+> Asset Date Close Open …
+> AAA 2021 -03 -15 234.809998 234.960007
+> …
+> GGG 2025 -03 -15 72.716080 71.721026
+> Historical price information for universe
+> with 𝑵 assets across 𝑻 timestamps:
+> Generation of asset (or market) graph:
+> 1. Generate correlation matrix
+> 2. Apply correlation threshold 𝜆
+
+Hybrid qReduMIS algorithm 
+
+> Classical computer (CPU)
+> Exact reduction
+> Quantum computer (QPU)
+> Sampling of frozen nodes
+> QAOA on trapped -ion QPU Selection of corner nodes
+> Selection of
+> corner nodes
+> Removal of
+> subgraph
+> CCC
+
+Output and Postprocessing     
+
+> Final graph:
+> Output: Independent set of size 𝑚 ,
+> representing basket with 𝑚 diversified
+> financial assets (e.g., AAA, DDD, and FFF)
+> AAA
+> BBB
+> FFF
+> DDD
+> EEE
+> GGG
+> FFF
+> AAA
+> BBB
+> FFF
+> DDD
+> EEE
+> GGG
+> AAA
+> BBB
+> FFF
+> DDD
+> EEE
+> GGG
+> Optional diversification of solution pool
+> through local search:
+
+FIG. 1. End-to-end pipeline for quantum-informed portfolio selection given a universe of N assets. The input asset (or market) graph is generated from the correlation matrix C based on the assets’ returns across T timestamps (diagrammatically shown in the table) and the correlation threshold λ. This graph defines the input to the hybrid (recursive) qReduMIS algorithm to solve the PSP-MIS problem. qReduMIS intermixes exact reduction (in polynomial time) executed on classical hardware (CPU) and sampling of frozen nodes on the QPU, as to unblock the classical exact reduction wrapper when necessary. The set of frozen nodes is identified from quantum measurements (indicated as the output histogram) obtained through execution of QAOA circuits with the MIS Hamiltonian as cost Hamiltonian run on trapped-ion quantum hardware. The output is given by an independent set of size m that defines a diversified basket of m uncorrelated assets. Colored nodes represent one candidate solution, with the option to generate additional solutions via simple local search (as indicated by the arrows swapping selection of neighboring nodes). 
+
+the respective number of counts corresponding to those sets. The standard way of using QAOA, and most of the state-of-the-art quantum algorithms, is to perform an analysis over the independent set measurements with the goal of finding the optimal solution. With qReduMIS we propose to not only perform this to keep track of the best solution output by the hardware, but more importantly, we leverage these measurements to identify frozen nodes .These are nodes with a high probability of being either included in or excluded from optimal solutions, corre-sponding to what we define as the in-set and out-set cri-teria, respectively. This work focuses specifically on the in-set criterion and the selection of a single frozen node, though the approach can be extended to handle multiple frozen nodes simultaneously. To identify a frozen node, we observe the distribution of the marginal probability of each of the nodes from the QAOA measurements, as shown in the histogram in Fig. 2 (d’). In this case, node 4
+
+has the highest marginal probability (90%) and it is iden-tified as a frozen node and is selected to be in the solution and it is removed from the updated kernel graph. As a consequence of its selection, its neighbors (nodes 3 and 5) are removed as they cannot be part of the solution. With this, the kernel is updated for the next iteration and it consists of the three orange nodes in Fig. 2 (d’). Then, the next iteration starts with this updated kernel as in-put and the classical reduction is performed. Node 8 is now isolated and is selected, and node 6 is a pendant and is also selected while its neighbour 7 is removed. With this, the algorithm concludes as shown in Fig. 2 (e), and an optimal solution is found (nodes in green). Note that in the ideal setting, nodes 4 and 8 would have the same marginal probability. While several variants of qReduMIS are conceivable, ranging from greedy heuristics to exact branch-and-reduce-type algorithms, here we focus on a semi-greedy implementation thereof. It generates a subset of the top-ranked nodes and then randomly selects one of them. 
+
+Frozen node sampling. We propose a fundamen-tally different way of leveraging the independent set mea-surements, with the goal of correctly identifying frozen nodes whose removal produces an updated kernel that can be further reduced by the classical reduction. By keeping track of the largest independent set measured on the QPU, the case in which just one classical reduction, followed by standard QAOA, solves the problem to op-timality, can be recovered. But most interestingly, our approach can also find the optimal solution in the cases in which standalone QAOA over the first kernel graph cannot. Imagine that instead of measuring optimal solu-tions, the QPU outputs suboptimal solutions (e.g., with size less than three in the example of Fig. 2 these are solutions of size less than three). Still, it is likely that by looking at the marginal probabilities, we could identify node 4 as a frozen node, or any other ground-truth frozen node (i.e., one that belongs to at least one MIS). Note that the probability of sampling a frozen node is strictly larger than the probability of sampling the optimal solu-tion (refer to Theorem 2 in Appendix D). Thus, unlike in the example, the optimal solution is not observed in the measurement; however, steps in Fig. 2 (d’) and (e) 5                                      
+
+> FIG. 2. Schematic of the qReduMIS algorithm on an 8-node graph G(illustrative; not experimental data). (a) Original graph G.
+> (b) Classical reduction: vertex 1(degree 1) is selected; its neighbour 2is removed. (c) The kernel K(orange) is forwarded to the quantum subroutine. (d) QAOA is executed on K(violet); measured independent sets and counts are shown in the inset. (d’) Marginal probabilities computed from the measurements reveal node 4 as the top-ranked node. Following a greedy strategy over the marginals, it is selected and its neighbours {3,5}removed, triggering a new classical reduction. In practice, ties in marginal probability are broken at random. (e) Classical reduction fully resolves the remaining subgraph, yielding the maximum independent set I∗={1,4,6,8}of size 4. A simple postprocessing step based on local search (e.g., swapping node 1
+> with 2or node 6with 7) can further enhance solution diversification while preserving solution quality.
+
+proceed identically, and the algorithm still outputs an op-timal solution at the end. In this case, qReduMIS would succeed in finding the optimal solution while standalone QAOA only finds suboptimal solutions. We emphasize that qReduMIS is not merely a pre-processing technique; rather, it introduces a novel way to leverage the output of quantum optimization algo-rithms. qReduMIS leverages a hybrid reduce-and-sample 
+
+paradigm; it goes through iterations of classical reduc-tion followed by the routine executed on the QPU. The number of iterations depends on the problem itself and on the trial, as this is a semi-greedy algorithm. The number of independent set measurements used to build the distribution of marginal probabilities for each node is a hyperparameter. We call this value qshots ,which represents the number of quantum shots (mea-surements) performed in each call to the QPU. The opti-mal number of qshots can vary depending on the specific problem instance and the stage of the algorithm (iter-ation) when the QPU is called. In practice, one could implement a scheduler to adjust qshots dynamically. For more details, see Appendix C. Market graphs tend to be highly interconnected, as most assets exhibit some degree of correlation, and many implicit correlations exist (e.g., two assets may be cor-related through a shared intermediary). After apply-ing the correlation sensitivity (or threshold) λ to obtain the (unweighted) market graphs, these become sparser but still substantially connected. Crucially, the result-ing edges do not necessarily reflect local graph structure, producing a non-trivial topology that lacks regularity or locality. This non-local edge structure of market graphs places specific demands on the quantum hardware: abackend with high qubit connectivity is strongly pre-ferred, as limited connectivity would require additional overhead to implement the necessary gate operations be-tween non-neighboring qubits. This motivates our choice of trapped-ion quantum processors, which offer all-to-all qubit connectivity and are thus naturally suited to the dense, non-local structure of unweighted (thresholded) market graphs. To generate independent-set samples for identifying frozen nodes, we use QAOA [20, 21], which is a gate-based variational algorithm, as the quantum sub-routine in qReduMIS. QAOA is one of the most widely studied quantum algorithms for combinatorial optimiza-tion on near-term, gate-based hardware [20], with exper-imental demonstrations on both superconducting qubits [30, 31] and trapped ions [32]. Note that QAOA parameters can, in principle, be opti-mized independently via a classical-quantum variational loop and subsequently incorporated into the qReduMIS framework as fixed circuit parameters. Although such optimization is in general a challenging task [49], pre-trained parameters combined with established scaling techniques [50, 51] can be employed to mitigate this dif-ficulty. In this work, we bypass the optimization step entirely by employing pre-trained parameters scaled an-alytically to each kernel’s average degree [52]. This is suf-ficient because qReduMIS does not rely on the QPU to produce exact solutions but rather leverages it to detect 6signatures of frozen nodes—a task for which QAOA per-forms remarkably well even without fully optimized pa-rameters. This choice extends the qReduMIS framework to gate-based quantum devices, complementing prior im-plementations on analog quantum architectures.  
+
+> IV. EXPERIMENTAL RESULTS ON TRAPPED-ION QUANTUM HARDWARE
+
+We now assess the performance of qReduMIS experi-mentally. Our evaluation is organized in two parts. In Section IV A, we demonstrate the end-to-end pipeline at scale on Quantinuum’s 98-qubit trapped-ion Helios sys-tem, solving PSP-MIS instances derived from four major stock indices with up to 225 assets. In Section IV B, we perform a systematic benchmark on the Quantinuum H2-1 noisy emulator, studying how performance scales with the problem size and hardness. Throughout, we compare standalone QAOA against a semi-greedy implementation of qReduMIS powered by QAOA with the in-set frozen-node selection strategy. To ensure a fair comparison, both methods are eval-uated over the first kernel graph K—the reduced graph obtained after the initial classical reduction. This choice grants standalone QAOA the same classical preprocess-ing benefit used by qReduMIS, so that any observed ad-vantage cannot be attributed to the reduction alone. It also enables comparison at larger problem sizes, since the kernel fits within the qubit budget of current devices. Im-portantly, all problem instances considered in this work are not fully reducible, meaning that the classical reduc-tion rule alone is insufficient and at least one QPU call is required to find the optimal solution; this ensures that the quantum component plays a non-trivial role in ev-ery instance. As shown in Ref. [29], qReduMIS with a QPU subroutine outperforms random frozen-node selec-tion, confirming that the quantum measurements pro-vide strategically useful information beyond a purely ran-dom baseline. Despite this favorable baseline for stan-dalone QAOA, we show that qReduMIS achieves superior performance across multiple figures of merit, confirming that its advantage stems from the iterative interplay be-tween classical reduction and quantum subroutine calls, and from its novel use of QPU measurements to iden-tify frozen nodes rather than to directly sample optimal solutions. All QAOA measurements—both in standalone mode and within qReduMIS—undergo identical postpro-cessing that repairs independence-constraint violations, ensuring that any observed performance difference is at-tributable solely to the algorithmic framework. More de-tails are provided in Section V. Our benchmark focuses on comparing qReduMIS against standalone QAOA to assess the value of the hybrid reduce-and-sample paradigm relative to direct quantum optimization; a comparison against state-of-the-art classical solvers is included for completeness in Section IV B, though the primary objective is to establish that qReduMIS extracts significantly more useful infor-mation from limited QPU resources than standard quan-tum approaches. 
+
+PSP-MIS instances. We consider PSP-MIS in-stances constructed from assets belonging to major stock indices. We utilize the weekly returns to construct the correlation matrices using the datasets from Chang 
+
+et al. [53], made available via the open-source reposi-tory of Knazakis [54]. The sizes of these indices are re-ported in Table I. From these indices, we consider in-stances of varying hardness to study the performance of the proposed algorithm across the difficulty spec-trum. Problem hardness is driven by structural prop-erties of the instance—primarily problem size, graph density, and tree width [13]. However, hardness is not solely an intrinsic property of the instance: it also de-pends on the solver, since an instance that is challeng-ing for one algorithm may be easily solved by another. It has been empirically observed that, for local-update Markov-chain Monte Carlo (MCMC) methods such as simulated annealing and, through a related mechanism tied to the instance’s degeneracy structure, for quantum annealing, the conductance-like hardness parameter H
+
+captures instance difficulty [28, 29, 55]. It is defined as 
+
+H = D|MIS |− 1/(|MIS | · D|MIS |), where Dα denotes the degeneracy of the independent sets of size α. We in-clude an analysis of performance as a function of H in Appendix E 2. 
+
+Figures of merit. We evaluate three complemen-tary figures of merit. First we consider the end-to-end success probability PMIS defined as the fraction of in-dependent trials returning a maximum independent set, which captures the success rate on a single trial of the algorithm. The second metric is the average approxima-tion ratio ⟨| IS |⟩ /|MIS |, quantifying average solution qual-ity. For standalone QAOA, the weighted average is over shot counts; for qReduMIS, it is over the outputs of each classical trial. The third is the optimal time-to-solution (optTTS) [56–59], which is used extract runtime scaling. This metric captures the trade-off between per-trial run-time and success probability, defined as 
+
+optTTS = min 
+
+> tf
+
+tf · ln(1 − pd)ln(1 − pS (tf )) , (2) where tf is the runtime of a single trial, pS (tf ) is the probability of finding the optimal solution within that runtime, and pd = 0 .99 is the target confidence. We mea-sure tf in cumulative quantum shots, treating each shot as a single unit of time; this uniform-cost model makes the reported optTTS for qReduMIS an upper bound on the wall-clock optTTS in practice. Full details on the runtime model for both standalone QAOA and qRedu-MIS are provided in Section V. Ground-truth solutions were obtained with OR-Tools [60]. 7                                                        
+
+> FIG. 3. Performance comparison of standalone QAOA (blue) and qReduMIS (green) on the first kernel Kfor four stock market indices (DAX, FTSE, S&P 100, Nikkei 225). Left: Success probability; Right: Average approximation ratio ⟨AR ⟩. Error bars indicate 95% bootstrap confidence intervals obtained via 10,000 resamples. For S&P 100 and Nikkei 225, standalone QAOA achieves PMIS = 0 . qReduMIS consistently achieves higher success probability, and near-optimal approximation ratio across all indices. Standalone QAOA uses 100 quantum shots; qReduMIS uses 20 classical trials with 10 quantum shots per QPU call, requiring no more than five QPU calls. All experiments use p= 2 QAOA layers on Quantinuum’s Helios hardware (98 qubits). Stock Market Size λKernel KQAOA Circuit Nodes Density Qubits Gate Depth DAX 100 85 0.24 49 0.29 49 692 104 FTSE 100 89 0.32 45 0.28 45 574 82 S&P 100 98 0.24 68 0.20 68 914 96 Nikkei 225 225 0.62 78 0.17 78 1016 110 TABLE I. PSP-MIS instances and QAOA circuit character-istics for the four stock market indices. For each index, the table reports the total number of assets (Size), the correla-tion threshold λ, the number of nodes and edge density of the first kernel graph Kobtained after classical reduction, and the QAOA circuit characteristics (number of qubits, 2-qubit gate count, and 2-qubit circuit depth) corresponding to K.The number of qubits equals the kernel size |K| , since QAOA acts directly on the kernel graph. All circuits use p= 2 QAOA layers. This circuit is used in the first QPU call of qReduMIS; subsequent iterations operate on progressively smaller kernels and thus require strictly smaller circuits.
+> A. Large-scale quantum-informed PSP-MIS on hardware
+
+We evaluate the end-to-end pipeline on Quantinuum’s 98-qubit trapped-ion Helios system. To the best of our knowledge, this constitutes one of the largest gate-based QAOA demonstrations on real-world combinatorial opti-mization instances to date. We consider the four stock market indices and, for each one, select a correlation threshold λ such that the first kernel graph K fits within the qubit limit and its density keeps the 2-qubit gate count below 1000. Table I reports the characteristics of each kernel and the corresponding QAOA circuit. We set p = 2 QAOA layers for both standalone QAOA and the QAOA component of qReduMIS, with parameters scaled following Eq. 5. Note that the same circuit is used for both standalone QAOA and the first QPU call of qReduMIS; subsequent qReduMIS iterations operate on progressively smaller kernels, requiring strictly shallower circuits. Importantly, the classical reduction step is not merely a convenience for fair comparison: in the case of the Nikkei 225 (225 assets), encoding the full input graph would require 225 qubits, exceeding the 98 -qubit capac-ity of the Helios device, so the instance is addressable on this hardware only because qReduMIS operates on the reduced kernel ( |K| = 78 qubits). For the remaining in-dices, the reduction yields substantially smaller and shal-lower QAOA circuits than would be required to encode the input graph directly. For standalone QAOA we use 100 quantum shots. Due to practical constraints on quantum hardware access, we set the number of classical shots of qReduMIS to M =20 and report all figures of merit with 95% bootstrap confidence intervals (10,000 resamples with replacement) to quantify the resulting statistical uncertainty. Each QPU call uses qshots = 10 quantum shots. As discussed, 
+
+qshots is a hyperparameter; we have observed that for the problem instances considered, qshots = 10 achieves a good trade-off between the total number of QPU calls to solution ( tf ) and the end-to-end success probability. This trade-off is captured by the optTTS calculation, where 
+
+R(tf ) (Eq. 6) balances the two quantities. Fig. 3 presents two figures of merit—end-to-end success probability and average approximation ratio ⟨AR ⟩—for each stock market index. All point estimates are accom-panied by 95% bootstrap confidence intervals. We em-ploy an enhanced postprocessing strategy that not only removes constraint-violating nodes but also greedily rein-serts non-conflicting ones. This grants standalone QAOA an additional advantage, since qReduMIS does not rely on sampling the optimal solution directly but rather on identifying frozen nodes via measurement statistics. De-spite this enhanced postprocessing, standalone QAOA fails to sample the optimal solution within 100 shots for 8         
+
+> FIG. 4. QAOA measurements on the DAX 100 kernel ( |K| = 49 nodes, 100 shots on Quantinuum Helios) reveal a strong frozen-node signal despite low success probability. Left: Probability distribution over independent-set sizes from standalone QAOA; the dashed red line marks the ground-truth |MIS |and yellow bins indicate the top-2 largest sizes measured. The probability of sampling the optimal solution is below 10%. Right: Normalized marginal probability of each kernel node, computed over the top-2 largest independent sets (yellow bins on left panel). Green bars indicate in-set nodes (belonging to at least one MIS) and grey bars indicate out-set nodes (absent from all MIS solutions). Approximately 96% of the marginal probability mass concentrates on ground-truth in-set nodes, confirming that QAOA measurements carry sufficient signal for qReduMIS even when the optimal solution is rarely sampled directly. The six bars with red edges mark the top-6 in-set frozen nodes, candidates for selection by marginal probability; all six are ground-truth in-set frozen nodes.
+
+the S&P 100 and Nikkei 225 indices, yielding PMIS = 0 .In contrast, the noisy signal produced by the hardware remains sufficient for qReduMIS to identify frozen nodes and iteratively solve the instance to optimality. Across all four indices, qReduMIS achieves a dramatically higher success probability than standalone QAOA. The confidence intervals on PMIS are obtained by a nonparametric percentile bootstrap over the independent trials (resampling the n trials with replacement and tak-ing the 2.5–97 .5 percentiles of the resulting ˆPMIS ). Their width therefore reflects binomial sampling uncertainty: it scales as n−1/2 and is largest for instances with in-termediate success probability, where the per-trial vari-ance is maximal. Because qReduMIS is evaluated over 
+
+n = 20 independent runs, its intervals are correspond-ingly coarser than those of QAOA. For completeness, we report the optTTS in Table III of Appendix E 2. The average approximation ratio further underscores the gap. As shown in Table III in Appendix E 2, qRedu-MIS consistently achieves ⟨AR ⟩ ≥ 0.96 , whereas stan-dalone QAOA ranges between 0.73 and 0.83 , indicat-ing that even after postprocessing, the independent sets produced by standalone QAOA tend to be substantially smaller than the optimum. Regarding the number of QPU calls required for qRe-duMIS, a single trial of qReduMIS runs until the stopping criterion is met or the kernel becomes fully reducible. Refer to Appendix E 1 for a discussion. Across the four indices considered, no more than five QPU calls are re-quired for all their respective trials to reach the optimal solution. With qshots = 10 quantum shots per QPU call, this means that no more than a total of 50 quantum shots are required for an end-to-end execution of qReduMIS. 
+
+Frozen-node signal from QAOA measurements. 
+
+We illustrate the quantum mechanism underlying qRe-duMIS with the experimental results corresponding to the DAX 100 index. Standard QAOA is performed to produce a distribution of independent set measurements with the hope that the largest solution sampled corre-sponds to the optimal solution. We observe on the left panel of Fig. 4 that the optimal solution is indeed be-ing measured but its probability is very low, below 10% .In qReduMIS, we instead observe the marginal probabil-ity distribution over the nodes in the kernel to identify candidates for selection. We identify them by recogniz-ing frozen nodes via their marginal probabilities: in-set frozen nodes exhibit high marginal probability, indicating a strong likelihood of belonging to the independent set, while out-set frozen nodes exhibit low marginal probabil-ity, indicating consistent exclusion. A correct identifica-tion means that the selected in-set (out-set) frozen nodes coincide with ground-truth in-set (out-set) nodes—that is, nodes present in at least one MIS solution and nodes absent from every MIS solution, respectively. We enumerated all degenerate MIS solutions in order to identify the ground-truth in-set and out-set nodes. We observe that although standalone QAOA success probability is low, approximately 96% of the normalized marginal probability mass is concentrated on ground-truth frozen (in-set) nodes (as shown on the right panel with the green bars). qReduMIS exploits this concentra-tion: rather than requiring a full MIS to be sampled in a single shot, it suffices that one ground-truth in-set (out-set) is selected as randomly sampled from the top-ranked marginal nodes (the ones with the red edges). Specifi-cally, we select the M = 4 highest-marginal-probability nodes and randomly choose one as the frozen node to fix, removing it together with its neighbors. Note that M
+
+should be adaptive: for small kernels, a large M may ex-ceed the number of candidate nodes. This semi-greedy se-lection introduces diversity across trials while still lever-aging the strong frozen-node signal in the marginal dis-9tribution. These results demonstrate that qReduMIS effectively solves PSP-MIS at practical scale on current hardware; we next investigate how its performance scales systemat-ically with the problem size and hardness.  
+
+> B. Systematic benchmark on PSP-MIS instances
+
+We assess the performance of the end-to-end pipeline to solve PSP-MIS instances of different hardness using the Quantinuum’s noisy emulator of the H2-1 device. We generate PSP-MIS instances of sizes ranging from 26 to 44 in increments of two, and for each size, we randomly select assets from the Nikkei 225 index to make 20 prob-lem instances per problem size. We consider different problem sizes and set λ equal to the mean of all entries of the correlation matrix C:
+
+λ = 1
+
+N 2
+
+X
+
+> i,j
+
+|Cij |, (3) where N is the number of assets. Note that the value of λ depends on the problem instance. The PSP-MIS instances are reduced, resulting in 73 
+
+instances that are not fully reducible, spanning both dif-ferent sizes and first kernels of different densities. We discuss the reduction factor over these instances as well as densities of both the input graph and the first kernel in Appendix E 2. These 73 non-trivially-reducible instances form the testbed for both standalone QAOA and qRe-duMIS. Both methods use the same QAOA parameters, scaled following Eq. 5, and the same number of layers p.We consider p = 2 and p = 6 . The number of quantum shots employed to assess the performance of standard QAOA is 500 . The number of qshots in qReduMIS is a hyperparameter that can, in principle, be fine-tuned and depend on the kernel at each iteration. For this experi-ment, the qshots in qReduMIS was fixed to 5. The clas-sical shots (or trials) performed for qReduMIS for each problem instance was 20 .In the following, we assess the performance of qRedu-MIS powered by QAOA against standalone QAOA, eval-uating both the optTTS and the expected approximation ratio. Across both metrics, qReduMIS consistently out-performs standalone QAOA. For p = 2 , qReduMIS ex-hibits a significantly improved optTTS scaling exponent and a higher average approximation ratio. Increasing to 
+
+p = 6 improves both methods. This is a promising trend, as advances in hardware fidelity will progressively enable the reliable execution of deeper QAOA circuits, further benefiting qReduMIS and standalone QAOA alike. In the setting of p = 6 , qReduMIS continues to achieve a significantly higher approximation ratio; however, in this regime the optTTS of qReduMIS shows no clear scaling trend over the problem-size range considered, precluding a meaningful fit. The optTTS as a function of the (first) kernel size is shown in Fig. 5. We employed the bootstrap method with 10,000 resamples to estimate a 95% confidence interval for the optTTS calculations of the two methods. Each panel corresponds to a number of layers in the QAOA implementations, both as standalone and as part of qRe-duMIS. We compare the performance of qReduMIS pow-ered by QAOA to standalone QAOA. The number of quantum shots employed by QAOA as part of qRedu-MIS is a hyperparameter. We benchmarked optTTS for 
+
+qshots ∈ { 5, 10 , 25 , 50 , 250 , 500 } and report the results for qshots = 5 , which yields the best optTTS scaling. Refer to Fig. 12 in Appendix for a detailed analysis for one particular problem instance. For p = 2 both standalone QAOA and qReduMIS ex-hibit an exponential scaling of optTTS as a function of the size of the (first) kernel |K| , as shown with the fit-tings in the figure. The Ordinary Least Squares (OLS) regression is over the median values of each single prob-lem instance, corresponding to 95 % bootstrap confidence intervals. Refer to Appendix E 2 for details of the fits. The exponent of the scaling for QAOA is significantly reduced as p is increased from two to six, as expected. Note that for p = 2 , for some instances and trials, the suc-cess probability of standalone QAOA is null ( PMIS = 0 ), causing the optTTS to be infinite, which is indicated with the triangles showing ∞. We report the fraction of these among intervals of problem sizes in a heatmap in Fig. 9 in Appendix E 2. These points are therefore excluded from the fitting. Since the excluded instances correspond to the hardest cases—where QAOA fails entirely—the fit-ted scaling exponent for QAOA represents a lower bound on its true scaling difficulty; the actual performance gap between QAOA and qReduMIS is therefore likely larger than what the fits suggest. qReduMIS reduces the scaling exponent by a factor of 3.2 relative to standalone QAOA (βqReduMIS = 0 .164 versus βQAOA = 0 .524 ). Regard-ing the number of QPU calls in qReduMIS, Fig. 11 (left panel) in Appendix shows the number of QPU calls to solution remains consistently low, not exceeding 2 across all problem instances considered. In the case of p = 6 , qReduMIS shows a nearly con-stant optTTS. This is because, for most of the kernel sizes considered, qReduMIS solves the problem to opti-mality by performing a classical reduction followed by only a single QPU call and a subsequent reduction. This behavior is expected: although the success probability of standalone QAOA decays exponentially with kernel size, for kernels below size 18 the median success probabil-ity remains above ∼ 20% , and even a modest number of quantum shots suffices to either find the optimal solu-tion directly or correctly identify an in-set frozen node whose removal, together with its neighbors, unblocks the next classical reduction to reach optimality. Accordingly, the QPU calls to solution are concentrated around one, as shown in Fig. 11 (right panel) in the Appendix. It is only for larger kernel sizes that we observe a disper-sion towards higher values, producing a slight increase in the optTTS. Notably, we identify a crossing point be-yond which qReduMIS begins to outperform standalone 10                               
+
+> FIG. 5. Optimal time-to-solution (optTTS) as a function of the first kernel size |K| for standalone QAOA (blue circles) and qReduMIS (green squares) on PSP-MIS instances from the Nikkei 225 index. Left: p= 2 ;Right: p= 6 .Error bars denote 95% bootstrap confidence intervals on the median optTTS per problem instance. Dash-dotted lines show ordinary least squares exponential fits O(2 βK ), with scaling exponents reported in each legend. For p= 2 , the fitted exponents are
+> βQAOA = 0 .524 ±0.033 and βqReduMIS = 0 .164 ±0.018 , a 3.2times reduction (see Appendix E 2 for statistical tests). For p= 6 ,qReduMIS exhibits no statistically significant exponential scaling over the tested range. Upward triangles mark instances where QAOA failed to find any MIS (optTTS =∞); these are excluded from the fits, making the QAOA exponent a lower bound on its true value. Data points are horizontally offset by ±0.25 for visual clarity.
+
+QAOA for some instances, though this advantage is less pronounced than in the p = 2 case. One potential explanation is that the quantum-shot budget was kept the same as for p = 2 ; given the increased expressive-ness of the deeper circuit, fewer shots may be needed to achieve comparable or better frozen-node identification, and reducing the shot count would directly improve the optTTS. Regarding the scaling, we expect that a clearer decay in optTTS will emerge for larger problem sizes, enabling a more robust fitting of the scaling behavior. Significant dispersion in optTTS is observed for a given kernel size. This arises because each kernel-size bin ag-gregates instances from different input graphs G with varying kernel densities, and density is an additional driver of problem hardness [13]. The distribution of the kernel densities per kernel size is shown in the lower panel in Fig. 8 in the Appendix. To assess the quality of the solution estimation, we con-sider the average approximation ratio. Fig. 6 presents the average approximation ratio as a function of the (first) kernel size, with the input graph size shown on the sec-ondary x-axis. As before, results are reported for both 
+
+p = 2 and p = 6 . While QAOA exhibits a significant de-cline in performance as the problem size increases, qRe-duMIS remains robust. For p = 2 , a slight—though not statistically significant—decay is observed at larger sizes; however, the median per kernel size remains consistently equal to 1.
+
+Benchmark against classical solver. To contex-tualize the performance of our quantum-classical hybrid approach, we perform a benchmark over the same prob-lem instances with simulated annealing (SA), a well-established classical metaheuristic for combinatorial op-timization. We emphasize that the primary contribu-tion of this work is not to claim advantage over state-of-the-art classical solvers—indeed, SA is exceptionally effective on the instance sizes accessible to current quan-tum hardware. The SA results, reported in detail in Ap-pendix E 1, confirm that SA trivially solves most Nikkei market-graph instances at the scales considered here (ker-nel sizes K ≤ 22 ), with optTTS values clustering at the estimator floor of ≈ 2/3. As shown in Fig. 15, only a small fraction of instances yield non-trivial optTTS, which is insufficient to extract a reliable scaling exponent for SA at these sizes. We include this benchmark to establish a concrete classical baseline and to delineate the regime in which quantum-classical hybrid methods must improve to be-come competitive. At the instance sizes accessible to current quantum hardware (kernel sizes K ≤ 22 ), SA solves the vast majority of problems trivially, precluding a meaningful scaling comparison. As hardware matures and larger, harder instances become accessible, classical heuristics such as SA are known to struggle—precisely the regime in which the favorable scaling of qReduMIS over standalone QAOA may translate into a practical ad-vantage. 
+
+Performance with conductance-like hardness. 
+
+We further investigate performance as a function of the conductance-like hardness parameter H in Appendix E 2, 11                      
+
+> FIG. 6. Average approximation ratio ⟨| IS |⟩ /|MIS |as a function of kernel size |K| for standalone QAOA and qReduMIS on PSP-MIS instances from the Nikkei 225 index. Left: p= 2 ;Right: p= 6 . Translucent scatter points show individual instance values; markers with error bars indicate the median and interquartile range per kernel size. Methods are horizontally offset for clarity, and the secondary x-axis shows the corresponding input graph size N. While standalone QAOA exhibits a significant decline in solution quality with increasing kernel size, qReduMIS maintains ⟨| IS |⟩ /|MIS | ≈ 1across all sizes for both p= 2 and
+> p= 6 , demonstrating robust near-optimal performance independent of problem scale.
+
+confirming that qReduMIS degrades gracefully with in-creasing hardness while standalone QAOA deteriorates sharply. 
+
+qReduMIS for arbitrary graph topologies. Be-yond the structured market graphs studied here, we also benchmark qReduMIS on unstructured random 3-regular graphs in Appendix E 3. On these instances—where the classical reduction is initially ineffective due to the graph’s regularity—qReduMIS still achieves PMIS = 1 
+
+across all problem sizes tested, confirming that the frame-work’s advantage is not specific to the topology of finan-cial correlation graphs.  
+
+> V. METHODS
+
+QAOA implementation both as standalone and in qReduMIS. At each QPU call, we execute QAOA over the kernel graph. For this, we encode the MIS prob-lem in Eq. 1 by first mapping the classical binary vari-ables xi ∈ { 0, 1}, which indicate asset selection, to quan-tum variables zi ∈ {− 1, 1} via the relation xi = (1 −zi)/2.This transformation allows us to express the problem in terms of Pauli-Z operators, which are natural for quan-tum circuit implementations. The resulting cost Hamil-tonian, ˆHcost , penalizes configurations that violate the independence constraint and rewards the inclusion of as-sets in the independent set. Explicitly, the cost Hamilto-nian takes the form 
+
+ˆHcost = X
+
+> i
+
+zi
+
+2 + 14
+
+X
+
+> (i,j )∈E
+
+(−zi − zj + zizj ) (4) where the first term encourages the selection of assets, and the second term enforces the independence con-straint by assigning a higher energy cost to pairs of ad-jacent assets that are both selected. The unitary that implements the desired dynamics in Eq. 4 is given by 
+
+U(θ) = Π pl=1 Umix (βl)Ucost (γl), involving a series of p lay-ers alternating cost and mixing unitaries, Ucost (γl) = exp( −iγ l ˆHcost ) and Umix (βl) = exp( −iβ l ˆHmix ), respec-tively, which are generated by ˆHcost and ˆHmix = P 
+
+> i
+
+ˆXi,respectively. The parameters θ = ( γ, β) can either be optimized in an outer (closed) loop, inferred from pa-rameter setting heuristics [21, 61–63], or pre-optimized [64]. A recent work by Čepait˙ e et al. [52] tackled the MIS problem with QAOA and reported an analytic format of setting QAOA parameters γ, β . Given a p-layer QAOA, the j-th parameter θpj with θ ∈ { γ, β } is set as follows: 
+
+θpj = cθ
+
+> 1
+
+(j, p ) + cθ
+
+> 2
+
+(j, p )
+
+⟨d⟩cθ  
+
+> 3(j,p )
+
++ cθ
+
+> 4
+
+(j, p ) , (5) where {cθi (j, p )}i=1 ,..., 4 are four fitted parameters and ⟨d⟩
+
+is the average degree of the input graph. For the experiments we used these fitted parameters 
+
+{cθi (j, p )}i=1 ,..., 4. While in standalone QAOA, this scal-ing is performed only once for the input graph, in qRe-duMIS, this scaling is performed for the kernel Ki at each i-th iteration. Note that these kernels may have different degree distributions and thus the QAOA circuit may have different parameters. However, this is a simple calculation to scale the same given four fitted param-eters. Hyperparameters of the semi-greedy qReduMIS 12 implementation used in the benchmarks (in-set criterion, restricted-candidate-list size, frozen-node selection) are reported in Appendix E 4. 
+
+Backends. We perform experiments of standalone QAOA and qReduMIS powered by QAOA on the Quantinuum H2-1 emulator with a statevector backend that closely models the noise of the real device. For real hardware, we perform our experiments on Quantinuum Helios with 98 trapped-ion qubits. 
+
+Figures of merit. The success probability PMIS is defined as the fraction of independent trials that re-turn a maximum independent set of the target graph. For QAOA, the success probability is the fraction of the quantum shots that return a maximum independent set. For qReduMIS, it is the fraction of the classical shots— each comprising one or more iterative reduce-and-sample rounds—whose final output is a maximum independent set of the target graph. Another figure of merit we study is the scaling of the 
+
+time-to-solution (TTS), defined as in Refs. [56–59]: 
+
+TTS( tf ) = tf R(tf ), R(tf ) = ln(1 − pd)ln(1 − pS (tf )) , (6) where tf is the runtime for each run, pS (tf ) is the success probability of hitting the target solution given tf , and pd
+
+is the desired probability that at least one run yields the target solution. Here we consider pd = 0 .99 . We adopt the optimal TTS, defined as [56] 
+
+optTTS = min 
+
+> tf
+
+TTS( tf ). (7) We quantify tf in terms of the cumulative number of quantum shots across all iterations. Although the wall-clock time per shot decreases as the kernel shrinks, this variation scales at most polynomially with the original problem size and does not affect the superpolynomial scaling analysis. We therefore adopt a uniform unit-cost model, treating each quantum shot as a single unit of time. Note that by doing this, the estimated optTTS for qReduMIS is an upper bound to the optTTS we will expect in practice. To compute optTTS for qReduMIS, we estimate the success probability of a single trial given a maximum run-time tf as 
+
+pS (tf ) = Et [1 (runtime t ≤ tf )] . (8) The runtime for the t-th trial of qReduMIS is 
+
+runtime t =
+
+(
+
+D⋆t · qshots , if optimal 
+
+∞, otherwise (9) where D⋆t is the number of QPU calls required to reach the optimal solution, and qshots is the fixed number of quantum shots per iteration. For standalone QAOA, the quantum circuit is fixed for a given problem instance, and each quantum shot can be regarded as an independent trial with a single iteration. Thus, the optTTS simplifies to: 
+
+optTTS = ln(1 − pd) min 
+
+> tf
+
+tf
+
+ln(1 − pS (tf )) = ln(1 − pd)ln(1 − pS )
+
+(10) where pS is the success probability of a single QAOA quantum shot. For SA, we estimate the optTTS in the same way. We note that, in principle, the runtime and optTTS carry a wall-clock time unit (e.g., seconds). However, wall-clock times depend on hardware and implementa-tion details that are not the focus of this work. We there-fore treat each quantum shot as a single unit of time, so that runtime and optTTS are reported in units of quan-tum shots rather than seconds. This convention makes the analysis hardware-agnostic and emphasizes the algo-rithmic scaling behavior, which is the central object of study. Full details on the runtime model, the quantum-shot schedule, and the empirical estimation of optTTS are provided in Appendix C. The ground truth solutions for each of the problem instances considered were ob-tained with OR-Tools [60]. 
+
+Postprocessing of independent set measure-ments. Independent set violations in the QPU output are repaired via a postprocessing fixup applied identi-cally to both standalone QAOA and the QAOA compo-nent of qReduMIS. By default, we use a simple removal heuristic; for the hardware experiments (Section IV A), we employ a stronger technique that also greedily adds non-conflicting nodes. This stronger postprocessing is needed under hardware noise to give standalone QAOA a fair chance of sampling the optimal solution; without it, no MIS is recovered for all the four instances considered from the four major indices. The reinsertion step dispro-portionately benefits standalone QAOA, since qReduMIS only requires marginal distributions for frozen-node iden-tification, so this choice provides a favorable handicap to standalone QAOA in the comparison. This is further discussed in Appendix E.  
+
+> VI. CONCLUSION AND OUTLOOK
+
+In this work, we have presented an end-to-end pipeline for quantum-informed portfolio selection, leveraging the hybrid qReduMIS framework [29] that combines classical (exact) reduction techniques with quantum optimization, to sample frozen nodes. By extending qReduMIS to gate-based QAOA on trapped-ion hardware, we solved PSP-MIS instances with up to 225 assets on Quantinuum’s 98-qubit Helios system, with QAOA circuits acting on ker-nels of up to 78 qubits. This dual property—addressing input graphs whose direct encoding would exceed the de-vice’s qubit budget (as in the Nikkei 225 with 225 as-sets vs. 98 qubits), while also outperforming standalone QAOA on the instances both methods can encode—is, to our view, the most distinctive practical consequence 13 of the reduce-and-sample paradigm. These problems cor-respond to asset universes of major stock indices, demon-strating that the pipeline can operate at scales relevant to practical portfolio construction. Our empirical benchmarks confirm the scalability and versatility of the proposed pipeline. We show that us-ing the quantum computer in an inherently different way—to sample over frozen nodes rather than expecting it to output the optimal solution—successfully unblocks the next classical reduction, yielding robust performance across multiple figures of merit for PSP-MIS instances of varying sizes and hardness. qReduMIS consistently out-performs standalone QAOA, both on hardware—where standalone QAOA fails to find the optimal solution for the two largest indices—and on the noisy emulator, where qReduMIS achieves a 3.2× smaller optimal time-to-solution scaling exponent at p = 2 . We further observe that increasing the QAOA depth from p = 2 to p = 6 
+
+improves the performance of both methods, an encour-aging trend that suggests further gains are within reach as advances in hardware fidelity progressively enable the reliable execution of deeper QAOA circuits. Moreover, the qReduMIS framework is broadly applicable beyond structured market graphs, as demonstrated on unstruc-tured 3-regular graphs. We note that at the problem sizes accessible to cur-rent quantum hardware, classical MIS solvers—including simulated annealing—remain highly competitive, solving most instances trivially and leaving insufficient variation for a meaningful scaling analysis. Our comparison is therefore intentionally quantum-vs-quantum: it demon-strates that leveraging QPU measurements to identify frozen nodes—rather than expecting the quantum pro-cessor to directly output optimal solutions—and itera-tively combining this with exact (polynomial) classical reductions constitutes a fundamentally more effective use of limited quantum resources. qReduMIS is a flexible framework poised to benefit from continued advances in both classical and quantum components, including im-provements in hardware, algorithms, and software—an expectation already supported by the performance gains observed when moving from p = 2 to p = 6 QAOA layers. Looking ahead, the qReduMIS framework could be extended to alternative quantum subroutines and other combinatorial optimization problems. Additionally, designing an adaptive quantum-shot schedule could further improve the runtime scaling. As quantum hardware continues to mature, hybrid algorithms such as qReduMIS are well positioned to tackle large-scale optimization problems at scales where classical heuristics begin to struggle.  
+
+> VII. AUTHOR CONTRIBUTIONS
+
+All authors participated in the development and dis-cussion of the use case for the pipeline and the algo-rithmic development. RB, SS, and KP helped to frame and refine the use case. ZH contributed in setting up the experiments. MJAS devised the original project and algorithm idea. RY developed the implementation and performed the experiments, and was a major contributor in writing the manuscript. JS contributed in developing the figures of merit. JS, MS, and RA contributed in an-alyzing the results. All authors contributed to the paper writing and approved the final manuscript. 
+
+> ACKNOWLEDGMENTS
+
+We thank Ruslan Shaydulin, Pranav Deshpande, Ak-shay Seshadri, and Giuseppe Di Cera for valuable discus-sions and support.  
+
+> VIII. DISCLAIMER
+
+This paper was prepared for informational purposes with contributions from the Global Technology Applied Research center of JPMorgan Chase & Co and AWS Cen-ter for Quantum Computing. This paper is not a product of the Research Department of JPMorgan Chase & Co., AWS Center for Quantum Computing, or any of their af-filiates. Neither JPMorgan Chase & Co. nor AWS Cen-ter for Quantum Computing nor any of their affiliates makes any explicit or implied representation or warranty and none of them accept any liability in connection with this paper, including, without limitation, with respect to the completeness, accuracy, or reliability of the infor-mation contained herein and the potential legal, compli-ance, tax, or accounting effects thereof. This document is not intended as investment research or investment ad-vice, or as a recommendation, offer, or solicitation for the purchase or sale of any security, financial instrument, financial product or service, or to be used in any way for evaluating the merits of participating in any transaction.      
+
+> [1] H. M. Markowitz, Foundations of portfolio theory , Harry Markowitz: Selected Works pp. 481–490 (1990). [2] E. J. Elton, M. J. Gruber, S. J. Brown, and W. N. Goet-zmann, Modern portfolio theory and investment analysis
+> (John Wiley & Sons, 2009). [3] F. J. Fabozzi, H. M. Markowitz, and F. Gupta, Portfolio selection , Handb. Financ. 2, 3 (2008). [4] V. Boginski, S. Butenko, and P. M. Pardalos, Statistical analysis of financial networks , Comput. Stat. Data Anal.
+> 48 , 431 (2005).
+
+14 
+
+[5] R. C. Merton, An analytic derivation of the efficient port-folio frontier , J. Financ. Quant. Anal. 7, 1851 (1972). [6] J.-P. Bouchaud and M. Potters, Theory of financial risk and derivative pricing: from statistical physics to risk management (Cambridge University Press, 2003). [7] T. A. Feo, M. G. C. Resende, and S. H. Smith, A greedy randomized adaptive search procedure for maximum in-dependent set , Oper. Res. 42 , 860 (1994). [8] A. Gemsa, M. Nöllenburg, and I. Rutter, Evaluation of labeling strategies for rotating maps , ACM J. Exp. Algo-rithmics 21 (2016), ISSN 1084-6654. [9] W. K. Hale, Frequency assignment: Theory and applica-tions , Proc. IEEE 68 , 1497 (1980). [10] Y. Dong, A. V. Goldberg, A. Noe, N. Parotsidis, M. G. C. Resende, and Q. Spaen, A metaheuristic algo-rithm for large Maximum Weight Independent Set prob-lems , arXiv:2203.15805 (2022). [11] A. Kalra, F. Qureshi, and M. Tisi, Portfolio as-set identification using graph algorithms on a quan-tum annealer , SSRN (2018), URL https://ssrn.com/ abstract=3333537 .[12] R. Hidaka, Y. Hamakawa, J. Nakayama, and K. Tat-sumura, Correlation-diversified portfolio construction by finding maximum independent set in large-scale market graph , IEEE Access (2023). [13] P. Cazals, A. François, L. Henriet, L. Leclerc, M. Marin, Y. Naghmouchi, W. d. S. Coelho, F. Sikora, V. Vitale, R. Watrigant, et al., Identifying hard native instances for the maximum independent set problem on neutral atoms quantum processors , arXiv:2502.04291 (2025). [14] M. Xiao and H. Nagamochi, Exact algorithms for maxi-mum independent set , Inf. Comput. 255 , 126 (2017). [15] T. Kadowaki and H. Nishimori, Quantum annealing in the transverse Ising model , Phys. Rev. E 58 , 5355 (1998). [16] E. Farhi, J. Goldstone, S. Gutmann, and M. Sipser, 
+
+Quantum computation by adiabatic evolution ,arXiv:quant-ph/0001106 (2000). [17] E. Farhi, J. Goldstone, S. Gutmann, J. Lapan, A. Lund-gren, and D. Preda, A quantum adiabatic evolution al-gorithm applied to random instances of an NP-complete problem , Science 292 , 472 (2001). [18] A. Das and B. K. Chakrabarti, Colloquium: Quantum annealing and analog quantum computation , Rev. Mod. Phys. 80 , 1061 (2008). [19] P. Hauke, H. G. Katzgraber, W. Lechner, H. Nishimori, and W. Oliver, Perspectives of quantum annealing: meth-ods and implementations , Rep. Prog. Phys. 83 , 054401 (2020). [20] E. Farhi, J. Goldstone, and S. Gutmann, A quantum approximate optimization algorithm , arXiv:1411.4028 (2014). [21] L. Zhou, S.-T. Wang, S. Choi, H. Pichler, and M. D. Lukin, Quantum approximate optimization algorithm: performance, mechanism, and implementation on near-term devices , Phys. Rev. X 10 , 021067 (2020). [22] Z. He, D. Amaro, R. Shaydulin, and M. Pistoia, Perfor-mance of quantum approximate optimization with quan-tum error detection , Communications Physics 8, 217 (2025). [23] M. A. Perlin, Z. He, A. A. Armenakas, P. Andres-Martinez, T. Hao, D. Herman, Y. Jin, K. Mayer, C. Self, D. Amaro, et al., Fault-tolerant execution of error-corrected quantum algorithms , arXiv:2603.04584 (2026). [24] S. Omanakuttan, Z. He, Z. Zhang, T. Hao, A. Babakhani, S. Boulebnane, S. Chakrabarti, D. Herman, J. Sullivan, M. A. Perlin, et al., Threshold for fault-tolerant quantum advantage with the quantum approximate optimization al-gorithm , arXiv:2504.01897 (2025). [25] Y. Jin, Z. He, T. Hao, S. Omanakuttan, D. Amaro, S. Tannu, R. Shaydulin, and M. Pistoia, Iceberg beyond the tip: Co-compilation of a quantum error detection code and a quantum algorithm , arXiv:2504.21172 (2025). [26] G. Quiroz, P. Titum, P. Lotshaw, P. Lougovski, K. Schultz, E. Dumitrescu, and I. Hen, Quantifying the impact of precision errors on quantum approximate opti-mization algorithms , Phys. Rev. Res. 7, 023240 (2025). [27] A. Mandl, J. Barzen, M. Bechtold, F. Leymann, and K. Wild, Amplitude amplification-inspired QAOA: im-proving the success probability for solving 3SAT , Quan-tum Sci. Technol. 9, 015028 (2024). [28] S. Ebadi, A. Keesling, M. Cain, T. T. Wang, H. Levine, D. Bluvstein, G. Semeghini, A. Omran, J.-G. Liu, R. Samajdar, et al., Quantum optimization of Maximum Independent Set using Rydberg atom arrays , Science 376 ,1209 (2022). [29] M. J. Schuetz, R. Yalovetzky, R. S. Andrist, G. Salton, Y. Sun, R. Raymond, S. Chakrabarti, A. Acharya, R. Shaydulin, M. Pistoia, et al., qReduMIS: A quantum-informed reduction algorithm for the maximum indepen-dent set problem , arXiv:2503.12551 (2025). [30] J. S. Otterbach, R. Manenti, N. Alidoust, A. Bestwick, M. Block, B. Bloom, S. Caldwell, N. Didier, E. S. Fried, S. Hong, et al., Unsupervised machine learning on a hy-brid quantum computer , arXiv:1712.05771 (2017). [31] M. P. Harrigan, K. J. Sung, M. Neeley, K. J. Satzinger, F. Arute, K. Arya, J. Atalaya, J. C. Bardin, R. Barends, S. Boixo, et al., Quantum approximate optimization of non-planar graph problems on a planar superconducting processor , Nat. Phys. 17 , 332 (2021). [32] G. Pagano, A. Bapat, P. Becker, K. S. Collins, A. De, P. W. Hess, H. B. Kaplan, A. Kyprianidis, W. L. Tan, C. Baldwin, et al., Quantum approximate optimization of the long-range Ising model with a trapped-ion quan-tum simulator , Proc. Natl. Acad. Sci. U.S.A. 117 , 25396 (2020). [33] M. Sciorilli, L. Borges, T. L. Patti, D. García-Martín, G. Camilo, A. Anandkumar, and L. Aolita, Towards large-scale quantum optimization solvers with few qubits ,Nature Communications 16 , 476 (2025), URL https: //doi.org/10.1038/s41467-024-55346-z .[34] M. DeCross, E. Chertkov, M. Kohagen, and M. Foss-Feig, 
+
+Qubit-reuse compilation with mid-circuit measurement and reset , Phys. Rev. X 13 , 041057 (2023), URL https: //link.aps.org/doi/10.1103/PhysRevX.13.041057 .[35] J. A. Montanez-Barrera and K. Michielsen, Towards a linear-ramp QAOA protocol: Evidence of a scal-ing advantage in solving some combinatorial optimiza-tion problems , npj Quantum Information 11 , 131 (2025), arXiv:2405.09169, URL https://doi.org/10. 1038/s41534-025-01082-1 .[36] A. Byun, M. Kim, and J. Ahn, Finding the maximum independent sets of platonic graphs using rydberg atoms ,PRX Quantum 3, 030305 (2022), URL https://link. aps.org/doi/10.1103/PRXQuantum.3.030305 .[37] K. Dasgupta, S. Mukherjee, D. Verma, S. S. K. Sajja, A. Singh, D. Phan, and J. Kalagnanam, Quantum varia-tional approaches to the maximum independent set prob-15 
+
+lem at utility scale (2026), 2606.28866, URL https: //arxiv.org/abs/2606.28866 .[38] S. Bravyi, A. Kliesch, R. Koenig, and E. Tang, Obsta-cles to variational quantum optimization from symmetry protection , Phys. Rev. Lett. 125 , 260505 (2020). [39] J. R. Finžgar, A. Kerschbaumer, M. J. Schuetz, C. B. Mendl, and H. G. Katzgraber, Quantum-informed recur-sive optimization algorithms , PRX Quantum 5, 020327 (2024). [40] A. Acharya, R. Yalovetzky, P. Minssen, S. Chakrabarti, R. Shaydulin, R. Raymond, Y. Sun, D. Herman, R. S. Andrist, G. Salton, et al., Decomposition pipeline for large-scale portfolio optimization with applications to near-term quantum computing , arXiv:2409.10301 (2024). [41] Z. He, A. Apte, B. Augustino, A. Babakhani, A. Khan, S. Omanakuttan, and R. Shaydulin, Regularized warm-started quantum approximate optimization and condi-tions for surpassing classical solvers on the max-cut prob-lem , arXiv:2603.10191 (2026). [42] E. Wybo, J. Rönkkö, O. Hirviniemi, J. R. Finž-gar, and M. Leib, A scalable quantum-enhanced greedy algorithm for maximum independent set problems ,arXiv:2601.21923 (2026). [43] M. J. Schuetz, R. S. Andrist, G. Salton, R. Yalovet-zky, R. Raymond, Y. Sun, A. Acharya, S. Chakrabarti, M. Pistoia, and H. G. Katzgraber, Quantum compila-tion toolkit for Rydberg atom arrays with implications for problem hardness and quantum speedups , Phys. Rev. Res. 
+
+7, 033107 (2025). [44] M. MacMahon and D. Garlaschelli, Community detection for correlation matrices , Phys. Rev. X 5, 021006 (2015). [45] E. Farhi, S. Gutmann, D. Ranard, and B. Villalonga, 
+
+Lower bounding the MaxCut of high girth 3-regular graphs using the QAOA , arXiv:2503.12789 (2025). [46] M. R. Garey and D. S. Johnson, Computers and in-tractability: A guide to the theory of NP-completeness 
+
+(W. H. Freeman & Co., New York, NY, USA, 1990), ISBN 0716710455. [47] S. Butenko, P. Pardalos, I. Sergienko, V. Shylo, and P. Stetsyuk, in Proceedings of the 2002 ACM Symposium on Applied Computing (Association for Computing Ma-chinery, New York, NY, USA, 2002), SAC ’02, pp. 542– 546. [48] D. Strash, On the power of simple reductions for the maximum independent set problem , in Computing and Combinatorics , edited by T. N. Dinh and M. T. Thai (Springer International Publishing, Cham, 2016), pp. 345–356, ISBN 978-3-319-42634-1. [49] L. Bittel and M. Kliesch, Training variational quantum algorithms is NP-hard , Phys. Rev. Lett. 127 , 120502 (2021). [50] A. Galda, X. Liu, D. Lykov, Y. Alexeev, and I. Safro, in 
+
+2021 IEEE International Conference on Quantum Com-puting and Engineering (QCE) (IEEE, 2021), pp. 171– 180. [51] F. G. Brandao, M. Broughton, E. Farhi, S. Gutmann, and H. Neven, For fixed control parameters the quantum approximate optimization algorithm’s objective function value concentrates for typical instances , arXiv:1812.04170 (2018). [52] I. Čepait˙ e, N. Vaishnav, L. Zhou, and A. Monta-naro, Quantum-enhanced optimization by warm starts ,arXiv:2508.16309 (2025). [53] T.-J. Chang, N. Meade, J. E. Beasley, and Y. M. Sharaiha, Heuristics for cardinality constrained portfolio optimisation , Comput. Oper. Res. 27 , 1271 (2000). [54] A. Knazakis, Portfolio Optimization , https: //github.com/AchilleasKn/PortfolioOptimization 
+
+(2024), gitHub repository, accessed: 2026-04-07. [55] R. S. Andrist, M. J. Schuetz, P. Minssen, R. Yalovet-zky, S. Chakrabarti, D. Herman, N. Kumar, G. Salton, R. Shaydulin, Y. Sun, et al., Hardness of the maximum-independent-set problem on unit-disk graphs and prospects for quantum speedups , Phys. Rev. Res. 5,043277 (2023). [56] T. Albash and D. A. Lidar, Demonstration of a scaling advantage for a quantum annealer over simulated anneal-ing , Phys. Rev. X 8, 031016 (2018). [57] M. Kowalsky, T. Albash, I. Hen, and D. A. Lidar, 3-regular three-XORSAT planted solutions benchmark of classical and quantum heuristic optimizers , Quantum Sci. Technol. 7, 025008 (2022). [58] N. Mohseni, P. L. McMahon, and T. Byrnes, Ising ma-chines as hardware solvers of combinatorial optimization problems , Nat. Rev. Phys. 4, 363 (2022). [59] J. Leng, E. Hickman, J. Li, and X. Wu, Quantum Hamil-tonian descent , arXiv:2303.01471 (2023). [60] L. Perron and F. Didier, CP-SAT , https://developers. google.com/optimization/cp/cp_solver/ (2026), ac-cessed: 2026-04-07. [61] Z. He, R. Shaydulin, D. Herman, C. Li, R. Ray-mond, S. H. Sureshbabu, and M. Pistoia, Parameter set-ting heuristics make the quantum approximate optimiza-tion algorithm suitable for the early fault-tolerant era ,arXiv:2408.09538 (2024). [62] J. Wurtz and D. Lykov, Fixed-angle conjectures for the quantum approximate optimization algorithm on regular MaxCut graphs , Phys. Rev. A 104 , 052419 (2021). [63] T. Hao, Z. He, R. Shaydulin, J. Larson, and M. Pistoia, 
+
+End-to-end protocol for high-quality quantum approxi-mate optimization algorithm parameters with few shots ,Physical Review Research 7, 033179 (2025). [64] B. Augustino, M. Cain, E. Farhi, S. Gupta, S. Gutmann, D. Ranard, E. Tang, and K. V. Kirk, Strategies for run-ning the QAOA at hundreds of qubits , arXiv:2410.03015 (2024). [65] W. Hoeffding, Probability inequalities for sums of bounded random variables , Journal of the American sta-tistical association 58 , 13 (1963). [66] S. Mandra, Z. Zhu, and H. G. Katzgraber, Exponentially biased ground-state sampling of quantum annealing ma-chines with transverse-field driving hamiltonians , Physi-cal review letters 118 , 070502 (2017). 16 
+
+Appendix A: Glossary 
+
+qReduMIS is a quantum-classical hybrid algorithmic framework and involves several levels of execution. In this paper, we use some terms to distinguish specific ex-ecution levels, explained in Table II. 
+
+TABLE II. Glossary of terms for execution at different levels in qReduMIS. 
+
+Term Definition 
+
+(classical) trial An end-to-end iterative hybrid execution of a problem instance. Many trials are performed per instance. iteration One classical-reduction step followed by one QPU call. A trial comprises several iterations. QPU call The execution of a fixed quantum circuit; one QPU call per iteration. qshot A single quantum measurement; many qshots are performed within one QPU call. 
+
+Appendix B: The Portfolio Selection Problem (PSP) from the financial perspective 
+
+Correlation estimation. One way of estimating the pair-wise correlation is by considering the daily returns of n different assets over a period of T days, we define the matrix Xn×T ∈ Rn×T , where the i-th row corresponding to the i-th asset is a vector containing the daily returns of that asset across the period of T days. With it, the usual sample covariance estimator is Σ = (1 /T )XX T , whose elements are σi,j . We consider a normalized correlation 
+
+between assets i, j , denoted as ci,j , which is defined as 
+
+ci,j = σi,j 
+
+√σi,i · σj,j 
+
+. (B1) It is clear that −1 ≤ ci,j ≤ 1 because Σ is a positive semidefinite matrix. Denoting the correlation matrix as 
+
+C whose elements are ci,j , it holds that 
+
+C = D−1/2ΣD−1/2, (B2) where D ≡ Diag (σ1,1, σ 2,2, . . . , σ n,n ).Having C, we can construct a graph G = ( V, E) with 
+
+n = |V| nodes whose edges E are based on an effective (thresholded) adjacency matrix A where we set Ai,j = 1 
+
+if and only if the absolute value of the correlation be-tween assets i and j (given by ci,j ) is greater than the threshold parameter λ, and Ai,j = 0 otherwise. The use of the absolute value, consistent with the problem formu-lation in the main text, reflects the role of this step as 
+
+diversification , not hedging: two strongly anticorrelated assets are not independent sources of return but mirror images of each other, and treating them symmetrically with strongly positively correlated pairs ensures that the selected basket carries genuinely independent informa-tion. This convention also does not affect the bounds in Theorem 1. Accordingly, with the threshold λ acting as a correlation filter, pairs of assets are then classified as correlated only if the corresponding correlation coefficient exceeds a given (tunable) threshold λ, with all other cor-relations being discarded. Although simple, this method is known to be robust to noise [44], as the weakest cor-relations that are most prone to random fluctuations are removed. 
+
+Risk bounds with PSP-MIS. Two popular asset-allocation strategies—the uniform allocation and the inverse-variance allocation, both feasible asset allocations whose backtested effectiveness on real-world data is re-ported in Ref. [12]—admit explicit upper bounds on port-folio risk when restricted to a PSP-MIS solution. These bounds are stated in Theorem 1. 
+
+Theorem 1. Let S′ be the solution of PSP which is an MIS of G(V, E) whose edges are constructed with the aforementioned threshold 0 ≤ λ ≤ 1 on the correlated assets. Let wu be the uniform asset allocation such that 
+
+wi = 1 /m if i ∈ S′ and wi = 0 otherwise, where m ≡ | S′|.Let σi,j be the pair-wise covariance among the i and j as-sets. Then, it holds 
+
+wTu Σwu ≤ 1 − λ + λm 
+
+(m)2
+
+X
+
+> i∈S′
+
+σi,i .
+
+Moreover, let wv be the inverse-variance allocation asset such that wi = 1/σ i,i P  
+
+> i∈S′1/σ i,i
+
+if i ∈ S′ and wi = 0 otherwise. Then, it holds 
+
+wTv Σwv ≤ 1 − λ + λm 
+
+P 
+
+> i∈S′
+
+1/σ i,i 
+
+.
+
+Proof. It follows from the construction of the graph asset with threshold λ and the fact that S′ is an independent set, and therefore σi,j ≤ λ√σi,i σj,j holds for any i, j ∈ S′.Let us assume wu. In this case, 
+
+wTu Σwu = X
+
+> i,j ∈S′
+
+wiwj σi,j 
+
+= X
+
+> i∈S′
+
+w2 
+
+> i
+
+σi,i + X
+
+> i̸=j∈S′
+
+wiwj σi,j 
+
+≤ 1(m)2
+
+X
+
+> i∈S′
+
+σi,i + λ X
+
+> i̸=j∈S′
+
+√σi,i σj,j 
+
+
+
+≤ 1(m)2
+
+X
+
+> i∈S′
+
+σi,i + λ X
+
+> i̸=j∈S′
+
+σi,i + σj,j 
+
+2
+
+
+
+= 1(m)2
+
+X
+
+> i∈S′
+
+σi,i + λ(m − 1) X
+
+> i∈S′
+
+σi,i 
+
+!
+
+= 1 − λ + λm 
+
+(m)2
+
+X
+
+> i∈S′
+
+σi,i ,17 where the first inequality follows from the construction of the market graph, and the second from the fact that the arithmetic mean is at least the geometric mean For the inverse variance allocation, we can similarly derive 
+
+wTv Σwv = 1(P  
+
+> i∈S′1
+> σi,i
+
+)2
+
+X
+
+> i∈S′
+
+1
+
+σi,i 
+
++ X
+
+> i̸=j∈S′
+
+σi,j 
+
+σi,i σj,j 
+
+
+
+≤ 1(P  
+
+> i∈S′1
+> σi,i
+
+)2
+
+X
+
+> i∈S′
+
+1
+
+σi,i 
+
++ X
+
+> i̸=j∈S′
+
+λ
+
+√σi,i σj,j 
+
+
+
+≤ 1(P  
+
+> i∈S′1
+> σi,i
+
+)2
+
+X
+
+> i∈S′
+
+1
+
+σi,i 
+
++ λ
+
+2
+
+X
+
+> i̸=j∈S′
+
+1
+
+σi,i 
+
++ 1
+
+σj,j 
+
+
+
+= 1 − λ + λm 
+
+P 
+
+> i∈S′
+
+1/σ i,i 
+
+.
+
+As can be seen, the bounds imply that for sufficiently large MIS, the risk of such allocations is proportional to 
+
+λ times the average risk of assets in the MIS of graphs built with threshold λ. It is clear that the size of the MIS grows as λ gets larger, i.e., the size of MIS is m (the whole assets) when λ = 1 , but so does the average risk of the assets in the MIS. Therefore, λ acts as a parameter to balance the size of MIS with the average risk of assets in the MIS. 
+
+> Appendix C: Optimal Time-to-Solution: Definitions and Empirical Estimation
+
+TTS definition. As generally adopted [56–59], the TTS is defined as 
+
+TTS( tf ) = tf R(tf ), R(tf ) = ln(1 − pd)ln(1 − pS (tf )) (C1) where tf is the runtime for each run, pS (tf ) is the suc-cess probability for the solver to hit the target solution given the runtime tf , and pd is the desired probability for at least one run to obtain the target solution. The successes of different runs are assumed to be statistically independent, and R(tf ) can be thought of as the effec-tive number of runs needed to obtain at least one target solution. R(tf ) ≈ ln(1 /(1 −pd)) /p S (tf ) ∝ 1/p S (tf ) when 
+
+pS (tf ) is small. We utilize a robust definition of TTS [56], the optimal TTS, which is 
+
+optTTS = min 
+
+> tf
+
+TTS( tf ). (C2) We comment that the definition of TTS often also con-ventionally contains a parallelization factor 1/f where f
+
+is the number of parallel workers that can be deployed to work on independent runs of the same problem in-stance. In the framework of qReduMIS, if there are f
+
+independent QPUs with each being able to run the com-plete circuit, the parallelization may also be utilized at each QPU call, which would similarly introduce a factor of 1/f for TTS. However, in this paper, we assume that no such parallelization is used, and thus f = 1 .When the solver succeeds in all M runs at runtime 
+
+tf , the maximum-likelihood estimator ˆpS = 1 yields 
+
+ln(1 − ˆpS ) = −∞ and a meaningless TTS = 0 . Following Ref. [56], we replace the point estimate by the Jeffreys upper bound ˆpmax  
+
+> S
+
+= 1 − 1/(2 M ), which is the smallest failure probability statistically compatible with M all-success observations. The resulting optTTS is therefore an upper bound on the true optTTS for such instances and can only make the solver appear slower, never faster. For pd = 0 .99 , this cap implies the floor 
+
+optTTS ≥ ln(1 − pd)ln  1/(2 M ) tmin  
+
+> f
+
+= 2 ln 10 ln(2 M ) tmin  
+
+> f
+
+≥ 2 ln 10 ln(2 M ) ,
+
+(C3) where tmin  
+
+> f
+
+is the shortest runtime at which pS (tf ) = 1 is observed. 
+
+Runtime model for qReduMIS. For the t-th trial, the end-to-end run involves Dt iterations with subrou-tine labels C1,t , Q1,t , C2,t , Q2,t , . . . , CDt−1,t , QDt−1,t ,
+
+CDt,t , where Ci,t denotes the i-th classical subroutine and 
+
+Qi,t the i-th quantum subroutine. In terms of realistic wall-clock times, the cost of the classical subroutines is negligible compared to that of the quantum subroutines. For each Qi,t , the number of quantum shots qshots i,t 
+
+is fixed, and we also neglect any overhead time asso-ciated with circuit compilation on the quantum device. As the algorithm progresses, the kernel graph is progres-sively reduced in size, leading to fewer qubits. Conse-quently, the wall-clock time per quantum shot decreases over the course of the algorithm. This variation in per-shot cost is governed by the shrinking circuit size, which scales at most polynomially with the original problem size. Since our primary interest lies in characterizing the superpolynomial (e.g., exponential) scaling behavior of the algorithm, this polynomial variation does not affect the asymptotic analysis. We therefore adopt a uniform unit-cost model, treating each quantum shot as a single unit of time regardless of circuit size, and express tf ac-cordingly as the total number of quantum shots. The runtime for the t-th trial is given by 
+
+runtime t =
+
+(
+
+D⋆t · qshots , if optimal solution is reached 
+
+∞, if optimal solution not reached (C4) where D⋆t is the number of QPU calls required to reach the optimal solution. We consider each C and Q compo-nent of the algorithm as a block, and we inspect the local and incumbent solutions after each block execution, com-paring against the ground truth solution. The optimality of the solution at the i-th iteration can be achieved by either the local solution S or the incumbent solution W.These sets are constructed for the selected nodes across 18 both the classical reduction and the quantum part. At each QPU call, qReduMIS identifies the largest indepen-dent set measured and also performs the frozen node(s) selection. While the local solution S is updated with the (in-set) frozen node(s), the incumbent W is updated with the largest solution measured by the QPU, if the updated incumbent improves the current one. By doing this, W is always ahead of S and the optimal number of QPU calls D⋆t corresponds to the incumbent finding the optimal solution. 
+
+Quantum-shot schedule. In principle, the per-iteration shot budget qshots i,t can be scheduled adap-tively across iterations of a trial, e.g., guided by Hoeffding-type concentration bounds [65]. Different schedules trade off total time cost against per-call statis-tical accuracy. The impact of the (constant) shot budget on optTTS is illustrated in Fig. 12 for a representative instance, which motivates the choice qshots i,t = qshots 
+
+used throughout this work. 
+
+Empirical estimation of optTTS. For a given prob-lem instance, obtaining the optTTS from numerical ex-periments of multiple trials requires statistical estimation of TTS( tf ) for many values of tf and an optimization procedure with respect to tf . This may seem computa-tionally impractical, but we estimate it using a protocol that leverages the information from M multiple runs or trials. The success probability is estimated as 
+
+pS (tf ) = Et [1 (runtime t ≤ tf )] 
+
+≈
+
+P 
+
+> t
+
+1 (runtime t ≤ tf )
+
+P 
+
+> t
+
+1 = NS (tf )
+
+M
+
+(C5) where NS (tf ) denotes the number of successful runs within runtime tf . Typically, the solver adopts an itera-tive algorithm that continues to improve the solution as 
+
+tf increases, so we keep the solver running until the tar-get solution is reached and record the required runtime 
+
+ti for the run indexed by i. From M runs, we obtain a sorted list of times to target: t1 ≤ t2 ≤ · · · ≤ tM .Within a given runtime tf , the runs with ti ≤ tf have reached the target, whereas the runs with ti > t f have not. With increasing tf , the estimated pS (tf ) changes its value only at tf = ti (i = 1 , 2, · · · , M ), so it suffices to evaluate TTS( tf ) only at tf = ti. We use the con-vention NS (ti) = i − 1/2, so pS (ti) = ( i − 1/2) /M . The minimum of TTS( tf ) is then estimated from the M nu-merical values of pS (ti). The statistical error of optTTS is estimated by a bootstrap procedure of resampling the 
+
+M runs. 
+
+OptTTS for standalone QAOA. For standalone QAOA, the quantum circuit is fixed for a given prob-lem instance, and each quantum shot can be regarded as an independent trial with a single iteration. QAOA can thus be viewed as an annealing-type algorithm with a fixed tf = tf 0 = 1 (our unit of measure). The optTTS simplifies to: 
+
+optTTS = ln(1 − pd) min 
+
+> tf
+
+tf
+
+ln(1 − pS (tf )) = ln(1 − pd)ln(1 − pS ) ,
+
+where pS is the success probability of a single QAOA quantum shot. 
+
+> Appendix D: Successfully identifying frozen nodes is easier than finding the optimal solution
+
+We now present a theoretical analysis of the success probability of identifying frozen nodes and compare that with the success probability of finding an optimal solu-tion. We focus on the in-set criterion but this can be extended to out-set criterion in a straightforward man-ner. An in-set (out-set) frozen node is a node identified as with high (low) probability to be part of a maximum independent set. While in qReduMIS this is done em-pirically from quantum measurements, we refer to the ground-truth set of in-set (out-set) frozen nodes as the unique set of nodes that belong to at least one (none) maximum independent set. In this section, we refer to them directly as set of frozen nodes. 
+
+Theorem 2. Let F denote the set of (in-set) frozen nodes, which comprises the unique set of nodes that are part of at least one MIS solution for the graph K, Pr( F)
+
+the probability of sampling r = 1 (in-set) frozen nodes per draw (where r denotes the number of candidate frozen nodes drawn from the restricted candidate list; we use r
+
+here to avoid clashing with the correlation threshold λ
+
+used elsewhere in the paper), and let PMIS be the prob-ability of sampling the optimal solution. A lower bound for Pr( F) is the following 
+
+Pr( F) > P MIS + X
+
+> i,n
+
+PMIS i\{ n}| MIS-1 · PMIS-1 |non-MIS ·
+
+(1 − PMIS ),
+
+where MIS − 1 refers to the solutions to the MIS − 1
+
+problem and we consider the non-maximal independent set of size |MIS | − 1, referred as MIS i. In general, a non-maximal independent set of size k is an independent set that can be extended by adding |MIS | − k vertices to form a maximum independent set. Specifically, non-maximal independent sets of size k = |MIS | − 1 are constructed by removing any node n from each possible MIS i solution to the MIS problem. Moreover, under the assumption of uniform sampling among solutions of the same size, each independent set of a given size is sampled with equal probability. Thus, for the MIS − 1 problem, PMIS i\{ n}| MIS-1 = DMIS |MIS |DMIS −1 , where 
+
+DMIS and DMIS −1 denote the number of (degenerated) maximum independent sets and (degenerated) indepen-dent sets of size |MIS | − 1, respectively. Thus, in this 19 
+
+case, the probability of sampling a frozen node is lower bounded by 
+
+Pr( F) > P MIS + 1
+
+H · PMIS-1 |non-MIS · (1 − PMIS ), (D1) 
+
+where 1 
+
+> H
+
+:= DMIS |MIS |DMIS −1 , H is the hardness parameter in-troduced by Ebadi et al. [28]. While the assumption of uniform sampling is highly idealized as quantum annealers, for instance, are known to be biased samplers [43, 66], it yields a closed-form, instance-defined value for the coefficient 1/H. We remark that the structural bound Pr( F) > P MIS itself does not rely on this assumption. Proof. Given a graph G, we define the set of MIS solutions as M and the set of (in-set) frozen nodes as Fin , which contains the unique set of nodes that belong to all the 
+
+D (degenerated) MIS solutions. For ease of notation, we will refer as F. In general, given an independent set measurements {I i}, the probability of sampling a (any) frozen node from them is 
+
+Pr( F) = Pr( F | MIS ) · PMIS + Pr( F | non-MIS ) · (1 − PMIS )
+
+where we use the symbol P to refer to the probability of sampling an independent set measurement over a (par-ticular) set of independent set measurements and Pr to refer to the probability of sampling a frozen node (in F)from a set of independent set measurements. By defini-tion Pr( F | MIS ) = 1 and the probability of sampling a frozen node given a non-MIS solution is different from zero. Thus, in the cases where PMIS < 1 we can show that 
+
+Pr( F) = PMIS + Pr( F | non-MIS ) · (1 − PMIS ) > P MIS 
+
+To prove this, we show that Pr( F | non-MIS ) > 0.Note that given a solution to the MIS problem, if we remove i nodes from it, this is a solution to the MIS − i
+
+problem. For example, if a set I is a solution to the MIS problem, then if we remove any node from it I \ { n} ∀ 
+
+n ∈ I , this is a solution to the MIS − 1 problem. We start by noting that 
+
+Pr( F | non-MIS ) = 
+
+> |MIS |
+
+X
+
+> i=1
+
+Pr( F | MIS-i ) · PMIS-i |non-MIS 
+
++ Pr( F | >MIS ) · P>MIS |non-MIS 
+
+where PMIS-i |non-MIS refers to the probability that among all the non-MIS solutions we sample a solution to the MIS-i problem and Pr( F | MIS-i ) is the probability that given MIS-i solution, we sample a frozen node. The use of >MIS indicates independent set measurements whose size (i.e., Hamming weight) is larger than the MIS. 
+
+P>MIS |non-MIS refers to the probability of given a non-MIS solution, sample an independent set measurement that exceeds MIS. We take this P>MIS |non-MIS = 0 as ideally we would not expect to measure from the QPU a solution that is not an independent set. It is common practice to postprocess the QPU measurements to remove solutions that break the independence constraint. By splitting that sum into the case of i = 1 and i > 1 we obtain 
+
+Pr( F) = PMIS + Pr( F | MIS-1 ) · PMIS-1 |non-MIS · (1 − PMIS )+
+
+> |MIS |
+
+X
+
+> i> 1
+
+Pr( F | MIS-i ) · PMIS-i |non-MIS · (1 − PMIS )
+
+How much larger the probability of sampling a frozen node is, in comparison to the probability of sampling the optimal solution, is mostly controlled by the con-tributions of the probability of sampling each MIS − i,
+
+i = 2 , . . . , N − 1 independent set measurement that is made by removing nodes from the MIS solutions. Next, let us derive an expression for Pr( F | MIS-1 ). To do this, we note that the set of DMIS −1 solutions to the MIS − 1 problem consists of two sets: (1) those obtained by removing a single node from a MIS solution, and (2) other independent sets that are not derived in this way. The first type can be described as the sets MIS \ { n}, ∀
+
+n ∈ MIS, while we refer to the second type collectively as other .Given a measurement that yields an independent set, the probability of sampling an element from the first type is denoted by PMIS \{ n}| MIS-1 , and the probability of sampling an element from the second type is denoted by Pother |MIS-1 . Using these definitions, we can show that 
+
+Pr( F | MIS-1 ) = Pr( F | MIS \ { n}) · PMIS \{ n}| MIS-1 
+
++ Pr( F | other ) · Pother |MIS-1 
+
+where by definition Pr( F | MIS \ { n}) = 1 .We obtain a lower bound for Pr( F) by lower bounding this expression by removing the contributions of the other states (these are discarded rather than estimated, which strengthens the bound on Pr( F)), and we consider the contribution of each of the i-th MIS solutions and each of the n nodes as 
+
+PMIS \{ n}| MIS-1 = X
+
+> i,n
+
+PMIS i\{ n}| MIS-1 .
+
+Then, 
+
+Pr( F) > P MIS +
+
+X
+
+> i,n
+
+PMIS i\{ n}| MIS-1 · PMIS-1 |non-MIS · (1 − PMIS ).
+
+Under the assumption of uniform sampling across independent sets of the same size, the probability 20 
+
+PMIS \{ n}| MIS-1 is given by the problem instance and it is the proportion of MIS − 1 solutions that arise from all possible MIS solutions by deleting a single node from each. It has the following form, for all i and nPMIS i\{ n}| MIS-1 = DMIS 
+
+ |MIS |
+
+> 1
+
+
+
+DMIS −1
+
+= DMIS |MIS |DMIS −1
+
+.
+
+Thus, in the case of PMIS < 1, how much larger is the probability of sampling a (in-set) frozen node to the probability of sampling an optimal solution is driven by the second term, which is weighted by two terms. The first one is given by the problem instance and it is the fraction of solutions to MIS −1 that are constructed from MIS solution. Intuitively, the closer this number to 1, the better because it means that all the solutions to MIS − 1
+
+are made of (in-set) frozen nodes. Thus, the larger the probability PMIS-1 |non-MIS , the larger will be this contri-bution. Note that PMIS-1 |non-MIS is driven by the quan-tum algorithm of choice and in practice, it depends on the hardware. Note that for ease of reading, we have lower bounded 
+
+Pr( F) and only showed the contributions to this prob-ability with the solutions to the MIS − 1. However, as shown before, in the sum there are contributions from all the MIS − i solutions, weighted by the probability to sampling these solutions. More generally, using that 
+
+P|MIS |
+
+> i=1
+> DMIS
+
+(|M IS | 
+
+> i
+
+) 
+
+> DMIS −i
+
+> DMIS |MIS |DMIS −1 , we can write 
+
+Pr( F) > P MIS + DMIS |MIS |DMIS −1
+
+· PMIS-1 |non-MIS · (1 − PMIS )
+
+(D2) 
+
+= PMIS + 1
+
+H · PMIS-1 |non-MIS · (1 − PMIS ). (D3) Note that the coefficient DMIS |MIS |DMIS −1 is 1 
+
+> H
+
+, where H is the hardness parameter introduced by Ebadi et al. [28]. We have lower bounded the Pr( F) by considering non-maximal independent sets of different sizes. Among these, we focus on those of size |MIS | − 1 as these are arguably the states with the highest sampling likelihood after the optimal solutions, when using quantum algo-rithms intended to find the optimal solution. This leads to an expression where the probability of sampling a frozen node, relative to sampling the optimal solution, is governed by the contribution from non-maximal inde-pendent sets of size |MIS |− 1 and the fraction of measure-ments of size |MIS |− 1 among all non-MIS measurements. In the case of uniform sampling of measurements of same size, we see that this is controlled by the hardness of the problem instance itself. In both SA and QA, the sampling process can be viewed as generating configu-rations according to a probability distribution that, at equilibrium or in the low-temperature limit, becomes ap-proximately uniform over all independent sets of a fixed size. It has been empirically reported for these algorithms that the probability of sampling a maximum indepen-dent set, PMIS , decreases exponentially as the hardness parameter H increases [28, 29]. This analysis highlights the effectiveness of using the QPU as a co-processor to sample frozen nodes. Even if the QPU output rarely includes measurements corre-sponding to maximum independent sets, the ability to sample non-maximal independent sets of size |MIS | − 1
+
+ensures that Pr( F) may remain sufficiently large to pro-vide meaningful information for classical reduction in subsequent iterations. This enables qReduMIS to ulti-mately identify an optimal solution. Furthermore, since 
+
+Pr( F) > P MIS , the requirements for high-quality mea-surements from the QPU are relaxed; that is, it is not necessary to obtain extensive statistics for the optimal solution. For instance, in the context of QAOA, this means that robust parameter choices for γ and β do not need to be perfectly optimized to sample the optimal so-lution. As a result, the qReduMIS approach reduces the demands on quantum and classical resources required for successful problem solving. 
+
+> Appendix E: Experimental results
+
+Postprocessing of independent set measure-ments. There are multiple techniques, ranging from sim-ple heuristics such as removing the first violating node to more sophisticated approaches like greedily adding non-conflicting nodes after removal. The choice of strat-egy significantly affects both the size of the recovered IS and the resulting success probability. While the perfor-mance of QAOA directly depends on this strategy as it determines the end-to-end success probability of the al-gorithm, in qReduMIS the end-to-end algorithm’s suc-cess probability depends on the success probability of sampling correct frozen nodes. As established by The-orem 2, under the stated assumptions the probability of sampling a frozen node from a given set of independent-set measurements is strictly larger than the probability of sampling a maximum independent set. Thus, by de-sign, the performance of qReduMIS is less susceptible to the postprocessing fixup. For this reason, we opt for the most simple technique for postprocessing, if not said oth-erwise. In particular, for the hardware experiments, in order to leverage the hardware for larger and deeper cir-cuits, we opt for the most sophisticated one (remove and greedily add with check) with the goal of preventing null success probability in QAOA.  
+
+> 1. Large-scale quantum-informed PSP-MIS on hardware
+
+We execute QAOA (with p = 2 ) over the kernel K.We postprocessed the 100 independent set measurements and from them, we compute the figures of merit for stan-21                             
+
+> Stock Market Success Probability optTTS Average Approximation Ratio QAOA qReduMIS QAOA qReduMIS QAOA qReduMIS DAX 100 0.09 [0.04, 0.15] 0.95 [0.85, 1.00] 48.83 [28.34, 112.81] 35.56 [24.97, 52.84] 0.83 [0.81, 0.85] 1.00 [0.99, 1.00] FTSE 100 0.03 [0.00, 0.07] 0.70 [0.50, 0.90] 151.19 [63.46, 458.21] 185.58 [88.58, 286.41] 0.73 [0.71, 0.75] 0.98 [0.96, 0.99] S&P 100 0.00 0.40 [0.20, 0.60] ∞468.67 [215.28, 1181.40] 0.74 [0.73, 0.76] 0.96 [0.94, 0.97] Nikkei 225 0.00 0.95 [0.85, 1.00] ∞88.58 [49.94, 123.49] 0.80 [0.80, 0.82] 0.99 [0.98, 1.00] TABLE III. Performance comparison of standalone QAOA and qReduMIS on the first kernel Kfor each stock market index. The table reports the success probability ( PMIS ), optimal time-to-solution (optTTS), and expected approximation ratio (AR), each with 95% confidence intervals obtained via bootstrap resampling with 10,000 replacements. For standalone QAOA, 100 quantum shots were used; for qReduMIS, 20 classical trials with 10 quantum shots per QPU call. All experiments use p= 2
+> QAOA layers on Quantinuum’s Helios hardware (98 qubits).
+
+dalone QAOA. For qReduMIS, we perform 20 classical trials (cshots = 20 ) for each of the indices. At each iteration of qReduMIS, we performed the classical re-duction on a local classical computer, and we submitted the QAOA job (with 10 quantum shots) for the updated kernel ˜K. The independent set measurements are then postprocessed in the same way as those of standalone QAOA, and an in-set frozen node is selected, leading to an updated kernel for the next iteration. Table III shows the three figures of merit for the dif-ferent indexes. These are the values reflected in Fig. 3 in main text with the addition of the optTTS. For vanilla QAOA the S&P 100 and Nikkei 225 indices yield PMIS =0, and consequently optTTS = ∞. For the other two indices, the improvement in success probability achieved by qReduMIS is not directly reflected in the optTTS, since the latter also depends on the number of quantum shots performed at each QPU call, which may have been too large for these instances. Reducing the number of quantum shots, provided the end-to-end success proba-bility stays close to the values achieved here, would lower the optTTS and could reveal an improvement over stan-dalone QAOA. As we discussed in the main text, cross-method comparisons of optTTS on the same instances are not robust and for this reason in the main text we limit to discuss the other two figures of merit. For all the indices no more than five QPU calls (and five classical reductions) were performed. We kicked off 20 classical trials for each of the four kernels correspond-ing to the indices and after each QPU call and classical reduction, some of these trials finished because the up-dated kernel became fully reducible. Note that this does not mean that the optimal solution was found. There are some cases where the kernel graphs were fully reducible but the final solution was sub-optimal. This is because at some point in the iterations, there was an incorrect selec-tion of a frozen node, which unblocked the reduction, but was a node that did not belong to any MIS. To prevent running more experiments on the hardware when it was not necessary, we stopped the iterations once the ground truth solution, computed with OR-Tools, was found, as we report the optTTS.  
+
+> 2. Extensive benchmark on PSP-MIS instances
+
+This appendix reports two complementary emulator experiments on Quantinuum’s H2-1 emulator that use different quantum-shot budgets and should not be con-fused: (i) the kernel-size scan used to estimate the optTTS scaling (Figs. 10 and 11), in which qReduMIS uses qshots = 5 per QPU call, and (ii) the hardness-parameter scan at fixed N = 22 (Fig. 14), in which qRe-duMIS uses qshots = 10 per QPU call. The hardware ex-periments on Helios (Appendix E 1) also use qshots = 10 .         
+
+> Interval Number of Seeds
+> 4–5 11 6–9 910–13 914–15 716–16 817–18 919–20 821–21 722–22 5TABLE IV. Number of seeds per interval of (first) kernel size utilized for the benchmark on Quantinuum’s emulator.
+
+The testbed. For each problem size N (number of assets), we generate 20 random instances by sampling N
+
+assets without replacement from the NIKKEI 225 index, using the data from Chang et al. [53]. For every instance we set the correlation sensitivity as in Eq. 3 to obtain the graph G. The size of the (first) kernel is not a controllable parameter: it is fully determined by the input instance. The reduction technique, described in the main text, is based on the exposed-node removal. Thus, the number of nodes it eliminates depends on the density of the in-put graph and on the distribution of the exposed corner nodes. As a result, for a fixed number of nodes in the input graph, the size and structure of the (first) kernel graph vary from instance to instance. Fig. 7 shows the resulting dispersion of the size of the first kernel graph K
+
+as a function of the number of nodes in the input graph 
+
+G.We limit to input graphs whose (first) kernel sizes have up to 22 nodes. Considering the dispersion in kernel sizes, to select the problem instances from the ones shown in 22        
+
+> FIG. 7. Size of the first kernel graphs Kas a function of the size of the input graphs Gacross 20 random instances. To make the market graphs, the correlation sensitivity used was the average correlation among the set of assets.
+
+Fig. 7, we consider intervals of kernel sizes such that they have a similar number of problem instances per inter-val. Fig. 8 shows the instances considered for the exten-sive benchmark: the top panel reports the distribution of kernel sizes per interval, and the bottom panel the distribution of kernel density. Both the input-graph and kernel-size intervals are visible in the figure. We consoli-date the number of seeds per interval of (first) kernel size in Table IV. 
+
+Scaling of TTS. We compare the exponential scal-ing rates of the two solvers—standalone QAOA and qReduMIS—as a function of the kernel size K in Fig. 5 in main text. We modeled the bootstrap-median of the optTTS for each problem instance as an exponential function of K, the size of its (first) kernel graph. optTTS ∼ 2 βm K , (E1) or equivalently, in log-space, 
+
+log 2 optTTS = αm + βm K + ε, (E2) where βm is the exponential scaling exponent, αm is an intercept capturing baseline overhead, and ε rep-resents zero-mean residual noise. The parameters ˆαm
+
+and ˆβm were estimated via ordinary least-squares (OLS) regression on all instances with finite, strictly positive bootstrap-median TTS values. Note that for QAOA with 
+
+p = 2 , some individual seeds yield infinite optTTS val-ues, but the bootstrap-median is infinite only at K = 22 
+
+(refer to Fig. 9). Table V summarizes the OLS regression results for each method and QAOA depth combination. For p = 2 ,both QAOA and qReduMIS exhibited statistically signif-icant exponential scaling in the kernel size K. However,                                      
+
+> TABLE V. Ordinary least-squares fits of log 2eT=α+β K +ε
+> for each method and QAOA depth p.Method pˆβ±SE R2p-value ( ˆβ)QAOA 20.5235 ±0.0328 0.80 <10 −10
+> qReduMIS 2 0.1642 ±0.0179 0.54 <10 −10
+> QAOA 60.2894 ±0.0210 0.73 <10 −10
+> qReduMIS 6 No significant exponential fit
+
+the scaling exponents differed markedly. The two-sample 
+
+t-test on the slope difference yielded 
+
+∆ ˆβ = ˆβQAOA − ˆβqReduMIS = 0 .359 ± 0.037 ,t = 9 .61 , p < 10 −10 , (E3) decisively rejecting the null hypothesis of equal scaling exponents at any conventional significance level. The qReduMIS exponent is 3.2× smaller than that of standalone QAOA. In practical terms, for every unit in-crease in kernel size K, the optTTS of QAOA grows by a factor of 20.524 ≈ 1.44 , while that of qReduMIS grows by only 20.164 ≈ 1.12 . This difference compounds mul-tiplicatively: at K = 20 , the model predicts an optTTS ratio of 2(0 .524 −0.164) ×20 = 2 7.20 ≈ 147 . The better scal-ing for qReduMIS is very much expected, given that a substantial part of the overall workload is done by clas-sical reduction with poly runtime that helps reduce the overall (exponential) runtime. Although the R2 values are modest, reflecting the high instance-to-instance variability inherent to NP-hard com-binatorial problems, the statistically significant slope dif-ference confirms that the scaling advantage of qReduMIS over standalone QAOA is robust and not an artifact of noise. Moreover, for a single value of kernel size, we can consider different graph instances with different densities (as shown in the lower panel in Fig. 8) and the density is another metric driving hardness. At circuit depth p = 6 , QAOA still exhibited signifi-cant exponential scaling, whereas qReduMIS showed no statistically significant exponential growth over the tested range K ∈ [4 , 22] . This represents the strongest quali-tative evidence for the advantage of the qReduMIS ap-proach: at sufficient circuit depth, the combination of graph reduction and QAOA eliminates detectable expo-nential scaling entirely within the experimentally acces-sible regime. 
+
+Performance with success probability. For com-pleteness, we include the comparison of the end-to-end success probability PMIS of standalone QAOA and qReduMIS powered by QAOA. The success probability measures the fraction of independent trials that return the optimal solution, without accounting for the com-putational cost per trial. Since qReduMIS expends a larger budget of quantum shots per trial than standalone QAOA, the optTTS metric reported in the main text provides a more balanced comparison by incorporating 23                
+
+> FIG. 8. Characteristics of the (first) kernel graphs in the testbed. Top: The distribution of the (first) kernel size across the intervals in the testbed. Lower: the density distribution of the kernels. The boxplot of these distributions is shown as a function of the kernel-size interval, and the interval of input-graph sizes corresponding to each kernel-size bin is also indicated.
+> FIG. 9. Heatmap showing the fraction of instances ( %) with
+> optT T S =∞per interval of (first) kernel sizes for the differ-ent methods considered. qReduMIS refers to the qReduMIS powered by QAOA with the number of layers pindicated. The median optTTS per interval is reported. Noticeably for QAOA with p= 2 and kernels with 22 nodes, the median optTTS is ∞, as the fraction of trials whose success proba-bility is zero is 80% .
+
+this cost. Nevertheless, the success probability remains an informative figure of merit in its own right: it di-rectly quantifies algorithmic reliability, and its practical relevance may increase as hardware evolves to support parallel circuit execution—in which case the wall-clock cost per trial would be governed by the number of se-quential QPU calls (which remains consistently low for qReduMIS) rather than the total shot count. Addition-ally, the quantum-shot schedule is a tunable hyperparam-eter, and future adaptive strategies may further reduce the per-trial budget, making the success probability an increasingly representative indicator of end-to-end per-formance. The success probability is shown in Fig. 10 as a func-tion of intervals of (first) kernel size |K 1| (hereafter de-noted simply K). We aggregate results into intervals of 
+
+|K| , ensuring a comparable number of samples (between six and ten seeds) in each interval. The exact number of seeds per interval is provided in Table IV. The x-axis also indicates the interval of input-graph sizes N corre-sponding to each interval of (first) kernel size. Note that the box plots already capture the instance-to-instance variability across the 73 graphs within each kernel-size bin, making per-instance bootstrap confidence intervals redundant for this aggregate view. As expected, increas-ing the number of QAOA layers improves the perfor-mance of both standalone QAOA and qReduMIS. How-24                              
+
+> FIG. 10. Success probability PMIS as a function of the first kernel size |K| for standalone QAOA (blue) and qReduMIS (green) on PSP-MIS instances from the Nikkei 225 index. Left: p= 2 layers; Right: p= 6 layers. Box plots show the distribution across problem instances within each kernel-size interval; the secondary x-axis reports the corresponding input graph size N.Standalone QAOA exhibits clear suppression of PMIS with increasing kernel size, dropping to 0.078 at |K| = 22 for both p= 2
+> and p= 6 . In contrast, qReduMIS with p= 6 achieves a much higher PMIS across all problem sizes. QAOA uses 500 quantum shots; qReduMIS uses 20 classical trials with 5 quantum shots per QPU call.
+
+ever, standalone QAOA exhibits a clear suppression in success probability as the kernel size grows, dropping to 
+
+0.078 at a kernel size of 22 for both p = 2 and p = 6 .qReduMIS shows a milder decline for p = 2 , while for 
+
+p = 6 , it achieves a success probability of exactly 1 across all problem sizes, causing the box plots to collapse into flat bars. The dispersion and outliers within each box arise because each box aggregates instances spanning a range of kernel sizes and densities, both of which drive the hardness of the MIS problem. The distributions of these quantities are shown in Fig. 8, where notably, the kernel density exhibits considerable variation within the intervals. 
+
+QPU calls. To estimate the optTTS we are interested in the actual number of QPU calls to reach the optimal solution. We refer to it as QPU calls to solution or D∗
+
+in the main text. In most cases, the optimal solution was found in fewer iterations than the total number of QPU calls performed. This is because the intrinsic stop-ping criterion of qReduMIS is running out of nodes as nodes are removed in each iteration and it may be that the optimal solution is either measured in the first QPU call or constructed recursively through the previous it-erations. The distributions in Fig. 11 correspond to the average QPU calls to solution performed per problem instance corresponding to the (first) kernel size. As ex-pected, when increasing the number of layers in QAOA from two to six, the QPU calls are reduced and concen-trated around one. The difference becomes significant for the larger problem sizes considered. Although for the larger sizes the QAOA with p = 2 does not sample the optimal solution within the qshots = 5 measurements, as the success probability of standalone QAOA is very low, and zero in some cases, incurring another QPU call over the updated kernel suffices to find the optimal solution. For both cases, given the problem instances considered, at most two QPU calls suffice to find the optimal solution with high probability, and this is even in the cases that standalone QAOA over the kernel exhibits low success probability. 
+
+QPU plays a crucial role in qReduMIS. We inves-tigate how the number of quantum shots ( qshots ) used in each QPU call of qReduMIS impacts performance. For this, we consider the performance on one Nikkei 225 market-graph instance of size 30 for different values of 
+
+qshots using the H2-1 emulator. The figures of merit are displayed in Fig. 12. Note that the success probabil-ity PMIS is the end-to-end algorithm success probability (Eq. 8), given by whether the algorithm finds the op-timal solution of the given graph or not. As expected, it increases with the number of qshots (left panel), as well as the average AR (right panel). Despite this im-provement in pMIS , the optTTS also grows with qshots 
+
+(centre panel). The empirical curve lies below the linear reference optTTS ∝ qshots , indicating that its growth is sublinear. Thus, the minimum optTTS is attained at the smallest value of qshots for which the success probability remains non-negligible. For reference, the success probability of standalone QAOA over the kernel graph is 0.4% . How-ever, with qReduMIS, by taking only five quantum shots (in each QPU call) the end-to-end success probability is boosted to 0.35 . Note that the probability of sampling the optimal solution from the independent set measure-25          
+
+> FIG. 11. Distribution of QPU calls to solution ( D∗) performed by qReduMIS as a function of the kernel size K, for p= 2 (left) and p= 6 (right). The distribution is over the average QPU calls to solution per problem instance. qReduMIS is executed for cshot = 20 trials, and the average number of QPU calls to solution is reported and shown for each kernel size.
+
+ments of QAOA with only five samples is ∼ 2% . Never-theless, as already discussed, qReduMIS does not require to sample the optimal solution in the QPU call to output an optimal solution, as we see in this example. While in practice qReduMIS performed more than one QPU call, it was observed that the optimal solution was found with only one QPU call followed by a classical reduction. 
+
+Performance with respect to the conductance-like hardness. It has been shown for the Quantum Annealing Algorithm (QAA) [28, 29] and Simulated An-nealing (SA) [28, 29, 55] that algorithmic performance is exponentially suppressed in a conductance-like hardness parameter H, defined as H = D|MIS |− 1/(|MIS | · D|MIS |),where Dα denotes the degeneracy of independent sets of size α. In our framework for constructing market graphs, for a given problem size (number of assets), this hardness parameter is directly governed by the correlation thresh-old λ used to convert the weighted graph into an un-weighted one, which in turn determines the graph den-sity. Importantly, the density of the kernel graphs–the graphs actually input to the QPU–depends on the clas-sical reduction, whose effectiveness is not, in principle, governed by the notion of hardness. We evaluate the performance of qReduMIS powered by QAOA as a function of the hardness parameter H
+
+and benchmark it against standalone QAOA. To con-struct graphs of varying hardness, we fix the number of nodes (assets) and adjust the threshold (or correlation sensitivity) λ to generate different graph densities. Note that the instances considered in Fig. 5 exhibit similar hardness values. This similarity arises because we set 
+
+λ = 1 
+
+> N2
+
+P 
+
+> i,j
+
+|Cij |, where C is the correlation matrix for the set of N assets randomly selected from the Nikkei 225 index. Although different assets are considered in each instance, the ratio of λ to the correlations within each as-set universe remains nearly constant. Furthermore, the range of problem sizes considered is relatively narrow. As a result, the hardness across instances does not change significantly: for the majority of input graphs, H remains below two, with only seven instances exceeding this value. The same behavior is observed for the kernel graphs. We fix the number of assets to 22, as the largest size we solve with the Quantinuum’s H2-1 emulator, and we randomly select from the Nikkei 225 index to construct 10 instances of 22 assets. We sampled 25 correlation sen-sitivity λ values in total: ten uniformly spaced values 
+
+λ ∈ [0 .001 , 1.0] spanning the full range, plus fifteen addi-tional values in the range λ ∈ [0 .25 , 0.56] , concentrated in the intermediate regime where the classical reduction yields a non-trivial kernel ( K > 0). Thus, we consider 
+
+250 instances in total. Of these, 57 have a non-empty kernel after classical reduction and a well-defined hard-ness parameter H > 0; these are the instances reported in Fig. 14. We compare the performance of qReduMIS powered by QAOA with p = 6 against running stan-dalone QAOA with same number of layers, both acting over the (first) kernel graph. In qReduMIS we set up the hyper-parameter of quantum shots in each QPU call to 
+
+qshots = 10 and for the experiments with QAOA we uti-lized 500 quantum shots to estimate the figures of merit. Fig. 14 presents the three performance metrics: suc-cess probability PMIS , average approximation ratio 
+
+⟨| IS |⟩ /|MIS |, and optTTS, as a function of the hard-ness parameter H. The figure reveals a clear degrada-tion in performance with increasing hardness for both solvers, yet qReduMIS consistently outperforms stan-dalone QAOA across success probability and average ap-proximation ratio. In the low-hardness regime ( H ≲ 1), both methods achieve high success probability and av-erage approximation ratio, reflecting the low hardness of these instances. However, while standalone QAOA achieves average approximation ratio values below 1 but above 0.8 in the low-hardness regime, qReduMIS attains exactly unit value for these instances. As H grows be-26                             
+
+> FIG. 12. Effect of the number of quantum shots ( qshots ) on qReduMIS performance for a Nikkei 225 market-graph instance (N= 30 , QAOA depth p= 2 , hardness H= 3 .375 ). Left: Success probability PMIS (fraction of classical shots finding the ground-truth MIS), with 95% Wilson confidence intervals (shaded). The horizontal dashed line at 1indicates the best possible value. Centre: Optimal time-to-solution optTTS ; the dashed line shows the linear reference optTTS ∝qshots . The experimental curve is below this reference line indicating that the increase in optTTS is slower than linear. Right: Average approximation ratio ⟨| IS |⟩ /|MIS |, showing that solution quality is significantly high across the different values of qshots . The horizontal dashed line at 1indicates the best possible value.
+> FIG. 13. Hardness of the (first) kernel graph as a function of the correlation threshold λutilized to construct the given market graph. The heatmap refers to the size of the (first) kernel obtained after the first reduction over the given market graph.
+
+yond 1, success probabilities and average approximation ratios decline for both approaches, but qReduMIS de-grades slowly with hardness, maintaining both metrics appreciably above the corresponding standalone QAOA values. Regarding optTTS, standalone QAOA’s optTTS rises steeply with hardness, whereas qReduMIS exhibits only a modest deviation from its otherwise near-constant optTTS. As discussed previously, qReduMIS with p = 6 
+
+achieves a steady optTTS for the majority of instances, as they are solved with a single QPU call. It is only for the harder instances that additional QPU calls become nec-essary, leading to an increase in optTTS. Nevertheless, within the regime of hardness and problem sizes consid-ered here, the number of such harder instances remains insufficient to extract a robust scaling exponent. Note that there is a small region of values of hard-ness parameter for which we do not have results. This is because we could not generate instances whose (first) kernels are characterized by those values of hardness. As discussed, for a fixed problem size, the spectrum of hard-ness parameter values is limited, and we have not seen a clear relation between the correlation threshold λ and hardness nor with the graph density. However, an easy– hard–easy transition of hardness is observed as a function of the density, which is also represented as a function of the threshold in Fig. 13. We observe fully reducible instances for both low and large correlation thresholds, making the graphs either fully dense or very sparse. For values of threshold in [0 .2, 0.6] , we observe non-fully re-ducible instances corresponding to different sizes of ker-nels but no clear monotonic relation. 
+
+Benchmark against a classical solver. To con-textualize the performance of qReduMIS, we benchmark against simulated annealing (SA), a well-established clas-sical metaheuristic for combinatorial optimization. We use an optimized SA implementation following Ref. [55]. For a fair comparison with QAOA and qReduMIS pow-ered by QAOA at circuit depth p, the number of SA steps is set to match p; 500 replicas are performed with a linear temperature schedule, and the same bootstrap methodology used for qReduMIS and QAOA is applied. Fig. 15 reports the SA results on the same Nikkei market-graph instances discussed in the main text (Fig. 5). The y-axis shows, on a logarithmic scale, the bootstrap median of the optimal time-to-solution (optTTS), estimated from 500 independent SA runs per instance. The majority of data points cluster at an optTTS floor of ≈ 2/3, which is the minimum value the estimator can report when SA succeeds on all 500 runs. It corresponds to evaluating Eq. C3 at M = 500 , which yields 2 ln 10 / ln(10 3) = 2 /3. A minority of instances ex-hibit a success probability below 1, indicating that SA fails on some replicas. Although these tend to be the 27                              
+
+> FIG. 14. Performance metrics as a function of the hardness parameter Hfor N= 22 Nikkei 225 market graphs with non-trivial kernel ( K > 0). Each point represents one problem instance ( 57 per method); error bars indicate 95% bootstrap confidence intervals obtained from 1000 binomial resamples over the 500 QAOA shots and 20 qReduMIS classical shots, respectively.
+> (Left) Success probability PMIS .(Middle) Optimal time-to-solution optTTS (log scale). (Right) Average approximation ratio ⟨| IS |⟩ /|MIS |, measuring the expected independent-set size normalised by the MIS size. Instances are generated from 25
+> correlation thresholds ( 10 seeds each); higher Hindicates a harder landscape.
+
+larger instances, some smaller instances display the same behaviour, because problem size alone does not deter-mine hardness: graph density is also a driver of difficulty for SA and, more broadly, for Markov-chain Monte Carlo solvers. As expected, increasing the number of SA steps improves performance and causes the optTTS distribu-tion to concentrate further around the 2/3 floor. Despite the few instances that depart from this floor, the fraction of non-trivial optTTS values is too small to support a meaningful scaling analysis or a fair head-to-head comparison with qReduMIS at the current instance sizes. We expect that benchmarking on larger instances will yield enough variation to enable such an analysis. We note that the qReduMIS results presented here are limited to kernel sizes of up to 22 nodes, owing to the computational cost of classically simulating quantum cir-cuits at larger scales.  
+
+> 3. Quantum-informed MIS of 3-regular graphs
+
+We also benchmark qReduMIS (powered by QAOA) on 
+
+unstructured instances. Specifically, we consider random 3-regular graphs, which have been extensively studied in the QAOA literature [31, 45, 62]. For MIS in particular, there are recent theoretical results characterizing QAOA performance on large-girth 3-regular graphs [45]. The reduction strategy used in qReduMIS is (clique-based) isolated-vertex removal. While this reduction is effective on structured (real-world) instances, synthetic random d-regular graphs are typically unstructured and therefore largely immune to this specific reduction. How-ever, within the qReduMIS framework the algorithm pro-ceeds recursively and in the quantum component when using the in-set criterion, frozen nodes are identified from QPU measurements and removed (together with their neighbors) and the resulting kernel graphs do not neces-sarily remain d-regular. This can create opportunities for the reduction rules to take effect in later recursion levels. For this reason, random 3-regular graphs provide a useful testbed to evaluate the generality and robustness of the proposed qReduMIS approach. For different problem sizes, we generate 20 random 3-regular instances (different seeds). We then bench-mark standalone QAOA against qReduMIS powered by QAOA for several circuit depths (layers) p using the noiseless statevector simulator. Fig. 16 (top) shows the success probability versus the number of nodes for differ-ent QAOA depths p (colors), both for standalone QAOA and when QAOA is used inside qReduMIS. We observe that the success probability of standalone QAOA decays approximately exponentially with problem size. Increas-ing p mitigates this decay and improves performance, but the overall exponential trend remains. In contrast, qRe-duMIS powered by QAOA achieves a success probability of 1 across all tested instances and all considered values of 
+
+p, as indicated by the single set of markers. Notably, even at small size ( N = 6 ), the best standalone QAOA success probability (across seeds) reaches 0.96 at p = 6 , whereas qReduMIS attains perfect success already with a sub-stantially smaller depth (e.g., p = 2 ). Fig. 16 (bottom) reports the number of quantum calls made by qReduMIS. This quantity remains bounded and increases with prob-lem size, consistent with the added recursion required to progressively identify and eliminate frozen nodes. No-ticeably, for all the problem instances, the number of quantum calls is larger than or equal to one. This is because the first reduction does not do anything to the 3-regular graph (i.e., reduction factor is zero) but after the first quantum call, with the in-set criterion, one node is selected and is removed together with its neighbors. This allows the possibility of producing an exposed cor-ner node, thus unblocking the next classical reduction. We perform these experiments on the (noisy) Quantin-28 
+
+FIG. 15. Optimal time-to-solution (optTTS) as a function of the first kernel size |K| for simulated annealing on PSP-MIS instances from the Nikkei 225 index. Left: steps = 2 ; Right: steps = 6 . Error bars denote 95% bootstrap confidence intervals on the median optTTS per problem instance. SA achieves an optTTS concentrated around 1, meaning that after running for only one replica, the optimal solution is found. There are some instances, as the (first) kernels become larger whose optTTS is significantly increased. However, this does not suffice to perform a scaling analysis of the optTTS with kernel size. 
+
+FIG. 16. Performance of QAOA and qReduMIS powered by QAOA tackling random 3-regular graphs of different sizes. QAOA, in both cases, is run with different numbers of layers p indicated by color. Left: success probability as a function of the number of nodes; for qReduMIS, PMIS = 1 for every p considered, causing the markers to overlap. Right: number of quantum calls of qReduMIS as a function of the number of nodes. Error bars correspond to the standard deviation; for all instances at least one quantum call is performed, so error bars for values below 1 have no physical meaning. 
+
+uum H2-1 emulator for selected problem sizes and report the success probabilities in Fig. 17, alongside noiseless simulation results for comparison. Standalone QAOA is run with 1000 shots for both p = 2 and p = 4 . In contrast, qReduMIS is powered by QAOA at depth 
+
+p = 2 , using 250 shots per iteration. When noise is in-cluded, qReduMIS performance can degrade, as reflected by reduced success probabilities for some instances at 
+
+N = 16 and N = 20 (see the violin plots). Neverthe-less, qReduMIS substantially outperforms standalone QAOA. Interestingly, the median success probability remains close to its noiseless value, suggesting that noise primarily affects the tails of the distribution rather than the typical-case performance. A similar behavior is observed for standalone QAOA: the noisy and noiseless distributions are comparable, and noise does not uniformly reduce performance. Consistent with previous results, standalone QAOA exhibits improved (median) performance as the number of layers increases. The distribution of the number of QPU calls made by 29                           
+
+> FIG. 17. Performance of QAOA and qReduMIS powered by QAOA on random 3-regular graphs of different sizes. Violin plots show the distribution of PMIS for QAOA with layer number p= 2 and p= 4 (in blue and green) and for qReduMIS powered by QAOA with p= 2 (orange), under both noiseless (solid fill) and noisy (hatched fill) conditions. Interestingly, qReduMIS achieves PMIS = 1 without dispersion in noiseless simulation. QAOA noisy results correspond to 1000 quantum shots, while QAOA within qReduMIS corresponds to 250 per iteration.
+> FIG. 18. The number of quantum calls of qReduMIS powered by QAOA with p= 2 on Quantinuum’s noisy emulator as a function of the problem size N.Each QPU call performed 250 quantum shots.
+
+qReduMIS is shown in Fig. 18. We find that at least 99% of the instances in our testbed require no more than 4 QPU calls, corresponding to a total of 1,000 shots (since each call uses 250 shots).  
+
+> 4. Technical details about the numerical simulations
+
+The hardware used for simulations with the Quantin-uum emulator was based on AMD CPUs. Depending on the experiment, we utilized up to 56 CPU cores and 60 GB of RAM to parallelize the runs of both qReduMIS and QAOA. 
+
+Specifications of qReduMIS implementation used in the benchmarks. We utilize the semi-greedy implementation of qReduMIS with the in-set criterion to select frozen nodes from the QPU output [29]. We pick 
+
+r = 1 candidate node from a restricted candidate list (RCL) of size KRCL = 2 (we use r here to avoid clash-ing with the correlation threshold λ). That is, we sample nodes with the highest probability of being in the set from measurement results {I n} whose Hamming weight corre-sponds to the largest or second-largest IS size. We make a subset of the top M = 4 nodes with highest frequency among the nodes corresponding to the measurements re-sult in the RCL. We then randomly select one node from these M and we add that node to the set of selected nodes 
+
+S. As we use the in-set criterion, the selected node and its neighbors compose Q and we proceed to remove them from the kernel graph and output a new kernel graph that is the input for the next qReduMIS iteration.

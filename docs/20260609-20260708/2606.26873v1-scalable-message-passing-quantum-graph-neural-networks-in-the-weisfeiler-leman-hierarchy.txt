@@ -1,0 +1,1886 @@
+Title: Scalable Message-Passing Quantum Graph Neural Networks in the Weisfeiler-Leman Hierarchy
+
+URL Source: https://arxiv.org/pdf/2606.26873v1
+
+Published Time: Fri, 26 Jun 2026 00:50:58 GMT
+
+Number of Pages: 35
+
+Markdown Content:
+# Scalable Message-Passing Quantum Graph Neural Networks in the Weisfeiler–Leman Hierarchy 
+
+Snehal Raj, 1, 2 Brian Coyle, 3, 4 L´ eo Monbroussou, 3, 5 Andr´ e J. Ferreira-Martins, 6, 1 Renato M. S. Farias, 6 and Elham Kashefi 1, 3 
+
+> 1
+
+LIP6, CNRS, Sorbonne Universit´ e, Paris, France 
+
+> 2
+
+QC Ware, Palo Alto, USA and Paris, France 
+
+> 3
+
+School of Informatics, University of Edinburgh, Edinburgh, UK 
+
+> 4
+
+Fujitsu Research of Europe Ltd., United Kingdom 
+
+> 5
+
+Terra Quantum GmbH, Germany 
+
+> 6
+
+Quantum Research Center, Technology Innovation Institute, Abu Dhabi, UAE 
+
+Graphs provide a natural language for relational data in chemistry, biology and optimisation. Graph neural networks (GNNs) have driven much of the recent progress in learning from such data through message passing, a single primitive that generalises convolution and attention. Quantum counterparts have been proposed, but with limited connection to message passing and few guarantees on performance or scalability. More broadly, the trainability of variational quantum circuits is a recognised bottleneck for their wide applicability, and pre-training has emerged as one way to address it. Yet for a quantum model to be useful, it must offer expressivity guarantees along with demonstrable scalability. Here we show how a quantum graph neural network can be built to perform message passing, to be permutation equivariant, and to sit at a chosen level of the Weisfeiler–Leman hierarchy, the standard measure of how finely a model can tell graphs apart. We show that, as for classical GNNs, the training can be done first on small graph instances, allowing for a pre-training that can mitigate usual training issues, and its output can be read out at a cost that stays low as the graph grows. We validate the framework in large-scale simulations of up to 56 qubits across three datasets, on synthetic graphs that ordinary message passing cannot separate, on molecular property prediction, and on the travelling salesperson problem. Our framework opens a path for near-term quantum algorithms with theoretical guarantees and practical scalability, bringing the principles of graph learning into quantum circuit design. 
+
+Graph neural networks (GNNs) have become a central tool in modern machine learning, driving progress in molecular property prediction and drug discovery [1], protein structure modelling as realised in AlphaFold [2], and combinatorial optimisation on graphs [3, 4]. Their success rests on message passing , the rule by which each node updates from its neighbours [1, 5]. Quantum versions have been proposed in several forms [6–12], and like their classical counterparts they can be made permutation equivariant [13–15]. Most of them, however, do not actually carry out message passing: they derive the circuit topology from the graph, placing gates along the graph’s edges so that the circuit layout mirrors the graph structure [7, 10, 11], while the step that defines a graph neural network, aggregating over each node’s neighbours and updating its state, is left to a classical readout rather than run inside the circuit, because performing it coherently is expensive. These models also face the trainability difficulty common to variational circuits, whose gradients can vanish as the circuit grows [16–18]. Therefore, it is important to show that a quantum graph model can be trained and scaled to large graphs. Message passing is what makes a model a graph neural network, and a unifying principle of modern deep learning: on regular domains, this single primitive subsumes convolutional, recurrent, and attention-based architectures as special cases [1, 19]. Because agraph carries no intrinsic ordering of its nodes, any graph operation must be permutation equivariant by construction, so relabelling the nodes relabels the output the same way [19, 20]. What limits such a model is how finely it can separate structurally distinct graphs, and the standard yardstick for this is the Weisfeiler–Leman (WL) hierarchy, a sequence of colour-refinement tests of increasing power for distinguishing non-isomorphic graphs [21]. Ordinary message passing reaches only the first level of this hierarchy, the 1-WL test, so increasing depth or width never separates a pair of graphs that 1-WL cannot tell apart [5, 21]. This ceiling has concrete consequences, since graphs indistinguishable to 1-WL can correspond to chemically distinct molecules and to substructures the network is therefore unable to count [22]. In this work, we introduce a quantum graph neural network that faithfully carries out message passing, is permutation equivariant, and sits in the Weisfeiler– Leman hierarchy at a level set by the model, rising above the 1-WL ceiling. We prove these properties for an instantiation built from subspace-preserving circuits. Confining the dynamics to a fixed subspace keeps the model trainable, at the cost of a classical simulation with polynomial overhead set by the size of the subspace [18, 23–28]. As is done with classical GNNs, we pre-train on small graphs and apply the model to larger instances. This avoids cost concentration, since the trainable dynamics of the model do not scale directly with the size of the graph. We demonstrate trainability 
+
+> arXiv:2606.26873v1 [quant-ph] 25 Jun 2026
+
+2and scaling directly, in numerical simulations of up to 56 qubits on three datasets: Cai–F¨ urer–Immerman graphs, a synthetic benchmark of pairs that ordinary message passing cannot separate, used to validate the expressivity claim; QM9 molecular property prediction; and the Euclidean travelling salesman problem. We present our framework and its guarantees in Sec. I, first by introducing the general framework to define GNNs along with the theoretical properties that make them useful. We then show how our framework, when instantiated with subspace-preserving circuits, respects these properties and how it stays scalable through the pre-training strategy and its readout. Sec. II validates the model numerically on three datasets. Cai–F¨ urer– Immerman graphs [29], the standard benchmark for the Weisfeiler–Leman test, confirm the expressivity result on graph pairs that no message-passing network can tell apart. QM9 regression [30] carries the same Weisfeiler– Leman gain over to real molecular property prediction. Euclidean travelling-salesman instances up to TSP-50 (56 qubits) exercise equivariance, trainability, and the train-small, deploy-large pipeline, at sizes beyond the reach of prior quantum circuits.  
+
+> I. RESULTS
+
+We begin by recalling what defines a graph neural network and the theoretical properties that make such a model useful. We then present a general framework for building graph neural networks with these properties and instantiate it with subspace-preserving quantum circuits [25, 31–35]. We prove that this quantum instantiation realises these properties, and show how it stays scalable and trainable as the graph grows.  
+
+> A. Graph Neural Network framework
+
+A graph neural network processes a graph G on N
+
+nodes. An encoder V (G) collects the DF -dimensional node features into a matrix X ∈ RN ×DF . The connectivity is carried by an adjacency operation A(G) ∈
+
+RN ×N . Message passing then refines these features over L rounds: with H(0) = X, each round transforms 
+
+H(ℓ) into H(ℓ+1) by alternating A(G), which aggregates each node’s neighbours along the edges, with a trainable evolution W (θ) ∈ RDF ×DF acting on the feature space, followed by a nonlinearity σ.In order to produce useful GNNs, it is important to respect several theoretical properties that the literature has identified [1, 19, 20], and we explain how they motivate a proper processing of the input graph data. 
+
+Definition 1 (Message passing) . One layer maps 
+
+H(ℓ) 7 → H(ℓ+1) = σ A(G) H(ℓ) W (θ), with σ a suitable nonlinearity; after L layers, the embedding of node i
+
+encodes aggregated features from its L-hop neighbourhood in G.
+
+Message passing is the operational core of nearly every graph neural network, building each node’s representation by repeatedly aggregating its neighbours and updating itself, so the model exploits the graph’s connectivity rather than the node features alone [1, 5]. It is also the unifying principle of modern deep learning, with convolution, recurrence, and attention all recovered as message passing on grids, sequences, and fully connected graphs [19, 36]. 
+
+Definition 2 (Exact permutation equivariance) . Let f
+
+be the function computed by a GNN. It is permutation equivariant if f (π · G, π · X) = π · f (G, X ) for every relabelling π ∈ SN of the nodes. 
+
+Because the nodes of a graph carry no intrinsic order, permutation equivariance is essential for the model to return the same predictions for the same graph under different labelling [19, 20]. Encoding the symmetry into the architecture rather than learning it from data restricts the model to label-consistent functions, which lowers sample complexity and improves generalisation [14, 15]. 
+
+Definition 3 (Weisfeiler–Leman test) . The j-Weisfeiler–Leman ( j-WL) test assigns each j-subset S of the nodes a colour ct(S), refined over steps t = 0 , 1, 2, . . . 
+
+from the initial colour c0(S) given by the isomorphism type of the subgraph induced by S. Each step updates 
+
+ct+1 (S) = HASH 
+
+
+
+ct(S), {{ ct(S′) : |S△S′| = 2 }}
+
+
+
+, (1) 
+
+where HASH is an injective relabelling, {{·} } denotes a multiset, and S△S′ is the symmetric difference, so the multiset ranges over the j-subsets S′ obtained from S by replacing a single node. Once the colours stabilise, two graphs are distinguished when their multisets of subset colours differ [21]. 
+
+Definition 4 (Weisfeiler–Leman expressivity) . An architecture has j-WL expressivity when it matches the Weisfeiler–Leman test, returning identical outputs for any two graphs that j-WL leaves indistinguishable and different outputs whenever j-WL separates them. 
+
+The Weisfeiler–Leman hierarchy is the standard measure of a model’s distinguishing power, and ordinary message passing reaches only its first level, 1-WL [5, 21]. This ceiling has concrete consequences, since 1-WL cannot separate graphs that differ in higher-order structure, including molecules with distinct properties and substructures such as cycles that the network cannot count [22]; lifting it is a central aim of higher-order graph learning [20, 37].  
+
+> B. Quantum Graph Neural Network
+
+Here we give a general framework for constructing QGNNs from four building blocks: a data loader V , an 3(a) Message passing 
+
+𝑖 
+
+ℎ𝑖 ← 𝜎 
+
+( Í 𝑗 ∈ N ( 𝑖 ) 𝐴 𝑖 𝑗 ℎ 𝑗 𝑊 
+
+)
+
+(b) Permutation equivariance     
+
+> 1
+> 2
+> 34
+> 5
+> 𝐺
+> 𝜋 4
+> 5
+> 13
+> 2
+> 𝜋 ·𝐺
+
+𝑓 𝜽 (𝜋 ·𝐺 ) = 𝜋 · 𝑓 𝜽 (𝐺 )
+
+(c) WL expressivity    
+
+> 𝑗 =1𝑗 =2𝑗 =3𝑗 =4
+
+𝐺 𝑗 -WL 
+
+≁ 𝐺 ′ =⇒ 𝑓 𝜽 (𝐺 ) ≠ 𝑓 𝜽 (𝐺 ′)
+
+(d) Quantum Graph Neural Network 
+
+embedding 
+
+> 𝑛 =𝑘
+
+node    
+
+> 𝑛 =𝑗
+> 𝑞 𝑒
+> 1
+> 𝑞 𝑒
+> 2
+> 𝑞 𝑒 𝐷
+> 𝑞 𝑛
+> 1
+> 𝑞 𝑛
+> 2
+> 𝑞 𝑛 𝑁
+> ...
+> ...
+> ×𝐿 layers
+
+𝑉 (𝒙 )
+
+> load
+
+𝑊 (𝜽 )
+
+> train
+
+A ( 𝐺 )
+
+> adj.
+
+𝑀 (𝜽 𝑀 )
+
+> mix
+
+𝛾 
+
+> readout
+> node features
+> edge features
+
+|𝜓 (x, 𝐺 )⟩ = 𝑀 (𝜽 𝑀 ) [ 𝑊 (𝜽 ) A ( 𝐺 ) 𝑉 (x) ] 𝐿 |𝜓 0⟩
+
+FIG. 1. Graph-learning properties and the quantum graph neural network. (a) Message passing. Each node updates from its neighbours, hi ← σ  P   
+
+> j∈N (i)
+
+Aij hj W , so after L rounds a node aggregates its L-hop neighbourhood. (b) Permutation equivariance. Relabelling the input nodes by π relabels the output by the same π, fθ (π ·G) = π ·fθ (G). (c) Weisfeiler–Leman expressivity. The node-register particle number j sets the level of the set-based j-Weisfeiler–Leman hierarchy that the model reaches: at generic parameters it gives two graphs separated by j-WL distinct outputs, G̸ ∼j-WL 
+
+G′ ⇒ fθ (G)̸ = fθ (G′), exceeding the 1-WL ceiling for j ≥ 3. (d) A node register (N qubits at particle number j) and a 
+
+feature-embedding register (D qubits at particle number k). A loader V (x) encodes the graph, an equivariant adjacency A(G)acts on the node register and a trainable evolution W (θ) on the embedding register, alternating over L layers; a joint-register mixing layer M (θM ) couples the registers, and a readout γ returns the node and edge features. 
+
+equivariant adjacency layer A(G), a trainable evolution 
+
+W (θ), and a joint-register mixing layer M (θM ). We also instantiate this framework with subspace-preserving quantum circuits [25, 31–35, 38–41], and show how the resulting architecture respects the properties of Section I A. We detail each block below: 
+
+a. Hierarchical data loader. To reproduce the framework’s structure, we split the qubits into two registers. The N -qubit node register indexes the graph’s nodes at Hamming weight j, spanning the subspace HjN
+
+of dimension  Nj
+
+: its basis states are individual nodes at 
+
+j=1 and j-subsets of nodes (edges, triangles, and higher-order groups) at larger j. The D-qubit embedding register 
+
+holds the corresponding features at Hamming weight k,in HkD with DF =  Dk
+
+. Indexing the node basis by j-subsets T , the loader V prepares 
+
+|x⟩ = X
+
+> TDF
+
+X 
+
+> f=1
+
+x(T ) 
+
+> f
+
+|enode  
+
+> T
+
+⟩ ⊗ | eembedding  
+
+> f
+
+⟩ , (2) with enode  
+
+> T
+
+∈ { 0, 1}N of Hamming weight j, eembedding  
+
+> f
+
+∈{0, 1}D of Hamming weight k, and x(T ) the features of subset T (the node features at j=1). It is realised by the controlled-Givens particle-number encoder of [42], and the reuploading layers below apply it to an arbitrary state in HjN ⊗ H kD .
+
+b. Equivariant adjacency A(G). The adjacency layer applies Givens rotations between the node-qubit pairs that form an edge in G, encoding the graph connectivity. We show in Theorem 1 that, with the rotation angles θij assigned from the edge weights in a canonical ordering, the layer respects Definition 2. 
+
+c. Trainable evolution W (θ). Acts on the embedding register only and is shared across the node-register components. Many gate sets are admissible here, with different trainability and expressivity according to their dynamical Lie algebra. Our instantiation uses subspace-preserving gates: a Cayley parametrisation of SO( D) lifted to SO( DF ) by the k-th compound representation C(k)(·) [33, 43], with non-compound alternatives also available [25, 42]. We choose this set for its favourable trainability dynamics. 
+
+d. Reuploading and nonlinearity. The model is built from L layers, and the input features are re-4uploaded through the amplitude encoder V at each layer. This transformation creates non-linear features in the amplitudes of the quantum state and makes the overall map from input features to output nonlinear [44]. Fermionic ladder operators on each register follow from the Jordan–Wigner mapping under the same lexicographic qubit ordering; the embedding-register 1-RDM used as the readout in Section II E is γpq =
+
+⟨ψ| a† 
+
+> p
+
+aq |ψ⟩ for p, q ∈ [D]. 
+
+e. Joint-register mixing M (θM ). A final layer mixes the two subspaces. It applies Givens rotations between qubit pairs within and across the registers, taking the state into the subspace of N + D qubits at Hamming weight j + k. The layer has three kinds of gates: between node qubits, between embedding qubits, and across the registers. The angles are not tied; each is indexed by its rank in a canonical SN -invariant ordering induced by G, which preserves SN -equivariance (Supplementary Note 1).  
+
+> C. Main results
+
+In this section, we present the theoretical guarantees of the QGNN framework and its subspace-preserving instantiation. We first show that the instantiation realises, precisely, each of the three properties defined in Section I A: message passing, exact permutation equivariance, and Weisfeiler–Leman distinguishing power. We then show that the same instantiation is scalable: it can be pre-trained on small graphs and deployed on larger ones; similar to the usual training pipeline for classical GNNs. Our experiments show that these models remain trainable on large instances and that their readout cost remains low.  
+
+> 1. Expressivity guarantees
+
+a. Message passing. The model performs message passing inside the circuit, realising the layer map of Definition 1. The adjacency A(G) acts on the node register and routes each node’s amplitude along the edges; the trainable evolution W (θ) acts on the embedding register and updates the per-node features; and re-uploading the loader at each layer supplies the nonlinearity. All of this is done with quantum operations, not a classical post-processing step. The construction differs from a classical 1-GNN in two ways. First, the aggregation: a 1-GNN sums over each node’s neighbourhood multiset [5, 21], while the QGNN uses the deterministic real-orthogonal map A(G) on a fixed subspace of dimension  Nj
+
+. Second, the connectivity: a classical network uses a hard adjacency mask, while here every pair of node qubits is coupled, and the graph enters through the rotation angles. Each circuit iteration then matches one round of set-based j-WL refinement [21]: a Givens rotation between node qubits a and b couples the 
+
+j-subsets S and S′ = ( S \{ a})∪{ b} that differ by a single swap, the one-swap neighbourhood that defines set-based 
+
+j-WL (Lemma 3). 
+
+b. Exact permutation equivariance. Relabelling the input nodes permutes the output node and edge features by the same permutation, exactly and at every parameter value, so the model satisfies Definition 2. This is a consequence of the framework’s two-register structure. The trainable evolution acts only on the embedding register and is shared across the node-register components, so it is unchanged by any relabelling of the nodes; the graph-dependent operations, the adjacency and the joint mixer, are applied in a canonical ordering fixed by the edge weights rather than the node labels, so a relabelling reorders the same gates without changing their combined action. Together, these give exact SN -equivariance ( SN the symmetric group of all N ! possible relabelling of the nodes) without tying any parameters together. Earlier equivariant graph models, classical and quantum alike, instead impose the symmetry by sharing or tying parameters across the symmetric group [13, 19, 20], which constrains the function class. 
+
+Theorem 1 (Exact SN -equivariance) . Let π ∈ SN act on the node register through the permutation operator Pπ ,with Pπ |T ⟩node = |π(T )⟩node for every j-subset T ⊆ [N ].For every input x = ( X, A ) consisting of node features 
+
+X ∈ RN ×d and an adjacency matrix A ∈ RN ×N , every parameter assignment θ, and every π ∈ SN ,
+
+fθ
+
+ π · X, π · A = π · fθ (X, A ). (3) We prove Theorem 1 in Supplementary Note 1, and Section II D measures its effect on data efficiency (Figure 3). 
+
+c. Expressivity beyond the 1-WL ceiling. Amessage-passing network distinguishes two graphs only when the 1-Weisfeiler–Leman (1-WL) test does, a ceiling that bounds every standard architecture. The node-register particle number j sets how much graph structure the model resolves: at generic parameters, for 2 ≤ j ≤ 4, it matches the set-based j-WL test exactly (Definition 4), one circuit iteration per refinement round, and from j=3 it separates graphs that 1-WL, and hence every message-passing network, cannot. To our knowledge, it is the first quantum graph model proven to do so. 
+
+Theorem 2 (j-WL expressivity, informal) . For 2 ≤ j ≤
+
+4, the L-iteration QGNN of Section I B has set-based j-WL expressivity (Definition 4) at generic parameters. At node-register particle number j the QGNN’s basis states are the j-subsets of nodes that j-WL colours (Eq. (2) ), 
+
+HjN = span  |enode  
+
+> S
+
+⟩ : S ⊆ [N ], |S| = j ,
+
+and one circuit iteration performs one round of j-WL refinement. With each subset started from a colour that fixes its induced subgraph up to isomorphism, after L5
+
+iterations the QGNN output fθ separates exactly the graphs that L rounds of j-WL separate, 
+
+fθ (G) = fθ (G′) ⇐⇒ G ∼j-WL G′.
+
+For j ≥ 3, this passes the 1-WL ceiling that bounds every standard message-passing network. 
+
+The initialisation carry the graph’s structure into the model: two copies of the model with the same parameters, run on two graphs that j-WL tells apart, still produce different outputs, which is why the choice of initialisation is the essential ingredient. The construction works for groups of up to four nodes; Supplementary Note 2 gives a concrete choice, proves the result, and explains why larger groups need more information. Section II A validates the ascent on Cai– F¨ urer–Immerman families (Figure 2).  
+
+> 2. Scalability
+
+A central obstacle to scaling variational quantum algorithms is the barren plateau phenomenon, where gradients vanish as the circuit grows and prevent training [16, 17]. The phenomenon is tied to the size of the space the circuit’s dynamics explore: it arises when those dynamics reach an exponentially large space, and is mitigated when they stay within a smaller, structured subspace [18, 23–25]. The two-register QGNN works inside such a subspace; we recall the relevant trainability results in Supplementary Note 6. 
+
+Proposition 1 (GNN pre-training) . A GNN can be pre-trained on small graph instances: the trainable evolution 
+
+W (θ) acts only on the embedding register, whose size does not typically grow with the graph, while the adjacency layer requires no training. 
+
+This mirrors standard practice for classical graph networks, whose trainable weights act on the feature channels at a width chosen independently of the number of nodes, so a model trained on small graphs is routinely run on much larger ones, as in graph-based combinatorial optimisation [3, 4]. Our architecture inherits the property because the trainable evolution lives on the embedding register, kept separate from the growing node register. We use it through a transferable initialisation , in which parameters fitted at one graph size initialise the next; a similar train-small, deploy-large idea has recently been proposed for variational quantum models to ease their training [26–28]. 
+
+a. Trainability. Our technique is heuristic, but the numerical evidence is favourable. Although the state after the mixing layers lies in the joint subspace of N +D
+
+qubits at Hamming weight j +k, the gradients we observe do not follow that subspace dimension: across instances up to 56 qubits the architecture avoids the vanishing-gradient behaviour the subspace dimension would suggest, and the transferable initialisation improves the trend further, keeping the gradient signal one to two orders of magnitude above a random start at every size we test (Figure 4). A supporting trainability argument, under stated assumptions, is given in Supplementary Note 6 (Proposition 3). 
+
+b. Readout at polynomial cost. To ensure scalability, the trained model must also be easy to read out for deployment. 
+
+Proposition 2 (Polynomial-cost readout) . The node and edge features are the entries of the embedding-register one-particle density matrix γpq = ⟨ψ| a†
+
+> p
+
+aq |ψ⟩ (p, q ∈
+
+[D]), a D × D matrix over the D embedding modes with trace k. It is read in two steps: the node register is projected onto a single node, and the embedding register of the conditional state is measured. This matrix can be estimated to accuracy ε in O(D3/ε 2) measurement shots, either by a deterministic Hartree–Fock readout [45] or by a matchgate shadow [46] on the embedding register. The cost is set by the D-qubit feature register, not the number of nodes; the per-node projection multiplies it by 1/P proj , the inverse success probability of the node-register projection, which is polynomial in N .
+
+We prove this in Supplementary Note 7. Computational-basis measurements alone recover only the diagonal of this matrix; Section II E shows on the TSP task that the matchgate readouts keep the task-relevant information while they do not. Together, these let the model be trained on small graphs and run on larger ones.  
+
+> II. NUMERICAL VALIDATIONS
+
+We test the framework’s guarantees with large-scale numerical simulations. The expressivity, equivariance, trainability, and readout properties established as theorems and propositions in the previous sections are validated here at scale: the runs use multiple random seeds, reach up to 56 qubits, and cover both synthetic graphs and real-world data, showing that these properties hold and are useful in practice. We work with three datasets. The first, Cai–F¨ urer–Immerman (CFI) graphs [29], is a synthetic test of the j-WL ascent of Theorem 2. The second, QM9 [30], carries the same ascent over to a real molecular-property task. The third, the Euclidean travelling-salesman problem [3, 4], runs the full pipeline end-to-end at j=1, and also carries our ablations of permutation equivariance and trainability.   
+
+> A. Distinguishing graphs beyond 1-WL: CFI families
+
+On Cai–F¨ urer–Immerman (CFI) graphs, the QGNN’s distinguishing power rises with the node-register particle number j exactly at the level Theorem 4 predicts. CFI graphs are pairs of non-isomorphic graphs built 6so that the 1-Weisfeiler–Leman (1-WL) test, and every standard message-passing network with it, cannot tell them apart [29]; separating a pair requires going beyond 1-WL. Because the node register at particle number j
+
+encodes j-subset interactions, the model’s distinguishing power is set-based j-WL [21], and crossing the 1-WL ceiling needs j≥3. We use two families, CFI( K3) on N =6 vertices, separable at j=3, and CFI( K4) on N =8 vertices, separable at j=4. We train the QGNN end-to-end as a binary classifier on random relabellings of each graph, so success requires a permutation-invariant rule rather than memorised vertex labels. On both families, the test accuracy jumps from chance to 100% exactly at the predicted particle number, 
+
+j=3 for CFI( K3) and j=4 for CFI( K4), and stays at chance below it (Figure 2(a)). Classical baselines at matched parameter budgets behave as predicted: a 1-WL graph isomorphism network stays at chance on both families, while a 3-WL network (PPGN [47]) separates both. The deterministic k-WL test on the BREC benchmark [48] fixes the ceiling each model is measured against (Supplementary Note 3).  
+
+> B. Molecular property prediction (QM9)
+
+QM9 is a standard benchmark in quantum chemistry: 130 ,831 small organic molecules, each with up to nine heavy atoms (carbon, nitrogen, oxygen, fluorine) and a set of properties computed by density-functional theory [30]. We predict the HOMO–LUMO gap, the energy difference between a molecule’s highest occupied and lowest unoccupied orbitals, a quantity that governs much of its chemical reactivity and is a common target for learned property prediction. We ask whether raising the node-register particle number j, which raises the model’s 
+
+j-WL level (Theorem 4), lowers the error on this real task. Each molecule is processed end-to-end. The node register is prepared at particle number j, so its basis states carry single atoms at j=1 and groups of j atoms at higher j, each loaded with a feature describing the local bonding around it. The only quantity changed between runs is j: the embedding, the circuit depth, the head, and the optimiser are all held fixed (Methods M1). The error falls monotonically as j rises, from 0 .398 eV at j=1 to 0.308 eV at j=2 and 0.235 eV at j=3 (Figure 2(b), Figure 2); the j=1 value is a validation estimate and the other two are test errors, and amulti-seed run on a smaller subset reproduces the same ordering (Supplementary Note 4). The parameter count is almost unchanged across the sweep, so the gain comes from the added node-register resolution rather than a larger model. A classical message-passing network [21] reaches a lower error on the same task, but with about 320 × more parameters.   
+
+> C. Euclidean travelling salesman at j=1
+
+The travelling-salesman problem entails finding the shortest closed tour through N cities placed in the plane, and it is NP-hard. Learning to solve it is an active area for graph neural networks, with both classical [3, 4] and quantum [13] architectures developed for the task. We use the benchmark instances of Skolik et al. [13]. Each instance is solved end-to-end at j=1: a small encoder maps the city coordinates onto the embedding register, and after the trainable iterations and the mixer, the per-node 1-RDM features are turned into an edge-probability matrix and decoded into a tour (Methods M1). The runs span instances from N =5 to 50 cities, the largest a 56-qubit simulation at N =50. Tour quality is the ratio of the produced tour length to the optimal, where 1.0 is optimal (Figure 2(c), Table V; full protocol in Supplementary Note 5). The mean ratio is 1.008, 1.034, 1.078, 1.128, and 1.201 at N =5 , 10 , 20 , 30 , 50, declining steadily with N at the fixed embedding. The reinforcement-learning equivariant circuit of Skolik et al. [13] reaches 1 .026, 1.047, and 1.139 at N =5 , 10 , 20; our supervised j=1 model is at or below these where they overlap, though the two pipelines optimise different objectives, and there is no comparison beyond N =20 because simulating their N -qubit state vector becomes infeasible. At matched parameter counts, a classical graph convolutional network reaches a lower binary cross-entropy, which we take up in the Discussion. This j=1 setting also carries the supporting studies of permutation equivariance (Section II D) and trainability and readout (Section II E), together with two ablations in Supplementary Note 10 and Supplementary Note 9.  
+
+> D. Permutation equivariance
+
+Built-in permutation symmetry makes the model more data-efficient: it removes the need to relearn the same rule under every node relabelling. The standard route to SN -equivariance in QGNNs ties parameters across the symmetric group [7, 13, 49], which costs expressivity inside the equivariant class. Our two-register construction is exactly equivariant without tying any parameters: the canonical edge ordering of the adjacency operation A(G) and the joint mixer M is fixed by the graph’s weighted structure rather than its node labels, and the trainable evolution W (θ) acts identically on each node’s embedding register, so any relabelling leaves the combined action unchanged (Theorem 1). We test this on TSP-5 edge prediction, where the model scores each edge for membership in the optimal tour and is graded by validation binary cross-entropy (lower is better). The equivariant model is compared against a matched-parameter variant that swaps the canonical edge ordering of A and M for a fixed-lexicographic one and is otherwise identical. It reaches a lower validation BCE at every training-set size, by 7(a) CFI 6 ∼=                                                   
+
+> 1234
+> particle no. j
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Test acc. (%)
+> GIN (1-WL) CFI( K3)CFI( K4)
+> jCFI( K3)par CFI( K3)acc CFI( K4)par CFI( K4)acc 13,027 49 3,027 49 23,155 49 3,155 49 33,283 100 3,283 49 4––3,411 100
+> (b) QM9
+> 123
+> particle no. j
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> MAE (eV)
+> jParams MAE 12,591 0.398 22,623 0.308 32,655 0.235 Classical GNN 849 ,569 0.121
+> (c) Euclidean TSP
+> 510 20
+> cities N
+> 1.00
+> 1.05
+> 1.10
+> 1.15
+> Tour ratio
+> QGNN (ours) Prior QGNN
+> NParams Tour ratio 55,813 1.008 10 11 ,149 1.034 20 11 ,399 1.078 30 11 ,704 1.128 50 23 ,486 1.201
+
+FIG. 2. Numerical validation across three graph-learning tasks. (a) CFI graph discrimination. Test accuracy of the trained QGNN as the node-register particle number j increases, on two Cai–F¨ urer–Immerman families that 1-WL message passing cannot separate; accuracy reaches perfect separation exactly at the predicted level ( j=3 for CFI( K3), j=4 for CFI( K4)) while a 1-WL GIN baseline stays at chance and a 3-WL network (PPGN) separates both families (Supplementary Note 3). 
+
+(b) QM9 molecular property prediction. Mean absolute error on the HOMO–LUMO gap over the full QM9 set (130 ,831 molecules) falls monotonically with j at near-constant parameter count; a classical GNN reaches a lower error at roughly 320 ×
+
+the parameter count (Supplementary Note 4). (c) Euclidean travelling salesman at j=1: tour ratio (1 .0 is optimal) versus the number of cities N , against a prior QGNN, the equivariant quantum circuit of Skolik et al. [13], with the table extending to N =30 , 50 where no prior QGNN baseline is available (Supplementary Note 5). 
+
+14%, 6%, and 16% at n=500, 1000, and 2000 (three seeds each; Figure 3, with raw losses and per-seed numbers in Supplementary Note 1). The gap is consistent with the hypothesis-class reduction expected from SN -equivariance [14, 15]. 
+
+E. Trainability and readout 
+
+Two properties decide whether the framework scales: training must keep a usable gradient as the model grows, and the trained model must be read out cheaply (Proposition 2). Both rest on the same matchgate-compatible Givens rotations gates; here we test them numerically. 
+
+a. Trainability. We measure the per-parameter gradient variance at random initialisation over a sweep of graph and embedding sizes (Figure 4a). At fixed (D, k ) the variance is flat in N , and across ( D, k ) ∈{(6 , 3) , (8 , 4) , (10 , 5) } it follows the predicted dependence on the embedding dimension, out to N + D = 56 qubits; the measured curves stay well above the exponential decay that would mark a barren plateau and track the polynomial floor of Proposition 3. Transferring trained parameters across sizes helps further: initialising each model from a smaller trained one, in a single step or chained from N −1 to N , keeps the gradient signal one to two orders of magnitude above a random start at every size (Figure 4b). The per-regime power-law fits, and the gate-group breakdown are in Supplementary Note 6. 
+
+b. Readout. Deployment needs the embedding-register 1-RDM read out cheaply, at the cost of Proposition 2. The two computational-basis readouts recover only the diagonal of the 1-RDM and miss its off-diagonal hopping entries, while the deterministic Hartree–Fock and matchgate-shadow readouts apply a matchgate basis change first and recover the full matrix. The difference shows up on the task: the computational-basis Z+ZZ readout stalls at tour ratio 1 .043 on TSP, while the two matchgate readouts reach 1 .006 at the same shot budget. The compression to the D × D 1-RDM is generically injective up to a single direction, so it discards almost no information (Proposition 5). Supplementary Note 7 sets out the shot cost of all four readout strategies and their full task performance. 80 12 25                     
+
+> 0.4
+> 0.5
+> 0.6
+> Validation BCE  (a)
+> 025 50
+> (b)
+> 050 100
+> (c)
+> Epoch
+> Equivariant Fixed ordering
+> FIG. 3. Equivariance helps the model learn from less data. Training curves on a 5-city travelling-salesman edge-prediction task at three fixed training-set sizes. The y-axis is the validation prediction loss (lower is better). The blue curve is the model with built-in permutation symmetry (canonical
+> A+ canonical-ordering M); the red curve is a matched-parameter version of the same model with the symmetry broken (fixed-lex A+ linear M). Both arms train for the same number of epochs at every training-set size, with no early stopping. Shaded bands are ±one standard deviation across three random seeds. Equivariance gives a lower loss at every training-set size and at every epoch within each panel; per-seed numbers are in Supplementary Note 1. Setup details are in Methods.
+> III. METHODS M1: Task-specific instantiations
+
+All three experiments share one pipeline: the trainable layer stack of Section I A, with data re-uploading and the joint-register mixing layer, followed by the embedding-register readout of Section II E. They differ only in the input encoding, the readout head, the loss, and any decoding step at inference. The first, CFI graph discrimination, is the theoretical-validation experiment for the j-WL ascent of Theorem 4 (Section II A); QM9 HOMO–LUMO gap regression (Section II B) and Euclidean TSP edge prediction (Section II C) are the two real-world tasks. 
+
+a. CFI graph discrimination at j ≥ 2 (theoretical-validation experiment). This discrimination test anchors Theorem 4 on graph pairs that no 1-WL-bounded network can distinguish. Inputs are pairs of CFI graphs, or pairs drawn from the BREC benchmark [48], expanded into 200 random vertex permutations of each graph; the permuted instances are split 60 /20 /20 into train, validation, and test sets, stratified on the underlying pair label. The target is a binary probability that the two graphs of an instance are isomorphic. The encoder loads graph-indicator features into the embedding register at ( D, k )=(6 , 3). After the trainable iterations and the joint-register mixing layer, the per-node embedding features are summed across the node register into a single permutation-invariant vector per graph, and a single-layer linear classifier maps this vector to the class probability. Training minimises a binary cross-entropy on the graph labels with the optimiser stack of M2. 
+
+b. QM9 HOMO–LUMO gap regression at j ∈{1, 2, 3}. Inputs are atom-feature graphs from the full QM9 dataset (130 ,831 molecules); the target is the HOMO–LUMO gap in eV. The encoder loads atom features into the embedding register at ( D, k )=(6 , 3), using isomorphism-type atom features (full-graph degree at j=1, edge-gating at j ≥ 2). After the trainable iterations and the joint-register mixing layer, the per-node features are sum-pooled and passed through a small MLP head that produces the scalar prediction. Training minimises mean absolute error on a stratified 80 /10 /10 split with the optimiser split of M2; a complementary four-seed run on a 3 ,000-molecule subset provides across-seed error bars. Per-j settings and per-seed numbers are in Supplementary Note 4. 
+
+c. TSP edge prediction at j=1 . Inputs are the 2D Euclidean coordinates of the N cities of a TSP instance, drawn from the EQC benchmark of Skolik et al. [13] (the random-uniform TSP dataset of Vinyals et al. [50]). The target is an edge-probability matrix pij ∈ [0 , 1] over the complete graph on N nodes. The encoder maps each coordinate pair through a feed-forward MLP into a particle-number-k probability vector on the embedding register at ( D, k )=(6 , 3), loaded by the hierarchical loader of Section I A. After the L trainable iterations and the joint-register mixing layer, the per-node 1-RDM features are read out and passed through a small edge-logit MLP head, one row per node, yielding the edge probabilities. Training minimises a class-balanced binary cross-entropy on a held-out test split, with optimiser settings in M2. For the tour-ratio numbers of Section II C, the predicted edge probabilities are decoded into a Hamiltonian cycle by beam search of width 100; greedy nearest-neighbour decoding is reported as an ablation. An alternative encoder that replaces the MLP with geometric simplicial features computed from the coordinates is described with the TSP-specific protocol in the corresponding Supplementary Note. 
+
+> M2: Training and deployment protocol
+
+We train the model in classical simulation and design the protocol so that the trained parameters can later be evaluated on quantum hardware without retraining. Each task is trained with the loss stated in its M1 instantiation, using separate optimisers for the classical and quantum parameters: Adam for the classical weights and stochastic gradient descent for the quantum Givens angles, following the synergistic classical-quantum scheme of Rudolph et al. [28]. The quantum angles start near the identity, drawn from a small zero-mean Gaussian, so that the gradient behaviour of Section II E holds at initialisation. Two aspects of the protocol concern scaling. 911 16 20 30 40 50 56                    
+
+> Number of qubits N+D
+> 10 −7
+> 10 −6
+> 10 −5
+> 10 −4
+> 10 −3
+> Gradient variance  Var θ[∂ θ]
+> (a)
+> (D,k) = (6, 3)
+> (D,k) = (8, 4)
+> (D,k) = (10, 5)
+> Observed
+> Floor ∝(N+Dj+k)−1
+> (a) Per-parameter gradient variance vs. qubit count 11 16 20 30 40 50 56
+> Number of qubits N+D
+> 10 −9
+> 10 −7
+> 10 −5
+> 10 −3
+> 10 −1
+> Gradient variance  Var θ[∂ θ]
+> (b)
+> Random init
+> Identity (θ= 0)
+> Transfer from TSP-5
+> Chain (n−1 → n)(b) Transferable initialisation across graph sizes
+
+FIG. 4. Polynomial gradient variance and transferable initialisation. (a) Per-parameter gradient variance of our QGNN at three half-filling operating points ( D, k ) ∈ { (6 , 3) , (8 , 4) , (10 , 5) }, j=1, against the qubit count N +D up to 56 qubits (mean over 200 random initialisations per point). Dotted lines: a  N +Dj+k
+
+−1 reference, anchored and colour-matched to each curve, which every measured curve stays well above. (b) Gradient signal at the start of training under four initialisation regimes: random parameters (squares), identity ( θ=0, triangles), single-step transfer from a TSP-5-trained QGNN (down triangles), and chained transfer from N −1 to N (circles). A log–log regression confirms polynomial (power-law) decay rather than the exponential decay of a barren plateau, the power-law fit favoured in every case ( R2 = 0 .94 , 0.95 , 0.99 for the random, identity, and single-step transfer fits). Sweep ranges, per-regime exponents, and the gate-group and shot-complexity breakdowns are in Supplementary Note 6. 
+
+Parameters fitted at one graph size serve as the initialisation at the next, since ( D, k, j ) are independent of N and the embedding-register evolution is invariant under N ; the extra joint-mixer angles at the larger size are added in the canonical SN -invariant ordering. This is the transfer initialisation used in the N -scaling sweeps of Section II E. Because the trained circuit is matchgate-compatible, we envision carrying the same parameters onto quantum hardware at the deployment size, with the per-node features read out through the polynomial-shot 1-RDM measurement of Section II E. We do not perform this hardware step in the present work. Reported TSP and CFI metrics are averaged over five seeds and evaluated on a disjoint test split held out from training and model selection; TSP runs train for 200 to 800 epochs as N grows, and the QM9 run for 300 epochs on the full dataset. The j=1 TSP runs use a vectorised PyTorch back-end, while the QM9 and CFI runs at j ≥ 2 use a PennyLane reference implementation of the native j-subset circuit; the two give numerically equivalent forward and backward passes, differing in throughput rather than in the model. 
+
+M3: Resource estimates for quantum deployment 
+
+This paper validates the model in classical simulation and does not run it on hardware, so we give only a ballpark sense of what a future hardware run would need. We anchor the estimate at the largest TSP configuration with completed multi-seed results, N =20 at ( D, k )=(6 , 3) with node-register particle number j=1 (Methods M1), and project up to the N =50 deployment target. The two registers occupy N + D qubits, from 26 at N =20 to 56 at N =50, well within the qubit count of present-day superconducting platforms such as Google Willow ( ∼ 105 qubits) [51] and IBM Heron ( ∼ 156 qubits). A forward pass is built from particle-number-preserving Givens rotations, each compiling to a constant number of two-qubit gates [52], with the adjacency layer dominating at  N
+
+> 2
+
+ Givens per iteration; at N =50 this is on the order of 10 4 two-qubit gates over the few iterations used, with the per-block accounting in Supplementary Note 11. Reading the embedding-register 1-RDM out to accuracy ε takes O(D3/ε 2) shots per node, on the order of 10 5 to 10 6 shots at D=6 and ε=10 −2,times the polynomial node-register projection overhead of Supplementary Note 7. 
+
+IV. DISCUSSION 
+
+In this paper, we present a framework to adapt the structure and theoretical guarantees of GNNs from the classical litterature, into the quantum realm. We show how to represent and process graphs in a a similar way, and how to obtain important theoretical properties that 10 the classical literature identifies as the ones a graph neural network should have [1, 19]. We focused on three: message passing, in which each node gathers information from its neighbours and updates its state [1, 36]; permutation equivariance, in which relabelling the nodes relabels the output in the same way; and Weisfeiler– Leman expressivity, a standard measure of how finely a model distinguishes graphs [20–22]. We propose several methods, based on subspace-preserving gates, in order to prove that these properties are respected in a QGNN. The circuit performs message passing within the quantum state: the adjacency layer routes node amplitudes along the edges, the trainable evolution updates the per-node features, and re-uploading the graph at each layer makes the map nonlinear, with one circuit iteration corresponding to one round of set-based refinement. The construction is exactly permutation equivariant at every value of the parameters, without tying or sharing weights, which is how earlier equivariant models impose the symmetry [13]. Our method can be adapted in new architectures, and in particular to other subspace preserving approaches [27, 43, 53], in order to create useful quantum graph processing methods. We validated these properties numerically on three datasets, including two with important real-world applications, and offer good results on large models (up to 56 qubits). On the Cai–F¨ urer–Immerman graphs, which are constructed so that no 1-WL network can separate them, the model distinguished the pairs at exactly the level the ascent predicts [29]. On QM9, where the task is to predict the HOMO–LUMO gap, the error decreased as we raised the particle number at a fixed parameter budget [30]. On the Euclidean travelling salesman problem, the model produced near-optimal tours up to the largest instances we were able to simulate. These results, along with the theoretical motivations, illustrate how our framework can be used to provide good quantum methods that scale beyond small proof of concepts. Finally, the approach is motivated by its scalability. Across every configuration we trained, the per-parameter gradient did not vanish as the subspace dimension grew. The barren-plateau results in the literature characterise broad families of variational circuits, typically generic or randomly initialised ans¨ atze [16, 18, 23, 25]; our model is not of that kind, as its graph information enters through a fixed initialisation and its trainable dynamics stay within a small structured register. The trainability we observe therefore sits alongside those results rather than against them: the general theory bounds what happens across a class, but it does not settle what a specific, structured instantiation does in practice, and the favourable behaviour we find is of that practical kind. The graph-style pre-training used here, where parameters fitted on small instances seed larger ones, is one way to preserve this behaviour as the graph grows, and it invites a theoretical treatment aimed at structured, pre-trained circuits rather than generic ones. 
+
+> DATA AVAILABILITY
+
+The Euclidean travelling-salesman benchmark instances of Section II C follow the random-uniform TSP construction of Vinyals et al. [50], the dataset also adopted in the equivariant quantum circuit benchmark of Skolik et al. [13]. The QM9 molecular regression dataset of Section II B is loaded from the standard PyTorch Geometric distribution of QM9 [30]. The CFI graph families used for the theoretical-validation experiment of Section II A are generated programmatically from the construction of [29]; the BREC benchmark pairs are taken from [48]. 
+
+> CODE AVAILABILITY
+
+The code that supports the findings of this study is available at https://github.com/SnehalRaj/ mp-qgnns/ . The repository provides the message-passing quantum graph neural network implementation (the vectorised PyTorch back-end used at j=1 and the PennyLane reference back-end used at j ≥ 2), the training and deployment pipeline of Methods M2, the deterministic Hartree–Fock and matchgate-shadow readout protocols, and the analysis and plotting scripts for the figures and tables of this work. 
+
+> ACKNOWLEDGMENT
+
+BC, LM and EK acknowledge support from the EPSRC Quantum Advantage Pathfinder research (EP/X026167/1), and the Hub for Quantum Computing via Integrated and Interconnected Implementations (QCI3, EP/Z53318X/1) programs within the UK’s National Quantum Computing Center. 11 
+
+[1] J. Gilmer, S. S. Schoenholz, P. F. Riley, O. Vinyals, and G. E. Dahl, Neural message passing for quantum chemistry, in Proceedings of the 34th International Conference on Machine Learning (PMLR, 2017) pp. 1263–1272. [2] J. Jumper, R. Evans, A. Pritzel, T. Green, M. Figurnov, O. Ronneberger, K. Tunyasuvunakool, R. Bates, A. ˇZ´ ıdek, A. Potapenko, et al. , Highly accurate protein structure prediction with AlphaFold, Nature 596 , 583 (2021). [3] C. K. Joshi, T. Laurent, and X. Bresson, An efficient graph convolutional network technique for the travelling salesman problem, arXiv preprint arXiv:1906.01227 (2019), arXiv:1906.01227 [cs.LG]. [4] W. Kool, H. van Hoof, and M. Welling, Attention, learn to solve routing problems! (2019), arXiv:1803.08475 [stat.ML]. [5] K. Xu, W. Hu, J. Leskovec, and S. Jegelka, How powerful are graph neural networks? (2019), arXiv:1810.00826 [cs.LG]. [6] A. Ceschini, F. Mauro, F. D. Falco, A. Sebastianelli, A. Verdone, A. Rosato, B. L. Saux, M. Panella, P. Gamba, and S. L. Ullo, From graphs to qubits: Acritical review of quantum graph neural networks (2024), arXiv:2408.06524 [quant-ph]. [7] G. Verdon, T. McCourt, E. Luzhnica, V. Singh, S. Leichenauer, and J. Hidary, Quantum graph neural networks, arXiv preprint arXiv:1909.12264 (2019), arXiv:1909.12264 [quant-ph]. [8] X. Ai, Z. Zhang, L. Sun, J. Yan, and E. Hancock, Towards quantum graph neural networks: An ego-graph learning approach (2024), arXiv:2201.05158 [quant-ph]. [9] J.-Y. Ryu, E. Elala, and J.-K. K. Rhee, Quantum graph neural network models for materials search (2023). [10] Z. Hu, J. Li, Z. Pan, S. Zhou, L. Yang, C. Ding, O. Khan, T. Geng, and W. Jiang, On the design of quantum graph convolutional neural network in the NISQ-era and beyond, in IEEE 40th International Conference on Computer Design (ICCD) (IEEE, 2022) pp. 290–297. [11] J. Zheng, Q. Gao, and Y. L¨ u, Quantum graph convolutional neural networks, arXiv preprint arXiv:2107.03257 (2021), arXiv:2107.03257 [quant-ph]. [12] P. Mernyei, K. Meichanetzidis, and I. I. Ceylan, Equivariant quantum graph circuits, in Proceedings of the 39th International Conference on Machine Learning , Proceedings of Machine Learning Research, Vol. 162, edited by K. Chaudhuri, S. Jegelka, L. Song, C. Szepesvari, G. Niu, and S. Sabato (PMLR, 2022) pp. 15401–15420. [13] A. Skolik, M. Cattelan, S. Yarkoni, T. B¨ ack, and V. Dunjko, Equivariant quantum circuits for learning on weighted graphs, npj Quantum Information 9, 47 (2023). [14] L. Schatzki, M. Larocca, Q. T. Nguyen, F. Sauvage, and M. Cerezo, Theoretical guarantees for permutation-equivariant quantum neural networks, npj Quantum Information 10 , 12 (2024). [15] Q. T. Nguyen, L. Schatzki, P. Braccia, M. Ragone, P. J. Coles, F. Sauvage, M. Larocca, and M. Cerezo, Theory for equivariant quantum neural networks, PRX Quantum 
+
+5, 020328 (2024). [16] M. Larocca, S. Thanasilp, S. Wang, K. Sharma, J. Biamonte, P. J. Coles, L. Cincio, J. R. McClean, Z. Holmes, and M. Cerezo, Barren plateaus in varia-tional quantum computing, Nature Reviews Physics 7,174 (2025). [17] J. R. McClean, S. Boixo, V. N. Smelyanskiy, R. Babbush, and H. Neven, Barren plateaus in quantum neural network training landscapes, Nature Communications 9,4812 (2018). [18] M. Ragone, B. N. Bakalov, F. Sauvage, A. F. Kemper, C. Ortiz Marrero, M. Larocca, and M. Cerezo, A Lie algebraic theory of barren plateaus for deep parameterized quantum circuits, Nature Communications 15 , 7172 (2024). [19] M. M. Bronstein, J. Bruna, T. Cohen, and P. Veliˇ ckovi´ c, Geometric deep learning: Grids, groups, graphs, geodesics, and gauges, arXiv preprint arXiv:2104.13478 (2021), arXiv:2104.13478 [cs.LG]. [20] H. Maron, H. Ben-Hamu, N. Shamir, and Y. Lipman, Invariant and equivariant graph networks, in 
+
+International Conference on Learning Representations 
+
+(2019). [21] C. Morris, M. Ritzert, M. Fey, W. L. Hamilton, J. E. Lenssen, G. Rattan, and M. Grohe, Weisfeiler and Leman go neural: Higher-order graph neural networks, in Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 33 (2019) pp. 4602–4609. [22] Z. Chen, L. Chen, S. Villar, and J. Bruna, Can graph neural networks count substructures?, Advances in neural information processing systems 33 , 10383 (2020). [23] E. Fontana, D. Herman, S. Chakrabarti, N. Kumar, R. Yalovetzky, J. Heredge, S. H. Sureshbabu, and M. Pistoia, Characterizing barren plateaus in quantum ans¨ atze with the adjoint representation, Nature Communications 15 , 7171 (2024). [24] M. Cerezo, M. Larocca, D. Garc´ ıa-Mart´ ın, N. L. Diaz, P. Braccia, E. Fontana, M. S. Rudolph, P. Bermejo, A. Ijaz, S. Thanasilp, E. R. Anschuetz, and Z. Holmes, Does provable absence of barren plateaus imply classical simulability? Or, why we need to rethink variational quantum computing, Nature Communications 16 , 7907 (2025). [25] L. Monbroussou, E. Z. Mamon, J. Landman, A. B. Grilo, R. Kukla, and E. Kashefi, Trainability and expressivity of Hamming-weight preserving quantum circuits for machine learning, Quantum 9, 1745 (2025). [26] E. Recio-Armengol, S. Ahmed, and J. Bowles, Train on classical, deploy on quantum: scaling generative quantum machine learning to a thousand qubits, arXiv preprint arXiv:2503.02934 (2025), arXiv:2503.02934 [quant-ph]. [27] B. Bako, Z. Kolarovszki, and Z. Zimboras, Fermionic born machines: Classical training of quantum generative models based on fermion sampling, arXiv preprint arXiv:2511.13844 (2025), arXiv:2511.13844 [quant-ph]. [28] M. S. Rudolph, J. Miller, D. Motlagh, J. Chen, A. Acharya, and A. Perdomo-Ortiz, Synergistic pretraining of parametrized quantum circuits via tensor networks, Nature Communications 14 , 8367 (2023). 12 
+
+[29] J.-Y. Cai, M. F¨ urer, and N. Immerman, An optimal lower bound on the number of variables for graph identification, Combinatorica 12 , 389 (1992). [30] R. Ramakrishnan, P. O. Dral, M. Rupp, and O. A. von Lilienfeld, Quantum chemistry structures and properties of 134 kilo molecules, Scientific Data 1, 140022 (2014). [31] I. Kerenidis, J. Landman, and A. Prakash, Quantum algorithms for deep convolutional neural networks, in 
+
+International Conference on Learning Representations 
+
+(2020) arXiv:1911.01117 [quant-ph]. [32] J. Landman, N. Mathur, Y. Y. Li, M. Strahm, S. Kazdaghli, A. Prakash, and I. Kerenidis, Quantum methods for neural networks and application to medical image classification, Quantum 6, 881 (2022). [33] E. A. Cherrat, S. Raj, I. Kerenidis, A. Shekhar, B. Wood, J. Dee, S. Chakrabarti, R. Chen, D. Herman, S. Hu, P. Minssen, R. Shaydulin, Y. Sun, R. Yalovetzky, and M. Pistoia, Quantum deep hedging, Quantum 7, 1191 (2023). [34] L. Monbroussou, J. Landman, L. Wang, A. B. Grilo, and E. Kashefi, Subspace preserving quantum convolu-tional neural network architectures, Quantum Science and Technology 10 , 025050 (2025). [35] S. Raj and B. Coyle, QuIC: Quantum-inspired compound adapters for parameter efficient fine-tuning (2025), arXiv:2502.06916 [cs.LG]. [36] P. Veliˇ ckovi´ c, G. Cucurull, A. Casanova, A. Romero, P. Li` o, and Y. Bengio, Graph attention networks (2018), arXiv:1710.10903 [stat.ML]. [37] C. Morris, G. Rattan, and P. Mutzel, Weisfeiler and Leman go sparse: Towards scalable higher-order graph embeddings, in Advances in Neural Information Processing Systems , Vol. 33 (2020) pp. 21824–21840. [38] N. Mathur, B. Coyle, N. Jain, S. Raj, A. Tandon, J. S. Krauser, and R. Stoessel, Bayesian quantum orthogonal neural networks for anomaly detection, in 2025 IEEE International Conference on Quantum Computing and Engineering (QCE) , Vol. 1 (IEEE, 2025) pp. 2216–2227. [39] B. Coyle, S. Raj, N. Mathur, E. A. Cherrat, N. Jain, S. Kazdaghli, and I. Kerenidis, Training-efficient density quantum machine learning, npj Quantum Information 
+
+11 , 172 (2025). [40] N. Mathur, P. K. Barkoutsos, M. Yamada, M. Roetteler, and I. Kerenidis, Scalable On-Hardware Training of Quantum Neural Networks and Application to Clinical Data Imputation (2026), arXiv:2606.03517 [quant-ph]. [41] N. Jain, J. Landman, N. Mathur, and I. Kerenidis, Quantum Fourier networks for solving parametric PDEs, Quantum Science and Technology 9, 035026 (2024). [42] R. M. Farias, T. O. Maciel, G. Camilo, R. Lin, S. Ramos-Calderer, and L. Aolita, Quantum encoder for fixed-Hamming-weight subspaces, Phys. Rev. Appl. 23 , 044014 (2025). [43] I. Kerenidis and A. Prakash, Quantum machine learning with subspace states (2022), arXiv:2202.00054 [quant-ph]. [44] A. P´ erez-Salinas, A. Cervera-Lierta, E. Gil-Fuster, and J. I. Latorre, Data re-uploading for a universal quantum classifier, Quantum 4, 226 (2020). [45] F. Arute, K. Arya, R. Babbush, D. Bacon, J. C. Bardin, R. Barends, S. Boixo, M. Broughton, B. B. Buckley, D. A. Buell, et al. , Hartree–Fock on a superconducting qubit quantum computer, Science 369 , 1084 (2020), arXiv:2004.04174. [46] K. Wan, W. J. Huggins, J. Lee, and R. Babbush, Matchgate shadows for fermionic quantum simulation, Communications in Mathematical Physics 404 , 629 (2023). [47] H. Maron, H. Ben-Hamu, H. Serviansky, and Y. Lipman, Provably powerful graph networks, in Advances in Neural Information Processing Systems (2019). [48] Y. Wang and M. Zhang, An empirical study of realized GNN expressiveness, in Proceedings of the 41st International Conference on Machine Learning (ICML) 
+
+(2024) arXiv:2304.07702 [cs.LG]. [49] Y. Liao, X.-M. Zhang, and C. Ferrie, Graph neural networks on quantum computers, arXiv preprint arXiv:2405.17060 (2024), arXiv:2405.17060 [quant-ph]. [50] O. Vinyals, M. Fortunato, and N. Jaitly, Pointer networks, in Advances in Neural Information Processing Systems , Vol. 28, edited by C. Cortes, N. Lawrence, D. Lee, M. Sugiyama, and R. Garnett (Curran Associates, Inc., 2015). [51] Google Quantum AI and Collaborators, Quantum error correction below the surface code threshold, Nature 638 ,920 (2025). [52] G.-L. R. Anselmetti, D. Wierichs, C. Gogolin, and R. M. Parrish, Local, expressive, quantum-number-preserving VQE ans¨ atze for fermionic systems, New Journal of Physics 23 , 113010 (2021). [53] L. Monbroussou, B. Polacchi, V. Yacoub, E. Caruccio, G. Rodari, F. Hoch, G. Carvacho, N. Spagnolo, T. Giordani, M. Bossi, A. Rajan, N. D. Giano, R. Albiero, F. Ceccarelli, R. Osellame, E. Kashefi, and F. Sciarrino, Photonic quantum convolutional neural networks with adaptive state injection, Advanced Photonics 7, 066012 (2025). [54] M. Grohe, Descriptive Complexity, Canonisation, and Definable Graph Structure Theory , Lecture Notes in Logic, Vol. 47 (Cambridge University Press, 2017). [55] M. Cerezo, A. Sone, T. Volkoff, L. Cincio, and P. J. Coles, Cost function dependent barren plateaus in shallow parametrized quantum circuits, Nature Communications 
+
+12 , 1791 (2021). [56] M. Larocca, N. Ju, D. Garc´ ıa-Mart´ ın, P. J. Coles, and M. Cerezo, Theory of overparametrization in quantum neural networks, Nature Computational Science 3, 542 (2023). [57] D. D’Alessandro, Introduction to Quantum Control and Dynamics , Applied Mathematics and Nonlinear Science (Chapman & Hall/CRC, 2007). 13 
+
+# Supplementary Information Table of Contents 
+
+1 Proof of permutation equivariance (Theorem 1) 13 2 Proof of the j-WL ascent (Theorem 4) 14 3 CFI graph discrimination: experimental details 17 4 QM9 HOMO–LUMO gap regression: experimental details 19 5 TSP benchmark full details 19 6 Trainability derivations and DLA dimensions 21 7 Measurement strategy comparison 26 8 1-RDM Jacobian rank derivation 31 9 Gate-family ablation 32 10 Frozen-parameter ablation 33 11 Resource estimates and gate decompositions 34 Supplementary Note 1: Proof of permutation equivariance (Theorem 1) 
+
+We prove that the two-register QGNN of Section I A satisfies fθ (π · x) = π · fθ (x) for every π ∈ SN and every parameter assignment θ, with no parameter tying imposed. The proof is by direct verification of SN -equivariance for each of the four operations V, A, W, M defined in Section I A, followed by a composition argument. 
+
+Theorem 1 (Exact SN -equivariance) . Let π ∈ SN act on the node register through the permutation operator Pπ , with 
+
+Pπ |T ⟩node = |π(T )⟩node for every j-subset T ⊆ [N ]. For every input x = ( X, A ) consisting of node features X ∈ RN ×d
+
+and an adjacency matrix A ∈ RN ×N , every parameter assignment θ, and every π ∈ SN ,
+
+fθ
+
+ π · X, π · A = π · fθ (X, A ). (3) 
+
+Proof. Throughout, Pπ denotes the j-subset permutation |T ⟩node 7 → | π(T )⟩node , the restriction to the particle-number-
+
+j subspace of the operator that relabels the node qubits. Every block below is a product of sign-free Givens rotations (RBS and compound rotations, carrying no Jordan–Wigner parity string), so each conjugation identity holds on the full register space and restricts to this subspace identically for every j; we therefore write the argument once, for general j. We verify the equivariance of each block separately. 
+
+a. Initial state. The node register is prepared in the uniform superposition over j-subsets, |uj ⟩ =
+
+ Nj
+
+−1/2 P  
+
+> |T|=j
+
+|T ⟩node (the reference |1j 0N −j ⟩ produced by j controlled-X gates, spread to all j-subsets by the data-independent step of the loader). This state is Pπ -invariant, Pπ |uj ⟩ = |uj ⟩, since Pπ only permutes its equally weighted basis terms among themselves. The embedding register starts in |0⟩⊗D , invariant under every Pπ acting on the node register. Equivariance of the full map follows from this Pπ -invariant initial state together with the block identities below. 
+
+b. Hierarchical data loader V (x). Each controlled rotation in V acts on the embedding register conditioned on a node-register subset, with the rotation angle a symmetric function of the features carried by that subset (at j = 1 a single node’s features; at j > 1 an isomorphism-invariant of the induced sub-data, so the assignment depends on the subset as a set). Permuting the node labels by π permutes both the controlling subset and the input features in the same way, so the loader satisfies 
+
+V (π · x) = ( Pπ ⊗ Iemb ) V (x) ( P ⊤ 
+
+> π
+
+⊗ Iemb ).14 
+
+c. Equivariant adjacency A(G). The adjacency operation applies Givens rotations to every pair of node qubits, with the rotation between qubits ( i, j ) taken at an angle proportional to the edge weight wij in a canonical ordering induced by w (descending in wij , ties broken lexicographically by ( i, j )). Permuting node labels by π permutes the qubit pairs and the edge weights in the same way: the gate on ( i, j ) at angle wij becomes the gate on ( π(i), π (j)) at angle wπ(i)π(j), which is exactly the gate that the canonical ordering of the permuted weight matrix would produce. The combined action is therefore 
+
+A(π · A) = ( Pπ ⊗ Iemb ) A(A) ( P ⊤ 
+
+> π
+
+⊗ Iemb ).
+
+This is the architectural choice that supplies equivariance without parameter tying: the canonical ordering, not an imposed angle-sharing constraint, is what makes A commute with Pπ .
+
+d. Trainable evolution W (θ). W acts on the embedding register only. It commutes with every Pπ on the node register because it acts as the identity there: W (θ) on Hnode ⊗ H emb has the form Inode ⊗ ˜W (θ) for some operator ˜W on the embedding register. Hence W (θ) ( Pπ ⊗ Iemb ) = ( Pπ ⊗ Iemb ) W (θ). 
+
+e. Joint mixing layer M (θM ). M acts inside the joint particle-number subspace Hj+k of dimension  N +Dj+k
+
+, which is not a tensor product of node and embedding spaces. On this subspace SN acts as the subgroup of SN +D that fixes the embedding qubits; we denote the corresponding permutation operator ePπ , which extends Pπ on the node register by the identity on the embedding register and reduces to Pπ ⊗ Iemb on the factored sub-product. We show 
+
+M (θM ) ePπ = ePπ M (θM ) on Hj+k for every π ∈ SN .We construct M as a product of three Givens-rotation blocks, each with free trainable angles whose gate-to-parameter assignment is determined by a canonical ordering induced by the input, in the same spirit as the canonical edge ordering of A(G) above. No angles are tied within or across blocks. 1. Node-pair block. Givens rotations on every pair of node qubits in the all-pair connectivity, applied in the canonical edge-weight ordering of A, with one free trainable angle θ(A) 
+
+> r
+
+for the rank-r pair, r ∈ { 1, . . . ,  N
+
+> 2
+
+}. The argument used for A(G) applies verbatim: under π, the qubit pair at rank r in G becomes the qubit pair at rank r in π · G,and the same θ(A) 
+
+> r
+
+is applied. The block therefore commutes with ePπ .2. Embedding-pair block. Givens rotations on every pair of embedding qubits, with one free trainable angle per pair. These gates act trivially on the node register and commute with ePπ for every π ∈ SN .3. Cross-register block. Givens rotations on every (node-qubit, embedding-qubit) pair. Node qubits are sorted by a canonical SN -invariant per-node statistic of G (weighted degree, with lex tiebreak; the same caveat on exact ties applies as for A). The angle for the gate at (rank-r node-qubit, embedding-qubit b) is the free parameter θ(C) 
+
+> r,b
+
+.Under π, the node at rank r in G becomes the node at rank r in π · G, and the same θ(C) 
+
+> r,b
+
+is applied; the block commutes with ePπ .The total free-parameter count is  N
+
+> 2
+
++ D
+
+> 2
+
++N ·D, with no two angles forced equal. The product of the three blocks is therefore SN -equivariant by construction, with the same canonical-ordering mechanism that supplies equivariance for A.
+
+f. Readout. The readout assigns to each j-subset T the embedding-register feature of the corresponding node-conditioned state. Permuting the node labels permutes these feature rows by the induced action T 7 → π(T ); the head applies the same function to every row, so the output is permuted in the same way as the input. At j = 1, the rows are per-node, and the edge head yields edge probabilities that permute with the nodes; for the graph-level tasks at 
+
+j ≥ 2, the rows are summed over all j-subsets, and this symmetric pool is SN -invariant. 
+
+g. Composition. Equivariance is preserved under composition: if each block satisfies B(π · x) = (Pπ ⊗
+
+Iemb ) B(x) ( P ⊤ 
+
+> π
+
+⊗ Iemb ), then so does any composition of blocks. The full pipeline fθ = readout ◦ M ◦ (W ◦ A ◦ V )L
+
+is therefore SN -equivariant. 
+
+h. Equivariance ablation table. For the empirical comparison reported in Section II D, both arms are trained for the same number of epochs at every training-set size, with no early stopping, so the equivariant and non-equivariant variants see the same training budget. We report the validation BCE at the end of training, mean ± s.d. over three seeds, for the canonical-ordering equivariant model and the fixed-lex-ordering non-equivariant ablation.  
+
+> Supplementary Note 2: Proof of the j-WL ascent (Theorem 4)
+
+We prove that for 2 ≤ j ≤ 4, the QGNN at node-register particle number j implements set-based j-Weisfeiler– Leman colour refinement at generic parameters. The proof has the two-implication form indicated in the main text: 15                                    
+
+> TABLE I. Sample-efficiency gap from SN-equivariance, per training-set size. Validation BCE for the equivariance ablation on TSP-5, three seeds per cell, lower is better. The equivariant arm uses canonical A+ canonical-ordering M; the non-equivariant arm uses fixed-lex A+ linear M.
+> ntrain Equivariant BCE Non-equivariant BCE reduction 500 0.459 ±0.006 0.535 ±0.010 14 .1% 1000 0.425 ±0.002 0.451 ±0.045 5.7% 2000 0.354 ±0.016 0.423 ±0.037 16 .2%
+
+the unconditional upper bound that any two j-subsets sharing the same ℓ-step j-WL colour have equal QGNN row vectors, and the generic-parameter lower bound that any two j-subsets with different colour have distinct rows for every θ outside a closed measure-zero set. We close with an explicit constructive initialisation that realises the generic regime, the boundary case j = 1, and the scope of the result. The set-based j-Weisfeiler–Leman test in the convention of [21] colours j-subsets of a graph’s vertex set. Let 
+
+G = ( V, E ) have N vertices and write  Vj
+
+ for the collection of j-subsets. Each subset S is initialised with the isomorphism type of the induced subgraph, 
+
+c(0) (S) = iso −type  G[S], (21) and refined at each step by hashing the colour at S together with the multiset of colours over the one-swap neighbourhood 
+
+Nj (S) = S′ ∈  Vj
+
+ : |S △ S′| = 2 , (22) producing 
+
+c(ℓ+1) (S) = HASH 
+
+
+
+c(ℓ)(S), c(ℓ)(S′) : S′ ∈ N j (S)
+
+
+
+, (23) where {{·} } denotes a multiset. Set-based j-WL is expressivity-equivalent to ordered ( j−1)-WL on tuples [20, 21, 54]: 
+
+j=2 matches 1-WL, j=3 matches 2-WL, and j=4 matches 3-WL. The hierarchy is strict, with the CFI graphs CFI( K3)separating at j=3 and CFI( K4) at j=4 [29]. The QGNN state on the factored sub-product H(j)node ⊗ H (k)emb is the matrix Ψ ∈ R(Nj )×(Dk ) of Section I A, with row ΨS indexed by the j-subset S ⊆ [N ] and the column index running over k-subsets of [ D]. The proof is about which row labels become distinguishable across QGNN iterations, so we treat each row Ψ S as the QGNN-side colour of S.A QGNN iteration is the composition described in Section I A of the data loader V (x), the equivariant adjacency 
+
+A(G), and the trainable evolution W (θW ). The only graph-theoretic fact about A we need is the following, which is the QGNN-side counterpart of the j-WL one-swap rule. 
+
+Lemma 3 (One-swap neighbourhood matching) . A Givens rotation on node qubits a, b , restricted to the particle-number-j subspace, couples row ΨS to row ΨS′ if and only if S△S′ = {a, b }. Ranging over all  N
+
+> 2
+
+ pairs (a, b ), the rows reachable from S by a single Givens are exactly Nj (S).Proof. A Givens between node qubits a, b acts non-trivially on the two-dimensional plane spanned by basis states that differ only in positions a and b. For both states to lie in particle-number-j, exactly one of a, b must be in the lit subset, i.e. S△S′ = {a, b }, which is the definition of Nj (S). 
+
+Theorem 4 (QGNN expressivity equals set-based j-WL) . Fix 2 ≤ j ≤ 4. Consider the L-iteration QGNN with all-pair Givens adjacency, compound trainable layer, and an initialisation fixed by the induced subgraph that distinguishes exactly the non-isomorphic groups, Ψ(0)  
+
+> S1
+
+= Ψ (0)  
+
+> S2
+
+⇔ G[S1] ∼= G[S2] (realised by the closed-walk fingerprint (26) below). Then 
+
+(i) Upper bound (unconditional). For all parameter values θ and all ℓ ≤ L, two j-subsets with the same ℓ-step set-based j-WL colour have equal QGNN row vectors: 
+
+c(ℓ)(S1) = c(ℓ)(S2) = ⇒ Ψ(ℓ) 
+
+> S1
+
+= Ψ (ℓ) 
+
+> S2
+
+.
+
+(ii) Lower bound (generic parameters). For all θ outside a closed measure-zero subset of the parameter space, and all ℓ ≤ L, two j-subsets with different ℓ-step j-WL colour have distinct QGNN row vectors: 
+
+c(ℓ)(S1)̸ = c(ℓ)(S2) = ⇒ Ψ(ℓ)
+
+> S1
+
+̸ = Ψ (ℓ) 
+
+> S2
+
+.16 (iii) Combining (i) and (ii), the QGNN at generic parameters implements exactly L-step set-based j-WL. At the level of subset rows, Ψ(L) 
+
+> S1
+
+= Ψ (L) 
+
+> S2
+
+⇔ c(L)(S1) = c(L)(S2), and after permutation-invariant pooling the graph output satisfies fθ (G) = fθ (G′) ⇔ G ∼j-WL G′.Proof. We argue (i) and (ii) separately by induction on ℓ.
+
+Proof of (i). Induction on ℓ.
+
+Base case ℓ = 0 . The closed-walk initialisation (26) assigns the same row to subsets with the same induced-subgraph isomorphism type. By (21), c(0) (S1) = c(0) (S2) implies that G[S1] and G[S2] are isomorphic, so Ψ (0)  
+
+> S1
+
+= Ψ (0)  
+
+> S2
+
+.
+
+Inductive step. Suppose the statement holds at step ℓ. By the j-WL update (23), c(ℓ+1) (S1) = c(ℓ+1) (S2) requires both 
+
+c(ℓ)(S1) = c(ℓ)(S2), (24) 
+
+c(ℓ)(S′) : S′ ∈ N j (S1) = c(ℓ)(S′) : S′ ∈ N j (S2) . (25) The compound layer W applies the same row-wise transformation to every row, so the inductive hypothesis is preserved through it. The Givens adjacency A mixes each row only with its one-swap neighbours (Lemma 3). Combining (24) (equal self-feature) with (25) (equal multiset of neighbour features, by the inductive hypothesis applied to each neighbour), the mixing produces the same output for both S1 and S2:Ψ(ℓ+1)  
+
+> S1
+
+= Ψ (ℓ+1)  
+
+> S2
+
+.
+
+Proof of (ii). Induction on ℓ.
+
+Base case ℓ = 0 . We show the closed-walk initialisation separates all isomorphism types of induced subgraphs at 
+
+j ≤ 4. Take Ψ(0)  
+
+> S
+
+=   Tr  A[S, S ]2, Tr  A[S, S ]3, Tr  A[S, S ]4  · e0, (26) where A[S, S ] is the j ×j adjacency restricted to S and e0 ∈ R(Dk ) is a fixed embedding-register vector. The closed-walk counts Tr  A2, Tr  A3, Tr  A4 separate isomorphism types of graphs on j ≤ 4 vertices: Tr  A2 alone separates edge from non-edge at j = 2; the triple separates the four types (empty, edge, path, triangle) at j = 3; direct enumeration of the eleven non-isomorphic graphs on four vertices verifies separation at j = 4. The construction fails at j = 5, where three of the thirty-four non-isomorphic graphs on five vertices share the same closed-walk triple, which is why the theorem is restricted to j ≤ 4. 
+
+Inductive step. Suppose c(ℓ+1) (S1)̸ = c(ℓ+1) (S2). By the j-WL update, at least one of two cases holds: (a) c(ℓ)(S1)̸ = c(ℓ)(S2), the colours already differed at step ℓ.(b) c(ℓ)(S1) = c(ℓ)(S2), but the neighbour-colour multisets (25) differ. Write the post-compound state at step ℓ as Y = Ψ (ℓ) Λk(Oℓ)⊤, with YS′ the post-compound row for subset S′. The Givens adjacency layer produces Ψ(ℓ+1)  
+
+> S
+
+= X
+
+> S′
+
+MS,S ′ (θ) YS′ ,
+
+with M (θ) = Q
+
+> (a,b )∈
+
+([N ]2 ) Gab (θab ) a product of Givens rotation matrices indexed by the  N
+
+> 2
+
+ adjacency angles. Define the separation function 
+
+ϕ(θ) := Ψ (ℓ+1)  
+
+> S1
+
+(θ) − Ψ(ℓ+1)  
+
+> S2
+
+(θ).
+
+Each entry of M (θ) is a trigonometric polynomial in the angles, so ϕ is real-analytic on R(N 
+
+> 2
+
+). We show ϕ is not identically zero in either case. 
+
+Case (a). At θ = 0, the mixing matrix is the identity ( M (0) = I), so 
+
+ϕ(0) = YS1 − YS2 .
+
+The compound representation Λ k is injective and Ψ (ℓ)
+
+> S1
+
+̸ = Ψ (ℓ) 
+
+> S2
+
+by the inductive hypothesis, so YS1̸ = YS2 and ϕ(0)̸ = 0. 17 
+
+Case (b). At θ = 0, ϕ(0) = YS1 − YS2 = 0. We expand to first order: each Givens gate at small θab acts as Gab (θab ) = I + θab Aab + O(θ2
+
+> ab
+
+), with Aab the antisymmetric generator that couples Ψ S to Ψ (S\{ a})∪{ b}. The first-order separation function is 
+
+ϕ(1) (θ) = X
+
+> (a,b )
+
+θab 
+
+h X 
+
+> S′
+
+(Aab )S1,S ′ YS′ − X
+
+> S′
+
+(Aab )S2,S ′ YS′
+
+i
+
+.
+
+By Lemma 3, the only nonzero S′ in ( Aab )S, · is the one-swap neighbour of S via ( a, b ). Reindexing the inner sum by neighbours of S1 and S2 separately, ϕ(1) is a linear combination of YS′ for S′ ∈ N j (S1)∪N j (S2), with coefficients given by the θab . The neighbour-colour multisets differ between S1 and S2 by the case (b) hypothesis, so there exists at least one colour class c∗ that appears with different multiplicities in Nj (S1) and Nj (S2). By the inductive hypothesis, all subsets with colour c∗ map to the same row Y ∗, distinct from rows of other colours. The total coefficient of Y ∗ in 
+
+ϕ(1) is the difference in multiplicities, multiplied by a sum of relevant θab . As a function of θ, this is a nonzero linear form, so ϕ(1) is not identically zero. In both cases, ϕ is real-analytic and not identically zero. Its zero set is a proper closed analytic subvariety of R(N 
+
+> 2
+
+),hence Lebesgue-measure zero. For all θ outside this zero set, Ψ (ℓ+1) 
+
+> S1
+
+̸ = Ψ (ℓ+1)  
+
+> S2
+
+.The bad sets across all pairs ( S1, S 2) and all ℓ ≤ L are finitely many closed measure-zero sets; their union is closed and measure-zero. Outside this union, the QGNN at every step ℓ separates all j-WL-distinguishable subset pairs, completing (ii). On the complement, the QGNN row map at step ℓ has the same fibres as j-WL: subsets share a row iff they share a colour, which is the claim (iii). A constructive initialisation that lies inside the generic regime takes 
+
+θab = θ0
+
+ 1 + 1   
+
+> N(N−1)
+
+h(a, b ), θ0 ∈ (0 , π 
+
+> 2
+
+), (27) where h(a, b ) = a·N +b for a < b assigns a distinct integer to every pair, and the 1 /N (N −1) scaling keeps every angle inside (0 , π ). The angles in this family are pairwise distinct after the additive perturbation; the union of bad zero-sets, each defined by a finite system of polynomial-trigonometric equations in θ, has measure zero, so the family of (27) crosses it on at most a measure-zero subset of θ0 ∈ (0 , π/ 2). In our numerical experiments at θ0 = π/ 4 (Section II A), the QGNN attains 100% test accuracy on CFI( K3) at j = 3 and on CFI( K4) at j = 4, confirming that this family lies inside the generic regime. At j = 1 the rows of Ψ are indexed by single vertices, and the closed-walk initialisation (26) reduces to the trivial fingerprint (Tr( A[{v}, {v}]m)) m=2 ,3,4 = (0 , 0, 0) for every singleton, so all initial rows agree. The QGNN at j = 1 is therefore bounded above by ordinary 1-WL uniformly in θ: distinct rows can arise only from data-dependent loading 
+
+V (x) on the embedding register, not from the j-WL structure. Theorem 4 does not apply at j = 1, and the main-text bound at j = 1 uses a separate 1-WL argument from Morris et al. [21]. The scope of the result is bounded by three constraints. The closed-walk fingerprint (26) fails at j ≥ 5, where collisions among non-isomorphic five-vertex graphs prevent injective initialisation; extending the theorem requires a richer subgraph invariant such as the full graph spectrum on j vertices or a homomorphism-count vector. The proof assumes all-pair Givens connectivity in A, so restricting to nearest-neighbour or other structured connectivities would change the reachable neighbourhoods and replace Lemma 3 with a weaker statement. Finally, the proof is for the global set-based j-WL of [21], not the local δ-k-LWL variant of Morris–Rattan–Mutzel [37], which uses a graph-dependent neighbourhood at each step. 
+
+> Supplementary Note 3: CFI graph discrimination: experimental details
+
+The j-Weisfeiler–Leman ascent of Theorem 4 is tested on three CFI-class graph families and on the BREC benchmark. This note documents the QGNN-side instantiation at j ≥ 2, the deterministic k-WL discrimination across the 218 BREC pairs, and the classical 1-WL, 2-WL, and 3-WL baselines at parameter counts matched to the QGNN. At j ≥ 2 the QGNN is realised as a native j-subset circuit rather than the vectorised j=1 implementation used for the TSP instantiation of Section II C. The reason is that the all-pair Givens cascade across the node-register subspace, of dimension  Nj
+
+, does not vectorise efficiently across batches at j ≥ 2 in our shipped code, while a circuit-level reference implementation operates directly on the j-subset basis at the same asymptotic cost. The reference circuit applies the four operations of Section I A in the same order, hierarchical data loader, equivariant adjacency, compound trainable evolution, joint-register mixing, but with the node register interpreted as the lex-ordered particle-number-j
+
+basis on N qubits and each operation expressed as a sequence of two-qubit gates on that basis. The closed-walk 18 initialisation that supplies the generic-parameter regime, defined in (26) of Supplementary Note 2, is the entry point: the row Ψ (0)  
+
+> S
+
+of each j-subset S carries the closed-walk fingerprint of the induced subgraph G[S], multiplied by a fixed embedding-register vector. After the L trainable iterations and the joint mixing layer, per-subset embedding features are pooled by summation across the node register, producing a single permutation-invariant vector per graph; a single-layer linear classifier then maps this vector to a binary class probability. The vectorised PyTorch and the native j-subset implementation produce numerically equivalent forward and backward passes on shared test cases, so the difference is one of throughput rather than of model class (Methods M2). The dataset comprises two families. Cai–F¨ urer–Immerman pairs are generated programmatically from the construction of [29]: CFI( K3) at N =6 vertices is the canonical hard pair separable at j=3 but not below, and CFI( K4) at N =8 is separable at j=4 but not at j≤3. The BREC benchmark of [48] collects 218 non-isomorphic graph pairs across four difficulty groups, listed in Table II: 59 Basic pairs, 50 Regular, 79 Extension, and 30 CFI, each chosen so that some level of the WL hierarchy fails to distinguish it. We use BREC to record what the deterministic 
+
+k-WL test discriminates at each level before reporting the learned QGNN results.                  
+
+> TABLE II. Deterministic k-WL discrimination across BREC difficulty groups. Counts are pairs distinguished out of pairs tested on the BREC benchmark of [48]; the k=4 row is on 212 pairs because 6 pairs exceed the 25-node size cap at this level. Here kis standard k-WL on k-tuples, equivalent to the set-based ( k+1)-WL of [21] and to node-register particle number
+> j=k+1 in the model.
+> k-WL Distinguished / total Rate 122 /218 10 .1% 2182 /218 83 .5% 3196 /218 89 .9% 4185 /212 87 .3%
+
+The deterministic test runs 10 rounds of the colour refinement defined in (23) of Supplementary Note 2: at each round, every k-tuple is recoloured by hashing its current colour together with the multiset of colours over its one-swap neighbourhood, with the standard isomorphism-type initialisation. No model is trained, and no random seed enters the test; the only inputs are the two graphs of a pair. We observe three features. At 1-WL only 10% of pairs separate with the residue already distinguishable at this level. At 2-WL, the rate jumps to 83 .5%, the first ascent above 1-WL visible across the full benchmark. At 3-WL and 4-WL, the rate saturates near 90%; the remaining undistinguished pairs lie outside the window resolved by the test at the 25-node cap. On the CFI subgroup of 30 pairs the same trend appears at coarser resolution: 1-WL separates 3 (10 .0%), 2-WL separates 27 (90 .0%), 3-WL separates 26 (86 .7%), 4-WL separates 24 (80 .0%). The deterministic k-WL test upper-bounds what the QGNN at particle number j=k+1 can discriminate; the main text shows this bound is attained on CFI( K3) and CFI( K4) at the predicted thresholds (Section II A, Figure 2). The classical baselines reported in Figure 2 of Section II A probe the same ascent against 1-WL, 2-WL, and 3-WL message-passing networks at parameter counts matched to the QGNN. We use three encoders with disjoint expressivity classes. The Graph Isomorphism Network (GIN) of Xu et al. [5] is the canonical 1-WL representative: each layer applies the aggregation h(ℓ+1)  
+
+> v
+
+= MLP (ℓ) (1 + ϵ)h(ℓ) 
+
+> v
+
++ P  
+
+> u∈N (v)
+
+h(ℓ)
+
+> u
+
+ with a learnable scalar ϵ and a 2-layer MLP per layer. The Provably Powerful Graph Network (PPGN) of Maron et al. [47] represents graphs as N × N
+
+tensors and updates them by two block compositions per layer of the form MLP 3(M1M2), where M1, M 2 are MLP 1-and MLP 2-transformed copies of the input tensor multiplied as matrices. PPGN is 3-WL class, equivalent to the 2-folklore-WL test. The invariant graph network of Maron et al. [20] at k=2 ( k-IGN( k=2)) operates on order-2 permutation tensors using the full basis of order-equivariant linear maps RN ×N → RN ×N , of dimension 15, in place of PPGN’s matrix-product layer; it is 2-WL class, sitting between GIN and PPGN. A single training protocol applies to all three baselines and to the QGNN runs of Section II A. For each CFI family, we generate the paired non-isomorphic adjacency ( A0, A 1) from [29] and draw 200 random vertex permutations per class, yielding 400 graphs per family. The split is 60/20/20 train/validation/test (240/80/80) drawn at random per seed (Methods M1, M2). Each encoder feeds into a sum-pool over node features and a 2-layer MLP head to a single binary logit. Training uses Adam at learning rate 10 −3, batch size 32, binary cross-entropy on the graph label, and early stopping on validation accuracy with patience 30 over a budget of 200 epochs. Each configuration is repeated for five seeds {42 , 43 , 44 , 45 , 46 }, and Figure 2 reports the mean and standard deviation of test accuracy across these seeds. The width and depth grids for the baselines are chosen to bracket the QGNN parameter counts of 3 ,283 for CFI( K3)at j=3 and 3 ,283/3 ,411 for CFI( K4) at j=3/ j=4. For PPGN, hidden width h ∈ { 12 , 16 } and depth L ∈ { 1, 2} give parameter counts 2 ,001, 3 ,073, 4 ,961. For k-IGN( k=2), h ∈ { 16 , 24 } and L ∈ { 2, 3} give 3 ,137, 3 ,937, 7 ,761. The 19 smallest PPGN budget at h=12, L=1 (2 ,001 parameters) sits below the QGNN counts and exhibits a single-seed collapse on both CFI families: seed 43 drops to 0 .44 test accuracy while the other four seeds reach 1 .00, giving a mean of 0 .89 ± 0.22. At h=16, L=1 (3 ,073 parameters) and above, all five seeds reach 1 .00. The numbers reported in the main-text Figure 2 are the smallest configuration at which all five seeds reach 1 .00: PPGN at 3 ,073 and k-IGN( k=2) at 3,937 on both CFI( K3) and CFI( K4). We do not run a depth or width sweep for GIN beyond confirming chance-level test accuracy on both CFI families, which follows from the 1-WL identity GIN ≡ 1-WL of [5] and the construction of [21, 29]. The data and code for the runs reported here are released alongside the paper, with the full per-seed test-accuracy table in the supplementary archive. 
+
+> Supplementary Note 4: QM9 HOMO–LUMO gap regression: experimental details
+
+The j-WL ascent on QM9 reported in Section II B (Table III) is run on the full QM9 dataset of 130 ,831 molecules [30], loaded from the standard PyTorch Geometric distribution. The target is the HOMO–LUMO gap (target index 4), in eV after the customary Hartree-to-eV conversion. 
+
+a. Architecture and training. All three runs use the same ( D, k )=(6 , 3) embedding, L=3 trainable iterations, sum-pooling readout across the node register, and a small MLP head producing the scalar prediction. The encoder uses isomorphism-type atom features (full-graph degree at j=1, edge-gating at j ≥ 2). Only the node-register particle number j varies across runs. Each model is trained for 300 epochs on a stratified 80 /10 /10 split with the Adam+SGD optimiser split of Methods M2. We report the best validation MAE at j=1, for which no test checkpoint was retained, and the test MAE at j=2 and j=3.                
+
+> TABLE III. QM9 HOMO–LUMO gap: mean absolute error and trainable parameter counts on the full dataset.
+> Single seed (42), 300 epochs. The j=1 entry is the best validation MAE, as no test checkpoint was retained for that run; j=2 and j=3 are test MAE. Model Params MAE (eV) QGNN, j=1 2,591 0.398 QGNN, j=2 2,623 0.308 QGNN, j=3 2,655 0.235 Morris 1-GNN [21] 849 ,569 0.121
+
+b. Results, parameter counts, and the classical baseline. The error falls monotonically with j. The classical 1-GNN of Morris et al. [21], run on the same full-QM9 gap task, reaches a lower error of 0 .121 eV at 849 ,569 parameters; the QGNN at j=3 sits at roughly 1 .9× that error with about 320 × fewer parameters. The parameter count grows with j through the joint-register mixer, while the embedding capacity ( D, k )=(6 , 3) is held fixed across all three runs, so the error reduction reflects the added node-register resolution and not added feature capacity. 
+
+c. Robustness across seeds. A complementary four-seed run on the full dataset (seeds 43–46, Nmax =20, 30 epochs) reproduces the same monotone descent across j, with j=3 test MAE 0 .285 ± 0.001 eV, confirming the trend is stable across seeds. 
+
+> Supplementary Note 5: TSP benchmark full details
+
+This note documents the full protocol behind the multi-seed Euclidean TSP edge-prediction numbers cited in Section II C and Figure 2. The numbers reported in the main text (test BCE and tour ratio at N ∈ { 5, 10 , 20 , 30 , 50 })are produced by the QGNN at ( D, k ) = (6 , 3) on the equivariant quantum circuit benchmark of Skolik et al. [13]. 
+
+a. Dataset. The benchmark instances follow the random-uniform TSP construction of Vinyals et al. [50], adopted in the EQC benchmark of Skolik et al. [13]: N city coordinates sampled uniformly in the unit square, with optimal Hamiltonian cycles computed by the Lin–Kernighan–Helsgaun heuristic (we use the elkai Python binding). Train/validation/test splits sit in disjoint pickle files. Sample counts are 50 ,000 /2,000 /10 ,000 at N = 5, 100 ,000 /2,000 /10 ,000 at N = 10, 200 ,000 /5,000 /10 ,000 at N = 20, 100 ,000 /5,000 /10 ,000 at N = 30, and 10 ,000 /2,000 /10 ,000 at N = 50. The same splits are reused across seeds, so the seed-to-seed variation reflects optimisation stochasticity rather than data resampling. 20 
+
+b. Per-size hyperparameters. The embedding setting is ( D, k ) = (6 , 3) at every N , giving  63
+
+ = 20-dimensional particle-number subspaces and the same fixed embedding throughout. Only the depth of the trainable evolution and the width of the readout head scale with N . Table IV lists the per-size values; they correspond directly to the 
+
+QGCN CONFIGS dictionary in the public training script, which is the exact configuration used to produce the numbers below. 
+
+TABLE IV. QGNN hyperparameters per TSP size. The embedding ( D, k ) = (6 , 3) is fixed across all sizes; depth L,pyramids per layer P , hidden dimension, training length, and learning rate are tuned per N . The trainable evolution W uses nearest-neighbour pyramid connectivity throughout.                                                                                
+
+> TSP-5 TSP-10 TSP-20 TSP-30 TSP-50
+> D66666
+> k33333Layers L21112Pyramids per layer P21444Readout hidden dimension 64 128 128 128 256 Epochs (max) 300 500 800 1000 200 Learning rate 5×10 −39.5×10 −42.3×10 −32.3×10 −34.2×10 −3
+> Weight decay 03.8×10 −54.6×10 −54.6×10 −58.6×10 −5
+> Batch size 32 64 64 256 128 Beam width 100 100 100 100 100 Trainable parameters 5,813 11,149 11,399 11,704 23,486
+
+c. Optimisation. We use the dual-optimiser scheme of Methods M2: Adam at the per-size learning rate of Table IV on the classical parameters (encoder, readout MLP, normalisation), and stochastic gradient descent with momentum 0 .9 on the quantum Givens angles. Cosine annealing brings the classical learning rate to 10 −5 over the maximum epoch budget. Gradients are clipped to unit norm before each step. Early stopping triggers after 30 epochs without improvement on the validation BCE; the lowest-validation-BCE checkpoint is restored before test-set evaluation. 
+
+d. Multi-seed protocol. At N = 5 and N = 10 we run ten independent seeds (random states 42 , 43 , . . . , 51) on the same train/val/test split, each going through the full training and early-stopping pipeline. At N = 20, N = 30, and N = 50 we run five, four, and three seeds respectively. Reported test metrics are means and standard deviations over seeds. 
+
+e. Decoding. The trained model outputs an edge-probability matrix pij ∈ [0 , 1] over the complete graph on N
+
+nodes. We decode this into a Hamiltonian cycle by beam search of width 100, retaining the top-100 partial tours at every extension step ranked by accumulated log-probability. The tour ratio is the mean over the test set of the decoded tour length divided by the optimal tour length. As an ablation, we also report greedy nearest-neighbour decoding, which corresponds to beam width one. Beam-width sweeps in the range {1, 5, 10 , 25 , 50 , 100 , 200 , 500 } confirm that the tour ratio saturates by width 50 at N = 5 and by width 100 at N = 10 , 20. 
+
+f. Results. Table V reports the multi-seed test metrics. The TSP-5 and TSP-10 numbers are ten-seed runs; the TSP-20, TSP-30, and TSP-50 numbers are five-, four-, and three-seed cluster runs. Indeed, the test BCE at N = 20 has the same magnitude as at N = 10 even though the underlying graph is twice as large, consistent with the fixed embedding ( D, k ) = (6 , 3) controlling the readout cost across sizes. 
+
+TABLE V. QGNN test metrics on EQC TSP at (D, k ) = (6 , 3) . Means and standard deviations are over independent seeds on a held-out test split disjoint from training and validation.                                        
+
+> NTrainable params Test BCE Tour ratio Seeds 55,813 0.224 ±0.022 1 .008 ±0.002 10 10 11,149 0.364 ±0.009 1 .034 ±0.003 10 20 11,399 0.354 ±0.003 1 .078 ±0.005 530 11,704 0.324 ±0.003 1 .128 ±0.002 450 23,486 0.340 ±0.004 1 .201 ±0.003 3
+
+The N =30 and N =50 rows are multi-seed cluster runs (four and three seeds). The tabulated values are the test-set means and standard deviations at the best validation checkpoint. 21 
+
+g. Classical simulation cost. All results above are produced by exact state-vector simulation confined to the particle-number subspace, of dimension  N +Dj+k
+
+. At the embedding half-filling k = D/ 2 used throughout (the largest subspace for a given D), this is  N +D
+
+> 4
+
+ at j=1, growing from 330 at N =5 to 367 ,290 at N =50 (Table VI). One forward-and-backward pass scales as roughly D1.3sub , so the cost, while polynomial in N at fixed ( D, k ), is a steep polynomial: full training runs reached hundreds of GPU-hours. Reaching N =50 (56 qubits) is set by training walltime; extrapolated to N ≈100 a single pass takes tens of minutes and a full run takes months, beyond what we can simulate classically. 
+
+TABLE VI. Classical simulation cost of the TSP runs. All runs use ( D, k )=(6 , 3) and j=1. The simulated state lives in the particle-number subspace of dimension  N +D
+
+> 4
+
+. The forward-and-backward time is measured on one CPU core; full runs are on one A100. The full-run hours depend on the train set size as well as N , so they do not grow with N in order: N =20 takes more hours than N =30 because it trains on more instances. The N =50 figure is the 1200-epoch budget run (seed 42); the reported three-seed metrics of Table V use shorter 200-epoch runs.                                    
+
+> NQubits N+DSubspace dim  N+D
+> 4
+> Fwd+bwd (s) Train set Full run (GPU-h) 511 330 0.07 5,000 <110 16 1,820 0.12 10,000 <120 26 14,950 1.0 200,000 ∼316 30 36 58,905 7.1 100,000 ∼249 50 56 367,290 114 10,000 ∼356
+
+Raising the embedding makes the simulation far more expensive. Table VII compares the three half-filling embeddings (6 , 3), (8 , 4), and (10 , 5) at N =20: a single forward-and-backward pass grows from 1 second to over 100. At larger N these embeddings could not be pushed as far as (6 , 3): (8 , 4) completed only to N =40 and (10 , 5) to N =25 before reaching the walltime and memory limits. 
+
+TABLE VII. Simulation cost at N =20 across embedding sizes. All at half-filling k=D/ 2, j=1, on the same TSP pipeline. Forward-and-backward time is one CPU core.                     
+
+> (D, k )Qubits N+DSubspace dim  N+Dj+k
+> Fwd+bwd (s) (6 ,3) 26 14,950 1.0 (8 ,4) 28 98,280 8.4 (10 ,5) 30 593,775 116
+
+Supplementary Note 6: Trainability derivations and DLA dimensions 
+
+The two-register QGNN trains by gradient descent on a balanced binary cross-entropy cost. For optimisation to remain feasible as the graph size N and the embedding-register size D grow, the variance of every single-parameter gradient must stay above a polynomial floor. The barren-plateau phenomenon [17, 55], in which this variance decays as 4 −(N +D) for unstructured deep circuits, would close off training at moderate qubit count. We give a closed-form lower bound on the gradient variance for the full pipeline of Section I A, valid for any Hermitian readout used in the architecture, with the polynomial-not-exponential scaling made explicit. The bound takes the form of a single proposition (Proposition 3); we derive it by combining a single-register Lie-algebraic argument with a joint-register mixing argument. We work with N node-register qubits at fixed particle number j and D embedding-register qubits at fixed particle number k. The relevant subspace dimensions are 
+
+dN =
+
+Nj
+
+
+
+, dE =
+
+Dk
+
+
+
+, dJ =
+
+N + Dj + k
+
+
+
+. (61) The factored sub-product H(j)node ⊗ H (k)emb has dimension dN dE ; the joint-register mixing layer M (θM ) preserves only the total weight j + k and acts inside the larger joint particle-number subspace of dimension dJ . We write so (d) = 
+
+{X ∈ Rd×d : X⊤ = −X} for the real-orthogonal Lie algebra; it embeds in the Hermitian operators on Cd as i so (d). The basis of choice on the embedding register is the lex-ordered particle-number-k family {| S⟩ : |S| = k, S ⊆ [D]},with each |S⟩ corresponding to a computational-basis state with the bits indexed by S set to one. The trainable gates are particle-number-preserving Givens rotations on this basis. We write ⟨A, B ⟩HS = Tr  A†B for the Hilbert–Schmidt 22 inner product on operators, ∥A∥2 
+
+> F
+
+= Tr  A⊤A for the Frobenius norm of a real matrix, and σ(z) = (1 + e−z )−1
+
+for the logistic sigmoid. The Pauli operators on a single qubit are denoted X, Y, Z ; expressions such as Za Zb and 
+
+Xi Xj + Yi Yj refer to the corresponding two-qubit Pauli observables on the indexed qubits. The Lie-algebraic theorem of Ragone et al. [18] bounds the loss variance of a parametrised cost in terms of the dynamical Lie algebra (DLA) g of the circuit and the Hilbert–Schmidt projections of ρ, of the parameter generator, and of the observable O onto its simple ideals. The hypothesis is the Lie-Algebra-Supported Ansatz (LASA) of Ragone et al. (Definition 2.4): both iρ ∈ g and iO ∈ g. For our DLA g = so (dE ), the Hermitian image i so (dE ) consists of pure-imaginary off-diagonal antisymmetric matrices in the particle-number basis. The readouts in our architecture are real-symmetric in this basis: the edge-prediction observable ZaZb and the 1-RDM diagonal Zi are diagonal (a special case of real-symmetric), and the 1-RDM off-diagonal XiXj + YiYj is real-symmetric off-diagonal. For any real-symmetric O and any antisymmetric Y , the Hilbert–Schmidt overlap satisfies 
+
+⟨O, iY ⟩HS = i Tr( OY ) = i Tr  (OY )⊤ = i Tr  Y ⊤O⊤ = −i Tr( Y O ) = −i Tr( OY ), (62) using Tr A = Tr A⊤, ( AB )⊤ = B⊤A⊤, O⊤ = O, Y ⊤ = −Y , and cyclicity. The relation Tr( OY ) = − Tr( OY ) forces Tr( OY ) = 0, hence iO / ∈ g, and the LASA bound returns a vacuous zero. The particle-number-preserving theorem of Monbroussou et al. [25] (Theorem 3) gives an exact closed form for the gradient variance of a single-register Givens circuit on n qubits in the particle-number-k subspace of dimension 
+
+dk =  nk
+
+,
+
+Eζ0,y Var θ
+
+∂λC(θ) = 8 k (n − k)
+
+n (n − 1) dk
+
+, (63) with ζ0 the input-state amplitudes, y the target amplitudes, and C(θ) = ∥ζ − y∥22 the squared-Euclidean amplitude cost. The hypothesis (Eq. 22 of [25]) requires inputs and targets each with zero mean and isotropic squared moment 1/d k. Our cost is binary cross-entropy on a deterministic structured input. We sidestep both gaps by integrating directly over the Haar measure on SO( d) in its defining representation. Let 
+
+Eab denote the matrix with entry 1 at row a, column b and zero elsewhere, and define a Givens generator of so (d), 
+
+Hp = Eab − Eba , ∥Hp∥2 
+
+> F
+
+= 2 , H2 
+
+> p
+
+= −(Eaa + Ebb ). (64) Fix a unit input vector |ψ⟩ ∈ Rd and a real-symmetric observable O ∈ Rd×d, and let UL, U R be independent Haar-random rotations in SO( d). Setting 
+
+|ϕ⟩ = UL |ψ⟩ , M = U ⊤ 
+
+> R
+
+O U R, (65) 
+
+|ϕ⟩ is uniform on the unit sphere Sd−1 ⊂ Rd by left-invariance of Haar measure. The parameter-shift gradient at 
+
+θ = 0 is then 
+
+gp = ⟨ϕ| [M, H p] |ϕ⟩ . (66) The commutator [ M, H p] is real symmetric: with M ⊤ = M and H⊤ 
+
+> p
+
+= −Hp,[M, H p]⊤ = H⊤ 
+
+> p
+
+M − M H ⊤ 
+
+> p
+
+= −HpM + M H p = [ M, H p], (67) and Tr[ M, H p] = 0 by cyclicity. Hence E[gp] = 0 and Var[ gp] = 8
+
+d(d − 1)( d + 2) O − Tr( O)
+
+d I 2
+
+> F
+
+. (68) The proof has three steps. Spherical fourth moment. For ϕ uniform on Sd−1 and any traceless symmetric A,
+
+Eϕ
+
+(ϕ⊤Aϕ )2 = 2 Tr  A2
+
+d(d + 2) . (69) 
+
+Commutator Frobenius norm. Since [ M, H p] is symmetric, direct expansion and cyclicity give 
+
+∥[M, H p]∥2 
+
+> F
+
+= 2 Tr( M H pM H p) − 2 Tr  M 2H2
+
+> p
+
+. (610) 23 
+
+Orthogonal Weingarten averages. The Schur decomposition Sym( d) = Sym 0(d) ⊕ R · I of real symmetric matrices into traceless plus trace parts, applied to H2 
+
+> p
+
+(symmetric, Tr H2 
+
+> p
+
+= −2), gives 
+
+EUR Tr  M 2 H2
+
+> p
+
+ = − 2 Tr  O2
+
+d , (611) 
+
+EUR Tr( M H p M H p) = 2
+
+d − 1
+
+
+
+Tr  O2 − 1 
+
+> d
+
+Tr( O)2
+
+, (612) and hence 
+
+EUR ∥[M, H p]∥2 
+
+> F
+
+= 4
+
+d − 1 O − Tr Od I 2 
+
+> F
+
+. (613) Combining (69) and (613) yields Eq. (68). The dimension factor d(d−1)( d+2) = O(d3) comes from the algebra alone, and the Frobenius factor is bounded above by ∥O∥2 
+
+> F
+
+and below by a positive constant for any non-constant O. We verified the closed form at D = 6 , k = 3 , d = 20 for O = ZaZb: the formula predicts Var = 0 .01837 and a Monte-Carlo over 10 000 Haar SO(20) samples gives 0 .01807, agreement to 1 .6%. We further verified at d ∈ { 5, 10 , 20 , 50 } with random real-symmetric O, agreement within 2% in each case. The trainable evolution layer W acts on the embedding register through a sequence of Givens rotations. Two connectivities appear in our experiments, and they have different DLAs. In the nearest-neighbour variant , Givens act between adjacent qubits in successive layers of D − 1 gates each. The DLA is so (D), of dimension D(D − 1) /2, acting on the particle-number-k subspace through the k-th compound (exterior power) representation C(k)(SO( D)). Eq. (68) at d = D gives a per-parameter floor of order 1 /D 4. In the Ehrlich (all-pair) variant , controlled-Givens rotations act between every pair of particle-number-k basis states that differ by one excitation, in the order prescribed by the Ehrlich Gray code over k-subsets [42]. The DLA is the full so (dE ), of dimension dE (dE − 1) /2, on the same subspace, and Eq. (68) at d = dE gives a per-parameter floor of order 1 /d 4 
+
+> E
+
+. Connectivity choice trades off two competing effects: the Ehrlich variant covers a larger subgroup and is the more expressive subcircuit, but its DLA is large, and the per-parameter floor is correspondingly lower. The nearest-neighbour variant sits inside this larger group as a structured subgroup; its DLA is smaller, and the floor is higher, at the cost of a smaller search space. Monbroussou et al. [25] (Section 5) identify this as the regime where the dimension-only heuristic of [56] fails: dimension alone does not determine variance scaling for particle-number-preserving architectures, and orbit structure on the particle-number subspace also matters. The numerical values predicted by Eq. (68) for the nearest-neighbour variant at the readout O = ZaZb, restricted to half-filling, exhibit the polynomial scaling and a margin over the unstructured-circuit baseline that grows with D:                                  
+
+> (D, k )dE∥O−Tr( O)
+> dEI∥2
+> FVar [ ∂pL]4−Dratio (6 ,3) 20 19 .20 1 .84 ×10 −22.44 ×10 −475 (8 ,4) 70 68 .57 1 .58 ×10 −31.53 ×10 −5103 (10 ,5) 252 248 .89 1 .24 ×10 −49.54 ×10 −7130
+
+The same scaling holds for the 1-RDM diagonal Zi and the off-diagonal XiXj + YiYj , with traceless Frobenius norms differing only by an O(1) factor at fixed ( D, k ). Polynomial-cost Hartree–Fock and matchgate-shadow readouts inherit this scaling because their estimators are unbiased linear combinations of single-particle observables, and a fixed Lipschitz classical head composed onto the resulting feature vector preserves polynomial gradient variance up to a constant prefactor. The mixing layer M acts on the joint particle-number subspace of total weight j + k, of dimension dJ =  N +Dj+k
+
+,polynomial in N at fixed ( D, k, j ). Under all-pair connectivity within the joint subspace, the generator Hab = Eab −Eba 
+
+for each pair 1 ≤ a < b ≤ N + D acts as a real antisymmetric operator on the basis of ( j + k)-subsets of [ N + D], mediating single-mode-swap transpositions S ↔ (S \ { a}) ∪ { b} when exactly one of a, b lies in S; its Lie closure is contained in so (dJ ). The connectivity graph induced on these subsets by single transpositions is connected. On the single-particle subspace ( j + k = 1, dimension N + D), the commutator of two adjacent generators reduces exactly to [Hab , H bc ] = −Hac . (614) On the higher-weight subspaces ( j + k ≥ 2), which is the relevant regime for our architecture, the same identity holds up to a basis-state-dependent sign from Jordan–Wigner ordering of the bits in S, sufficient to generate the full algebra under closure. The standard density argument for connected single-particle transpositions on a finite-dimensional real-orthogonal irrep then gives equality to the full so (dJ ) [57]. We verified this directly by closing 24 the algebra under commutation: starting from the generator set, computing all pairwise commutators, retaining the ones not already in the span, and repeating until the dimension stopped growing. The four cases tested are (N, D, j, k ) ∈ { (3 , 3, 1, 1) , (4 , 3, 1, 1) , (2 , 4, 1, 2) , (3 , 3, 1, 2) }, with computed DLA dimensions {105 , 210 , 190 , 190 }, all matching dJ (dJ − 1) /2 exactly. The same proof construction applies at the configuration (5 , 4, 1, 2) used elsewhere in the paper, where dJ = 84 and the target dimension is 3486. Eq. (68) at d = dJ gives a per-parameter floor of order 1 /d 3 
+
+> J
+
+. At fixed ( D, k, j ) this is Ω(1 /N 3( j+k)), polynomial in N . For the Euclidean TSP regime j = 1 , (D, k ) = (6 , 3), the polynomial degree is 12. Tabulated alongside the unstructured baseline 4 −(N +D), the joint-register bound shows the polynomial-versus-exponential separation that is the trainability story of this architecture:                                         
+
+> NdJ4−(N+D)8/[dJ(dJ−1)( dJ+ 2)] ratio 5330 2.4×10 −72.2×10 −70.93 10 1820 2 .3×10 −10 1.3×10 −95.720 14950 2 .2×10 −16 2.4×10 −12 1.1×10 4
+> 30 58905 2 .1×10 −22 3.9×10 −14 1.9×10 8
+
+The polynomial floor sits below the exponential baseline at N = 5 because the latter is not yet small at N + D = 11; the separation grows quickly thereafter, reaching four orders of magnitude at N = 20 and eight orders at N = 30. The same analysis at ( D, k ) = (8 , 4) , j = 1 , N = 20 gives dJ = 98 ,280, polynomial floor 8 .4 × 10 −15 , baseline 1 .4 × 10 −17 ,separation 610, confirming that the polynomial-versus-exponential margin grows with both N and D.Eq. (68) bounds the gradient of an expectation ⟨O⟩. The BCE cost on edge probabilities is 
+
+LBCE (z) = −y log σ(z) − (1 − y) log  1 − σ(z), z = ⟨ZaZb⟩ ∈ [−1, 1] , (615) and direct differentiation gives the chain rule 
+
+∂z LBCE = σ(z) − y, ∂pLBCE =  σ(z) − y ∂pz. (616) The factor σ(z) − y lies in [ −1, 1], and its expected square at random initialisation is bounded below by a positive constant for y ∈ { 0, 1} and σ(z) not concentrated at y. The expected variance of the BCE gradient is therefore bounded above by Var[ ∂pz] and, in expectation over labels and trajectories, below by a positive constant times the same. The argument extends without modification to any fixed Lipschitz classical head composed onto the 1-RDM features. 
+
+Proposition 3 (Polynomial trainability of the two-register QGNN) . Consider the two-register QGNN of Section I A, with embedding-register evolution W in either the nearest-neighbour or the Ehrlich (all-pair) connectivity, and joint-register mixing M with all-pair connectivity. Suppose the cost is binary cross-entropy on edge probabilities or any fixed Lipschitz classical head on the 1-RDM features, and the trainable circuit forms an approximate 2-design on each of SO( D) (or SO( dE ) in the Ehrlich variant) and SO( dJ ) for the joint-register parameters. Then, for any single gate parameter θp, the gradient variance at random initialisation, in expectation over labels, satisfies 
+
+Var θ
+
+∂θp L = Ω 
+
+ 1poly( N, D )
+
+
+
+,
+
+polynomial of degree at most max {4, 3( j + k)} at fixed (j, k ).Proof. A W -parameter is bounded by the per-register form of Eq. (68) at d = D (nearest-neighbour) or d = dE
+
+(Ehrlich), each polynomial in D. An M -parameter is bounded by the joint-register form at d = dJ = Θ( N j+k), polynomial in N at fixed ( D, k, j ). The minimum of two polynomial floors is polynomial. The BCE chain-rule bound and any fixed Lipschitz classical head preserve polynomial scaling in expectation. Three remarks on the assumptions of Proposition 3 are worth making. The proposition is stated at random initialisation, which is the worst case for arguments of this kind: the Haar-averaged variance integrates over the entire parameter space, including configurations far from the trained one. In practice, parameters are initialised near zero with a small standard deviation, so each Givens rotation begins close to the identity, and the trainable circuit applies a small perturbation to the initial state. Near-identity initialisation gives strictly larger gradients than the Haar-averaged worst case for shallow effective depth, by a separate mechanism that does not invoke a 2-design hypothesis at all, and our experiments use this regime throughout. The 2-design hypothesis itself is provable for circuit depths of order d log d in the defining representation [56], and our typical depths sit in the same regime up to constants; the 25 empirical near-neighbour-versus-Ehrlich variance ratio at ( D, k ) = (6 , 3) is consistent with mild under-saturation at moderate D. Finally, the all-pair connectivity assumption for M is the assumption used in our closure verification, but the implementation uses a nearest-neighbour pyramid on the joint register; for that connectivity the DLA may be a proper subalgebra of so (dJ ), in which case Proposition 3 applies at the effective dimension of the subalgebra rather than at dJ . The polynomial-in-N scaling at fixed ( D, k, j ) is preserved as long as this effective dimension grows polynomially in N , which we flag as the most pressing direct verification item. A complementary observation, independent of these conditional points: in our experiments, transfer initialisation from a small graph to a larger graph preserves 100 to 500 × larger gradients than random initialisation across N ∈ [5 , 20] at fixed ( D, k, j ). This is empirical evidence that the polynomial floor is operationally meaningful in practice, not just an asymptotic statement. 
+
+Empirical verification. The same data underlying the main-text Figure 4 is reported at two additional resolutions in the figures below. Figure 5 shows the two diagnostic sweeps used to confirm the form of the bound: N -dependence at fixed ( D, k )=(6 , 3) across N ∈ { 5, 8, 10 , 15 , 20 , 25 , 30 , 40 } (panel a) and D-scaling at N =10, k=D/ 2 for D ∈{4, 6, 8, 10 , 12 , 14 } against the 1 / dim( g)2 Ragone–Larocca prediction and the 1 / Dk
+
+2 Monbroussou bound (panel b). The mean per-parameter gradient variance over quantum-side parameters is constant in N within seed noise across the extended range, and the D-scaling tracks the polynomial bound between the Ragone–Larocca and Monbroussou predictions across three orders of magnitude in  Dk
+
+.5 10 15 20 25 30  
+
+> Number of nodes N
+> 0.00040
+> 0.00045
+> 0.00050
+> 0.00055
+> 0.00060
+> 0.00065
+> 0.00070
+> 0.00075
+> Var θ [∂θi L]
+
+(a)       
+
+> mean = 5 .90 ×10 −4
+> 10 110 210 3
+> Embedding dimension (DD/ 2
+> )
+> 10 −6
+> 10 −5
+> 10 −4
+> 10 −3
+> 10 −2
+> Var θ [∂θi L]
+
+(b)                    
+
+> Measured 1/dim( g)2(Ragone–Larocca) 1/(Dk
+> )2(Monbroussou et al.)
+> FIG. 5. Empirical confirmation of the polynomial gradient floor. (a) N-dependence at fixed ( D, k )=(6 ,3), j=1: mean per-parameter gradient variance over quantum-side parameters at random initialisation, 50 initialisations per point. The variance is flat in Nwithin seed noise across the swept range. (b) D-scaling at N=10, k=D/ 2, j=1 against the Ragone–Larocca 1/dim( g)2bound and the Monbroussou 1 / Dk
+> 2bound.
+
+The per-parameter gradient variance also resolves at the gate-group level. Figure 6 reports the mean and the maximum per-parameter gradient variance, computed over the trainable embedding-register parameters at random initialisation, separated by the four trainable blocks of the model (loader controls, W (ℓ) at each iteration ℓ, joint-register mixing M , and the readout-side classical head). The mean and the maximum decay with the same slopes in 
+
+N + D as the pooled measurement of Figure 4, and no single gate group dominates the polynomial floor. The decomposition into quantum and classical parameters is reported in Figure 7: the quantum-parameter gradient variance dominates the classical-parameter variance at every N in the studied range, confirming that the trainability bound is operative on the parameters that the proposition addresses. The trainability separation translates into a shot-complexity separation. Figure 8 reports the shots required to estimate the gradient to a fixed relative accuracy as a function of N + D, at the ( D, k ) = (6 , 3) embedding setting and assuming parameter-shift differentiation: the random-initialisation curve crosses 10 6 shots per gradient step at 
+
+N + D ∼ 50, while the chained-transfer curve stays at 10 4 shots per step out to the same qubit count. 26 
+
+TABLE VIII. Numerical values for the trainability sweeps of Figure 5. 50 random initialisations per point. Left: 
+
+N -dependence at fixed ( D, k )=(6 , 3), j=1. Right: D-scaling at N =10, k=D/ 2, j=1, with the Ragone–Larocca lower bound 1/ dim( g)2 at dim( g)= D(D−1) /2 and the Monbroussou bound 1 / Dk
+
+2 at  Dk
+
+. Variances are mean per-parameter Var θ [∂θi L]over quantum-side parameters. 
+
+N Var θ [∂θ L]5 6 .43 × 10 −4
+
+8 5 .72 × 10 −4
+
+10 5 .91 × 10 −4
+
+15 6 .02 × 10 −4
+
+20 5 .77 × 10 −4
+
+25 5 .71 × 10 −4
+
+30 4 .67 × 10 −4
+
+40 4 .46 × 10 −4
+
+D  Dk
+
+ Var θ [∂θ L] 1/ dim( g)2 1/ Dk
+
+2
+
+4 6 2 .97 × 10 −3 2.78 × 10 −2 2.78 × 10 −2
+
+6 20 5 .91 × 10 −4 4.44 × 10 −3 2.50 × 10 −3
+
+8 70 1 .43 × 10 −4 1.28 × 10 −3 2.04 × 10 −4
+
+10 252 3 .46 × 10 −5 4.94 × 10 −4 1.57 × 10 −5
+
+12 924 7 .99 × 10 −6 2.30 × 10 −4 1.17 × 10 −6
+
+14 3 ,432 2 .82 × 10 −6 1.20 × 10 −4 8.49 × 10 −8
+
+Supplementary Note 7: Measurement strategy comparison 
+
+Each forward pass of the trained QGNN ends with feature extraction from the joint state on N + D qubits. We compare four candidate strategies on arbitrary input states. Table IX reports the asymptotic shot complexity required to make every entry of each strategy’s native feature vector individually trustable to additive error ε. For HF and the matchgate shadow, where the native feature is the D × D 1-RDM matrix and the matchgate-frame channel inverse couples entries, this per-entry budget coincides with the Frobenius bound up to constants; for amplitude, the bin-population convention is what controls deployment. 
+
+TABLE IX. Per-strategy shot complexity for full-feature recovery on the embedding register. Each row gives shots to make every entry of the strategy’s native feature vector individually trustworthy to additive error ε. Native feature vectors: amplitude reads  Dk
+
+ probabilities |cS |2, where the bin-population budget divides across bins; Z+ZZ reads O(D2) comp-basis correlators ⟨Zp⟩, ⟨ZpZq ⟩ jointly diagonal in Z; HF and shadow reconstruct the full 1-RDM γ (D2 entries) under the matchgate channel inverse, which adds a factor of D. Per measurement setting on the embedding register, amplitude and Z+ZZ require zero additional depth, deterministic HF requires O(D) depth, and the matchgate shadow requires O(D2) depth. Strategy Shots (per-entry ε on native feature) Amplitude O   Dk
+
+/ε 2
+
+Embedding Z+ZZ O(D2/ε 2)Deterministic HF O(D3/ε 2)Matchgate shadow O(D3/ε 2)
+
+We work on the embedding-register Hilbert space of fixed particle number k on D qubits. For a real-amplitude state |ψ⟩ = P 
+
+> S
+
+cS |S⟩, the 1-RDM is γpq = ⟨ψ| a†
+
+> p
+
+aq |ψ⟩ in the Jordan–Wigner mapping; γ is real symmetric with Tr γ = k. All four strategies share an outer projection step on the node register: each readout first measures the node register in the comp basis, accepts only outcomes whose lit set has cardinality exactly j, identifies that lit set with a j-subset T ⊆ [N ], and runs the embedding-register protocol on the post-measurement conditional state |ϕT ⟩emb on the particle-number-k subspace. The four native feature vectors carry different information about the embedding-register state. Amplitude and 
+
+Z+ZZ are confined to comp-basis observables: amplitude resolves the multinomial counts ˆ pS , from which bγpp =P 
+
+> S∋p
+
+ˆpS but no off-diagonal entry can be recovered; Z+ZZ adds the diagonal 2-RDM correlators ⟨ˆnp ˆnq ⟩ but is similarly blind to γpq for p̸ = q. The off-diagonal entries are sign-coherent sums of amplitude products cS cSq→p over basis pairs differing by a single mode swap, and the Born statistics |cS |2 retain no sign information. A worked example is illustrative. At ( D, k ) = (4 , 1) the two particle-number-1 states 
+
+|ψ+⟩ = 12 (|1000 ⟩ + |0100 ⟩ + |0010 ⟩ + |0001 ⟩), |ψ−⟩ = 12 (|1000 ⟩ − | 0100 ⟩ + |0010 ⟩ − | 0001 ⟩)satisfy ⟨Zp⟩ = 12 and ⟨ZpZq ⟩ = 0 for all p, q in both, so the comp-basis-only readouts produce identical native features on the two states. Their 1-RDMs are orthogonal rank-1 projectors with Frobenius distance √2, so a downstream task that depends on γ cannot distinguish |ψ+⟩ from |ψ−⟩ through comp-basis-only features at any shot count. The 27 20 40 
+
+Qubits N+D
+
+10 −9 
+
+10 −7 
+
+10 −5 
+
+10 −3 
+
+> Mean Var
+
+FinalPyramid A 
+
+(city--city) 
+
+20 40 
+
+Qubits N+D
+
+10 −9 
+
+10 −7 
+
+10 −5 
+
+10 −3 
+
+FinalPyramid B 
+
+(emb--emb) 
+
+20 40 
+
+Qubits N+D
+
+10 −10 
+
+10 −8 
+
+10 −6 
+
+10 −4 
+
+10 −2 
+
+FinalPyramid C 
+
+(cross) 
+
+20 40 
+
+Qubits N+D
+
+10 −10 
+
+10 −8 
+
+10 −6 
+
+10 −4 
+
+10 −2 
+
+CompoundPyramid 
+
+layers 
+
+20 40 
+
+Qubits N+D
+
+10 −12 
+
+10 −10 
+
+10 −8 
+
+10 −6 
+
+10 −4 
+
+> Mean Var
+
+Embedding 
+
+MLPs 
+
+20 40 
+
+Qubits N+D
+
+10 −9 
+
+10 −8 
+
+10 −7 
+
+10 −6 
+
+10 −5 
+
+10 −4 
+
+Readout 
+
+head 
+
+20 40 
+
+Qubits N+D
+
+10 −13 
+
+10 −10 
+
+10 −7 
+
+10 −4 
+
+10 −1 
+
+Adjacency 
+
+MLP 
+
+Random init Identity Transfer from TSP-5 Chain (n−1 → n)20 40 
+
+Qubits N+D
+
+10 −8 
+
+10 −6 
+
+10 −4 
+
+10 −2 
+
+> Max Var
+
+FinalPyramid A 
+
+(city--city) 
+
+20 40 
+
+Qubits N+D
+
+10 −8 
+
+10 −6 
+
+10 −4 
+
+10 −2 
+
+FinalPyramid B 
+
+(emb--emb) 
+
+20 40 
+
+Qubits N+D
+
+10 −10 
+
+10 −8 
+
+10 −6 
+
+10 −4 
+
+10 −2 
+
+FinalPyramid C 
+
+(cross) 
+
+20 40 
+
+Qubits N+D
+
+10 −9 
+
+10 −7 
+
+10 −5 
+
+10 −3 
+
+10 −1 
+
+CompoundPyramid 
+
+layers 
+
+20 40 
+
+Qubits N+D
+
+10 −10 
+
+10 −8 
+
+10 −6 
+
+10 −4 
+
+10 −2 
+
+> Max Var
+
+Embedding 
+
+MLPs 
+
+20 40 
+
+Qubits N+D
+
+10 −6 
+
+10 −5 
+
+10 −4 
+
+10 −3 
+
+10 −2 
+
+Readout 
+
+head 
+
+20 40 
+
+Qubits N+D
+
+10 −12 
+
+10 −9 
+
+10 −6 
+
+10 −3 
+
+10 0
+
+Adjacency 
+
+MLP 
+
+Random init Identity Transfer from TSP-5 Chain (n−1 → n)
+
+FIG. 6. Gradient variance ordering across trainable gate groups. Per-parameter gradient variance, separated by gate group. Top: mean over the parameters of each group. Bottom: maximum over the parameters of each group. Both follow the same polynomial-in-N +D scaling as the pooled estimate of Figure 4. 28 11 14 16 18 21 26 31 36 46 56 
+
+Qubits N+D
+
+> 10 −9
+> 10 −7
+> 10 −5
+> 10 −3
+> 10 −1
+> Grad.\ variance  Var θ[∂ θ]
+
+(a) Quantum parameters          
+
+> 11 14 16 18 21 26 31 36 46 56
+
+Qubits N+D
+
+> 10 −10
+> 10 −9
+> 10 −8
+> 10 −7
+> 10 −6
+> 10 −5
+> 10 −4
+> 10 −3
+> 10 −2
+> Grad.\ variance  Var θ[∂ θ]
+
+(b) Classical parameters        
+
+> Random init Transfer from TSP-5 Chain (n−1 → n)Identity (θ= 0)
+
+FIG. 7. Quantum-parameter variance dominates classical-parameter variance. Per-parameter gradient variance, decomposed into quantum (Givens-rotation) parameters and classical (head) parameters. The quantum-parameter variance lies above the classical-parameter variance at every studied N .0 20 40 60 80 100 
+
+Number of qubits N+D
+
+10 5
+
+10 7
+
+10 9
+
+10 11 
+
+10 13 
+
+10 15 
+
+10 17 
+
+> Shots per parameter
+
+(a) 
+
+Random init 
+
+Transfer from TSP-5 
+
+Chain (n−1 → n)
+
+Identity (θ = 0) 
+
+0 20 40 60 80 100 
+
+Number of qubits N+D
+
+10 7
+
+10 9
+
+10 11 
+
+10 13 
+
+10 15 
+
+10 17 
+
+10 19 
+
+10 21 
+
+> Total shots per gradient step
+
+(b) 
+
+FIG. 8. Shot budget per parameter-shift gradient step. Shot complexity per parameter (left) and per full parameter-shift gradient step (right) at relative accuracy δ=0 .05, plotted against the qubit count N +D at ( D, k )=(6 , 3). Random initialisation (squares) reaches 10 6 shots per gradient step at N +D∼50; chained-transfer initialisation (diamonds) stays at 10 4 shots per step at the same qubit count. 
+
+matchgate-tailored protocols of the next two rows distinguish the two states at finite shot count and are the focus of the rest of this note. Deterministic Hartree–Fock [45] and the matchgate shadow [46] apply a matchgate basis-change unitary on the embedding register before comp-basis measurement, mapping off-diagonal γpq entries into accessible occupation differences. Both protocols are unbiased on every Hermitian symmetric one-body observable. The two protocols differ in the choice of basis change. Deterministic HF uses D/ 2 + 1 fixed Givens settings, each at depth O(D), covering all  D
+
+> 2
+
+ off-diagonal entries. The matchgate shadow draws a fresh Haar-random matchgate 29 
+
+C(k)(U ) with U ∈ SO( D) per snapshot at depth O(D2), then inverts the resulting channel via Eq. (73). The two protocols also differ in their per-shot variance. Deterministic HF splits the shot budget across D/ 2 + 1 settings, so the per-entry variance of γ from one shot is ( D/ 2 + 1) /N shots . The matchgate-shadow channel inverse multiplies each snapshot entry by ( D+2) /2, so the per-entry variance is (2 D−1) /N shots . Summing over the D(D+1) /2unique entries of the symmetric matrix gives Frobenius shots D(D+1)( D+2) /(4 ε2) for HF and D(D+1)(2 D−1) /(2 ε2)for the shadow, both O(D3/ε 2) with a constant prefactor gap of about 4 in HF’s favour. The wall-clock budget on hardware adds the projection multiplier 1 /P proj from the outer node-register conditioning. The per-iteration operations V , A, and W each preserve the node-register particle number j individually, so before the final mixing layer M , the projection succeeds on every measurement run. The mixing layer M preserves only the total weight j + k, so after M the joint state has support on every ( nnode , n emb ) partition with sum j + k, and the projection succeeds only on the ( j, k ) component. For a Haar-random joint state in the particle-number-( j + k)subspace, 
+
+Pproj =
+
+ Nj
+
+  Dk
+
+ N +Dj+k
+
+ , 1
+
+Pproj 
+
+∼ j!
+
+ Dk
+
+ (j + k)! N k (N → ∞ ). (71) The total wall-clock cost over all N nodes is therefore O(N k+1 D3/ε 2) for both polynomial-cost protocols. The matchgate-shadow estimator is derived as follows. Apply a Haar-random matchgate C(k)(U ) before each comp-basis measurement and accumulate U ⊤diag(ˆ nS )U where ˆ nS,p = 1[p ∈ S]. The expected snapshot, by joint expectation over Haar SO( D) and the comp-basis outcome S sampled from | ⟨ S| C(k)(U ) |ψ⟩ | 2, is 
+
+M(γ)pq = EU,S 
+
+(U ⊤diag(ˆ nS )U )pq 
+
+ = 2
+
+D + 2 γpq + kD + 2 δpq , (72) where the inner expectation ES [ˆ nS,p | U ] = (U γU ⊤)pp uses the homomorphism property of the compound representation acting on one-body observables, and the Haar average on SO( D) decomposes Sym( RD ) = Sym 0(RD ) ⊕
+
+R · I and acts as the scalar 2 /(D + 2) on the traceless symmetric component and as the identity on R · I. Inverting on each component gives the unbiased estimator 
+
+bγ = D + 2 2 U ⊤diag(ˆ nS ) U − k
+
+2 I, (73) with E[bγ] = γ and Tr( bγ) = k as an algebraic identity per snapshot. The per-entry variance of a single shadow snapshot is bounded by 2 D − 1 [46]. A classical readout head g that is Lipschitz-L in the per-node 1-RDM features propagates a per-entry estimation error ε on bγ to a Frobenius error ∥bγ − γ∥F ≤ Dε , and through g to an edge-logit perturbation |∆zij | ≤ LDε .Correct decoding of the predicted output requires |∆zij | < ∆min /2, where ∆ min is the smallest gap between selected and rejected logits; combined with a union bound over the D2 entries and the  N
+
+> 2
+
+ edges, the per-readout sample complexity is 
+
+Nshots ≥ 8L2D3 log( DN/δ )∆2min 
+
+, N wall shots ≥ Nshots 
+
+Pproj 
+
+, (74) for correct decoding with confidence 1 − δ.
+
+Proposition 4 (Polynomial-cost 1-RDM readout) . For the two-register QGNN with matchgate trainable evolution, the embedding-register 1-RDM conditioned on a j-subset T of node-register qubits can be estimated to Frobenius additive error ε in O(D3/ε 2) shots per accepted projection round at circuit depth O(D) per measurement setting via the deterministic protocol of [45], or in O(D3/ε 2) shots per accepted round at circuit depth O(D2) per snapshot via the matchgate-shadow estimator of Eq. (73) . The shadow’s per-entry variance is larger than HF’s by a factor of about 
+
+4 from the channel-inverse amplification; both costs are independent of N and k. The wall-clock measurement budget is the per-round budget multiplied by 1/P proj from Eq. (71) , polynomial in N at fixed (D, j, k ).Proof. Both protocols act on the embedding register at fixed particle number k, conditioned on the projection onto a j-subset of node-register qubits. The deterministic protocol of [45] estimates each off-diagonal entry as a single bounded ±1 correlator after an O(D)-depth Givens layer; per-setting Hoeffding gives 1 /N variance per entry, and summing over the D(D − 1) /2 off-diagonal entries and D/ 2 + 1 settings yields O(D3/ε 2) for Frobenius error ε. The matchgate-shadow estimator of Eq. (73), at circuit depth O(D2) per snapshot, is unbiased with per-snapshot per-entry variance at most 2 D − 1 [46]; summing over the D2 entries gives the same O(D3/ε 2) bound. The shadow’s per-entry variance exceeds the deterministic protocol’s by the ratio (2 D − 1) /(D/ 2 + 1), about 2 .75 at D = 6, and a separate 30 channel-inverse prefactor ( D + 2) /2 = 4 amplifies the shadow’s variance at small shot budgets. The per-round cost is independent of N and k; the wall-clock budget multiplies it by 1 /P proj from Eq. (71), polynomial in N at fixed (D, j, k ). The 1-RDM compresses  Dk
+
+ amplitudes into a D ×D symmetric matrix with trace k; the generic image dimension is min(  Dk
+
+ − 1, D (D + 1) /2 − 1), with one direction lost at half-filling. The detailed Jacobian-rank derivation, including the Hodge identity γ(⋆ψ ) = I − γ(ψ), is in Supplementary Note 8. 10 2 10 3 10 4 10 5 
+
+> Shots Nshots
+> 0.00.20.40.60.81.01.21.4
+> ‖̂ γ − γ‖F
+
+(a)     
+
+> 10 210 310 410 5
+> Shots Nshots
+> 0.00.51.01.52.0
+> ‖̂ γ − γ‖F
+
+(b)     
+
+> 10 210 310 410 5
+> Shots Nshots
+> 0.00.51.01.52.02.53.0
+> ‖̂ γ − γ‖F
+
+(c)     
+
+> Embedding Z+ZZ
+> Deterministic HF Matchgate shadow 1/√Nshots envelope
+> ‖γoff ‖Ffloor
+
+FIG. 9. 1-RDM Frobenius recovery on Haar-random states across measurement strategies. Each curve plots 
+
+∥bγ − γ∥F versus shot budget for one of the four readout strategies, at three values of ( D, k ). The HF and shadow curves decrease as 1 /√Nshots with the prefactor gap of Table IX; the amplitude and Z+ZZ curves stall at the off-diagonal mass 
+
+∥γoff ∥F , which their native features do not resolve. 
+
+a. Task-level instantiation (TSP). The framework-level results above (O(D3/ε 2) shots for full γ, ∼ 4×
+
+HF/shadow prefactor gap, comp-basis recovery confined to diag( γ)) are independent of any specific task. The remaining paragraphs of this note specialise to the TSP instantiation of Section II C and report visible task-level error metrics (test BCE, tour ratio) defined there. We compare the same protocols on the trained QGNN of Section II C, sweeping the shot budget at ( D, k )=(6 , 3) with parameter-matched classical heads ( ∼5,350 parameters each). Each head is trained on exact features for 100 epochs and evaluated at four shot budgets via protocol simulation: amplitude readout uses multinomial sampling from |cS |2; the ⟨ZiZj ⟩ readout uses the shot-noise model Var[ ⟨ZiZj ⟩] = (1 − ⟨ ZiZj ⟩2)/N shots ; the matchgate-shadow readout uses Eq. (73) with Haar SO( D) samples per node per shot. 
+
+TABLE X. Tour quality of the trained QGNN under each measurement strategy. Test BCE and tour ratio at (D, k )=(6 , 3) on the trained QGNN of Section II C, three seeds, parameter-matched classical heads ( ∼ 5, 350 parameters per strategy). Dashes: data not collected at this shot budget. Exact 5×10 4 shots 10 4 shots 10 3 shots Strategy Feat. BCE Tour BCE Tour BCE Tour BCE Tour Amplitude 20 0.176 1 .003 — — — — — —Embedding Z+ZZ 21 0.391 1 .043 0 .392 1.043 0.396 1 .045 0 .437 1 .055 Deterministic HF 36 0.239 1 .006 0 .247 1.006 0.281 1 .008 0 .643 1 .043 Matchgate shadow 36 0.239 1 .006 0 .262 1.007 0.355 1 .014 1 .247 1 .099 
+
+Structural sanity check (node-register only) 
+
+Node ⟨ZiZj ⟩ 5 0.574 1 .104 0 .582 1.110 0.609 1 .126 0 .829 1 .177 31 Table X makes the information-content gap of Table IX visible at the task level. The embedding Z+ZZ row is shot-stable across the budget range, converging to its exact-feature gap at all shot counts (consistent with the absence of a randomised channel inverse), but stalls at tour ratio 1 .043 at every shot budget; this is 40 × the optimality gap of the matchgate readouts at exact features. The deterministic HF and matchgate shadow rows reach exact-feature tour ratio 1 .006, within 0 .3% of the amplitude reference 1 .003, and degrade gracefully with shot budget: HF beats the shadow at every finite-shot budget by the prefactor gap of Table IX, with BCE 0 .643 vs 1 .247 at 10 3 shots, 0 .281 vs 0 .355 at 10 4 shots, 0 .247 vs 0 .262 at 5 ×10 4 shots, all converging to the exact-feature BCE 0 .239 as the budget grows. The shadow row degrades sharply at 10 3 shots, where the channel-inverse prefactor ( D + 2) /2 = 4 at D = 6 amplifies low-shot variance. The node-register ⟨ZiZj ⟩ row below measures only city-register correlators and ignores the embedding entirely; its task error does not improve at any shot budget. Hardware noise modelling is absent throughout.  
+
+> Supplementary Note 8: 1-RDM Jacobian rank derivation
+
+The matchgate-shadow and deterministic Hartree–Fock protocols of Supplementary Note 7 estimate the 1-RDM γ
+
+on the embedding register, a D × D real symmetric matrix with trace k, in place of the full  Dk
+
+-dimensional state. We ask what fraction of the state-amplitude information survives this compression. The answer is the generic rank of the Jacobian of the map Φ : |ψ⟩ 7 → γ(ψ), which we derive in Proposition 5: the rank is the minimum of source and target dimensions, with one additional unit lost at half-filling k = D/ 2 when source and target dimensions are comparable. Let SD,k denote the unit sphere of real-amplitude states in the particle-number-k subspace, SD,k = {ψ ∈ R(Dk ) :
+
+∥ψ∥2 = 1 }, of dimension  Dk
+
+ − 1. Let T kD denote the affine subspace of real symmetric D×D matrices with trace 
+
+k, T kD = {M ∈ Sym( RD ) : Tr M = k}, of dimension D(D + 1) /2 − 1. The map Φ : SD,k → T kD is the assignment 
+
+ψ 7 → γ(ψ) with entries γpq (ψ) = ⟨ψ| a†
+
+> p
+
+aq |ψ⟩, quadratic in ψ. The image Φ( SD,k ) ⊂ T kD is closed semialgebraic, and we ask for its generic dimension. The differential dΦ|ψ : Tψ SD,k → Tγ(ψ)T kD acts between spaces of dimensions  Dk
+
+ − 1 and D(D + 1) /2 − 1respectively. Quadratic maps between real algebraic varieties have generic rank equal to the minimum of source and target dimensions; this is Sard’s theorem applied to a polynomial map plus constancy of rank on a Zariski open set. Hence rank  dΦ|ψ
+
+ ≤ min 
+
+ Dk
+
+ − 1, D(D+1) 2 − 1
+
+
+
+(81) at every ψ, with equality on a generic point unless an algebraic constraint cuts the image. At half-filling k = D/ 2, source and target are both indexed by k-subsets of [ D], and the Hodge star induces an involution on real amplitudes. Define ⋆ : R(Dk ) → R(Dk ) by ( ⋆ψ )S = sgn( σS,S c ) ψSc , where σS,S c is the permutation taking the concatenation ( S, S c) into the identity ordering on [ D]. Then ⋆2 = ( −1) k(D−k)I, with ⋆2 = + I when 
+
+k(D − k) is even and ⋆2 = −I otherwise. The Hodge identity for the 1-RDM is 
+
+γ(⋆ψ ) = I − γ(ψ), (82) a Hartree–Fock-style relation whose proof reduces to a sign computation: under ⋆, the role of a†
+
+> p
+
+aq on |S⟩ with 
+
+q ∈ S, p / ∈ S is exchanged with a† 
+
+> q
+
+ap on |Sc⟩ with p ∈ Sc, q / ∈ Sc; the JW signs accumulated through the involution combine with the quadratic structure of γ to give γ(⋆ψ ) + γ(ψ) = I entrywise. We verified Eq. (82) numerically at (D, k ) ∈ { (4 , 2) , (6 , 3) , (8 , 4) }, observing residuals ∥γ(⋆ψ ) − (I − γ(ψ)) ∥F at most 5 .6 × 10 −16 at random ψ on the unit sphere. The identity (82) is a global property of the image Φ( SD,k ). Its consequence for the local Jacobian rank depends on whether the source and the target dimensions are comparable. When  Dk
+
+ > D (D + 1) /2, the differential is generically full target rank and the Hodge identity merely constrains the image to a proper subset of T kD without further reducing its local dimension. When  Dk
+
+ ≤ D(D + 1) /2 at half-filling, source and target are both close to  Dk
+
+ − 1, and the Hodge constraint cuts the image dimension by exactly one direction at generic ψ. Among the cases relevant to our paper, this regime contains exactly one value: ( D, k )=(6 , 3), where  63
+
+ = 20 and D(D + 1) /2 = 21. 
+
+Proposition 5 (Generic Jacobian rank of Φ) . For ψ on a Zariski open subset of the unit sphere SD,k ,
+
+rank  dΦ|ψ
+
+ = min 
+
+ Dk
+
+ − 1, D(D+1) 2 − 1
+
+
+
+− 1
+
+h
+
+k = D 
+
+> 2
+
+and  Dk
+
+ ≤ D(D+1) 2
+
+i
+
+. (83) 
+
+The Hodge correction −1 at half-filling is a single real direction in the image, traced back through Eq. (82) to the Hodge star acting on amplitudes. 32 
+
+Proof. The naive bound (81) holds for any quadratic map by dimension counting. Generic equality on a Zariski open set follows from polynomial rank constancy: the locus where rank( dΦ) falls below its maximum over SD,k is a proper algebraic subvariety, hence measure zero. For the Hodge correction at half-filling, differentiate Eq. (82) at ψ in the direction δψ that lies along the orbit of ⋆ (that is, δψ = ⋆ψ − ⟨ ⋆ψ, ψ ⟩ψ projected onto the unit-sphere tangent); the cross-quadratic term dγ |ψ (δψ ) + dγ |⋆ψ (d ⋆ ·δψ ) = 0 provides one linear constraint relating tangent vectors at ψ and at ⋆ψ . When source and target dimensions are comparable (the case  Dk
+
+ ≤ D(D + 1) /2), this constraint reduces the image dimension at ψ by one; when the source dimension dominates the target one, the same constraint is absorbed into the rank loss already captured by the target dimension bound and produces no further deficit. We computed rank( dΦ|ψ ) by automatic differentiation in PyTorch, projecting the input onto the unit-sphere tangent and counting singular values above 10 −9 at ≥ 1,000 random ψ per case (results invariant across seeds and sample size).                                               
+
+> TABLE XI. Jacobian rank of the embedding-to-1-RDM map at selected (D, k ).Source dim =  Dk
+> −1; target dim =D(D+ 1) /2−1. The note column marks the unique case in our paper’s range where the half-filling Hodge correction is observed.
+> D k  Dk
+> −1D(D+1) /2−1 rank note 6214 20 14 full source 6319 20 18 half-filling, Hodge −18355 35 35 full target 8469 35 35 half-filling, source ≫target 10 5 251 54 54 half-filling, source ≫target
+
+A complete sweep over ( D, k ) with D ≤ 10 and 1 ≤ k ≤ D − 1 confirms that the Hodge −1 correction triggers only at ( D, k )=(6 , 3) within this range; all other half-filling cases tested have source dimension exceeding target by enough that the rank is set by the target dimension alone. At ( D, k )=(6 , 3), the Jacobian rank is 18 out of 19, so Φ contracts a single real direction on the tangent sphere, a 5.3% information loss along that direction. The lost direction does not propagate to the downstream task: the task performance of the trained QGNN under matchgate-shadow readout (Supplementary Note 7, Table X) is within 0 .4% of the amplitude readout on tour ratio at exact features. The compression that enables polynomial-cost measurement is, at this operating point, operationally invisible. 
+
+> Supplementary Note 9: Gate-family ablation
+
+The trainable evolution W on the embedding register (Section I A) admits two ansatz families compatible with the matchgate gate set, both acting as orthogonal transformations on the particle-number-k subspace of D qubits. This note records their parametrisations, dynamical Lie algebras, and per-parameter gradient-variance ratio at random initialisation. 
+
+a. Nearest-neighbour pyramid ( WNN ). The pyramid of two-qubit Givens rotations introduced by [33], written as a Cayley parametrisation of SO( D) on the defining D-dimensional representation, lifted to the particle-number-
+
+k subspace by the k-th compound representation C(k). The free parameters are the D(D−1) /2 entries of an antisymmetric generator A, and the embedding-register action is C(k) (I − A)( I + A)−1, which decomposes into nearest-neighbour Givens rotations on the k-subset basis. The DLA is so (D) of dimension D(D−1) /2, equal to 15 at (D, k )=(6 , 3). This is the choice used for the TSP numbers reported in the main text. 
+
+b. Ehrlich connectivity ( WEhr ). The controlled-Givens particle-number encoder of [42]: a direct parametrisation of SO(  Dk
+
+) by a chain of single-excitation controlled-Givens rotations along the Ehrlich Gray sequence on k-subsets. Consecutive subsets S and S′ in the sequence differ by a single mode swap, and one trainable angle per consecutive pair gives  Dk
+
+−1 parameters per layer. The all-pair connectivity within the embedding register raises the DLA to 
+
+so ( Dk
+
+) of dimension  Dk
+
+( Dk
+
+−1) /2, equal to 190 at ( D, k )=(6 , 3). We use this variant for trainability sweeps where a larger circuit dimension is wanted; it is not used for the numbers reported in the main text. 
+
+c. Gradient-variance comparison. We measure the per-parameter gradient variance of each variant at random initialisation, with the training protocol of Methods M2: ( D, k )=(6 , 3), two trainable layers with two trainable blocks per layer, quantum angles drawn from N (0 , 0.32), on the TSP-5 task. The variance is averaged over the trainable embedding-register parameters of W (the compound-generator entries for the nearest-neighbour pyramid, the Ehrlich 33 Gray angles for the Ehrlich connectivity), across 100 random initialisations. We then train each variant for 300 epochs on the 50 ,000-instance training split with 3 seeds and report test BCE and tour ratio under beam-search decoding.                         
+
+> TABLE XII. Nearest-neighbour pyramid versus Ehrlich connectivity on TSP-5.Comparison at ( D, k )=(6 ,3). DLA dimension is the closed-form value dim g.Variance at initialisation is the per-parameter gradient variance averaged over the trainable embedding-register parameters at random initialisation (100 initialisations). Test BCE and tour ratio are reported as mean ±s.d. over 3 seeds after 300 training epochs. Variant dim gVar at init. (per param.) Test BCE / tour ratio Nearest-neighbour pyramid 15 9.9×10 −40.21 ±0.01 / 1 .005 Ehrlich connectivity 190 1.8×10 −50.20 ±0.02 / 1 .004
+
+d. Result. The empirical pyramid-to-Ehrlich variance ratio is ≈ 55, larger than the ≈ 13 predicted by the DLA-dimension ratio  Dk
+
+( Dk
+
+−1) /(D(D−1))=190 /15 alone. The closed-form bound of Supplementary Note 6 is monotone decreasing in dim g, so the dimension-only prediction is a lower bound on the gap; the additional empirical factor sits in the regime that Monbroussou et al. [25] attribute to orbit structure within the particle-number subspace, which adds to trainability beyond circuit dimension. Test performance is comparable between the two variants at matched parameter budget, with the nearest-neighbour pyramid slightly behind on BCE and within s.d. on tour ratio; the practical gap closes once training is allowed to run. 
+
+e. Implication. The nearest-neighbour pyramid has the smaller DLA and the larger gradient floor, and is the choice used in the paper on those grounds. The Ehrlich connectivity is retained as an exploratory alternative for trainability sweeps and for the j-WL implementations of Section II A and Supplementary Note 2, where the all-pair connectivity is wanted to span the full particle-number subspace. Both variants are matchgate-compatible and so admit the polynomial-cost readouts of Section II E. 
+
+> Supplementary Note 10: Frozen-parameter ablation
+
+The two-register architecture combines a classical encoder and readout head with a trainable Givens evolution on the embedding register. We isolate the contribution of each by training the same model under three parameter-update regimes and comparing the downstream test metrics on a single configuration: the TSP-5 instance of Methods M1 with ( D, k )=(6 , 3), L=2 trainable iterations, and the readout MLP head used in Section II C. The model has 5 ,813 trainable parameters in total, of which 115 (2 .0%) are quantum Givens angles and 5 ,698 (98 .0%) are classical encoder and head weights. We define three regimes. The full regime updates all 5 ,813 parameters; this is the same setting used for the TSP-5 numbers reported in the main text. The quantum-only regime freezes the classical encoder weights and the readout MLP head at their initial values and updates only the 115 Givens angles. The classical-only regime freezes the Givens angles at their zero-mean Gaussian initialisation ( σ=0 .3 rad, M2) and updates the 5 ,698 classical parameters. Each regime is run with five seeds {42 , 123 , 456 , 789 , 1024 }, and within each seed, the optimiser state is reset before training so that the frozen subset is fixed at the chosen initialisation. All other hyperparameters (learning rate, batch size, balanced binary cross-entropy, early stopping with patience 30, EQC train/validation/test split) match the protocol of Methods M2 used for the main-text results. Test BCE and tour ratio are reported on the held-out test split fixed by the EQC benchmark of Skolik et al. [13]. Table XIII reports the resulting metrics. The full model attains test BCE 0 .191 ± 0.014 and tour ratio 1 .004 ± 0.001 across the five seeds. Freezing the classical encoder and head reduces the trainable parameter count from 5 ,813 to 115, and the test BCE rises to 0 .585 ± 0.011 with a tour ratio of 1 .059 ± 0.009. Freezing the quantum Givens evolution reduces the trainable parameter count from 5 ,813 to 5 ,698, and the test BCE rises to 0 .411 ± 0.014 with tour ratio 1.026 ± 0.005. Both frozen regimes degrade the metrics relative to the full model on both BCE and tour ratio. The two frozen regimes give a one-sided check on the contribution of each sub-block. The classical-only regime keeps an untrained Givens evolution at random initialisation, so the gradient signal that reaches the encoder and head must propagate through a fixed quantum map; the resulting BCE of 0 .411 shows that a substantial fraction of the task fit is recoverable through the classical sub-block alone, but a gap of 0 .220 in BCE and 0 .022 in tour ratio remains relative to the full model. The quantum-only regime keeps the encoder and head at their initialisation, so the only signal available to the model passes through 115 trainable Givens angles; the resulting BCE of 0 .585 is close to the chance-level binary cross-entropy of log 2 ≈ 0.69 scaled by the class-balance re-weighting used in M2, indicating that 115 Givens angles in isolation are too few to fit the edge-prediction target on this task. The full model is the only regime that reaches a tour ratio below 1 .01. Hence, the encoder and head supply the majority of the parametric 34                          
+
+> TABLE XIII. Frozen-parameter ablation on TSP-5.Three parameter-update regimes at the configuration of Methods M1: full, quantum-only, and classical-only. Five seeds per regime; mean ±standard deviation. Trainable parameter counts refer to the parameters updated by gradient descent in each regime; the model itself has 5 ,813 parameters in all three.
+> Regime Trainable params Test BCE Tour ratio Full 5,813 0.191 ±0.014 1 .004 ±0.001 Quantum-only 115 0.585 ±0.011 1 .059 ±0.009 Classical-only 5,698 0.411 ±0.014 1 .026 ±0.005
+
+capacity needed for the BCE fit, and the trainable Givens evolution supplies the remaining gap; neither sub-block reaches the full-model metrics on its own at this parameter budget. The result fixes the role of the quantum evolution within the architecture as a bottleneck layer that the classical sub-blocks rely on, and not as a stand-alone learner of the TSP edge distribution; it does not bear on quantum advantage, which is addressed separately in Section II E. 
+
+> Supplementary Note 11: Resource estimates and gate decompositions
+
+This note gives the per-block decomposition behind the resource estimate of Methods M3. We anchor the count at the largest TSP configuration with completed multi-seed results, N =20 at ( D, k )=(6 , 3) and node-register particle number j=1 with L=3 trainable iterations, and project upward to the deployment target N =50 at the same ( D, k, j, L ). The two registers occupy N + D qubits, equal to 26 at N =20 and 56 at N =50. 
+
+a. Givens decomposition. A particle-number-preserving Givens rotation Gab (θ) acts on two qubits a, b as a real SO(2) rotation in the two-dimensional subspace span {| 01 ⟩, |10 ⟩} . On a cnot -native instruction set the canonical decomposition of Anselmetti et al. [52] gives 
+
+Gab (θ) = 2 cnot + 2 Ry (±θ/ 2) , (111) i.e. two two-qubit cnot s and two single-qubit y-rotations per Givens, with a fixed Hadamard frame on either side. The decomposition is exact up to a global phase and uses no ancillas. Controlled Givens rotations, used inside the hierarchical loader for cross-register connections that thread the Ehrlich sequence onto the embedding qubits conditional on the active node, take a constant prefactor more under SWAP routing on a linearly-connected device: each controlled Givens decomposes to a sandwich of two cnot s around a controlled Ry , which itself unfolds into two further cnot s and two Ry on a cnot -native gate set, plus the SWAP overhead to bring the control qubit adjacent to the rotation pair. We absorb this prefactor into the per-block count below; it does not change the leading-order scaling. 
+
+b. Per-block accounting. Methods M3 fixes the canonical block structure as one hierarchical loader V , one equivariant adjacency A, one trainable evolution W , and one joint mixing M per iteration, repeated L times, followed by a single measurement basis change. We count primitive Givens per block. 
+
+Hierarchical loader V . On the first iteration, V creates the j=1 uniform superposition on the node register with 
+
+j controlled-X gates, then encodes the embedding register via the Ehrlich Gray code chain on the particle-number-k
+
+subspace, which uses 
+
+Dk
+
+
+
+− 1 = 
+
+63
+
+
+
+− 1 = 19 (112) Givens rotations. Reuploading layers re-encode coordinates with the same 19-Givens chain on the embedding register, but skip the initialisation gates on the node register (the state is already in the correct particle-number subspace). The total over L=3 is therefore 19 + 19 + 19 = 57 Givens plus a single controlled-X on the first iteration. 
+
+Equivariant adjacency A. The adjacency layer applies one Givens per pair of nodes in the canonical edge ordering, i.e.  N
+
+> 2
+
+ Givens per iteration. At N =20 this is 190 Givens per iteration and 570 Givens over L=3. At N =50 this is 1 ,225 per iteration and 3 ,675 over L=3. Hence, the adjacency layer dominates the per-iteration count, scaling quadratically in N at fixed L.
+
+Trainable evolution W . The nearest-neighbour pyramid parametrises a Cayley element of SO( D) and uses 
+
+D(D−1) /2 = 15 Givens at D=6. The compound lift C(k) is implemented at the matrix-multiplication level on the embedding-register state and is not itself realised by additional gates: the 15 base-register Givens generate the  Dk
+
+=20-dimensional compound action through the natural action of SO( D) on the particle-number-k subspace, with depth O(D) on a linearly-connected device. Over L=3 this is 45 Givens. 35 
+
+Joint mixing M . The cross-register matchgate mixing layer applies one Givens per (node, embedding-qubit) pair, giving N D Givens per iteration. At N =20 , D =6 this is 120 Givens per iteration; at N =50 , D =6 this is 300. Over 
+
+L=3 this is 360 at N =20 and 900 at N =50. 
+
+Measurement basis change. The deterministic Hartree–Fock 1-RDM readout uses D/ 2 + 1 = 4 measurement settings, each a single layer of Givens on the embedding register at depth O(D), contributing a constant additive cost independent of L. The matchgate-shadow alternative uses one Haar matchgate per snapshot at depth O(D2) = 36. Both are negligible relative to the adjacency cost at L=3.                                              
+
+> Block Givens per iter Givens over L=3 ( N=20) Givens over L=3 ( N=50) Hierarchical loader V19 (+ 1 ctrl-X first iter) 57 57 Equivariant adjacency A N
+> 2
+> 570 3,675 Trainable evolution WD(D−1) /2 = 15 45 45 Joint mixing MN D 360 900 Measurement basis change D/ 2 + 1 = 4 settings 44Total per forward pass —∼1,036 ∼4,681
+> TABLE XIV. Per-block Givens count at (D, k, j, L ) = (6 ,3,1,3) .The mixing column is reported over L=3 since one M
+> block follows each of the Literations of V,A, and W.
+
+c. Total per forward pass. Summing the entries of Table XIV, a single forward pass at the N =20 benchmarked configuration uses on the order of 1 ,036 primitive Givens rotations, which by (111) compile to approximately 2 ,072 
+
+cnot s and 2 ,072 single-qubit Ry rotations on a cnot -native instruction set, plus the constant Hadamard frame. At the N =50 deployment target the count rises to approximately 4 ,681 Givens, or about 9 ,362 cnot s, with the increase carried entirely by the  N
+
+> 2
+
+ growth of the adjacency layer at fixed ( D, k, j, L ). The model hyperparameters ( D, k, j, L )are chosen independently of N , and the per-layer trainable feature-embedding evolution does not change with N ; the joint mixer adds O(N 2) trainable angles (Methods M2). 
+
+d. Hardware feasibility. The 26-qubit configuration at N =20 and the 56-qubit deployment target at N =50 sit inside the qubit envelope of present-day superconducting platforms: Google’s Willow processor at ∼ 105 qubits [51] and IBM Heron at ∼ 156 qubits. The deployment claim attached to these numbers is functional rather than complexity-theoretic: the trained parameters can be evaluated on matchgate-compatible hardware at this scale. Noise tolerance under realistic two-qubit gate error rates and shot budgets is not characterised in the present paper, and the resource estimate above assumes ideal gates in the abstract gate-count sense. This note is the per-block backing for the numbers cited in Methods M3.

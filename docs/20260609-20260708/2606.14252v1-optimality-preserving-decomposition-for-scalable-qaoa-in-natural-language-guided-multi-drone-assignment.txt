@@ -1,0 +1,312 @@
+Title: Optimality-Preserving Decomposition for Scalable QAOA in Natural-Language-Guided Multi-Drone Assignment
+
+URL Source: https://arxiv.org/pdf/2606.14252v1
+
+Published Time: Mon, 15 Jun 2026 00:40:12 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Optimality-Preserving Decomposition for Scalable QAOA in Natural-Language-Guided Multi-Drone Assignment 
+
+Junyeop Bang 
+
+Department of Smart Convergence Korea University Republic of Korea 
+
+junyeop9981@korea.ac.kr 
+
+Byongho Lee 
+
+Department of Smart Convergence Korea University Republic of Korea 
+
+unlike96@korea.ac.kr 
+
+Dohyun An 
+
+Department of Smart Convergence Korea University Republic of Korea 
+
+sinsiga1905@korea.ac.kr 
+
+Hwangnam Kim 
+
+School of Electrical Engineering Korea University Republic of Korea 
+
+hnkim@korea.ac.kr 
+
+Abstract: As multi-drone fleets scale, zone assignment rapidly evolves into an intractable NP-hard combinatorial problem that overwhelms classical exhaustive search. While quantum optimization promises to shatter these classical bottle-necks, mapping complex spatial tasks from human intent to restricted quantum hardware remains a severe challenge. To bridge this gap, we present an end-to-end framework integrating a fine-tuned Large Language Model (LLM) front-end with a highly scalable, domain-specific quantum-classical backend. The front-end utilizes Supervised Fine-Tuning (SFT) and Direct Preference Optimization (DPO) to translate free-form natural language instructions into structurally robust Quadratic Unconstrained Binary Optimization (QUBO) constraints without false negatives. To overcome the strict qubit limits of near-term quantum devices, our framework features a novel constraint-preserving graph partitioner and a com-pressed separator-based dynamic programming (DP) merge. By structurally en-coding constraints via W-state initialization and XY-mixers in Conditional Value-at-Risk Quantum Approximate Optimization (CVaR-QAOA), the pipeline stays highly compact. Empirical results demonstrate that this architecture circumvents classical scaling walls, recovering the global optimum on 100% of idealized oracle cases and 96.3% under real QAOA sampling, enabling natural-language-guided task allocation at previously intractable scales. 
+
+Keywords: Multi-Robot Systems, Task Allocation, Quantum Computing, Large Language Models, QAOA 
+
+## 1 Introduction 
+
+Deploying multi-drone systems for complex spatial tasks, such as regional surveillance, disaster response, and logistics, requires efficient and dynamic zone assignment [1]. Traditionally, human operators must translate high-level mission goals into precise programmatic constraints or mathe-matical formulations—a process that is time-consuming, error-prone, and requires specialized ex-pertise. With the advent of Large Language Models (LLMs), there is a growing opportunity to bridge this gap by enabling robots to parse free-form, natural-language instructions directly into executable task specifications [2]. However, converting natural language into structured mathematical models is exceptionally challenging, as even minor logical omissions can lead to critical optimization failures. To address this initial barrier, recent advances have successfully demonstrated the automated trans-lation of unstructured problem specifications into formal Quadratic Unconstrained Binary Optimiza-
+
+> arXiv:2606.14252v1 [cs.RO] 12 Jun 2026
+
+tion (QUBO) models [3]. Specifically, by leveraging a systematic fine-tuning strategy that integrates Supervised Fine-Tuning (SFT) and Direct Preference Optimization (DPO), LLMs can be optimized to generate structured constraints with high structural accuracy and logical consistency. A key strength of this pipeline is its exceptional robustness in eliminating False Negatives—i.e., missed constraints—thereby ensuring that the critical boundaries of the multi-drone task allocation problem are fully captured from the user’s natural language input. While translating natural language into a QUBO formulation successfully digitizes human intent [4], finding the optimal assignment introduces a severe computational bottleneck. As the fleet size and the number of candidate zones increase, the multi-drone assignment problem triggers an exponential combinatorial explosion ( O(M N )), quickly rendering classical exact solvers and exhaustive search methods intractable within real-time operational windows. To shatter this classical barrier, quantum optimization algorithms—specifically the Quantum Approximate Optimization Algorithm (QAOA) [5]—have emerged as a transformative alternative, offering the potential to explore massive state spaces concurrently. However, directly applying QAOA to large-scale robotics problems is currently blocked by physical hardware limitations. Real-world Noisy Intermediate-Scale Quantum (NISQ) devices are restricted by strict qubit budgets and gate error rates [6], meaning a monolithic LLM-generated QUBO instance will quickly overwhelm available quantum capacity. To overcome this scalability barrier, this paper presents an end-to-end integration that bridges a robust language front-end [3] with a highly optimized, domain-specific quantum-classical back-end. Rather than simply chaining existing computational tools, our primary contribution lies in the hardware-aware formulation and structural optimization tailored specifically to the multi-drone spa-tial assignment problem. We introduce a domain-specific sub-QUBO encoding that eliminates the severe qubit overhead typically associated with one-hot assignment penalty terms. By mapping the drone-zone constraints directly into W-state initializations and Hamming-weight-preserving XY-mixers within CVaR-QAOA, we create a highly compact representation that structurally enforces hard constraints at the quantum circuit level. Furthermore, we adapt classical graph partitioning and separator-based dynamic programming to the quantum domain, establishing a scalable archi-tecture that decomposes massive, LLM-generated assignment problems into hardware-compatible sub-QUBOs and recombines them while rigorously preserving the global optimum. Through this tai-lored integration, our framework successfully bypasses the classical exhaustive-search wall, demon-strating a practical blueprint for translating high-level human intent into scalable, globally optimal quantum execution. 
+
+## 2 Related Work 
+
+Language-Conditioned Robot Task Planning. Traditional multi-robot task allocation (MRTA) relies on rigid, hand-coded formal specifications like MILP [7]. While recent frameworks (e.g., SayCan [8], Code as Policies [9]) enable LLMs to parse natural-language instructions, they mostly target single-robot tasks. Extending LLMs to multi-drone systems via heuristic prompting [10] lacks optimization guarantees and is prone to hallucinated constraints. To bridge this, fine-tuning pipelines (SFT+DPO) have been proposed to reliably emit structurally valid QUBO constraints without false negatives [3]. 
+
+Quantum Optimization in Robotics. As drone fleet sizes expand, combinatorial explosion renders classical exact solvers intractable [11]. QAOA has emerged as a promising quantum alternative for solving NP-hard QUBO problems [5, 12, 13]. However, Noisy Intermediate-Scale Quantum (NISQ) devices are severely constrained by qubit budgets and gate-error rates [6, 14], making monolithic encoding of large multi-drone instances impossible and necessitating hardware-aware decomposi-tion. 
+
+Scalable Decomposition. Classical decomposition methods (e.g., ADMM) incur heavy commu-nication overheads [15]. Recent quantum-classical partitioners [16] fit subproblems within NISQ limits but rely on greedy merges that destroy global context. We overcome this using a constraint-2preserving partitioner coupled with a compressed separator-DP merge [17] that provably recovers the global optimum (Sec. 4.4). 
+
+## 3 Problem Formulation 
+
+Before defining the objective function, we summarize the main symbols used throughout this section in Table 1. We consider a fleet of N drones indexed by i ∈ D = {1, . . . , N } and M candidate zones indexed by j ∈ Z = {1, . . . , M }. Drone i and zone j are located at pd 
+
+> i
+
+∈ R2 and pz 
+
+> j
+
+∈ R2, respectively. We define binary assignment variables xij ∈ { 0, 1}, where xij = 1 indicates that drone i is assigned to zone j. The travel cost between drone i and zone j is given by the Euclidean distance dij =
+
+∥pd 
+
+> i
+
+− pz 
+
+> j
+
+∥2.Each drone must be assigned to exactly one zone, i.e., P 
+
+> j∈Z
+
+xij = 1 for all i ∈ D . This one-hot constraint is enforced structurally by our solver (Sec. 4) rather than through a penalty term. From the operator instruction, the language front-end extracts: (i) per-drone movement weights αi ∈{αmove , 1}, where αi = αmove > 1 indicates that the movement of drone i should be minimized; (ii) force and forbid assignment sets F, B ⊆ D × Z ; and (iii) a requested minimum occupancy 
+
+ρj ≥ 0 for each zone. The target occupancy of zone j is defined as mj = max( L, ρ j ) ≥ 1, which combines the global minimum coverage level L (default L = 1 ) with the zone-specific request ρj . Thus, every zone must receive at least one drone unless a larger occupancy target is specified. Let nj = P 
+
+> i
+
+xij denote the number of drones assigned to zone j. The global assignment cost is then formulated as 
+
+H(x) = X
+
+> i∈D
+
+X
+
+> j∈Z
+
+αidij xij (travel cost) 
+
++ λhard 
+
+ X
+
+> (i,j )∈F
+
+(1 − xij ) + X
+
+> (i,j )∈B
+
+xij 
+
+
+
+(force/forbid) 
+
++ λ X
+
+> j∈Z
+
+max(0 , m j − nj )2 (target occupancy) .
+
+(1) This cost H serves as the evaluation objective: both the separator-DP merge (Sec. 4.4) and the brute-force oracle evaluate assignments using the same objective function, providing a consistent optimality criterion. Here, λhard ≫ λ ensures that any hard-constraint violation dominates feasible costs, while λ controls the occupancy penalty relative to the travel cost. Although the force/forbid Table 1: Main symbols used in the problem formulation. Symbol Description                             
+
+> NTotal number of drones
+> MTotal number of candidate zones
+> DSet of drones
+> ZSet of candidate zones
+> xij Binary assignment of drone ito zone j
+> pd
+> iPosition of drone i
+> pz
+> jPosition of zone jdij Euclidean travel distance between drone iand zone jαiMovement weight for drone i
+> FForce assignment set
+> BForbidden assignment set
+> ρjRequested minimum occupancy of zone jmjTarget occupancy of zone jnjNumber of drones assigned to zone jλOccupancy penalty weight
+> λhard Hard-constraint penalty weight
+
+31. Constraint extraction                                    
+
+> “r1 must go to z2; r3 should move little; z5 needs ≥2drones”
+> LLM (SFT+DPO)
+> force: {r1 →z2 }
+> move: {r3 }
+> min: {z5:2 }
+> Language
+> 2. Constraint-preserving partition
+> z1 z2
+> z3 z4
+> z5
+> z1 z2
+> z3 z4
+> z5
+> subproblems via METIS, each ≤qmax
+> Decomposition
+> 3. Sub-QUBO CVaR-QAOA
+> |0⟩
+> |0⟩
+> |0⟩
+> |W⟩UCXY UCXY
+> Measurement samples (one-hot):
+> 100 010 010 100 001 001
+> XY-mixer preserves Hamming weight = 1
+> Quantum solving
+> 4. Separator-DP merge
+> Subproblem profiles Pb:κ→(cost )
+> κ1=(1 ,0,1) :c=12 .3
+> κ2=(0 ,1,1) :c=10 .8
+> z1 z2
+> z3 z4
+> z5
+> z1 z2
+> z3 z4
+> z5
+> Global optimum recovered
+> Reconstruction
+
+Figure 1: End-to-end pipeline: an instruction is parsed by the fine-tuned LLM (SFT+DPO) into con-straints; the constraint-aware graph is partitioned into qubit-budget subproblems; each subproblem is solved by CVaR-QAOA (W-state init + one-hot-preserving XY-mixer); per-subproblem profiles are recombined by a separator-DP merge. term is written explicitly for completeness, our implementation enforces these constraints struc-turally through variable fixing and deletion (Sec. 4.3), making the corresponding penalty identically zero on feasible one-hot assignments. The deficit-only occupancy penalty additionally admits a slack-qubit reformulation; its concrete weighting strategy and the handling of the mj ≥ 2 case are deferred to Sec. 4. 
+
+## 4 Method 
+
+The pipeline comprises four stages (Fig. 1): natural-language constraint extraction, constraint-preserving partitioning, sub-QUBO CVaR-QAOA optimization, and separator-DP merge. 
+
+4.1 Natural-Language Constraint Extraction 
+
+The entry point is a free-form instruction. We employ a fine-tuned LLM (Qwen1.5-1.8B [18] with LoRA [19]) to translate instructions into structured constraints (force/forbid assignments, minimum coverage). Supervised Fine-Tuning (SFT) [20] fixes the output schema, while Direct Preference Op-timization (DPO) [21] maximizes structural validity and essentially eliminates missing constraints. A deterministic layer then validates these extracted constraints and emits the global QUBO formu-lation. 
+
+4.2 Constraint-Preserving Graph Partitioning 
+
+To overcome monolithic qubit limits, we partition the drone-zone assignment graph into qubit-budgeted subproblems using PyMETIS [22]. At this stage, our specific structural contribution is the introduction of a coverage candidate pruning mechanism prior to graph partitioning. Crucially, to mathematically preserve the global optimum across partitions, any drone whose detour to a zone exceeds the coverage penalty threshold ( λL 2) is excluded. This targeted pruning safely removes assignments that cannot improve the global objective, ensuring that the heuristic partitioning does not inadvertently sever the globally optimal solution set. Subproblems are strictly sized to fit the maximum hardware qubit budget ( qmax ). 
+
+4.3 Sub-QUBO Encoding and CVaR-QAOA 
+
+We structurally reduce the qubit footprint before quantum execution. First, through variable fix-ing and deletion , force/forbid constraints directly eliminate their respective decision qubits without requiring penalty terms. For the remaining variables, our core contribution at the circuit level is a domain-specific structural encoding that bypasses the heavy qubit overhead of traditional one-hot penalty terms. We struc-turally group each drone’s decision qubits into a Hamming-weight-one block of size k. Instead of a generic transverse-field mixer, we initialize this block in the W-state via a cascade of controlled-4Ry and CNOT gates [23], creating an equal superposition of all valid single-zone assignments: 
+
+|W ⟩ = 1√k
+
+ |10 · · · 0⟩ + |01 · · · 0⟩ + · · · + |0 · · · 01 ⟩. We then apply a block-local XY-mixer [24], 
+
+P
+
+> a<b
+
+(XaXb + YaYb), which preserves the Hamming weight of each block throughout the quan-tum evolution. By restricting the quantum evolution exclusively to the valid one-hot subspace, this bespoke encoding fundamentally improves the convergence landscape for the CVaR-QAOA solver. Each sub-QUBO is optimized via CVaR-QAOA [25] using the COBYLA optimizer [26]. For zones requiring multiple drones ( mj ≥ 2), we employ an exact binary slack expansion, while single-drone coverage is delegated to the classical merge layer to save qubits. 
+
+4.4 Compressed Separator-DP Merge 
+
+The subproblem profiles are recombined using a left-to-right dynamic program (DP) over the par-tition separators. While standard DP recombination quickly suffers from combinatorial explosion on dense graphs, our algorithmic contribution here is the design of a lossless compressed boundary state. By clamping zone counts strictly at their target occupancy mj , the DP footprint is drastically reduced. This compression enables an exact dominance pruning strategy: among partial assignments yielding the same clamped boundary state, only the one with the minimum accumulated travel cost is retained. Because the final coverage penalty depends solely on these clamped counts (separabil-ity and sufficiency), we establish a formal guarantee that this highly compressed search definitively recovers the global optimum of the original monolithic QUBO. 
+
+## 5 Experiments 
+
+The primary objective of our evaluation is to empirically validate the core contributions introduced in Section 1. Specifically, we aim to demonstrate that (1) the structurally encoded CVaR-QAOA can effectively optimize the sub-QUBOs within hardware constraints, and (2) the partition-and-merge architecture bypasses classical scaling bottlenecks while preserving the global optimum. 
+
+Scenarios & Hardware. We evaluate 300 scenarios across 10 fleet configurations, denoted as 
+
+N ×M (number of drones × number of zones), ranging from 7×5 to 12 ×4 on a 50 ×50 map. Each scenario includes random force/forbid constraints ( ≤ 3), movement preferences on ∼20% of drones (αmove =3 , otherwise 1), and minimum zone requests on ∼25% of zones, with global coverage strictly enforced. Experiments and brute-force baselines run on a single NVIDIA RTX 4080 using Qiskit-Aer [27] noiseless statevector simulation. Penalty weights are set to λ = 5 ¯d (where ¯d is the mean drone–zone distance) and λhard = 1000 λ.
+
+Hyperparameters. Subproblems are partitioned with a maximum qubit budget qmax =24 . To re-duce unnecessary candidate assignments, the coverage candidate pruning described in Sec. 4.2 is ap-plied prior to partitioning, recursively bisecting subproblems if the qubit budget is exceeded. Each sub-QUBO is optimized via CVaR-QAOA ( p=6 , α=0 .1) using COBYLA with 8 restarts ( 1 IN-TERP [28], 7 random). The shot count and iteration budget are scaled linearly with the sub-QUBO size to maintain consistent optimization quality across different partition sizes. Table 2: Constraint-extraction fidelity on 720 gold constraints (micro-averaged). FN = missed constraints (lower is better). Method Precision Recall F1 FN spaCy-based 0.406 0.524 0.458 340 SRL-based 0.603 0.436 0.506 403 OpenIE-based 0.465 0.699 0.559 215 LLM (SFT-only) 0.947 0.869 0.907 94     
+
+> LLM+DPO (Ours) 0.984 0.997 0.990 2
+
+55.1 Constraint-Extraction Fidelity 
+
+Before optimization, the language front-end (Sec. 4.1) must translate the operator instruction into the correct constraint set: a single missed constraint yields an invalid QUBO and a meaning-less assignment. We therefore evaluate constraint-extraction fidelity on a benchmark of 720 gold constraints spanning three difficulty tiers—C1 (single-clause), C2 (medium), and C345 (multi-clause/complex)—scoring each predicted constraint against the gold JSON. We compare three rule-based NLP extractors (spaCy, SRL, OpenIE), an SFT-only ablation, and our SFT+DPO front-end. Table 2 reports micro-averaged precision, recall, and F1, together with the absolute number of missed constraints (FN). Rule-based extractors plateau at F1 ≤ 0.56 , as fixed patterns fail to gener-alize across phrasings. The SFT-only model reaches F1 0.91 but still misses 94 constraints. Adding DPO drives recall to 0.997 and cuts missed constraints to 2 of 720 —an essentially false-negative-free front-end, the property the downstream optimization depends on: every extracted boundary is preserved, so no hard constraint is silently dropped before the QUBO is built. To illustrate this automated pipeline, consider a simple scenario with two drones (r1, r2) and two zones (z1, z2). An operator issues the natural language instruction: “r1 must not be assigned to zone z2, and Zone z1 must be assigned at least 2 drones.” The SFT+DPO front-end parses this text and successfully extracts two structured constraints: a forbid condition B = {(1 , 2) } and a minimum occupancy target ρ1 = 2 . Consequently, our deterministic layer automatically compiles these parameters into the global QUBO formulation (following Eq. 1): 
+
+H(x) = 
+
+> 2
+
+X
+
+> i=1 2
+
+X
+
+> j=1
+
+dij xij 
+
+| {z }
+
+> Travel Cost
+
++ λhard x12 
+
+| {z } 
+
+> Forbid (r1→z2)
+
++ λ max(0 , 2 − (x11 + x21 )) 2
+
+| {z } 
+
+> Coverage (z1≥2)
+
+. (2) This empirical translation confirms that our front-end flawlessly captures both boundary limitations and regional demands from free-form operator intent. 
+
+5.2 Global-Optimum Attainment 
+
+We evaluate the pipeline along two complementary axes. First, to isolate the correctness of the partition-and-merge layer from QAOA’s probabilistic sampling, we replace the QAOA solver with an exhaustive subproblem enumerator: any deviation from the brute-force global optimum must then be attributed to the partition or merge layer. Second, we run the full pipeline with real CVaR-QAOA. Table 3 reports both columns side by side. The brute-force oracle column recovers the global opti-mum on 300/300 (100.0%) scenarios across all configurations, empirically confirming the optimality guarantee of Sec. 4.4 and the conservative completeness of the constraint-preserving partition. Un-der real CVaR-QAOA, the pipeline attains the exact global optimum in 289/300 cases (96.3%) ,Table 3: Global-optimum attainment of the pipeline, with an idealized subproblem oracle and with real CVaR-QAOA on a single RTX 4080 GPU. Config N/M n Oracle Real CVaR-QAOA Match Acc. (%) Match Acc. (%) Avg. gap (%)                                                                                                 
+
+> 7×51.4 30 30 100.0 30 100.0 0.00
+> 8×42.0 30 30 100.0 28 93.3 0.05
+> 8×51.6 30 30 100.0 29 96.7 0.05
+> 9×42.2 30 30 100.0 29 96.7 0.01
+> 9×51.8 30 30 100.0 30 100.0 0.00
+> 10 ×42.5 30 30 100.0 28 93.3 0.07
+> 10 ×52.0 30 30 100.0 30 100.0 0.00
+> 11 ×42.8 30 30 100.0 27 90.0 0.13
+> 11 ×52.2 30 30 100.0 28 93.3 0.07
+> 12 ×43.0 30 30 100.0 30 100.0 0.00
+> Total 300 300 100.0 289 96.3 0.04
+
+6with a negligible average optimality gap of 0.04% across all 300 scenarios. To contextualize this achievement, finding the absolute global minimum in a discrete state space of O( M N ) is exception-ally difficult for heuristic solvers, which frequently get trapped in local minima. Achieving a 96.3% exact-match rate is remarkably high for a probabilistic quantum solver operating at a fixed shot count. This high attainment rate directly validates the efficacy of our structural sub-QUBO encod-ing: by utilizing W-state initialization and XY-mixers to enforce one-hot constraints, the quantum solver avoids the optimization landscape distortions (e.g., barren plateaus) typically caused by heavy penalty terms, allowing it to efficiently locate the optimum within a strict qubit budget. Every sub-optimal case is therefore attributable to incomplete QAOA sampling at the configured shot count rather than structural flaws; rerunning these sub-optimal scenarios recovers the global optimum, reflecting QAOA’s inherent stochasticity. 
+
+5.3 Scalability and Runtime Comparison 
+
+Figure 2 compares the median wall-clock runtime as the global problem scale increases. To thor-oughly evaluate scalability, we extended the scenarios up to a 20 ×5 (drones × zones) configuration. Classical brute-force exhaustive search evaluates every valid one-hot assignment, resulting in a time complexity of O(M N ). We directly measured brute-force runtimes up to the 12 ×5 configuration. For the larger, intractable scales ( 15 ×5, 18 ×5, and 20 ×5), the brute-force runtimes were theoret-ically extrapolated based on this O(M N ) complexity using an atomic evaluation function bench-mark. As depicted, the exhaustive approach rapidly hits an exponential wall. In contrast, our partition-and-merge architecture successfully avoids this exponential explosion. Val-idating our second core contribution, the runtime of our pipeline is dominated by the slowest sub-QUBO’s QAOA execution, which remains strictly bounded by the constant qubit budget qmax . Be-cause the structural encoding keeps each subproblem compact, and the separator-DP merge adds only polynomial overhead, the framework scales gracefully. We further accelerate the pipeline via a parallel variant that allocates one GPU stream per subproblem. Rather than a fixed constant speedup, the efficiency of this parallelization dynamically depends on the number of partitions and the vari-ance in subproblem sizes. As the global problem expands and generates more subproblems, this concurrent execution naturally absorbs the scaling burden, making the parallel advantage increas-ingly pronounced. The crossover point where our parallel pipeline overtakes the brute-force ap-            
+
+> 10 510 610 710 810 910 10 10 11 10 12 10 13 10 14
+> 10 −1
+> 10 1
+> 10 3
+> 10 5
+> 10 7
+> 10 9
+> Search space MN(number of assignments)
+> Runtime (s)
+> Brute force (median)
+> Ours, sequential (median)
+> Ours, parallel (median)
+
+Figure 2: Runtime vs. problem scale. Brute-force scales as M N (measured; dashed extrapolation), while the pipeline is bounded by the slowest sub-QUBO’s QAOA plus a polynomial merge; the parallel variant (blue) runs sub-QUBOs concurrently. Past the crossover ( M N ≈ 5 × 10 7) brute force becomes intractable. 7proach occurs near a state space of M N ≈ 5 × 10 7, beyond which the runtime gap widens by orders of magnitude in our framework’s favor. To formally quantify this profound trade-off between exactness and scalability, we introduce a Time-Normalized Effective Accuracy metric, defined as the probability of finding the global optimum divided by the execution time ( Attainment Rate Runtime ). For small-scale configurations (e.g., 7×5), the brute-force oracle evaluates almost instantly, yielding a high effective accuracy. However, as the scale approaches the crossover point ( 15 ×5 and beyond), the brute-force runtime explodes into hours or days, causing its effective accuracy to asymptotically collapse toward zero despite its 100% at-tainment rate. Conversely, our quantum-classical pipeline sustains a highly stable 96 .3% global-optimum attainment rate while maintaining a nearly flat, sub-minute runtime trajectory bounded by 
+
+qmax . Consequently, past the crossover threshold, our framework achieves an effective accuracy that is orders of magnitude superior to exhaustive search, decisively proving that trading a negli-gible 3.7% probabilistic gap for an exponential speedup is highly advantageous for real-time fleet coordination. 
+
+## 6 Limitations 
+
+While the proposed framework successfully scales multi-drone task allocation, we note two practical considerations for future deployment. 
+
+Physical NISQ Deployment. Our experiments utilize noiseless statevector simulations to validate the fundamental architecture of the decomposition method. Transitioning to physical quantum hard-ware will naturally introduce gate noise and amplify the inherent probabilistic sampling variance of CVaR-QAOA. Maintaining subproblem optimality in real-world deployments will thus require coupling our pipeline with robust error mitigation and adaptive sampling strategies. 
+
+Decomposition Trade-offs. The classical overhead of the separator-DP merge is tied to the graph’s separator size. Shrinking partitions to fit extremely tight qubit budgets inevitably increases this boundary state, potentially bottlenecking the classical recombination phase for densely constrained topologies. Careful calibration of the partition size is required to balance quantum execution with classical merge efficiency. 
+
+## 7 Conclusion 
+
+We presented an end-to-end framework that bridges the gap between natural-language instructions and scalable quantum optimization for multi-drone task allocation. Rather than heuristically assem-bling off-the-shelf solvers, we demonstrated a domain-specific quantum-classical backend tailored to bypass the strict qubit limitations of NISQ hardware. By structurally encoding hard assignment constraints via W-state initialization and XY-mixers, we eliminated severe penalty overheads, al-lowing sub-QUBOs to remain highly compact and executable. Furthermore, our application of constraint-preserving graph partitioning and compressed separator-DP merge ensured that these manageable subproblems could be recombined without sacrificing the global optimum. Empirically, our pipeline validates this tailored integration. The SFT+DPO language front-end cap-tures structural boundaries with 99 .7% recall. Passed to the quantum backend, our structural encod-ing and merge layer recovered the global optimum in 100% of oracle evaluations and 96 .3% of cases using real CVaR-QAOA sampling, maintaining a sub-percent optimality gap. Most importantly, this architecture successfully circumvents the classical exhaustive-search bottleneck, scaling gracefully as the global fleet size expands. Future work will focus on transitioning from statevector simulations to physical NISQ devices, which will require coupling our structural encoding with hardware-aware error mitigation and adap-tive sampling loops. Ultimately, we aim to explore a Hierarchical QAOA (QAOA-in-QAOA) struc-ture, replacing the classical DP merge with a secondary quantum optimization layer to establish a fully quantum-centric scaling path for massive autonomous fleets. 8References 
+
+[1] J. Zhou, J. Yi, Z. Yang, H. Pu, X. Li, J. Luo, and L. Gao. A survey on vehicle–drone cooperative delivery operations optimization: Models, methods, and future research directions. Swarm and Evolutionary Computation , 92:101780, 2025. [2] X. Yao, H. Zhou, O. Mees, Y. Meng, T. Xiao, Y. Bisk, J. Oh, E. Johns, M. Shridhar, D. Shah, et al. Bridging language and action: A survey of language-conditioned robot manipulation. 
+
+arXiv preprint arXiv:2312.10807 , 2023. [3] H. K. Dohyun An, Wooyong Jung. A structured pipeline for formalizing natural-language robot task-allocation specifications. Autumn Annual Conference of The Institute of Electronics and Information Engineers , 2025. [4] F. Glover, G. Kochenberger, and Y. Du. A tutorial on formulating and using qubo models. 
+
+arXiv preprint arXiv:1811.11538 , 2018. [5] E. Farhi, J. Goldstone, and S. Gutmann. A quantum approximate optimization algorithm. arXiv preprint arXiv:1411.4028 , 2014. [6] J. Preskill. Quantum computing in the nisq era and beyond. Quantum , 2:79, 2018. [7] A. Khamis, A. Hussein, and A. Elmogy. Multi-robot task allocation: A review of the state-of-the-art. Cooperative robots and sensor networks 2015 , pages 31–51, 2015. [8] M. Ahn, A. Brohan, N. Brown, Y. Chebotar, O. Cortes, B. David, C. Finn, C. Fu, K. Gopalakr-ishnan, K. Hausman, A. Herzog, D. Ho, J. Hsu, J. Ibarz, B. Ichter, A. Irpan, E. Jang, R. J. Ruano, K. Jeffrey, S. Jesmonth, N. J. Joshi, R. Julian, D. Kalashnikov, Y. Kuang, K.-H. Lee, S. Levine, Y. Lu, L. Luu, C. Parada, P. Pastor, J. Quiambao, K. Rao, J. Rettinghouse, D. Reyes, P. Sermanet, N. Sievers, C. Tan, A. Toshev, V. Vanhoucke, F. Xia, T. Xiao, P. Xu, S. Xu, M. Yan, and A. Zeng. Do as i can, not as i say: Grounding language in robotic affordances, 2022. URL https://arxiv.org/abs/2204.01691 .[9] J. Liang, W. Huang, F. Xia, P. Xu, K. Hausman, B. Ichter, P. Florence, and A. Zeng. Code as policies: Language model programs for embodied control. In 2023 IEEE International conference on robotics and automation (ICRA) , pages 9493–9500. IEEE, 2023. [10] S. S. Kannan, V. L. Venkatesh, and B.-C. Min. Smart-llm: Smart multi-agent robot task plan-ning using large language models. In 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 12140–12147. IEEE, 2024. [11] A. A. Juan, J. Faulin, S. E. Grasman, M. Rabe, and G. Figueira. A review of simheuristics: Extending metaheuristics to deal with stochastic combinatorial optimization problems. Oper-ations Research Perspectives , 2:62–72, 2015. [12] K. Blekos, D. Brand, A. Ceschini, C.-H. Chou, R.-H. Li, K. Pandya, and A. Summer. A review on quantum approximate optimization algorithm and its variants. Physics Reports , 1068:1–66, 2024. [13] M. Cattelan and S. Yarkoni. Modeling routing problems in qubo with application to ride-hailing. Scientific Reports , 14(1):19768, 2024. [14] J. W. Z. Lau, K. H. Lim, H. Shrotriya, and L. C. Kwek. Nisq computing: where are we and where do we go? AAPPS bulletin , 32(1):27, 2022. [15] E. Di Mario and A. Martinoli. Distributed particle swarm optimization for limited-time adap-tation with real robots. Robotica , 32(2):193–208, 2014. [16] A. Verma and M. Lewis. Penalty and partitioning techniques to improve performance of qubo solvers. Discrete Optimization , 44:100594, 2022. 9[17] H. L. Bodlaender and A. M. Koster. Combinatorial optimization on graphs of bounded treewidth. The Computer Journal , 51(3):255–269, 2008. [18] J. Bai, S. Bai, Y. Chu, Z. Cui, K. Dang, X. Deng, Y. Fan, W. Ge, Y. Han, F. Huang, et al. Qwen technical report. arXiv preprint arXiv:2309.16609 , 2023. [19] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen, et al. Lora: Low-rank adaptation of large language models. Iclr , 1(2):3, 2022. [20] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal, K. Slama, A. Ray, et al. Training language models to follow instructions with human feedback. 
+
+Advances in neural information processing systems , 35:27730–27744, 2022. [21] R. Rafailov, A. Sharma, E. Mitchell, C. D. Manning, S. Ermon, and C. Finn. Direct preference optimization: Your language model is secretly a reward model. Advances in neural information processing systems , 36:53728–53741, 2023. [22] G. Karypis and V. Kumar. A fast and high quality multilevel scheme for partitioning irregular graphs. SIAM Journal on scientific Computing , 20(1):359–392, 1998. [23] D. Cruz, R. Fournier, F. Gremion, A. Jeannerot, K. Komagata, T. Tosic, J. Thiesbrummel, C. L. Chan, N. Macris, M.-A. Dupertuis, et al. Efficient quantum algorithms for ghz and w states, and implementation on the ibm quantum computer. Advanced Quantum Technologies , 2(5-6): 1900015, 2019. [24] S. Hadfield, Z. Wang, B. O’gorman, E. G. Rieffel, D. Venturelli, and R. Biswas. From the quantum approximate optimization algorithm to a quantum alternating operator ansatz. Algo-rithms , 12(2):34, 2019. [25] P. K. Barkoutsos, G. Nannicini, A. Robert, I. Tavernelli, and S. Woerner. Improving variational quantum optimization using cvar. Quantum , 4:256, 2020. [26] M. J. Powell. A direct search optimization method that models the objective and constraint functions by linear interpolation. In Advances in optimization and numerical analysis , pages 51–67. Springer, 1994. [27] A. Javadi-Abhari, M. Treinish, K. Krsulich, C. J. Wood, J. Lishman, J. Gacon, S. Martiel, P. D. Nation, L. S. Bishop, A. W. Cross, et al. Quantum computing with qiskit. arXiv preprint arXiv:2405.08810 , 2024. [28] L. Zhou, S.-T. Wang, S. Choi, H. Pichler, and M. D. Lukin. Quantum approximate optimiza-tion algorithm: Performance, mechanism, and implementation on near-term devices. Physical Review X , 10(2):021067, 2020. 10

@@ -1,0 +1,2309 @@
+Title: Signature-Based Optimal Execution for Statistical Arbitrage with Path-Dependent Trading Signals
+
+URL Source: https://arxiv.org/pdf/2606.31387v1
+
+Published Time: Wed, 01 Jul 2026 00:58:57 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Signature-Based Optimal Execution for Statistical Arbitrage with Path-Dependent Trading Signals 
+
+## Gianmarco Morbelli a,c , Sven Karbach b,c and Mike Derksen a
+
+> a
+
+Deep Blue Capital B.V., Amsterdam, The Netherlands 
+
+> b
+
+Informatics Institute, University of Amsterdam, LAB42, Science Park 900, Amsterdam, 1098 XH, The Netherlands 
+
+> c
+
+Korteweg-de Vries Institute for Mathematics, University of Amsterdam, Science Park 105–107, Amsterdam, 1098 XG, The Netherlands 
+
+A R T I C L E I N F O 
+
+Keywords :statistical arbitrage optimal execution path signatures pairs trading 
+
+A B S T R A C T 
+
+We develop a signature-based framework for optimal execution in statistical arbitrage strategies with path-dependent predictive signals. Both the alpha process and the trading speed are modelled as linear functionals of the truncated signature of a time-augmented market path, placing signal generation and execution on the same truncated signature basis. This allows the trading rule to react to the realised history of the signal while accounting for temporary impact, inventory exposure, terminal liquidation, and approximate dollar neutrality. The main contribution is a quadratic reduction theorem: within the class of signature-linear trading speeds, the restricted path-dependent execution problem becomes a finite-dimensional concave quadratic programme in the policy coefficients. After running synthetic experiments under a mean-reverting log-spread model, we find that the fitted policy achieves a higher return on turnover than a 
+
+z-score classical threshold benchmark. We shows how the same workflow can be deployed on a historical equity pairs-trading backtest, where the fitted signature policy again outperforms the benchmark in accounting terms. 
+
+## 1. Introduction 
+
+Statistical-arbitrage strategies depend not only on the quality of their predictive signals, but also on how those signals are executed. In liquid markets, relative-value signals often decay on the same time scale on which temporary impact, inventory risk, and neutrality constraints become material. A trading rule for statistical arbitrage must therefore do more than decide whether a spread is rich or cheap and also decide how aggressively to trade, how much inventory to hold, and how quickly to reduce exposure as the opportunity evolves. This paper studies the execution of path-dependent statistical arbitrage signals. The motivating example is pairs trading: a spread signal indicates which long–short position is attractive, but the realised history of the spread, the cost of trading, and the requirement to remain approximately dollar-neutral all affect the optimal execution rule. Classical threshold strategies, such as z-score entry and exit rules, usually separate signal generation from execution. They specify when to enter and exit a trade, but they do not solve an execution problem with impact, inventory penalties, and terminal liquidation [ 1, 2 ]. Conversely, classical optimal-execution and algorithmic-trading models study temporary, permanent, and transient impact under linear-quadratic or convex objectives [ 3, 4 , 5, 6 ], but their canonical schedules are usually driven by clock time, current inventory, or a low-dimensional Markov state rather than by the realised path of a statistical arbitrage signal. Alpha-aware execution and data-rich microstructure models incorporate predictors such as order-flow imbalance [ 7], but they usually rely on parametric or learned state representations and do not yield an explicit matrix reduction for general path-dependent signals. The goal of this paper is to connect these viewpoints. We ask whether a path-dependent statistical arbitrage signal and an execution-aware trading rule can be represented in the same feature space, so that the resulting control problem remains computationally tractable. The answer developed here uses path signatures, a sequence of iterated integrals of an observed path, which can be read as a systematic feature dictionary for the realised history of the market. Signature methods in finance were introduced in [ 8 ]and applied to execution and portfolio optimisation in [ 9, 10 ]. Closest to our setting, [ 11 ] develop signa-ture trading strategies with path-dependent signals in a mean–variance framework; neural, controlled-differential-equation, and kernelised signature models use this feature map for rich prediction and simulation [ 12 , 13 , 14 , 15 , 16 ]. Relative to the existing signature-execution literature, the contribution here is to formu-late an execution problem for statistical arbitrage signals rather than for a pure liquidation or multi-execution objective. The same signature state carries both the exogenous alpha signal and the trading speed rule, while the objective is flexible and it can combine signal reward, temporary impact, inventory risk, terminal liquidation, and dollar-neutrality penalties. Most importantly, we then show how all these constraints remain inside one finite-dimensional quadratic programme. 
+
+correspondence: g.morbelli@uva.nl Page 1 of 21 
+
+> arXiv:2606.31387v1 [q-fin.TR] 30 Jun 2026
+
+Signature-Based Optimal Execution for Statistical Arbitrage 
+
+Our approach. We model both the predictive alpha signal and the trading speed as linear functionals of the same truncated signature state. The signal matrix determines which path features predict returns, and the execution matrix determines how the strategy trades in response to those features. Because both objects live on the same tensor basis, impact costs, inventory risk, dollar-neutrality penalties, and terminal liquidation penalties reduce to a quadratic form in the execution coefficients. As such, the resulting optimisation is static and we can solve for the trading speed via a standard quadratic decomposition. No dynamic programming or HJB equation is solved during calibration, and no iterative optimisation is needed during live execution. The practical attraction is that the expensive step happens off-line. The objective matrices are estimated from historical paths, Monte Carlo simulations, or computed analytically when suitable. After this cali-bration step, the live trading speed can be obtained simply by computing the current signature features and applying one matrix-vector multiplication with the calibrated speed matrix. For an execution desk, this means that path-dependent adaptivity can be added without introducing a real-time dynamic-programming layer. 
+
+Paper Outline. We organize the paper as follows: Section 2 introduces the signature-based execution framework. After defining the lifted information path and the truncated signature state, we model both the predictive signal and the trading speed as linear functionals of the same path-feature vector. We then state the execution objective and prove the quadratic reduction theorem, which shows that the restricted path-dependent control problem becomes a finite-dimensional concave quadratic programme in the trading speed coefficients. The section also discusses the closed-form optimiser, regularisation, and the connection with classical Almgren–Chriss and linear-quadratic execution models. Section 3 then presents the trading experiments. We test the framework on a synthetic common-trend log-spread model with an Ornstein–Uhlenbeck spread and compare the learned signature policy with a standard 
+
+z-score pairs trading benchmark. A historical workflow then applies the same calibration procedure to an equity pair, illustrating the practical deployment of the framework on real data. The appendices provide the sup-porting derivations and diagnostics. Appendix A gives the explicit tensor expansion behind the matrices of the quadratic objective. Appendix B presents the equivalent shuffle-algebra formulation. Appendix C derives the moment inputs and closed-form OU Gram blocks used to validate empirical calibration. Appendix D reports numerical checks of the quadratic reduction, matrix conditioning, truncation-order effects and parameter sensitivity. 
+
+Table 1 
+
+Summary of principal notation. Symbol Meaning 
+
+Zt ∈ Rdz Exogenous information (market) path 
+
+Pt ∈ Rn Unaffected mid-prices ( n assets) 
+
+S(Z)s,t Signature of Z over [s, t ]
+
+S≤N (Z)0,t Truncated signature at level Nxt ∈ Rm Coordinate vector of S≤N (Z)0,t 
+
+ψt ∈ Rk Projected low-dimensional basis 
+
+yt := R t 
+
+> 0
+
+xu du Time-integral of signature features 
+
+rt := R t 
+
+> 0
+
+ψu du Time-integral of projected basis 
+
+vt ∈ Rn Trading speed (shares per unit time) 
+
+αt ∈ Rn Predictive signal 
+
+K ∈ Rn×m Signal matrix; αt = Kx t
+
+B ∈ Rn×m Trading-speed matrix; vt = Bx t
+
+θ = vec( B) ∈ Rnm Column-major vectorisation of BQt ∈ Rn Inventory (cumulative position) 
+
+A ∈ Rnm ×nm Curvature matrix of the reduced quadratic objective 
+
+b ∈ Rnm Linear coefficient of reduced objective 
+
+˜Λ ∈ Rn×n Temporary impact matrix 
+
+Σ ∈ Rn×n Inventory risk (urgency) matrix 
+
+ϕ ≥ 0 Inventory risk (urgency) weight 
+
+η ≥ 0 Dollar-neutrality weight 
+
+γ ≥ 0 Terminal inventory penalty 
+
+Gψ Gram matrix E
+
+hR T 
+
+> 0
+
+ψtψ⊤ 
+
+> t
+
+dt
+
+i
+
+Gr Gram matrix E
+
+hR T 
+
+> 0
+
+rtr⊤ 
+
+> t
+
+dt
+
+i
+
+At L´ evy area 
+
+zt Rolling spread z-score used in the mean-reversion signal 
+
+cα Signal scale converting zt into instantaneous-return units 
+
+β Hedge ratio in the spread definition 
+
+τ Rolling-window length for the z-score 
+
+κ OU mean-reversion speed 
+
+σM , σ X Common-trend and log-spread volatilities in the synthetic data-generating process 
+
+λridge Ridge shift used in the empirical matrix solve 
+
+Mi, R i Closed-form OU moment integrals used in Gψ and Gr
+
+## 2. Signature-Based Execution Framework 
+
+We formulate the statistical arbitrage execution problem directly in signature feature space. The same truncated signature drives both alpha generation and the execution policy, so signal extraction and trading frictions are handled within one model rather than in two separate layers. The guiding idea is simple: instead of forcing the problem into a small Markovian state, we keep the path dependence explicit but choose a feature class whose algebra is still tractable. 
+
+correspondence: g.morbelli@uva.nl Page 2 of 21 Signature-Based Optimal Execution for Statistical Arbitrage 
+
+2.1. Market Path and Signature Features 
+
+Fix a finite time horizon T > 0. Let (Ω , F, (Ft)t∈[0 ,T ], P) be a filtered probability space satisfying the usual conditions, with t the time parameter. We consider n tradable asset processes 
+
+P (i) 
+
+> t
+
+, i = 1 , . . . , n , and collect all exogenous information in a continuous, F-adapted path 
+
+Zt ∈ Rdz , t ∈ [0 , T ]. (2.1) The unaffected mid-prices are extracted by a fixed projection πP : Rdz → Rn,
+
+Pt := πP Zt = ( P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+, . . . , P (n) 
+
+> t
+
+)⊤. (2.2) The minimal specification is 
+
+Zt = ( t, P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+, . . . , P (n) 
+
+> t
+
+),
+
+but one may append spread factors or microstructure covariates without changing the algebraic arguments below. In trading terms, ( Zt)t≤T is the information stream to which the execution rule is allowed to react. It is not controlled by the strategy; in particular, we work in a temporary-impact setting. Throughout the paper, we work under the following general standing assumption. 
+
+Assumption 2.1 (Geometric lift of the information path) . The information stream Z = ( Zt)t∈[0 ,T ] is given together with a chosen ( Ft)t∈[0 ,T ]-adapted geometric rough-path lift 
+
+Z =  1, Z1, . . . , Z⌊p⌋ ∈ GΩp([0 , T ]; Rdz )of finite p-variation, for some p ≥ 1. The first level of the lift is the increment of the information path, 
+
+Z1 
+
+> s,t
+
+= Zt − Zs, 0 ≤ s ≤ t ≤ T, 
+
+and, for k = 2 , . . . , ⌊p⌋, Zks,t ∈ (Rdz )⊗k denotes the k-th order iterated-integral component of the chosen lift. A crucial object is the extension to any N ≥ p in the limit 
+
+N → ∞ which defines the signature of the lifted path 
+
+Z. We will denote the signature as S(Z)s,t instead of 
+
+S(Z)s,t when the lift is clear from context [17][9]. We stress that Assumption 2.1 is not limiting: as noted in [ 9] and the references therein, many processes of interest, including continuous semimartingales and discretely observed market data, admit suitable lifts to geometric rough paths and are thus amenable to our framework. We now proceed to introduce the basis theory behind signatures that appeared already in Assumption 2.1: Let 
+
+T (( Rdz )) := 
+
+> ∞
+
+Y
+
+> k=0
+
+(Rdz )⊗k (2.3) denote the extended tensor algebra over Rdz . For a word 
+
+I = ( i1, . . . , i k) with letters in {1, . . . , d z }, define the corresponding Stratonovich iterated integral by 
+
+SI (Z)s,t := 
+
+Z 
+
+> s<u 1<··· <u k<t
+
+◦dZ i1 
+
+> u1
+
+· · · ◦ dZ ik 
+
+> uk
+
+. (2.4) The signature of Z over [ s, t ] is the tensor series in 
+
+T (( Rdz )) given by 
+
+S(Z)s,t =
+
+
+
+1,
+
+Z ts
+
+◦dZ u,
+
+Z
+
+> s<u 1<u 2<t
+
+◦dZ u1 ⊗ ◦ dZ u2 , . . . 
+
+
+
+,
+
+which satisfies Chen’s identity and the shuffle product relation 
+
+SI (Z)s,t · SJ (Z)s,t = X
+
+> K∈IJ
+
+SK (Z)s,t , (2.5) where I  J is the shuffle product between words I and 
+
+J [18, 19]. Fix a truncation level N ∈ N and define the truncated tensor algebra 
+
+T ≤N (Rdz ) := 
+
+> N
+
+M
+
+> k=0
+
+(Rdz )⊗k.
+
+The truncated signature over [0 , t ] is 
+
+S≤N (Z)0,t :=  SI (Z)0,t 
+
+ 
+
+> |I|≤ N
+
+∈ T ≤N (Rdz ),
+
+and we write Φt := S≤N (Z)0,t . (2.6) After fixing a basis of T ≤N (Rdz ), we identify Φ t
+
+with a coordinate vector 
+
+xt ∈ Rm, m = dim  T ≤N (Rdz ).
+
+Linear functionals on the truncated signature then become matrix-vector products in xt. This is the object that will play the role of the state variable in the reduced optimisation problem. Unlike a Markov state, xt is not postulated as a small sufficient statistic. It is a finite-dimensional feature representation of the whole observed path over [0 , t ] [18, 20, 19]. 
+
+Assumption 2.2 (Integrability of feature moments) .
+
+Set yt := R t 
+
+> 0
+
+xu du. The moments needed below are finite: 
+
+E
+
+"Z T
+
+> 0
+
+∥xt∥2 dt
+
+#
+
+< ∞, E
+
+"Z T
+
+> 0
+
+∥Pt∥2∥yt∥2 dt
+
+#
+
+< ∞.
+
+2.2. Signal, Control, and Objective 
+
+The vector xt summarizes the past trajectory of the information path Z through a finite collection of signature features [ 19 , 21 ]. From this point onward, the model separates cleanly into three ingredients: an exogenous signal αt, an admissible trading speed vt, and the inventory process Qt induced by that speed. The signal and the speed use the same feature vector, but only the speed coefficients are chosen by the optimiser. 
+
+correspondence: g.morbelli@uva.nl Page 3 of 21 Signature-Based Optimal Execution for Statistical Arbitrage 
+
+Predictive signal. We model the short-term predictive signal (or expected instantaneous return) of the tradable assets as a linear function of the signature features, 
+
+αt := Kx t ∈ Rn, (2.7) where K ∈ Rn×m is a parameter matrix that may be estimated from historical data. This specification allows nonlinear dependence on the past trajectory of the market through the signature features while preserving linearity in the model parameters. 
+
+Trading policy. We restrict admissible trading policies to the class of signature-linear controls 
+
+vt := Bx t ∈ Rn, (2.8) where B ∈ Rn×m is a parameter matrix. The process 
+
+vt represents the trading speed (shares per unit time) of n ∈ N underlying assets, and the inventory Qt ∈ Rn
+
+evolves according to dQt = vt dt, t ≥ 0. (2.9) This parametrization defines a finite-dimensional family of path-dependent trading strategies. The optimisation problem is therefore not over an arbitrary adapted process but over the coefficient matrix B. We adopt the convention that positive trading speed corresponds to buying and negative trading speed to selling. Therefore, all timing decisions are encoded in B: two paths with different signature histories can induce different trading speeds even if the current clock time is the same. 
+
+Assumption 2.3 (Admissibility and exogeneity) . The control v is progressively measurable and satisfies 
+
+E
+
+"Z T
+
+> 0
+
+∥vt∥2 dt
+
+#
+
+< ∞.
+
+Moreover, the law of the information path Z does not depend on the choice of B, i.e. we work in a temporary-impact setting. 
+
+Trading costs. As stated previously, we consider temporary execution costs described by a cross-impact matrix ˜Λ ∈ Rn×n, such that for a given execution speed 
+
+vt we incur a cost v⊤ 
+
+> t
+
+˜Λvt per unit of time. We assume that the impact matrix ˜Λ ∈ Rn×n is symmetric positive definite. 
+
+2.3. Examples of Signals 
+
+Example 2.4. To illustrate how (2.7) captures classical statistical arbitrage signals, consider a pair of assets with prices P (1)  
+
+> t
+
+and P (2)  
+
+> t
+
+and define their log spread 
+
+St = log ( P (1)  
+
+> t
+
+) − β log ( P (2)  
+
+> t
+
+). Here, β is the slope coefficient of the linear regression between the returns of the two assets 1. A standard mean-reversion strategy   
+
+> 1The regression slope βis also known as the hedge ratio.
+
+trades against the normalized spread deviation [ 1, 2, 22 ]
+
+zt = St − μt
+
+σt
+
+, μt = 1
+
+τ
+
+Z tt−τ
+
+Su du, (2.10) 
+
+σt =
+
+ 1
+
+τ
+
+Z tt−τ
+
+(Su − μt)2 du
+
+1/2
+
+, (2.11) producing predictive returns αt = cα(−zt, z t/β )⊤. The signal zt is commonly known as the z-score 2 [2, 23 ]. Here, 
+
+cα > 0 is a suitable scaling constant that converts the dimensionless z-score into instantaneous-return units. If the z-score is appended explicitly to the information path, Zt = ( t, P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+, z t), then the z-score level-one coordinate is the increment zt − z0; in the scalar-augmented vector (1 , ∆t, ∆P (1) , ∆P (2) , ∆z), it appears as the fifth entry. Thus the rolling statistic is treated as an observed exogenous channel, not as a quantity generated by the signature of prices alone. The signal matrix for this choice of signal can be expressed as 3
+
+K =
+
+0 0 0 0 −cα 0 · · · 00 0 0 0 cα/β 0 · · · 0
+
+
+
+∈ R2×m.
+
+Higher-order signature terms in xt are multiplied by zero in K here, but they appear in the trading-speed matrix B and therefore influence the execution timing. The specification (2.7) thus generalises classical mean-reversion signals while allowing additional path-dependent predictors encoded by higher-order signature terms. 
+
+Example 2.5 (L´ evy area as a path-geometry signal) .
+
+Another example can be constructed using the following path feature: at truncation level N = 2, the signature state includes the antisymmetric second-order coordi-nate 
+
+At = S(Z)(1 ,2) 0,t − S(Z)(2 ,1) 0,t =
+
+Z t
+
+> 0
+
+ P (1)  
+
+> u
+
+− P (1) 0
+
+ ◦ dP (2) 
+
+> u
+
+−
+
+Z t
+
+> 0
+
+ P (2)  
+
+> u
+
+− P (2) 0
+
+ ◦ dP (1)  
+
+> u
+
+,
+
+also known as the L´ evy area of the two price processes. Geometrically, At measures the signed area enclosed by the trajectory ( P (1) , P (2) ) in the price plane. Large positive (negative) At indicates that asset P (1) has been systematically leading (lagging) P (2) over [0 , t ]. Incorporating At into the signal matrix K therefore allows the strategy to distinguish between transient dislocations (one asset briefly moves ahead, producing large area) and persistent divergence (both assets drift apart simultaneously, producing little area). By antisym-metry, some paths may have zero signed area despite non-trivial joint movement, so the L´ evy area should         
+
+> 2For Assumption 2.1 to apply with zas an information channel, σtmust remain bounded away from zero on the trading window.
+> 3Setting z0= 0 without loss of generality.
+> correspondence: g.morbelli@uva.nl Page 4 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+be interpreted as one directional path-geometry feature rather than a complete measure of pair dependence. For example, in [ 24 ], they propose an extension of the L´ evy area that is always positive and aims to improve the strength of this signal. This is one of the possible geometric features that the level-two signature makes available to the policy class. 
+
+2.4. Objective Framework 
+
+We now introduce the main objective of the paper. The trader chooses the control matrix B so as to maximise 
+
+J(B) := E
+
+h Z T
+
+> 0
+
+
+
+Q⊤ 
+
+> t
+
+αt − v⊤ 
+
+> t
+
+˜Λvt − ϕ Q ⊤ 
+
+> t
+
+ΣQt
+
+− η(Q⊤ 
+
+> t
+
+Pt)2
+
+dt − γ∥QT ∥2i
+
+(2.12) for parameters ϕ, η, γ ≥ 0. This objective has a natural relative-value interpretation: 
+
+• Q⊤ 
+
+> t
+
+αt rewards holding inventory in directions supported by the predictive signal, capturing the statistical arbitrage component of the strategy. 
+
+• v⊤ 
+
+> t
+
+˜Λvt models quadratic temporary execution costs, with temporary impact matrix ˜Λ possibly accommodating cross-impact between assets. By construction, ˜Λ must be positive definite, as we cannot allow for costless trades. 
+
+• ϕ Q ⊤ 
+
+> t
+
+ΣQt, with Σ ∈ Rn×n symmetric positive semidefinite, penalises inventory risk (aversion to adverse price moves while holding a position), with ϕ ≥ 0 controlling the urgency to reduce exposure. Setting ϕ = 0 disables the inventory-risk term, which is appropriate in statistical arbitrage settings where the strategy deliberately builds and unwinds inventory in response to the signal. 
+
+• η(Q⊤ 
+
+> t
+
+Pt)2 penalises net dollar exposure, promot-ing approximately dollar-neutral portfolios. 
+
+• γ∥QT ∥2 is a soft terminal liquidation penalty that discourages residual inventory at the end of the trading horizon. 
+
+Remark 2.6 (Execution-only specialisation) . Setting 
+
+αt dt = dPt turns the reward R T 
+
+> 0
+
+Q⊤ 
+
+> t
+
+αt dt into 
+
+R T 
+
+> 0
+
+Q⊤ 
+
+> t
+
+dPt, which is the mark-to-market value of inven-tory accrued along the realised price path. Integration by parts then reduces Equation (2.12) to a pure execution problem with temporary impact and dollar-neutrality penalty; classical liquidation formulations of [ 3, 4 , 9 ]are recovered by replacing the neutrality term with a terminal-inventory target. 
+
+Remark 2.7 (Units) . We work in share-based units throughout: Qt is measured in shares, vt in shares per unit time, and Pt in currency per share. The dollar-neutrality term ( Q⊤ 
+
+> t
+
+Pt)2 then has units of currency squared, and the impact cost v⊤ 
+
+> t
+
+˜Λvt has units of currency per unit time after ˜Λ absorbs the residual dimensional factor. The predictive signal αt is the share-normalised expected instantaneous return, i.e. currency per share per unit time, so Q⊤ 
+
+> t
+
+αt has units of currency per unit time and integrates over [0 , T ] to a currency reward. The reduced objective values are therefore price-scaled scores unless this signal is converted to currency-per-share units by multiplying by current prices. 
+
+Remark 2.8 . The objective in Equation (2.12) is a modelling choice, chosen to follow standard conventions in the optimal execution literature. The framework itself is not tied to this particular specification. Any predictive signal that can be suitably represented, or approximated, as a linear functional of the chosen signature features can be incorporated by changing the signal matrix 
+
+K. Likewise, alternative execution penalties or trading constraints can be added whenever they preserve the quadratic structure of the problem. 
+
+2.5. Quadratic Reduction 
+
+We now state the central structural result of the paper. Throughout this section we use the column-major 
+
+vectorisation convention vec( ·) , which stacks columns. In particular, for u ∈ Rm, w ∈ Rn, and B ∈ Rn×m,
+
+w⊤Bu = vec( B)⊤ (u ⊗ w). (2.13) Indeed, w⊤Bu = Pni=1 
+
+Pmj=1 wiBij uj is equal to vec( B)⊤ (u ⊗ w) because ( u ⊗ w) stacks the products 
+
+wiuj in the same order as vec( B) stacks Bij under column-major vectorisation. 
+
+Theorem 2.9 (Feature-linear quadratic reduction for signature trading speeds) . Under Assumption 2.1 -2.3, let xt ∈ Rm denote the coordinate vector of 
+
+Φt = S≤N (Z)0,t and set 
+
+αt = Kx t, vt = Bx t, Qt = Q0 +
+
+Z t
+
+> 0
+
+vu du, 
+
+with K ∈ Rn×m fixed and B ∈ Rn×m to be optimised. We assume that the signal matrix K and the trading matrix B are deterministic, Q0 is deterministic, ˜Λ is symmetric positive definite, Σ is symmetric positive semidefinite, and ϕ, η, γ ≥ 0. Let θ := vec( B) ∈ Rnm 
+
+be the column-major vectorisation of B. Then there exist a symmetric matrix A ∈ Rnm ×nm , a vector 
+
+b ∈ Rnm , and a scalar c ∈ R such that the objective Equation (2.12) can be written as the finite-dimensional quadratic function 
+
+J(θ) = θ⊤Aθ + b⊤θ + c. (2.14) 
+
+Furthermore, the tensors A, b, c are deterministic and given by 
+
+A = −E
+
+" Z T
+
+> 0
+
+(xtx⊤ 
+
+> t
+
+) ⊗ eΛ d t
+
++
+
+Z T
+
+> 0
+
+(yty⊤ 
+
+> t
+
+) ⊗  ϕΣ + ηP tP ⊤
+
+> t
+
+ dt  
+
+> correspondence: g.morbelli@uva.nl Page 5 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
++ γ y T y⊤ 
+
+> T
+
+⊗ In
+
+#
+
+, (2.15) 
+
+b = E
+
+" Z T
+
+> 0
+
+yt ⊗  Kx t − 2ϕΣQ0 − 2ηP tP ⊤ 
+
+> t
+
+Q0
+
+ dt
+
+− 2γyT ⊗ Q0
+
+#
+
+, (2.16) 
+
+and 
+
+c = E
+
+" Z T
+
+> 0
+
+ Q⊤ 
+
+> 0
+
+Kx t − ϕQ ⊤ 
+
+> 0
+
+ΣQ0 − η(Q⊤ 
+
+> 0
+
+Pt)2 dt
+
+− γ∥Q0∥2
+
+#
+
+,
+
+(2.17) 
+
+where In denotes the n × n identity matrix and yt :=R t 
+
+> 0
+
+xu du.Proof. Since θ = vec( B) , vt = Bx t and yt = R t 
+
+> 0
+
+xu du,we have 
+
+vt = ( x⊤ 
+
+> t
+
+⊗ In)θ ⇒ Qt = Q0 + ( y⊤ 
+
+> t
+
+⊗ In)θ. (2.18) It follows that vt is linear in θ and Qt is affine in θ.Consequently, each running term in Equation (2.12) is at most quadratic in θ: The temporary-impact term v⊤ 
+
+> t
+
+eΛvt
+
+is quadratic in θ, since vt is linear in θ. The inventory-risk term Q⊤ 
+
+> t
+
+ΣQt, the dollar-neutrality term ( Q⊤ 
+
+> t
+
+Pt)2,and the terminal penalty ∥QT ∥2 are also quadratic, because Qt is affine in θ, while Pt is exogenous from Assumption 2.3. Since Pt does not depend on B, hence on θ, the dollar-neutrality term remains quadratic in θ.Finally, Assumption 2.2 ensures that the corresponding coefficients are integrable, hence expectation and time integration yield deterministic A, b, and c, with their explicit computations displayed in Appendix A. Theorem 2.9 tells us that the path-dependent stochastic control problem restricted to signature-linear trading speeds reduces to a finite-dimensional concave quadratic maximisation in the coefficient vector θ.The reduction is exact within the fixed policy class; approximation enters only through the chosen feature set, moment estimation, and any regularisation used in the numerical solve. To obtain explicit formulas, we assumed the exoge-nous signal is represented in the same coordinate system, 
+
+αt = Kx t, K ∈ Rn×m. (2.19) This is the natural specification when both the forecast and the trading speed are built from the same truncated signature state. In this representation, the matrix A
+
+collects the curvature induced by execution costs and inventory penalties, while b captures the linear reward from the predictive signal together with the effect of the initial inventory. We now present a short lemma to ensure that, under natural sign assumptions on the objective terms, the reduced quadratic problem Equation (2.14) is concave. 
+
+Lemma 2.10 (Concavity of the reduced objective) .
+
+Let J(θ) = θ⊤Aθ + b⊤θ + c be the reduction from Theorem 2.9. If ˜Λ ≻ 0 is symmetric, Σ ⪰ 0 is symmetric, and ϕ, η, γ ≥ 0, then J is concave. Proof. We show that every term inside the expectation of the curvature matrix Equation (2.15) is positive semidefinite. First, all outer products are naturally positive semidefinite: xtx⊤ 
+
+> t
+
+⪰ 0, y ty⊤ 
+
+> t
+
+⪰ 0 and PtP ⊤ 
+
+> t
+
+⪰
+
+0. By construction, eΛ ≻ 0, so ( xtx⊤ 
+
+> t
+
+) ⊗ eΛ ⪰ 0.
+
+Since ϕ, η, γ ≥ 0, Σ ⪰ 0, we have ϕΣ ⪰ 0 and 
+
+ηP tP ⊤ 
+
+> t
+
+⪰ 0. It follows that the Kronecker blocks (yty⊤ 
+
+> t
+
+) ⊗  ϕΣ + ηP tP ⊤
+
+> t
+
+ and γ y T y⊤ 
+
+> T
+
+⊗ In are positive semidefinite. Time integration and expectation preserve positive semidefiniteness. Since the matrix A is the negative of these positive semidefinite blocks, we obtain 
+
+A ⪯ 0. Strict concavity holds whenever the penalty contributions are jointly coercive in θ (e.g. when ˜Λ ≻ 0and the empirical Gram matrix E
+
+hR T 
+
+> 0
+
+xtx⊤ 
+
+> t
+
+dt
+
+i
+
+has full rank). 
+
+Lemma 2.11 (Closed-form optimiser) . Assume A in Equation (2.15) is symmetric negative definite. Then the reduced problem is strictly concave and its unique unconstrained maximiser is 
+
+θ∗ = − 12 A−1b. (2.20) 
+
+Proof. The gradient is ∇θ J(θ) = 2 Aθ + b. Setting it to zero gives Equation (2.20), and negative definiteness of 
+
+A yields strict concavity. 
+
+Corollary 2.12 (Ridge-regularised optimiser) . Let 
+
+A ⪯ 0 be the curvature matrix in Theorem 2.9 and fix ρ > 0. The ridge-shifted objective 
+
+Jρ(θ) = θ⊤(A − ρI )θ + b⊤θ + c
+
+is strictly concave and has the unique unconstrained maximiser 
+
+θ∗ 
+
+> ρ
+
+= − 12 (A − ρI )−1b. 
+
+Proof. Since A ⪯ 0 and ρ > 0, A − ρI ≺ 0. Applying Lemma 2.11 to the shifted curvature matrix gives the stated maximiser. 
+
+Remark 2.13 (Strict vs. semidefinite curvature) .
+
+Lemma 2.10 only requires A ⪯ 0, while Lemma 2.11 additionally requires A ≺ 0. The impact block alone equals E
+
+hR T 
+
+> 0
+
+xtx⊤ 
+
+> t
+
+dt ⊗ ˜Λ
+
+i
+
+, so A ≺ 0 holds whenever the feature Gram matrix has full rank and ˜Λ ≻ 0. In practice, however, the empirically assembled ˆA  
+
+> correspondence: g.morbelli@uva.nl Page 6 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+may be numerically negative semidefinite because the signature dictionary contains highly collinear coordinates and the dollar neutrality and terminal penalties act only on the integrated coordinates yt, y T .The optimiser is then made well posed by a small Tikhonov shift, − 12 (A − ρI )−1b with ρ > 0 small, as shown in Corollary 2.12. If A ⪯ 0 but A̸ ≺ 0, the unregularised unconstrained quadratic need not have a finite maximiser: a finite maximiser exists only when the linear term does not act on null directions of A, equivalently b ∈ Range (−A). The empirical implementation therefore solves the ridge-shifted problem in Corollary 2.12. Hard desk constraints can be imposed after the same reduction, because they become finite-dimensional constraints on θ = vec( B) once the feature paths are fixed. Examples include bounds on trading speed, inven-tory, gross notional or leverage, hard terminal inventory constraints, and hard or banded dollar-neutrality con-straints. The resulting problem is a constrained concave quadratic programme; the experiments below use soft penalties instead of these hard constraints. Without signature lifting, non-Markovian depen-dence on the full path of Z leads naturally to dy-namic programming on an enlarged, potentially infinite-dimensional state space. Under the signature-linear pol-icy class, the optimisation is carried entirely by the finite-dimensional coefficient vector θ and the precomputed moment tensors A and b. The non-Markovian path dependence is absorbed into the feature vector xt and its integral yt, not into the state space of a PDE. The path-dependent stochastic control problem has been reduced to a static finite-dimensional optimisation: find θ ∈ Rnm 
+
+that maximises a concave quadratic. The matrices A and 
+
+b are precomputed off-line from historical paths (or from closed-form moment formulas where available), after which the optimal policy is available via a single matrix solve θ∗ = − 12 A−1b. During live trading, evaluating the policy requires only the current signature feature vector xt and one matrix-vector multiply; no dynamic programming, no differential equations, and no re-optimisation are needed at execution time. For an execution desk, this is the main operational message: model richness is paid for during calibration, not during live execution. 
+
+2.6. Regularization and Signature Complexity 
+
+Universal approximation results [ 17 , 19 , 25 ] show that linear functionals on signatures are dense in appropriate spaces of continuous path functionals as 
+
+N → ∞ . They do not by themselves guarantee good finite-sample calibration at any fixed truncation level. In practice, however, the dimension m of the feature space grows as PNk=0 dkz and financial data is noisy. Increasing 
+
+N therefore adds theoretical signal (by capturing higher-order geometric effects such as lead–lag curvatures) but simultaneously inflates the variance of the empirical moment matrices. 
+
+Spectral view. In practice the exact matrices A and b
+
+are replaced by empirical estimators ˆA and ˆb. Denoting the eigendecomposition of − ˆA by eigenvalues λi > 0and eigenvectors vi, the estimated optimiser reads ˆθ∗ = 12
+
+> nm
+
+X
+
+> i=1
+
+v⊤ 
+
+> i
+
+ˆbλi
+
+vi.
+
+The factor 1 /λ i amplifies estimation noise in ˆb. For a higher-order signature component that contributes little independent structural variance ( λi small), this amplification can generate large, oscillating coefficients and excessive inventory turnover out of sample. 
+
+Tikhonov regularization. A practical remedy is to add a ridge penalty −ρ∥θ∥2 to the objective, as formalised in Corollary 2.12, yielding 
+
+Jridge (θ) = θ⊤(A − ρI )θ + b⊤θ + c, θ∗ 
+
+> ridge
+
+= − 12 (A − ρI )−1b. 
+
+The quadratic structure is preserved and the noise amplifier for the i-th component becomes 1 /(λi + ρ). Choosing ρ on the scale of the near-null eigenvalues caps this amplification by replacing 1 /λ i with 1 /(λi + ρ), so it is not a hard threshold. 
+
+Lasso penalty for feature selection. To identify the minimal set of predictive signature coordinates, one can instead apply an L1 penalty: 
+
+Jlasso (θ) = θ⊤Aθ + b⊤θ + c − τ ∥θ∥1.
+
+The resulting problem is concave, though not a quadratic programme in the classical smooth sense because 
+
+∥ · ∥ 1 is non-differentiable. It is strictly concave only on directions where the quadratic part is strictly negative. Equivalently, minimising −Jlasso is a convex problem solvable by standard solvers via, e.g., a second-order cone reformulation. The L1 penalty drives noise-dominated coefficients exactly to zero, performing automated, data-driven depth truncation without fixing 
+
+N in advance. 
+
+2.7. Connection to Classical Models 
+
+The framework contains classical deterministic exe-cution schedules as degenerate feature classes. This is important conceptually: the signature approach should be viewed as an extension of the usual execution toolbox, not as a competing formulation that starts from unrelated assumptions. 
+
+Proposition 2.14 (Time-only reduction to determinis-tic execution classes) . Consider a single asset ( n = 1 ). If the feature map is restricted to time-only coordinates   
+
+> correspondence: g.morbelli@uva.nl Page 7 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+xt = (1 , t, . . . , t N /N !) , the reduced problem is a deter-ministic quadratic programme over time-polynomial trad-ing speeds. This is the same linear-quadratic liquidation structure as Almgren–Chriss, restricted to the chosen polynomial schedule class; increasing N enlarges this deterministic class and can approximate the continuous Almgren–Chriss schedule. Proof. Restrict to Zt = ( t) (time only) so that xt =(1 , t, . . . , t N /N !). The feature process is deterministic and yt = R t 
+
+> 0
+
+xu du is a vector of time polynomials. The optimal trading speed is therefore 
+
+v∗ 
+
+> t
+
+=
+
+> N
+
+X
+
+> k=0
+
+βktk,
+
+a polynomial schedule in t. At N = 1 this gives an affine schedule v∗ 
+
+> t
+
+= β0 + β1t; increasing N enlarges the deterministic schedule class used to approximate, rather than identically recover at finite N , the corresponding Almgren–Chriss liquidation profile [ 3]. The classical hard liquidation constraint QT = −Q0 is represented here only through the soft terminal penalty unless an explicit linear equality constraint is added. All moment tensors A and b reduce to time integrals of monomials, so J becomes the classical deterministic Almgren–Chriss objective. 
+
+Remark 2.15 (Relation to feedback LQ control) . For practitioners, the Almgren–Chriss case corresponds to a policy that only reacts to time, or to time and remaining inventory in the usual deterministic liquidation formula-tion. The signature framework enlarges this policy class by allowing the trading rule to react to richer summaries of the realised path, while preserving the same quadratic-programme structure. For control theorists, Riccati LQ control remains the natural formulation when the trading rule is an affine feedback of the endogenous inventory state, for example vt = u0(t) + u1(t)Qt. Such feedback laws are closely related to the present quadratic structure, but they are not covered by the exogenous-path reduction theorem without adding an endogenous-state extension. The difference is architectural: LQ control optimises feedback laws through a state equation, whereas the signature formulation fixes an exogenous path-feature dictionary and optimises the coefficients of a static feature map. 
+
+Remark 2.16 (Computational comparison to LQ con-trol) . Classical stochastic LQ control optimises over 
+
+adapted controls and proceeds through a Riccati ordi-nary differential equation that must be solved backward in time. The signature approach instead fixes a pathwise feature class, precomputes the moment tensors A and 
+
+b once from data or closed-form formulas, and then reads off θ∗ from a single matrix inversion. There is no backward integration and no requirement to specify a transition density for the state. The trade-off is that the policy class is restricted to signature-linear functions. Signature universality gives density in suitable continuous path-functional classes as the truncation depth increases, but the finite-N problem remains a restricted policy optimisation. 
+
+## 3. Trading Experiments and Workflow Illustration 
+
+This section applies the reduced execution frame-work to a controlled synthetic mean-reversion exper-iment and to a historical workflow example. The synthetic data-generating process uses two log prices that share a stochastic market component while their log spread follows an Ornstein–Uhlenbeck process. This experiment provides the main benchmark for studying how the signature execution layer trades a fixed z-score alpha signal under trading costs, terminal inventory pressure, and dollar-neutrality penalties. The historical example applies the same workflow to an equity pair and illustrates how the method behaves on a real relative-value trading problem. 
+
+3.1. Data-Generating Process 
+
+We simulate two assets whose unaffected log prices satisfy, for t ∈ [0 , 1], d log P (1)  
+
+> t
+
+= d Mt + 12 dXt (3.1) d log P (2)  
+
+> t
+
+= d Mt − 12 dXt (3.2) where dMt = μ dt + σM dW Mt (3.3) dXt = −κX t dt + σX dW Xt (3.4) with dW Mt , dW Xt standard Wiener processes, corre-lated with parameter ρ. Thus Mt is an arithmetic Brownian motion with drift μ and volatility σM , while 
+
+Xt is an OU process with mean-reversion speed κ and volatility σX .The common component lets both price levels wander, while the relative-value signal remains tied to a stationary log spread. Indeed, the spread between the two log prices follows dSt = d log P (1)  
+
+> t
+
+− d log P (2)  
+
+> t
+
+(3.5) = d Xt (3.6) so St = Xt up to its initial value. 
+
+3.2. Standard Z-Score Benchmark and Updated Trading Costs 
+
+As a simple benchmark, we consider a standard 
+
+z-score pairs-trading rule [1, 2, 26]. Let 
+
+zt := St − μt
+
+σt
+
+(3.7)   
+
+> correspondence: g.morbelli@uva.nl Page 8 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+denote the usual normalised spread signal. Given an entry threshold ze = 2, the rule opens a long–short position when |zt| > z e: if zt < −ze, it buys asset 1 and sells asset 2; if zt > z e, it sells asset 1 and buys asset 2. Open trades are closed when the spread signal reverts to the prescribed exit region, here represented by a crossing of zt = 0. Positions are capped at a fixed maximum investment amount (in currency value). For both the benchmark and the signature strategy, ex-post mark-to-market wealth is reported after a fixed proportional spread cost. A trade in asset i at speed 
+
+v(i) 
+
+> t
+
+is charged the execution price ˜P (i) 
+
+> t
+
+= P (i)
+
+> t
+
+ 1 + ξ sign( v(i) 
+
+> t
+
+), (3.8) with ξ > 0. We set ξ = 0 .5 · 10 −4, corresponding to half a basis point per unit of traded notional. The reduced objective itself continues to use the quadratic temporary-impact term in Equation (2.12); the proportional spread cost is an accounting metric used simply for more realistic benchmark comparisons. 
+
+Remark 3.1 . To compare the signature-based strategy with the z-score benchmark, we report the return on turnover (ROT) of each strategy. For a strategy with final cumulative profit ( P nL )T and cumulative traded notional 
+
+T := X
+
+> k
+
+X
+
+> i
+
+∆Qitk P itk , (3.9) we define ROT := (P nL )T
+
+T . (3.10) Thus, return on turnover measures the profit generated per unit of traded notional and can be a useful metric to compare strategies that trade different amounts. 
+
+3.3. Large-Run Synthetic Illustration 
+
+We consider two assets following Section 3.1. The alpha signal is the simple z-score specification αt =
+
+cα(−zt, z t/β )⊤, with cα = 1.5, described in Exam-ple 2.4. The displayed large-run experiment estimates the signature moments from 10000 training paths and evaluates the fitted coefficients on 5000 test paths. Its process parameters are T = 1, P (1) 0 = 1, P (2) 0 = 1, 
+
+μ = 0, σM = 0 .02, σX = 0 .02, κ = 50, and ρ = 0 .3. The execution parameters are N = 2, Q0 = (0 , 0) ⊤,˜Λ = diag (10 −4, 10 −5), η = 10 −1, ϕ = 0, γ = 0 .1, β = 1 and λridge = 10 −8. Trading speeds are evaluated on 1000 execution events over a 5000-step path grid. The rolling mean and standard deviation of the log-spread signal are estimated over a warm-up window of 600 grid steps. This construction gives a controlled environment in which the spread is genuinely mean reverting and the benchmark rule of Section 3.2 is well specified. The results are shown in Figure 1. The two middle panels illustrate the main difference between the two approaches. The classical z-score benchmark 4 enters and exits positions according to fixed thresholds, whereas the signature strategy produces a continuous execution policy. Trading speeds are largest when the signal is active and then decrease as the terminal horizon approaches. The resulting price-scaled inventory paths are approximately balanced across the two assets, which indicates that the fitted speed respects the dollar-neutrality penalty. The terminal penalty also has the intended effect: average inventory exposure is gradually reduced toward the end of the trading window. The bottom panel compares cumulative mark-to-market PnL after proportional execution costs. In this simulation, the signature strategy achieves ahigher average return on turnover than the threshold benchmark, approximately 9 bps versus 6 bps. 
+
+3.4. Historical Workflow Illustration 
+
+We apply the same calibration and execution work-flow to Shell PLC 5 and BP PLC 6, two London Stock Exchange equities in the energy sector for which a mean-reverting spread is economically plausible. The empirical signature is estimated from four-day trading windows between January 2025 and October 2025, and the fitted policy is evaluated on November and December 2025. The execution objective uses the following parameters: ˜Λ = diag (10 −1, 10 −2), η = 10 −2, ϕ = 0, γ = 1, cα = 1, 
+
+β = 1, N = 2, and an unregularised solve ( λridge = 0); the z-score uses an 8-hour rolling window. Estimating the expected signature from fixed-length past windows treats those windows as draws from a single stationary path law, so regime drift between the training and test periods is an additional source of out-of-sample error here. The results are displayed in Figure 2. The top panel displays a non-stationary but visibly reverting log spread over this test window: the spread declines during the first part of the window, stabilises around the middle, and then rises sharply in December. The second panel shows the corresponding trading signal. The z-score is computed using an 8-hour rolling window, and it can be seen how it alternates between large positive and negative regimes. The third panel again shows the main difference between the signature solution and the benchmark. The signature strategy continuously adjusts trading speed as a function of the realised path features. This produces large but symmetrical inventory exposures in the two assets when the signal is strong, followed by reductions in exposure when the signal weakens or the terminal horizon approaches. The policy is therefore consistent with the intended dollar-neutral execution behaviour in this window. Finally, the bottom panel reports cumulative mark-to-market PnL. For this particular trading window,          
+
+> 4For this simulation we used a benchmark maximum invest-ment amount of 1000.
+> 5Ticker: SHEL.
+> 6Ticker: BP.
+> correspondence: g.morbelli@uva.nl Page 9 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+> Figure 1: Synthetic benchmark against a classical z-score pairs-trading rule. The two assets follow the common-trend log-spread model of Section 3.1. We display the log spread, the z-score signal, price-scaled trading speed and inventory paths, and cumulative PnL for the signature strategy and the benchmark of Section 3.2. The plotted values are averages over 5000 test paths after a
+> 600 -step warm-up window used to estimate the rolling z-score; shaded regions indicate one standard deviation around the mean. The signature strategy uses the same z-score alpha as the benchmark but learns a continuous path-dependent execution rule: in this illustration return on turnover is higher than that of the benchmark.
+
+the fitted signature policy has a significantly higher return on turnover, approximately 9 bps versus 2 bps for the benchmark 7. Given the same z-score signal, the quadratic model produces an adaptive execution rule that varies trade intensity and manages inventory as the realised path evolves. Furthermore, in this test window, the signature policy appears more robust than the benchmark during periods in which the signal does not consistently translate into realised returns. This is visible in November, where the z-score strategy records negative performance while the signature-based strategy maintains positive accounting PnL. We stress again that our framework is general and these experiments use a rather simple signal. Further research can test the framework with richer proxies for expected returns. Natural extensions include employing richer alpha proxies such as order-flow imbalance        
+
+> 7For this experiment we used abenchmark maximum investment amount of 500 000 pounds per trade.
+
+features [ 7 ], deep-learning microstructure predictors [ 27 ], or residual-factor signals in the spirit of [2]. In conclusion, the purpose of this experiment is not to provide a systematic historical performance claim, but to show how the signature-based execution framework can be connected to a real equity pairs-trading problem. A full empirical validation would require a larger universe of pairs, multiple market regimes, and a more detailed implementation of exchange fees, taxes, borrow costs, and liquidity constraints. 
+
+## 4. Conclusion 
+
+This paper develops a signature-based framework for signal-aware execution in statistical arbitrage. The central idea is to model the predictive signal and the execution rule on the same path-feature space. Path signatures provide a systematic feature map for      
+
+> correspondence: g.morbelli@uva.nl Page 10 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+> Figure 2: The historical Shell–BP deployment backtest on a single out-of-sample test window. The panels show the log spread, the z-score signal, price-scaled trading and inventory exposure in the two legs, and cumulative PnL of the signature strategy against the z-score benchmark of Section 3.2. The signature policy is calibrated on past fixed-length trading windows and then applied on the test window. The figure illustrates how the reduced quadratic programme produces a continuous path-dependent execution rule from the same z-score alpha used by the benchmark. In this test window, the signature-based strategy outperforms the benchmark in accounting terms, as reflected by its higher return on turnover.
+
+sequential data while preserving the algebraic structure needed to keep the execution problem finite-dimensional. In the proposed framework, an exogenous informa-tion path Z is represented by its truncated signature coordinate vector xt. Both the alpha signal and the trading speed are linear functionals of this same state, 
+
+αt = Kx t and vt = Bx t. The signal matrix K is fixed during execution, while the execution matrix B
+
+is optimised. Temporary impact, inventory risk, dollar-neutrality, and terminal liquidation therefore remain inside one finite-dimensional optimisation problem. The main theoretical contribution is the quadratic reduction in Theorem 2.9. For θ = vec (B), the proposed objective restricted to signature-linear controls can be expressed as a deterministic quadratic form in the trading speed, from which the solution is readily obtained. During live execution, the policy is updated only through the signature of the observed path-feature vector Equation (2.1), from which the trading speed follows by a simple matrix multiplication. We applied the model to a synthetic simulation and to a real-data pairs-trading workflow. In both cases, the signature-based strategy achieved a higher return on turnover than the benchmark. 
+
+Limitations. The framework as presented has the following structural restrictions. The policy class is signature-linear : nonlinear-in-features policies (e.g. neu-ral networks over signature inputs) are outside the cur-rent quadratic reduction, though they can be handled by approximate methods. Execution costs are modelled as quadratic (temporary impact only); permanent impact or order-book dynamics require separate treatment. The Shell–BP example should not be read as a systematic empirical validation: it uses one pair, one test window, one simple signal, and simplified trading frictions. It also omits short-sale constraints, borrow costs, funding,   
+
+> correspondence: g.morbelli@uva.nl Page 11 of 21
+
+Signature-Based Optimal Execution for Statistical Arbitrage 
+
+leverage caps, order-size limits, exchange fees, taxes, and latency. 
+
+Future directions. Natural extensions include: (i) online learning of the signature policy using rolling windows with regime-change detection; (ii) multi-asset generalisation beyond the two-asset case studied here; (iii) depth-adaptive truncation via L1 penalisation (Section 2.6) as an alternative to fixing N in advance; (iv) hybrid analytic–empirical Gram blocks that add area coordinates to the OU-projected basis, extending the projected-policy calibration to the full level-two state; (v) integration with limit-order-book microstructure models to handle permanent impact and adverse selection; and (vi) extension to non-Markovian market impact models using the rough-path structure of the signature. 
+
+## References 
+
+[1] E. Gatev, W. N. Goetzmann, K. G. Rouwenhorst, Pairs trading: Performance of a relative-value arbitrage rule, The Review of Financial Studies 19 (3) (2006) 797–827. 
+
+doi:10.1093/rfs/hhj020 .[2] M. Avellaneda, J.-H. Lee, Statistical arbitrage in the US equities market, Quantitative Finance 10 (7) (2010) 761–782. 
+
+doi:10.1080/14697680903124632 .[3] R. Almgren, N. Chriss, Optimal execution of portfolio transactions, Journal of Risk 3 (2) (2000) 5–39. doi: 10.21314/JOR.2001.041 .[4] ´A. Cartea, S. Jaimungal, J. Penalva, Algorithmic and High-Frequency Trading, Cambridge University Press, 2015. [5] C. Lorenz, A. Schied, Drift dependence of optimal trade execution strategies under transient price impact, Finance and Stochastics 17 (4) (2013) 743–770. doi:10.1007/s00780-013-0211-x .[6] G. Curato, J. Gatheral, F. Lillo, Optimal execution with non-linear transient market impact, Quantitative Finance 17 (1) (2017) 41–54. doi:10.1080/14697688.2016.1181274 .[7] P. N. Kolm, J. Turiel, N. Westray, Deep order flow imbalance: Extracting alpha at multiple horizons from the limit order book, Mathematical Finance 33 (4) (2023) 1044–1081. doi: 10.1111/mafi.12413 .[8] L. G. Gyurk´ o, T. Lyons, M. Kontkowski, J. Field, Extracting information from the signature of a financial data stream, arXiv preprint arXiv:1307.7244 arXiv:1307.7244 .[9] J. Kalsi, T. Lyons, I. Perez Arribas, Optimal execution with rough path signatures, SIAM Journal on Financial Mathe-matics 11 (2) (2020) 470–493. doi:10.1137/19M1259778 .[10] ´A. Cartea, I. Perez Arribas, L. S´ anchez-Betancourt, Double-execution strategies using path signatures, SIAM Journal on Financial Mathematics 13 (4) (2022) 1379–1417. doi: 10.1137/21M1456467 .[11] O. Futter, B. Horvath, M. Wiese, Signature trading: A path-dependent extension of the mean-variance framework with exogenous signals (2023). arXiv:2308.15135 .URL https://arxiv.org/abs/2308.15135 
+
+[12] H. Buehler, B. Horvath, T. Lyons, I. Perez Arribas, B. Wood, Generating financial markets with signatures, SSRN Elec-tronic Journal doi:10.2139/ssrn.3657366 .[13] P. Kidger, J. Morrill, J. Foster, T. Lyons, Neural controlled differential equations for irregular time series, in: Advances in Neural Information Processing Systems, Vol. 33, 2020, pp. 6696–6707. URL https://proceedings.neurips.cc/paper_files/ paper/2020/file/4a5876b450b45371f6cfe5047ac8cd45-Paper.pdf 
+
+[14] P. Bonnier, P. Kidger, I. P. Arribas, C. Salvi, T. Lyons, Deep signature transforms, Curran Associates Inc., Red Hook, NY, USA, 2019. [15] C.-I. Lu, J. Sester, Generative model for financial time series trained with mmd using a signature kernel, arXiv preprint arXiv:2407.19848 arXiv:2407.19848 .[16] G. Manten, C. Casolo, E. Ferrucci, S. W. Mogensen, C. Salvi, N. Kilbertus, Signature kernel conditional independence tests in causal discovery for stochastic processes (2025). 
+
+arXiv:2402.18477 .URL https://arxiv.org/abs/2402.18477 
+
+[17] T. J. Lyons, M. Caruana, T. L´ evy, Differential Equations Driven by Rough Paths, Vol. 1908 of Lecture Notes in Mathematics, Springer, 2007. doi:10.1007/978-3-540-71285-5 .[18] T. Lyons, Differential equations driven by rough signals, Revista Matem´ atica Iberoamericana 14 (2) (1998) 215–310. [19] I. Chevyrev, A. Kormilitzin, A Primer on the Signature Method in Machine Learning, Springer Nature Switzerland, 2025, p. 3–64. doi:10.1007/978-3-031-97239-3_1 .URL http://dx.doi.org/10.1007/978-3-031-97239-3_1 
+
+[20] D. Levin, T. Lyons, H. Ni, Learning from the past, predicting the statistics for the future, learning an evolving system, arXiv preprint arXiv:1309.0260 arXiv:1309.0260 .[21] A. Fermanian, Embedding and learning with signatures, Computational Statistics & Data Analysis 157 (2021) 107148. 
+
+doi:10.1016/j.csda.2020.107148 .[22] C. Krauss, Statistical arbitrage pairs trading strategies: Review and outlook, Journal of Economic Surveys 31 (2) (2017) 513–545. doi:10.1111/joes.12153 .[23] J. F. Caldeira, G. V. Moura, Selection of a portfolio of pairs based on cointegration: A statistical arbitrage strategy, SSRN Electronic Journal doi:10.2139/ssrn.2196391 .[24] Z. Guo, H. Jin, J. Kuang, Z. Qian, J. Wang, Signature decomposition method applying to pair trading, Journal of Futures Markets 46 (3) (2026) 582–603. doi:https: //doi.org/10.1002/fut.70075 .[25] C. Cuchiero, P. Schmocker, J. Teichmann, Global universal approximation of functional input maps on weighted spaces, Constr. Approx. 63 (2) (2026) 537–612. doi:10.1007/ s00365-025-09726-3 .[26] G. Vidyamurthy, Pairs Trading: Quantitative Methods and Analysis, John Wiley & Sons, 2004. [27] J. Sirignano, R. Cont, Universal features of price formation in financial markets: Perspectives from deep learning, Quan-titative Finance 19 (9) (2019) 1449–1459. doi:10.1080/ 14697688.2019.1622295 .[28] R. J. Elliott, J. van der Hoek, W. P. Malcolm, Pairs trading, Quantitative Finance 5 (3) (2005) 271–276. doi: 10.1080/14697680500149370 .
+
+correspondence: g.morbelli@uva.nl Page 12 of 21 Signature-Based Optimal Execution for Statistical Arbitrage 
+
+## A. Explicit Tensor Computation 
+
+This appendix provides detailed algebraic expansion underlying the proof of Theorem 2.9. We show term by term how the objective functional decomposes into a quadratic form in θ = vec( B), deriving the matrix A,vector b, and scalar c explicitly. We recall that the objective functional Equation (2.12) reduces to 
+
+J(θ) = θ⊤Aθ + b⊤θ + c, (A.1) where θ = vec( B) ∈ Rnm and Q0 ∈ Rn. We write 
+
+vt = Bx t, yt := R t 
+
+> 0
+
+xu du, and αt = Kx t. Under the column-major convention of Section 2.5, 
+
+vt = ( x⊤ 
+
+> t
+
+⊗ In)θ, Qt = Q0 + ( y⊤ 
+
+> t
+
+⊗ In)θ. (A.2) The following identity will also be useful in the following computations: 
+
+ (y⊤ 
+
+> t
+
+⊗ In)θ⊤z = θ⊤(yt ⊗ z), z ∈ Rn. (A.3) The objective functional Equation (2.12) contains five groups of terms; we expand each separately and collect the contributions to A, b, and c.
+
+Signal reward. 
+
+Q⊤ 
+
+> t
+
+αt = Q0 + ( y⊤ 
+
+> t
+
+⊗ In)θ⊤ Kx t
+
+= Q⊤ 
+
+> 0
+
+Kx t + θ⊤ (yt ⊗ Kx t) . (A.4) The first term contributes to c, and the second con-tributes to b.
+
+Impact cost. 
+
+v⊤ 
+
+> t
+
+˜Λvt = (x⊤ 
+
+> t
+
+⊗ In)θ⊤ ˜Λ (x⊤ 
+
+> t
+
+⊗ In)θ
+
+= θ⊤ 
+
+xtx⊤ 
+
+> t
+
+⊗ ˜Λ
+
+
+
+θ. (A.5) This contributes negatively to A because impact enters the objective with a minus sign. 
+
+Inventory-risk term. Writing Qt = Q0 + ( y⊤ 
+
+> t
+
+⊗ In)θ:
+
+ϕ Q ⊤ 
+
+> t
+
+ΣQt = ϕ Q ⊤ 
+
+> 0
+
+ΣQ0 + 2 ϕ θ ⊤(yt ⊗ ΣQ0)+ ϕ θ ⊤(yty⊤ 
+
+> t
+
+⊗ Σ) θ. (A.6) These three terms contribute to c, b, and A respectively; the quadratic block enters A with a negative sign in the objective. 
+
+Dollar-neutrality term. 
+
+(Q⊤ 
+
+> t
+
+Pt)2 = Q⊤ 
+
+> 0
+
+Pt + θ⊤(yt ⊗ Pt)2
+
+= ( Q⊤ 
+
+> 0
+
+Pt)2 + θ⊤(yty⊤ 
+
+> t
+
+⊗ PtP ⊤ 
+
+> t
+
+)θ
+
++ 2( Q⊤ 
+
+> 0
+
+Pt) θ⊤(yt ⊗ Pt). (A.7) The quadratic, linear and constant pieces contribute to 
+
+A, b and c respectively, with the quadratic block again entering A negatively. 
+
+Terminal inventory. The objective contains 
+
+−γQ ⊤ 
+
+> T
+
+QT ; expanding: 
+
+Q⊤ 
+
+> T
+
+QT = Q0 + ( y⊤ 
+
+> T
+
+⊗ In)θ⊤ Q0 + ( y⊤ 
+
+> T
+
+⊗ In)θ
+
+= Q⊤ 
+
+> 0
+
+Q0 + 2 θ⊤(yT ⊗ Q0)+ θ⊤(yT y⊤ 
+
+> T
+
+⊗ In)θ. (A.8) Multiplying by −γ:
+
+−γQ ⊤ 
+
+> T
+
+QT = −γ Q ⊤ 
+
+> 0
+
+Q0 − 2γ θ ⊤(yT ⊗ Q0)
+
+− γ θ ⊤(yT y⊤ 
+
+> T
+
+⊗ In)θ. (A.9) 
+
+## B. Shuffle-Algebra Formulation 
+
+This appendix presents an intrinsic reformulation of Theorem 2.9 in the language of shuffle algebras, following the framework of [ 9 , 10 ]. The main purpose is to connect the coordinate-based matrix presentation of Section 2 and Appendix C to the abstract algebraic structure underlying signatures. Readers primarily interested in computation may skip this appendix without loss of continuity; the key identity (2.5) is the only result from this language used in the main text. For a general introduction to signature methods, see [ 19 ]. In this section, we reformulate the problem of Theorem 2.9 in the language of shuffle algebras, restricting admissible controls to the class of signature trading speeds .Let Z be a d-dimensional geometric rough path, and denote by 
+
+S(Z)s,t ∈ T  (Rd)
+
+its signature over the interval [ s, t ], where T (( Rd)) is the extended tensor algebra introduced in (2.3) . For a word 
+
+I = ( i1, . . . , i k) ∈ A d,
+
+with Ad the set of words over the alphabet {1, . . . , d },we write SI (Z)s,t for the corresponding I-th coordinate of the signature. The algebra T (( Rd)) admits the natural dual space 
+
+T  (Rd)∗,
+
+whose elements act linearly on signatures through the canonical pairing 
+
+⟨· , ·⟩ : T  (Rd)∗ × T  (Rd) → R.
+
+Thus, for any ℓ ∈ T (( Rd)∗), the quantity 
+
+⟨ℓ, S (Z)s,t ⟩
+
+defines a real-valued functional of the path Z on [ s, t ]. Throughout this appendix, ℓ denotes a finite linear combination of words, so that each pairing involves only finitely many signature coordinates.   
+
+> correspondence: g.morbelli@uva.nl Page 13 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+We define the class of signature trading speeds by 
+
+Tsig := (s, t ) 7 → ⟨ ℓ, S (Z)s,t ⟩ : ℓ ∈ T  (Rd)∗ . (B.1) Equivalently, if ℓ = P 
+
+> j
+
+ℓIj eIj , eIj ∈ T  (Rd)∗, ℓ Ij ∈ R
+
+is expanded in the word basis of T (( Rd)∗), then 
+
+⟨ℓ, S (Z)s,t ⟩ = X
+
+> j
+
+ℓIj SIj (Z)s,t .
+
+As shown in [ 9 ], this class is dense in a suitable space of admissible trading speeds, which justifies restricting the control problem to signature-based controls. For the algebraic manipulations below, it is conve-nient to identify the dual tensor algebra with the space of formal linear combinations of words, 
+
+T  (Rd)∗ ∼= W(Ad).
+
+Under this identification, a basis element eI ∈ T (( Rd)∗)corresponds to the word I ∈ A d. The vector space structure is given by the usual coefficient-wise addition, while the relevant algebraic operations are the concate-nation product and the shuffle product . In particular, if 
+
+f, g ∈ T (( Rd)∗), then the product of the corresponding signature functionals is represented by the shuffle product as in Section 2.1: 
+
+⟨f, S (Z)s,t ⟩ ⟨ g, S (Z)s,t ⟩ = ⟨f  g, S (Z)s,t ⟩. (B.2) Concatenation f ⊔ g is a different operation: it adjoins letters in the tensor basis rather than multiplying the corresponding path functionals. For words I and J,the concatenation IJ labels the coordinate SIJ ; the product SI SJ is instead represented by the shuffle sum in Equation (B.2). In particular, because the path is time-augmented and the time coordinate is the first channel, the notation ℓ ⊔ (1) denotes the time-integral operation: for any speed functional ℓ, the integral R t 
+
+> 0
+
+⟨ℓ, S 0,u ⟩ du is represented by ⟨ℓ ⊔ (1) , S 0,t ⟩.Here the clock letter (the first channel, denoted (1)) is appended on the right of every word in ℓ; the identity is exact for the geometric lift because dZ1 
+
+> u
+
+= du,so right-concatenation by (1) implements R t 
+
+> 0
+
+(·) d u at the level of signature coordinates. This identification allows nonlinear expressions in the control problem to be rewritten as linear functionals of the signature, which is the key algebraic simplification underlying this framework. 
+
+B.1. Dictionary for the Main Reduction 
+
+The shuffle-algebra viewpoint is useful because it explains why products of signature-linear quantities remain linear after moving to higher tensor levels. The dictionary is as follows: Let gi and ℓi be dual tensor elements such that 
+
+αit = ⟨gi, S 0,t (Z)⟩, vit = ⟨ℓi, S 0,t (Z)⟩ (B.3) with i ∈ { 1, ..., n } indexing the assets. The time channel is the first word letter and the traded price channels follow it, so the price of asset i is represented by the first-level coordinate e(i+1) plus its initial value (unlike the coordinate displays of Section C.1, which index channels from 0, this appendix indexes letters from 1). This pure signature representation assumes raw price channels; if the signature is built from transformed or normalised inputs, the dollar-neutrality block must instead be estimated as the mixed price-feature moment in Equation (2.15). It follows that we can express the inventory and price process as 
+
+Qit = Qi 
+
+> 0
+
++
+
+Z t
+
+> 0
+
+viu du (B.4) = ⟨Qi
+
+> 0
+
+∅ + ℓi ⊔ (1) , S 0,t (Z)⟩ (B.5) 
+
+P it = ⟨e(i+1) + P i 
+
+> 0
+
+∅, S 0,t (Z)⟩, (B.6) where ∅ ∈ W (Ad) denotes the empty word, i.e. with some slight abuse of notation 
+
+⟨∅ , S s,t (Z)⟩ = 1 .
+
+It follows that the signal term Q⊤ 
+
+> t
+
+αt can be written as 
+
+Qitαit = ⟨Qi
+
+> 0
+
+∅ + ℓi ⊔ (1) , S 0,t (Z)⟩⟨ gi, S 0,t (Z)⟩
+
+(B.7) = ⟨Qi
+
+> 0
+
+∅ + ℓi ⊔ (1)   gi, S 0,t (Z)⟩ (B.8) Similarly, the temporary impact terms can be expressed as: 
+
+vit ˜Λij vjt = ˜Λij ⟨ℓi, S 0,t (Z)⟩⟨ ℓj , S 0,t (Z)⟩ (B.9) = ˜Λij ⟨ℓi  ℓj , S 0,t (Z)⟩, (B.10) where we used the crucial shuffle property Equa-tion (B.2). To ease the notation, define 
+
+F i = Qi
+
+> 0
+
+∅ + ℓi ⊔ (1) . (B.11) Analogously, the ϕ term becomes 
+
+QitΣij Qjt = Σ ij F i, S 0,t (Z) F j , S 0,t (Z)
+
+= Σ ij F i  F j , S 0,t (Z) . (B.12) The dollar neutral term in Equation (2.12) can be written as 
+
+Ni := F i  e(i+1) + P i 
+
+> 0
+
+∅, (B.13) 
+
+Q⊤ 
+
+> t
+
+Pt = X
+
+> i
+
+⟨N i, S 0,t (Z)⟩, (B.14) 
+
+ Q⊤ 
+
+> t
+
+Pt
+
+2 =
+
+DX 
+
+> i
+
+Ni
+
+2
+
+, S 0,t (Z)
+
+E
+
+. (B.15) The terminal inventory penalty is expressed as 
+
+QiT QiT = F i, S 0,T (Z) 2
+
+= (F i)2, S 0,T (Z) . (B.16)   
+
+> correspondence: g.morbelli@uva.nl Page 14 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+Set 
+
+B := X
+
+> i
+
+F i  gi − X
+
+> i,j
+
+˜Λij ℓi  ℓj
+
+− ϕ X
+
+> i,j
+
+Σij F i  F j − η
+
+X 
+
+> i
+
+Ni
+
+2
+
+.
+
+(B.17) It finally follows that the objective functional Equa-tion (2.12) can be rewritten as a combination of concatenations and shuffle products of linear functionals on the signature as 
+
+J(ℓ) = E
+
+"Z T
+
+> 0
+
+B, S 0,t (Z) dt − γ
+
+DX 
+
+> i
+
+ F i2, S 0,T (Z)
+
+E#
+
+= E
+
+"D
+
+B ⊔ (1) − γ X
+
+> i
+
+ F i2, S 0,T (Z)
+
+E#
+
+=
+
+D
+
+B ⊔ (1) − γ X
+
+> i
+
+ F i2, E [S0,T (Z)] 
+
+E
+
+,
+
+(B.18) where in the last equation we crucially moved the expectation to the signature components only, as the left-hand side of the inner product does not contain stochastic terms. This dictionary is the algebraic content behind Theorem 2.9: every product created by the objective is (at most) quadratic in the policy coefficients, and its random coefficient is a signature or mixed price-feature moment that can be estimated before the policy is solved. 
+
+Remark B.1 (Truncation level required by the shuffle representation.) . If the trading speed coefficients ℓi are supported on words of length at most N , then the shuffle products appearing in the objective generally involve signature coordinates above level N . For example, the terminal term F i  F i may require levels up to 2 N + 2, while the squared dollar-neutrality term may require levels up to 2 N + 4 when prices are represented as first-level signature coordinates. Thus the shuffle formulation is exact only when the expected signature is available, at least, to the corresponding minimum level. 
+
+## C. Moment Inputs and OU Gram Blocks 
+
+This section connects the abstract quadratic reduc-tion to the quantities that must be estimated before solving the policy. Indeed, the quadratic reduction of Section 2.5 leaves a concrete calibration problem: before the policy coefficients can be solved, the moment blocks entering A and b must be estimated or computed. In the notation of Theorem 2.9, the main inputs are 
+
+E[
+
+Z T
+
+> 0
+
+xtx⊤ 
+
+> t
+
+dt], E[
+
+Z T
+
+> 0
+
+yty⊤ 
+
+> t
+
+dt], E[yT y⊤ 
+
+> T
+
+],
+
+together with the signal block E[R T 
+
+> 0
+
+yt ⊗ Kx t dt] and, when the dollar-neutrality penalty is active, the mixed price-feature block E[R T 
+
+> 0
+
+yty⊤ 
+
+> t
+
+⊗ PtP ⊤ 
+
+> t
+
+dt]. The full-signature optimiser used in the synthetic simulations of Section 3.3 estimates these blocks em-pirically from training paths. Similarly, in Section 3.4 we computed the expected signature via past trading windows of fixed length. This section identifies a low-dimensional part of the same calibration problem that admits closed-form benchmarks under a standard Ornstein–Uhlenbeck spread model. Those benchmarks are then used in Section C.6 to check the empirical moment-estimation pipeline. Throughout, xt denotes the full level-N signature coordinate vector, while 
+
+ψt = (1 , t, S t) denotes a projected low-dimensional basis used only for the analytic moment calculations. The section is organised as follows. Section C.1 records the signature coordinates behind the empirical moment blocks. Section C.2 introduces the OU spread projection and derives the closed-form Gram matrix Gψ .Section C.3 gives the integrated-basis Gram matrix Gr .
+
+C.1. Level-N Signature Coordinates 
+
+Before introducing the projected OU basis, we fix the full-signature coordinate notation used by the empirical moment blocks. For readability, start with the minimal two-asset price path 
+
+Zt = ( Z0 
+
+> t
+
+, Z 1 
+
+> t
+
+, Z 2 
+
+> t
+
+) := ( t, P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+) ∈ R3 (C.1) and let S≤N (Z)0,t be its truncated geometric signature of depth N 8. The associated coordinate vector in Rm is 
+
+xt := 
+
+
+
+1, ∆Z0 
+
+> t
+
+, ∆Z1 
+
+> t
+
+, ∆Z2 
+
+> t
+
+, Z0,0 
+
+> t
+
+, Z0,1 
+
+> t
+
+, . . . , Z2,2 
+
+> t
+
+, . . . 
+
+⊤
+
+,
+
+(C.2) where ∆ Zit := Zit − Zi 
+
+> 0
+
+and 
+
+Zi,j t =
+
+Z
+
+> 0<u 1<u 2<t
+
+◦ dZiu1 ◦ dZju2 . (C.3) Thus, focusing on the first two levels, the coordinate vector contains the constant term, the three first-level increments, and the nine second-level iterated integrals. 
+
+Remark C.1 . The exposition above uses the minimal three-channel information path Zt = (t, P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+). The numerical implementation in Section C.4 ap-pends the rolling z-score as a fourth channel, Zt =(t, P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+, z t) ∈ R4 (as in Example 2.4). The level-two coordinate vector then has m = 1 + 4 + 16 = 21 entries. All arguments below extend channel-by-channel with no algebraic change; we keep dz = 3 in the displays purely for readability. 
+
+Remark C.2 (Interpretation of the level-two block) .
+
+Because time is one of the channels, the shuffle identity yields 
+
+Z0,i t + Zi, 0 
+
+> t
+
+= ∆ Z0 
+
+> t
+
+∆Zit = t∆P (i) 
+
+> t
+
+, i = 1 , 2.       
+
+> 8We write m=dim (S≤N
+> 0,t (Z)) for the length of the level-N
+> signature vector.
+> correspondence: g.morbelli@uva.nl Page 15 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+Hence the symmetric time-price combinations recover time-weighted price increments, while the antisymmetric combinations Z0,i t −Zi, 0 
+
+> t
+
+distinguish whether price moves occur early or late in the trading window. Likewise, 
+
+Z1,2 
+
+> t
+
+− Z2,1 
+
+> t
+
+is the signed L´ evy area between the two price channels and captures lead–lag information that is invisible at level one. 
+
+C.2. Projected Bases for Analytical Moment Calculations 
+
+The full coordinate vector Equation (C.2) is the correct level-N state, but its moment tensors are model-specific and must typically be estimated empirically. For analytic insight, and to provide noise-free matrix blocks, it is useful to work with smaller, economically interpretable bases. We denote such reduced bases by ψt
+
+to emphasise that they are deliberate model reductions, not relabellings of the full signature state. The key point is that the Gram matrices of ψt can sometimes be computed in closed form under a specific spread model. In the present numerical implementation these formulas serve two purposes: they check the empirical moment-estimation pipeline and, used directly in the policy solve, they calibrate a projected policy with lower sampling error than its Monte-Carlo counterpart. Concretely, Gψ
+
+validates the impact block E[R T 
+
+> 0
+
+xtx⊤ 
+
+> t
+
+dt], while Gr
+
+and E[rT r⊤ 
+
+> T
+
+] validate the inventory-risk and terminal-liquidation blocks; the dollar-neutrality price-feature block does not reduce to these Gram matrices and stays empirical unless the reference-price approximation 
+
+PtP ⊤ 
+
+> t
+
+≈ P0P ⊤ 
+
+> 0
+
+is imposed (cf. Remark C.3). Combining them with empirical higher-order geometric blocks is a natural extension but is not the optimiser used for the reported full-signature trades. Accordingly, the projected basis is an implementation device: the full theorem remains stated for xt, while ψt isolates the part of the problem for which exact moment calculations are especially transparent. 
+
+OU spread projection. In pairs-trading applications [ 1, 26 , 2], let St denote a one-dimensional spread coordinate extracted from ( P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+); the synthetic experiment of Section C.4 instantiates this coordinate as the log spread St = log P (1)  
+
+> t
+
+− log P (2)  
+
+> t
+
+, which equals the OU component Xt in Section 3.1. Assume that S
+
+follows the Ornstein–Uhlenbeck dynamics [28, 2] dSt = −κ(St − μ) d t + σ dWt, κ > 0. (C.4) Writing a := S0 − μ, its first two moments are 
+
+m(t) := E[St] = μ + ae −κt ,v(t) := Var( St) = σ2
+
+2κ
+
+ 1 − e−2κt .
+
+Consider the reduced basis 
+
+ψt := (1 , t, S t)⊤ ∈ R3. (C.5) Its Gram matrix 
+
+Gψ := E
+
+Z T
+
+> 0
+
+ψtψ⊤ 
+
+> t
+
+dt
+
+is explicit. Writing M0 := R T 
+
+> 0
+
+m(t) d t, M1 := 
+
+R T 
+
+> 0
+
+tm (t) d t, and M2 := R T 
+
+> 0
+
+(m(t)2 + v(t)) d t, we have 
+
+Gψ =
+
+
+
+T T 2 
+
+> 2
+
+M0   
+
+> T2
+> 2
+> T3
+> 3
+
+M1
+
+M0 M1 M2
+
+ ,
+
+with 
+
+Z T
+
+> 0
+
+m(t) d t = μT + aκ
+
+ 1 − e−κT ,
+
+Z T
+
+> 0
+
+tm (t) d t = μ T 2
+
+2 + a
+
+ 1 − e−κT 
+
+κ2 − T e −κT 
+
+κ
+
+
+
+,
+
+Z T
+
+> 0
+
+E[S2 
+
+> t
+
+] d t = μ2T + 2 μa 1 − e−κT 
+
+κ
+
++ a2 1 − e−2κT 
+
+2κ
+
++ σ2
+
+2κ T − σ2
+
+4κ2
+
+ 1 − e−2κT .
+
+The basis Equation (C.5) is a tractable mean-reversion proxy, not the full signature state. Its purpose is to isolate the part of the reduced quadratic programme that already admits closed-form calibration under a standard spread model. In particular, (1 , t, S t) captures the baseline mean-reversion economics: time, current spread level, and the accumulated effect of carrying inventory against that spread. 
+
+C.3. Integrated-Basis Gram Matrix 
+
+For the projected basis Equation (C.5), define 
+
+rt := 
+
+Z t
+
+> 0
+
+ψu du =
+
+
+
+t, t2
+
+2 , I t
+
+⊤
+
+, It := 
+
+Z t
+
+> 0
+
+Su du. 
+
+(C.6) The corresponding inventory Gram matrix is 
+
+Gr := E
+
+Z T
+
+> 0
+
+rtr⊤ 
+
+> t
+
+dt. (C.7) For deterministic S0, the OU covariance is Cov( St, S s) = σ2
+
+2κ
+
+
+
+e−κ|t−s| − e−κ(t+s)
+
+, (C.8) the integrated spread has mean 
+
+E[It] = μt + aκ
+
+ 1 − e−κt  (C.9) and variance Var( It) = σ2
+
+κ2 t− σ2
+
+κ3
+
+ 1−e−κt − σ2
+
+2κ3
+
+ 1−e−κt 2. (C.10)   
+
+> correspondence: g.morbelli@uva.nl Page 16 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+Hence 
+
+E[I2 
+
+> t
+
+] =  E[It]2 + Var( It). (C.11) The time-polynomial entries of Gr are immediate, 
+
+Z T
+
+> 0
+
+t2 dt = T 3
+
+3 ,
+
+Z T
+
+> 0
+
+t t2
+
+2 dt = T 4
+
+8 ,
+
+Z T
+
+> 0
+
+ t2
+
+2
+
+2
+
+dt = T 5
+
+20 ,
+
+(C.12) while the mixed entries involving It are obtained by setting 
+
+R1 := 
+
+Z T
+
+> 0
+
+t E[It] d t, R2 := 
+
+Z T
+
+> 0
+
+t2
+
+2 E[It] d t, (C.13) where 
+
+R1 = μ T 3
+
+3 + aT 2
+
+2κ − aκ
+
+ 1 − e−κT 
+
+κ2 − T e −κT 
+
+κ
+
+
+
+,R2 = μ T 4
+
+8 + aT 3
+
+6κ
+
+− a
+
+2κ
+
+Z T
+
+> 0
+
+t2e−κt dt, 
+
+with 
+
+Z T
+
+> 0
+
+t2e−κt dt = 2
+
+κ3
+
+ 1 − e−κT 
+
+− e−κT  T 2
+
+κ + 2Tκ2
+
+
+
+.
+
+(C.14) Finally, 
+
+Z T
+
+> 0
+
+E[I2 
+
+> t
+
+] d t =
+
+Z T
+
+> 0
+
+ E[It]2 dt+
+
+Z T
+
+> 0
+
+Var( It) d t, (C.15) and the right-hand side is an elementary polynomial-exponential expression after substituting Equations (C.9) and (C.10). Thus the entire matrix Gr
+
+is available in closed form. The signal block E[R T 
+
+> 0
+
+rt ⊗ Kψ t dt] entering b is closed form by the same calculation: with the projected signal proportional to the spread St, its entries are 
+
+R T 
+
+> 0
+
+t m (t) d t, R T 
+
+> 0
+> t2
+> 2
+
+m(t) d t (both already available from 
+
+Gψ ), and R T 
+
+> 0
+
+E[ItSt] d t, where Cov( It, S t) = 
+
+Z t
+
+> 0
+
+Cov( Su, S t) d u = σ2
+
+2κ2
+
+ 1 − e−κt 2,
+
+(C.16) so that E[ItSt] = E[It] m(t) + Cov (It, S t) is again elementary after substituting Equation (C.9). 
+
+Remark C.3 (Neutrality moment under OU projection) .
+
+The dollar-neutrality penalty contributes a block (yty⊤ 
+
+> t
+
+) ⊗ ηP tP ⊤ 
+
+> t
+
+to the curvature matrix (cf. Equation (2.15)), which requires the mixed moment 
+
+E[R T 
+
+> 0
+
+rtr⊤ 
+
+> t
+
+⊗ PtP ⊤ 
+
+> t
+
+dt]. Under the OU spread projection the price vector Pt is not a function of ψt, so this mixed moment does not reduce to the OU Gram blocks. In a projected analytic approximation one may replace PtP ⊤ 
+
+> t
+
+by its reference value P0P ⊤ 
+
+> 0
+
+inside the neutrality block, reducing it to η P0P ⊤
+
+> 0
+
+ ⊗ Gr . This is a reference-price approximation: it evaluates the dollar-neutrality penalty around a fixed price scale and should not be interpreted as a general upper or lower bound. In the empirical construction no such approximation is required: PtP ⊤ 
+
+> t
+
+is observed on each simulated path and the block is estimated directly. The reported canonical optimiser uses this empirical construction. 
+
+C.4. Validation and Diagnostics of the Framework 
+
+The theoretical framework of Section 2 and Ap-pendix C is now validated on the same common-trend log-spread pair introduced in Section 3.1. The diagnostics serve three purposes: to check that the analytical Gram matrices of Sections C.2 and C.3 agree with Monte Carlo estimates, to visualise the optimised policy on representative paths, and to quantify how the reduced objective and accounting diagnostics change when moving from the level-one ( N = 1) to the level-two (N = 2) signature specification. Robustness is assessed through signal-strength, ridge, and sample-size sweeps and through independent train/test splits, rather than through any claim of universal level-two dominance. The reported synthetic workflow is: (i) simulate independent training paths and compute the time-augmented signature features xt and their integrals yt;(ii) assemble the empirical curvature matrix and linear term ( ˆA, ˆb) using the discrete version of Equations (2.15) and (2.16); (iii) symmetrise ˆA, apply the fixed ridge shift λridge ,and solve ˆθρ = − 12 ( ˆA − λridge I)−1ˆb;(iv) evaluate the fitted policy vt = ˆBρxt on held-out paths under the same d t-weighted reduced objective and separately record mark-to-market accounting metrics. All reported policies are estimated from 1000 Monte Carlo training paths and evaluated on 1000 held-out paths, with 1000 execution orders placed uniformly over [0 , T ] on each test path. The signatures are computed from the discrete piecewise-linear interpolants of the simulated paths. The matrix assembly integrates against dt over the full simulator grid, while the backtest evaluates the fitted speed on 1000 execution buckets with quadrature weights equal to the bucket widths, which sum to the trading horizon (see the units convention in Remark 2.7). The trading speed is thus treated as a rate throughout,   
+
+> correspondence: g.morbelli@uva.nl Page 17 of 21 Signature-Based Optimal Execution for Statistical Arbitrage
+
+so the policy is evaluated under the same d t-weighted criterion it was calibrated on. Features are evaluated at bucket endpoints in both the matrix assembly and the backtest. This gives a consistent discretisation of the continuous-time formula, but a strictly predictable live implementation would use left-endpoint features. The difference is an implementation robustness issue rather than part of the algebraic reduction. The price channels 
+
+P (1) , P (2) enter both the signature and the dollar-neutrality block as raw mid-prices (identity transform), so there is no scaled-versus-raw price mismatch, and the neutrality block is assembled as the empirical mixed price-feature moment E[R T 
+
+> 0
+
+yty⊤ 
+
+> t
+
+⊗ PtP ⊤ 
+
+> t
+
+dt] on each path. The dollar-neutrality, inventory-risk, and terminal-liquidation terms are soft penalties rather than desk-enforceable hard constraints; hard constraints are left to future work. Thus the experiment is a discrete approximation of the continuous-time formulas rather than a separate continuous-time solver. The main numerical findings are threefold. First, the reduced matrix problem is well behaved under the canonical calibration: the estimated quadratic form has the expected sign structure, and the policy can be computed by a single regularised linear solve. Second, the fitted policy has the expected relative-value structure: it opens temporary long–short positions against spread dislocations and then reduces inventory before the terminal horizon. Third, level-two signature information raises the reduced objective relative to level one in this synthetic mean-reversion experiment, but the objective gain is tied to greater turnover and larger temporary inventory exposure. 
+
+C.5. Common-Trend Log-Spread Pair 
+
+The first τ execution events on each path are masked to zero so that the policy only trades once the rolling-window estimate of the z-score is fully populated. The baseline path parameters are 
+
+κ = 50 , μ = 0 , σM = 0 .02 , σX = 0 .02 ,ρ = 0 .3, τ = 100 , β = 1 ,T = 1 , P (1) 0 = 30 , P (2) 0 = 5 .
+
+(C.17) For the execution objective, the calibration uses Λ1 = 3 × 10 −3, Λ2 = 3 × 10 −4, Q0 = (0 , 0) ⊤,η = 10 −2, ϕ = 0 ,γ = 0 .1, λridge = 10 −8.
+
+(C.18) The canonical impact matrix is diagonal: Λ12 =Λ21 = 0, so that ˜Λ = diag (Λ 1, Λ2) in the notation of Equation (2.12). The signal scale is cα = 12 κ bsd (S) ≈
+
+5.02 ×10 −2, half the OU reversion drift per unit of spread standard deviation, estimated from the training paths and recorded in the run manifest. Cross-impact is part of the model and code interface, but the headline mean-reverting-pair experiment does not exercise it. With 
+
+ϕ = 0, the inventory-risk penalty is absent; the strategy is driven by the spread signal, temporary impact, dollar-neutrality, and the terminal inventory penalty. This choice isolates the statistical arbitrage mechanism: the strategy is allowed to build a temporary long–short position when the spread signal is strong, but it still pays impact costs and is penalised for ending the trading window with residual inventory. The simulated market fixes the economic object traded in the rest of the section: the two assets share a common stochastic log-price trend, their log spread mean reverts around zero, and the rolling z-score supplies the dimensionless dislocation signal that is converted into alpha by cα. The following diagnostics and metric-specific comparisons refer to this baseline market. 
+
+C.6. Analytical versus Empirical Gram Matrices 
+
+A key practical advantage of the framework is that the Gram matrices Gψ and Gr entering the OU-projected basis (see Sections C.2 and C.3) are available in closed form under the continuous-time OU spread model. We verify the implementation and quantify the noise reduction by comparing the analytical formulas against Monte Carlo estimates as a function of the sample size M .Figure 3 shows the Frobenius-norm errors 
+
+∥Gemp  
+
+> ψ
+
+(M ) − Gexact  
+
+> ψ
+
+∥F and ∥Gemp  
+
+> r
+
+(M ) − Gexact  
+
+> r
+
+∥F for both projected blocks, together with the standard 
+
+O(M −1/2) Monte Carlo reference slope. The targets 
+
+Gexact  
+
+> ψ
+
+and Gexact  
+
+> r
+
+are the closed-form OU moment integrands of Sections C.2 and C.3 evaluated on the 
+
+same simulator time grid as the estimator. Matching the grid cancels the deterministic time-discretisation error of the Riemann sum (for example R T 
+
+> 0
+
+t dt = 12
+
+versus the right-point value 12 + 12nsteps ), so the residual is pure Monte Carlo sampling error and decays at the O(M −1/2) rate; at each sample size the error is averaged over random resamples of the held-out paths. The empirical estimator retains non-zero sampling error at finite sample sizes, whereas the closed-form OU formula removes this source of estimation noise for the projected OU blocks. This is a calibration diagnostic: it shows that part of the reduced matrix has a deterministic benchmark under the projected OU model. The reported optimiser itself is still assembled empirically from the simulated full-signature paths. The Gram convergence above shows that the OU-projected moment blocks are estimated consistently; we now show that using their closed forms instead of Monte Carlo estimates produces a better-calibrated policy. We build a projected policy on the low-dimensional basis 
+
+ψt = (1 , t, S t) and its integral rt = R t 
+
+> 0
+
+ψu du, and solve the reduced quadratic programme of Theorem 2.9   
+
+> correspondence: g.morbelli@uva.nl Page 18 of 21
+
+Signature-Based Optimal Execution for Statistical Arbitrage 
+
+Figure 3: Convergence of the empirically estimated Gram matrices Gψ and Gr to their closed-form OU moment targets, evaluated on the simulator time grid so that the comparison isolates Monte Carlo sampling error. The error decays at the 
+
+O(M −1/2) Monte Carlo reference rate (grey), consistent with consistent estimation of the OU-projected blocks; imposing the spread model removes this sampling noise for those blocks. 
+
+twice: once with the moment blocks estimated from 
+
+M simulated paths, and once with the closed-form OU blocks Gψ , Gr , E[rT r⊤ 
+
+> T
+
+] and the closed-form signal term derived in Appendix C. 9 Both are compared against a large independent reference (4000 paths). Figure 4 reports, as a function of M , the relative coefficient error, the relative objective gap, the expected terminal inventory, and the conditioning of the projected curvature matrix. The closed-form policy attains a relative coefficient error of 1 .3 × 10 −2 and objective gap of 2 .4 × 10 −3 at any M , below the empirical policy even at M = 1000 (4 .8 × 10 −2 and 1 .6 × 10 −2 respectively) and well below the small-sample empirical fit ( M = 25: 9.3 × 10 −2 and 1 .2 × 10 −1). The projected curvature matrices have the same order of conditioning, so the improvement is driven by variance reduction in the moment blocks rather than by a material conditioning change, and the terminal-inventory curves agree once the empirical estimator has converged. This is the concrete payoff of Appendix C: where the spread model holds, closed-form blocks deliver large-sample calibration accuracy at no sampling cost, motivating a hybrid implementation that replaces the noisiest empirical blocks by their analytic counterparts. The headline N = 2 policy of this section is still calibrated from the full empirical signature moments; the bridge applies to the projected OU sub-block only.            
+
+> 9This diagnostic isolates the blocks that admit OU closed forms: it uses the impact and inventory-risk terms ( η= 0, ϕ= 1, Σ = I2) and the terminal penalty, for which Gψ,Grand E[rTr⊤
+> T]suffice; the dollar-neutrality block does not reduce to OU Gram matrices and is left to the empirical full-signature construction.
+
+Figure 4: Projected-policy calibration on ψ = (1 , t, S t):empirical Monte-Carlo blocks (blue) versus closed-form OU blocks (red dashed), against a 4000 -path reference. Closed-form blocks achieve lower relative coefficient error and objective gap than the empirical fit at every training size M , while the projected curvature matrices have comparable conditioning: the gain is variance reduction, not regularisation. 
+
+## D. Numerical Validation of the Quadratic Reduction 
+
+In this section we verify the central claim of Theorem 2.9 numerically: that the path-dependent objective collapses exactly to the finite quadratic form 
+
+J(θ) = θ⊤Aθ + b⊤θ + c. On a fixed set of 300 paths we assemble ( A, b ) from the tensor formulas and, independently, recompute the objective directly from vt = Bx t, Qt = Q0 + By t, and αt = Kx t by integrating the running terms of Equation (2.12) against time. Figure 5 plots the two values against each other for the fitted θ∗ and for 48 random coefficient vectors spanning a wide range of objective values. They coincide along the identity line with a maximum relative error of 2 .2 × 10 −7, i.e. to floating-point precision. This is an algebraic identity per path rather than a Monte Carlo statement, so the agreement checks that the tensor assembly of ( A, b, c ) implements the reduction correctly. The next diagnostic, Figure 6, then asks whether the complete quadratic problem assembled from empir-ical moment estimates has the sign and conditioning properties required by the closed-form optimiser. 
+
+D.1. Matrix Diagnostics 
+
+Lemma 2.11 requires A to be symmetric negative definite for the closed-form maximiser θ∗ = − 12 A−1b
+
+to exist without regularisation. Figure 6 displays the signed eigenvalue spectrum of − ˆA and heatmap of the symmetrised matrix ˆA obtained from 1000 training paths at signature order N = 2. The spectrum of − ˆA
+
+is non-negative up to numerical precision and spans many orders of magnitude: only 29 of the 42 directions lie above the ridge level λridge , while the remainder form a near-null tail. The ridge shift λridge = 10 −8
+
+correspondence: g.morbelli@uva.nl Page 19 of 21 Signature-Based Optimal Execution for Statistical Arbitrage 
+
+Figure 5: Quadratic-reduction check. The matrix-form value 
+
+θ⊤Aθ + b⊤θ + c versus the directly path-simulated objective 
+
+Jsim (θ), for the optimiser θ∗ (star) and 48 random coefficient vectors. All points lie on the identity line (maximum relative error 1.5 × 10 −7), checking the matrix implementation of Theorem 2.9 numerically. 
+
+Figure 6: Left: sorted signed eigenvalues of − ˆA (positive semidefinite under concavity) on a signed-log scale, with zero and the ridge level λridge marked. Plotting signed eigenvalues keeps any concavity violation visible. Right: heatmap of ˆA
+
+showing its Kronecker block structure from signature Gram matrices and execution penalties. 
+
+therefore makes the linear solve well posed precisely in those near-null signature directions. The near-null directions are expected: the level-two feature dictionary contains correlated time-price and spread coordinates, and the zero-inventory initial condition means that only directions rewarded by the signal and regularised by impact or terminal liquidation matter out of sample. The diagnostic therefore supports the algebraic sign of the objective while also showing why a small ridge is a practical part of the calibration. The sensitivity analysis below shows that realised metrics can be materially affected by this choice. Together, Figure 3 and Figure 6 check the numerical reduction itself: the former checks the moment inputs, while the latter checks the resulting quadratic form. Only after these checks does it make sense to interpret the trading paths and metric-specific diagnostics. 
+
+D.2. Effect of Signature Truncation Order 
+
+We compare policies trained at signature orders 
+
+N = 1 and N = 2. For each order, 1000 training 
+
+Figure 7: Effect of signature truncation order N . Out-of-sample per-path distributions (boxes: 25–75%, whiskers: 5– 95%, diamonds: means) of the reduced objective, terminal wealth, terminal inventory norm, and turnover at N = 1
+
+versus N = 2 . Adding the second-order block (time ordering, L´ evy area) shifts the reduced-objective and terminal-wealth accounting distributions upward, while the turnover and inventory distributions widen markedly, due to the cost of the more active level-two policy. 
+
+paths are used to estimate A and b, and the resulting policy is evaluated on 1000 independent test paths. Figure 7 reports the pathwise distributions of the reduced objective, terminal wealth, terminal inventory norm, and turnover. At N = 1, the admissible policy class is linear in the current signature state: trading speed is an affine function of (1 , t, P (1)  
+
+> t
+
+, P (2)  
+
+> t
+
+, z t). 10 While the z-score is available, the policy cannot exploit cross-products of features, so information about how the spread has been evolving (its velocity, curvature, or lead-lag ordering between the two assets) is inaccessible. At N = 2, the policy gains access to the full level-two block of the signature, which includes second-order iterated integrals such as the L´ evy area (Example 2.5) and time-weighted price moves. These capture geometric path information that is strictly beyond level one: for instance, whether a spread deviation was driven by a fast move in one asset or a slow drift in both. Under the baseline calibration used here, the level-two specification raises both the reduced objective and the terminal mark-to-market wealth accounting diagnostic relative to the level-one policy, at the cost of higher turnover and slightly larger residual inventory. Quantitatively, the mean reduced objective rises from 4 .125 × 10 −5 at 
+
+N = 1 to 6 .438 × 10 −5 at N = 2, while mean terminal wealth increases from 4 .787 × 10 −5 to 2 .105 × 10 −4. The accompanying increase in turnover, from 0 .544 to 1 .204, shows that the metric gains are obtained through a more active policy. 
+
+D.3. Sensitivity Analysis 
+
+We next examine how the fitted strategy reacts to changes in the main calibration and execution parameters. The sensitivity runs use the common-trend log-spread dynamics of Section 3.1 and start from the baseline configuration in Equation (C.18). We vary one parameter family at a time and keep all other parameters    
+
+> 10 Under the standard signature convention, the level-one coordinates record the increments Zt−Z0(plus the scalar term 1); equivalently, these are affine functions of the current path values.
+
+correspondence: g.morbelli@uva.nl Page 20 of 21 Signature-Based Optimal Execution for Statistical Arbitrage 
+
+fixed. The parameters considered include the temporary-impact coefficients ˜Λij , the dollar-neutrality parameter 
+
+η, the terminal inventory penalty γ, the inventory-risk 
+
+ϕ, the ridge parameter, the signal scale cα, and the number of executed trades. For each value, the policy is recalibrated on the training paths and evaluated on the same synthetic test set. Figure 8 reports the resulting mean accounting re-turn on turnover under the canonical synthetic workflow. The purpose of this diagnostic is not to optimise these parameters, but to identify which modelling parameters materially affect out-of-sample accounting metrics. The model is especially sensitive to the ridge parameter, which controls the use of near-null directions in the empirical curvature matrix: too little regularisation can amplify noisy signature directions, whereas too much regularisation shrinks the policy. The operating ridge should therefore be read as a regularised empirical choice, not as an unregularised optimum. Overall, the sensitivity analysis supports the inter-pretation of the baseline experiment. The level-two reduced-objective gain is not presented as the result of a single finely tuned parameter; rather, the policy’s behaviour is governed by the expected trade-off between signal strength, execution cost, neutrality, terminal liquidation, and regularisation.

@@ -1,0 +1,969 @@
+Title: Stable Self-Modulating Quantum Fast-Weight Programmers with Bounded Memory Gates
+
+URL Source: https://arxiv.org/pdf/2607.02363v1
+
+Published Time: Fri, 03 Jul 2026 01:19:59 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+## Stable Self-Modulating Quantum Fast-Weight Programmers with Bounded Memory Gates 
+
+Kuo-Chung Peng 1[0009 −0001 −8342 −2481] , Jiun-Cheng Jiang 1[0009 −0005 −1134 −4962] ,Chun-Hua Lin 1[0009 −0002 −4383 −0453] , Yifeng Peng 2[0009 −0007 −3306 −9417] ,Junghoon Justin Park 3[0000 −0001 −8982 −0387] , Huan-Hsin Tseng 4[0000 −0001 −9544 −4226] , Hsin-Yi Lin 4[0000 −0001 −5731 −2353] , Kuan-Cheng Chen 5[0000 −0002 −6575 −7034] , Chen-Yu Liu 1[0000 −0002 −5437 −5188] , Shinjae Yoo 4[0000 −0003 −4378 −6448] , and Samuel Yen-Chi Chen 6[0000 −0003 −0114 −4826]  
+
+> 1
+
+National Taiwan University, Taiwan  
+
+> 2
+
+Stevens Institute of Technology, NJ, USA  
+
+> 3
+
+Seoul National University, Korea  
+
+> 4
+
+Brookhaven National Laboratory, NY, USA  
+
+> 5
+
+Imperial College London, UK  
+
+> 6
+
+Wells Fargo, NY, USA 
+
+ycchen1989@ieee.org 
+
+Abstract. Quantum Fast-Weight Programmers (QFWPs) store tempo-ral information in dynamically programmed variational-circuit parameters rather than in nonlinear recurrent hidden states, offering a practical route to quantum sequence modeling. Self-Modulating QFWP improves this framework by using input-dependent gates for both new fast-weight updates and the accumulated fast-weight state, but its unbounded old-state multiplier can diverge in long-sequence regimes. We propose a bounded old-state modulation rule that applies a sign-preserving tanh 
+
+gate only to the recurrent memory branch while leaving the additive update and new-update modulation unchanged. We evaluate standard QFWP, full Self-Modulating QFWP, Only-New, and Only-Old variants on two CUDA-Q quantum-dynamics forecasting tasks and on Milan SMS telecommunication activity prediction. The quantum-dynamics results show that old-state modulation is the most consistent source of improve-ment over Standard QFWP, and that bounding the old-state gate removes long-sequence divergence while improving aggregate robustness. On Mi-lan SMS forecasting, the original unbounded Self-Modulating QFWP converges across the tested grid and shows its clearest gains at longer input windows, with behavior close to the Only-Old ablation. These findings identify accumulated-memory modulation as the key mechanism of Self-Modulating QFWP and bounded old-state gating as a targeted stabilization strategy. 
+
+Keywords: Quantum Fast-Weight Programmer · Self-Modulating QFWP 
+
+· Bounded Memory Gate · Quantum Time-Series Forecasting  
+
+> arXiv:2607.02363v1 [quant-ph] 2 Jul 2026 2K.-C. Peng et al.
+
+1 Introduction 
+
+Quantum sequence models have become a promising direction for learning tem-poral dependencies with hybrid quantum–classical architectures[ 6,1 ,3]. A repre-sentative starting point is the Quantum Long Short-Term Memory (QLSTM) model, which replaces parts of the classical LSTM cell with variational quan-tum circuits and has shown promising empirical behavior on temporal learning tasks [ 9, 7, 31 , 10 ]. These studies suggest that variational quantum circuits can act as compact nonlinear processors for temporal data, but recurrent quantum models still inherit a central limitation during training. Models with nonlinear recurrence must propagate gradients through a time-ordered nonlinear state evolution. Quantum Fast Weight Programmers (QFWPs) were introduced to address this bottleneck by moving memory from a recurrent hidden state into dynamically programmed circuit parameters [ 8]. In QFWP, a classical slow programmer reads each input and generates an update to the parameters of a variational quantum circuit, which acts as the fast programmer. Because the temporal state is represented by accumulated fast weights rather than by a nonlinear recurrent hidden state, the model avoids backpropagation through time (BPTT) across a quantum recurrent cell and admits a simpler, more parallelizable gradient path [ 24 ]. This makes QFWP an attractive framework for quantum time-series prediction and sequential control, where circuit-evaluation cost and gradient depth are major practical constraints. The recent Self-Modulating QFWP extends this framework by introduc-ing input-dependent multiplicative modulation over both the newly generated fast-weight update and the previously accumulated fast-weight state [ 11 ]. This update rule gives the model direct control over how new information is in-jected and how past fast-weight memory is retained, suppressed, amplified, or sign-reversed. Prior results indicate that such self-modulation improves conver-gence and prediction accuracy, with the old-state branch often providing the dominant source of improvement [ 11 ]. However, because the original old-state multiplier is unconstrained, repeated multiplicative updates can become unstable in long-sequence regimes. In this work, we revisit Self-Modulating QFWP on two complementary next-step prediction settings: telecommunication traffic predic-tion and quantum-dynamics prediction. The former tests the model on practical temporal signals, while the latter evaluates whether adaptive fast-weight memory can learn observables generated by simulated quantum systems. We compare Standard QFWP, full Self-Modulating QFWP, and the Only-New and Only-Old Self-Modulating ablations across hidden sizes and input-window lengths, and we use relative-improvement, old-state strength, and synergy diagnostics to identify which modulation branch drives the observed gains. Our main architectural contribution is a bounded old-state modulation rule. Specifically, we apply a sign-preserving tanh bound to the old-state multiplicative gate while leaving the additive update and new-update modulation unchanged. This isolates the stabilization mechanism to the recurrent fast-weight memory branch. Empirically, the bounded gate preserves the low-error behavior of old-state Stable Self-Modulating QFWPs with Bounded Memory Gates 3
+
+modulation while curing the long-sequence divergence observed in unbounded multiplicative variants. The resulting analysis supports a focused conclusion: input-dependent control of accumulated fast weights is central to the benefit of Self-Modulating QFWP, and bounding this control provides a simple and effective route to stable quantum fast-weight programming. 
+
+2 Related Work 
+
+2.1 Quantum and quantum-inspired sequential models 
+
+Early QRNN and QLSTM studies showed that variational quantum circuits (VQCs) can process temporal data and sequence-recognition tasks [ 3 ,9]. Recent works also investigate VQC-instantiated quantum-inspired Kolmogorov–Arnold network (QKAN)-based LSTM models and transformer models implemented by single-qubit data re-uploading circuits for scalable yet efficient quantum-inspired sequence learning [ 16 ,14 ,22 ]. Applications have since expanded to environmental and energy forecasting, including climate [ 12 ], air-quality [ 20 ], solar-power [ 17 ], and flood prediction [ 21 ]; economic and infrastructure forecasting, including carbon prices [ 4], stock indices [ 28 ], and urban telecommunication traffic [ 6,14 ]; and scientific or biomedical sequence modeling, including drug discovery [ 31 ], predictive maintenance [ 30 ], human activity recognition [ 13 ], and wearable-health estimation [ 29 ]. These studies demonstrate the breadth of quantum sequential modeling, but recurrent quantum cells still couple computation across time and therefore retain the cost of sequential backpropagation through time. 
+
+2.2 Fast weight programmers 
+
+Fast Weight Programmers (FWPs) take a different view of memory: a slow network writes context-dependent parameters into a fast network, so temporal information is stored in fast-weight dynamics rather than in a nonlinear hidden-state recurrence [ 27 ]. This classical idea was later connected to linear self-attention and extended through recurrent fast-weight variants [ 26 , 15 ]. QFWP transfers the FWP principle to hybrid quantum learning by using a classical slow programmer to update the parameters of a variational quantum circuit, with demonstrations on time-series prediction and reinforcement learning [ 8, 5 ]. Recent extensions include Quantum-Train QFWP for parameter-efficient circuit programming [ 23 ]and quantum-inspired Gated QKAN-FWP for scalable sequence learning, long-horizon solar-cycle prediction, MiniGrid reinforcement learning [ 24 ], and traffic matrix forecasting [ 25 ]. The prior Self-Modulating QFWP further introduces input-dependent gates on both the new fast-weight update and the accumulated fast-weight state [ 11 ]; our work preserves this memory-control idea but bounds the old-state multiplier to remove long-sequence divergence. 4 K.-C. Peng et al. 
+
+3 Model 
+
+3.1 QFWP baseline 
+
+Let Q denote the number of qubits and L the number of trainable variational layers in the fast variational quantum circuit. At time step t, the fast circuit parameters form a matrix Θt ∈ RL×Q. A classical slow controller maps the scalar input xt to a hidden state 
+
+ht = ϕΩ (xt) ∈ RH , (1) where Ω are trainable controller parameters. Two affine heads generate vectors 
+
+ℓt = Wℓht + bℓ ∈ RL, rt = Wr ht + br ∈ RQ, (2) and their outer product gives the raw fast-weight update 
+
+∆t = ℓtr⊤ 
+
+> t
+
+∈ RL×Q. (3) The additive QFWP baseline is 
+
+Θt = Θt−1 + ∆t. (4) The variational circuit then uses Θt to produce quantum expectation-value features for the next-step prediction head. In all experiments below, the controller width and the number of qubits are tied, H = Q, and the circuit depth is fixed at L = 5 for quantum dynamics tasks and L = 2 for the telecommunication task. For the full circuit construction and implementation details, we follow prior works [8,11]. 
+
+3.2 Self-modulation inherited from the previous model 
+
+Self-Modulating QFWP adds two input-dependent modulation matrices, one for the new update and one for the old accumulated state. For s ∈ { new , old }, the modulation head produces 
+
+ms,L t = W s,L ht + bs,L ∈ RL, ms,Q t = W s,Q ht + bs,Q ∈ RQ, (5) and 
+
+M st = ms,L t (ms,Q t )⊤ ∈ RL×Q. (6) The unbounded full self-modulating update is 
+
+Θt = ∆t ⊙ M new  
+
+> t
+
++ Θt−1 ⊙ M old  
+
+> t
+
+, (7) where ⊙ denotes element-wise multiplication. The common ablations are 
+
+Θt = ∆t ⊙ M new  
+
+> t
+
++ Θt−1, Only-New , (8) 
+
+Θt = ∆t + Θt−1 ⊙ M old  
+
+> t
+
+, Only-Old . (9) The previous self-modulation study found that old-state modulation is a key driver of the performance gain, because it directly controls how past fast-weight updates are retained, suppressed, amplified, or sign-reversed. This motivates bounding exactly the old-state branch rather than changing the full model. Stable Self-Modulating QFWPs with Bounded Memory Gates 5
+
+3.3 Bounded old-state modulation 
+
+The raw entries of M old  
+
+> t
+
+are unconstrained, because eq. (6) is an outer product of affine-head outputs. We therefore replace the recurrent old-state gate by 
+
+fM old  
+
+> t
+
+= tanh  M old 
+
+> t
+
+ , |[ fM old  
+
+> t
+
+]kq | ≤ 1 ∀k ∈ { 1, . . . , L }, q ∈ { 1, . . . , Q }, t. 
+
+(10) The bounded full and bounded Only-Old recurrences are 
+
+Θt = ∆t ⊙ M new  
+
+> t
+
++ Θt−1 ⊙ fM old  
+
+> t
+
+, bounded full , (11) 
+
+Θt = ∆t + Θt−1 ⊙ fM old  
+
+> t
+
+, bounded Only-Old . (12) No bound is applied to Standard QFWP or Only-New, because those variants do not multiply Θt−1 by an input-dependent gate. We also leave M new  
+
+> t
+
+unchanged in the full model so that the modification is isolated to recurrent memory. The 
+
+tanh choice is sign-preserving, smooth, and close to the identity near zero; it bounds large recurrent multipliers without converting the old-state branch into a nonnegative sigmoid gate. For a single coordinate j = ( k, q ), let at,j = fM old  
+
+> t,j
+
+. The bounded Only-Old recurrence unrolls as 
+
+θt,j = θ0,j tY
+
+> u=1
+
+au,j +
+
+> t
+
+X
+
+> s=1
+
+ds,j tY
+
+> u=s+1
+
+au,j , |au,j | ≤ 1, (13) where ds,j = [ ∆s]j . Thus the recurrent kernel cannot geometrically amplify a stored update as any growth comes from the additive sequence of new updates rather than from repeated old-state multiplication. 
+
+4 Quantum-Dynamics Prediction Tasks 
+
+We evaluate two quantum-dynamics benchmarks generated with CUDA-Q Dy-namics, the dynamics-simulation backend of CUDA-Q [ 18 ]. In both cases, we extract a single scalar observable from a simulated quantum trajectory and treat it as a univariate next-step prediction task. Each trajectory contains 3000 evenly sampled time steps, is min–max normalized to [−1, 1] , and is converted into chronological sliding-window samples: given [xt−N , . . . , x t−1], the model predicts 
+
+xt. The samples are split chronologically into 80% training and 20% test data. 
+
+Open Jaynes–Cummings dynamics. The first benchmark is an open Jaynes– Cummings system with a two-level qubit coupled to a single cavity mode truncated to five Fock levels. The Hamiltonian is 
+
+H = ωca†a + ωq σ+σ− + g(σ−a† + σ+a), (14) with ωc = ωq = 2 π and g = π. Photon loss is included through the collapse operator C = √γ a , where γ = 0 .05 . The system is initialized as ρ0 = |g, 1⟩⟨ g, 1|,and the prediction target is the qubit excitation probability ⟨σ+σ−⟩(t) over 
+
+t ∈ [0 , 50] .6 K.-C. Peng et al. 
+
+Dispersive Transmon–resonator dynamics. The second benchmark is a closed dispersive transmon–resonator model, where the transmon is represented as a two-level system and the resonator is truncated to 20 Fock levels. The Hamiltonian is 
+
+H = 12 ω′
+
+> 01
+
+σz + ( ω′ 
+
+> r
+
++ χσ z )a†a. (15) We use ω01 = 3 .0 · 2π GHz, ωr = 2 .0 · 2π GHz, χ = 0 .025 · 2π GHz, ω′ 
+
+> 01
+
+= ω01 + χ,and ω′ 
+
+> r
+
+= ωr . The initial state is (|0⟩ + |1⟩)/√2 for the transmon and |α = 2 .0⟩
+
+for the resonator. The prediction target is the resonator position quadrature 
+
+⟨ˆx⟩(t) over t ∈ [0 , 25] ns. 
+
+5 Telecommunication Activity Prediction 
+
+We also evaluate the Self-Modulating QFWP on a practical application scenario. Here we consider the Milan Telecommunication Activity Dataset [ 2 ], a real-world urban spatiotemporal dataset collected in Milan, Italy. The dataset records telecommunication activity over spatial grid cells and includes multiple service modalities, such as SMS, call, and Internet traffic. In this work, we focus on the SMS activity signal and formulate the task as a univariate forecasting problem over individual spatial cells. Each spatial cell is treated as a separate time series, and historical SMS activity values are used to predict future activity. In our experiments, we evaluate 100 spatial cells, corresponding to 100 SMS activity time series, for each model configuration. This setting provides a realistic benchmark for evaluating sequential forecasting models on urban telecommunication dynamics, where the temporal patterns may contain both short-term fluctuations and longer-range dependencies. Since our goal is to study the effect of self-modulation under different input window lengths, we restrict the experiments to the SMS modality and do not consider multimodal fusion in this paper. Although this benchmark is derived from a telecommunication forecasting task, the SMS activity sequences are real-world urban time series with noise, irregular fluctuations, and heterogeneous temporal patterns, making them useful for evaluating the potential applicability of self-modulating sequence models to other noisy real-world forecasting scenarios. 
+
+6 Experimental Protocol 
+
+We evaluate Standard QFWP, full Self-Modulating QFWP, Only-Old, and Only-New as inherited baselines, and we run the bounded-old modification for the multiplicative variants in the long-sequence stability study. The grid is 
+
+H = Q ∈ { 4, 6, 8, 10 , 12 , 14 }, N ∈ { 4, 8, 16 , 32 , 64 }, (16) for 30 configurations per variant per dataset. All runs for quantum dynamics tasks use L = 5 variational layers, batch size 4, Adam optimizer [ 19 ] with learning rate 10 −3, gradient clipping with maximum ℓ2-norm 1.0, 100 training epochs, Stable Self-Modulating QFWPs with Bounded Memory Gates 7−1               
+
+> 0
+> 1
+> Value
+> Jaynes-Cummings
+> Standard QFWP
+> Jaynes-Cummings
+> Self-Modulating QFWP
+> Transmon-resonator
+> Standard QFWP
+> Epoch 10
+> Transmon-resonator
+> Self-Modulating QFWP
+> −1
+> 0
+> 1
+> Value
+> Epoch 20
+> −1
+> 0
+> 1
+> Value
+> Epoch 50
+> 01000 2000 3000
+> Time Step
+> −1
+> 0
+> 1
+> Value
+> 01000 2000 3000
+> Time Step
+> 01000 2000 3000
+> Time Step
+> 01000 2000 3000
+> Time Step
+> Epoch 100
+> Prediction Ground Truth Train/Test Split
+
+Fig. 1. Prediction trajectories at hidden size H = 10 and sequence length N = 32 on both benchmarks. Rows show epochs 10 , 20 , 50 , and 100 ; columns compare Standard QFWP and full Self-Modulating QFWP on Jaynes–Cummings and transmon-resonator dynamics. 
+
+and seed 42. For telecommunication activity problem, we use L = 2 and batch size 16. A cell is treated as complete only when it reaches epoch 100 without a cancellation sidecar. Final test mean-squared error (MSE) is the primary accuracy metric; medians are emphasized where means are distorted by isolated divergent cells. For variant comparisons, the relative improvement over Standard QFWP is 
+
+∆rel = Mstandard − Mvariant 
+
+Mstandard + ϵ , ϵ = 10 −12 . (17) Positive values indicate lower MSE than the standard baseline. We also use Rela-tive Strength, ∆old − ∆new , to distinguish old-state and new-update modulation, and Synergy, ∆both − max (∆old , ∆ new ), to test whether the full model exceeds the stronger single-sided variant. The bounded-vs-unbounded stability study is kept separate from the unbounded reproduction aggregates, because eqs. (11) and (12) define a modified architecture. 
+
+7 Results 
+
+7.1 Quantum dynamics prediction 
+
+During the unbounded sweep, gradient divergence was observed only in the multiplicative self-modulating variants, namely full Self-Modulating QFWP and 8 K.-C. Peng et al. 0.000                 
+
+> 0.002
+> 0.004
+> 0.006
+> Test MSE
+> H=4, N=4
+> Jaynes-Cummings
+> 0.00
+> 0.01
+> 0.02
+> 0.03 H=4, N=4
+> Transmon-resonator
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> Test MSE
+> H=10, N=16
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20 H=10, N=16
+> 020 40 60 80 100
+> Epoch
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Test MSE
+> H=14, N=64
+> 020 40 60 80 100
+> Epoch
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4 H=14, N=64
+> Standard QFWP Self-Modulating QFWP Only Old Modulated Only New Modulated
+
+Fig. 2. Representative test-MSE convergence curves for (H, N ) = (4 , 4) , (10 , 16) , and 
+
+(14 , 64) . Columns show Jaynes–Cummings and transmon-resonator dynamics; curves compare Standard QFWP, full Self-Modulating QFWP, Only-Old, and Only-New. 
+
+Only-Old. These failures occur mainly at long sequence length and larger hidden size. We therefore analyze the completed unbounded cells as a reproduction of the prior self-modulating behavior, and separately evaluate the tanh -bounded old-state gate on the long-sequence sub-grid N ∈ 32 , 64 . The trajectory plots in fig. 1 show the practical effect of adaptive fast-weight memory on the two quantum-dynamics signals. On Jaynes–Cummings dynamics, Standard QFWP initially gives a noisy and amplitude-mismatched response, whereas the full Self-Modulating QFWP tracks the oscillatory decay much earlier in training. On the transmon-resonator signal, Standard QFWP shows early amplitude collapse, while the self-modulating model already follows the envelope and phase structure. The convergence curves in fig. 2 are consistent with the trajectory plots. Across the completed unbounded cells, the modulated variants generally converge faster and reach lower test MSE than Standard QFWP, especially when the sequence is longer and the recurrent fast-weight state carries more history. This agrees with the main finding of the prior Self-Modulating QFWP study [ 11 ]: modulation of the accumulated fast-weight state improves both optimization speed and predictive accuracy. The final-MSE heatmaps in figs. 3 and 4 show that the main advantage of self-modulation appears most clearly at longer sequence lengths. In the rightmost columns, Standard QFWP often has substantially higher Stable Self-Modulating QFWPs with Bounded Memory Gates 914                         
+
+> 12
+> 10
+> 8
+> 6
+> 4
+> Hidden Size
+> 2.27e-05 2.03e-04 4.76e-04 6.68e-04 0.6037
+> 5.46e-06 8.81e-06 1.31e-04 0.0010 0.0012
+> 1.61e-05 1.11e-05 6.10e-05 0.0069 0.0014
+> 1.67e-04 9.64e-06 4.24e-04 0.0016 0.1075
+> 6.80e-05 1.65e-05 8.12e-04 0.0015 0.0012
+> 1.60e-05 6.89e-05 1.65e-04 4.34e-04 0.1547
+
+Standard QFWP                         
+
+> 6.98e-06 1.11e-04 2.86e-05 2.81e-05 1.75e-05
+> 6.65e-06 8.88e-06 4.44e-05 4.82e-06 1.14e-06
+> 1.48e-06 1.35e-05 4.06e-06 1.15e-05 4.37e-06
+> 9.08e-06 1.46e-05 0.0026 7.20e-06 1.42e-06
+> 3.21e-06 3.91e-05 5.42e-05 9.99e-05 4.76e-06
+> 1.89e-05 6.59e-05 5.45e-06 1.07e-05 1.34e-05
+
+Self-Modulating QFWP     
+
+> B
+> B
+> 4816 32 64
+
+Sequence Length                         
+
+> 14
+> 12
+> 10
+> 8
+> 6
+> 4
+> Hidden Size
+> 1.06e-05 1.10e-05 2.12e-05 6.91e-06 7.97e-05
+> 1.26e-05 1.71e-05 6.55e-06 1.86e-05 3.28e-06
+> 8.94e-06 8.80e-05 2.90e-05 4.42e-06 5.15e-06
+> 2.46e-05 1.16e-04 1.61e-04 2.70e-05 1.05e-05
+> 8.96e-06 2.14e-05 9.18e-06 2.78e-06 4.59e-05
+> 1.15e-04 8.74e-05 1.18e-04 1.99e-05 1.29e-04
+
+Only Old Modulated     
+
+> B
+> 4816 32 64
+
+Sequence Length                         
+
+> 1.13e-05 2.03e-05 1.29e-04 0.0025 0.0137
+> 5.07e-05 2.51e-05 1.16e-04 0.0010 0.0143
+> 4.69e-06 2.61e-05 2.05e-04 0.0011 0.0010
+> 1.90e-04 1.07e-04 2.00e-04 5.17e-04 0.0031
+> 5.14e-05 2.05e-05 2.47e-04 4.56e-04 0.0266
+> 4.44e-05 1.29e-04 1.41e-04 0.0017 0.0087
+
+Only New Modulated 
+
+> 10 −5
+> 10 −4
+> 10 −3
+> 10 −2
+> 10 −1
+> Final Test MSE (log scale)
+
+Fig. 3. Final test MSE on Jaynes–Cummings dynamics across hidden sizes and sequence lengths. Values are shown on a log scale. Cells marked B are unbounded multiplicative cells that did not reach epoch 100 ; their displayed values are replaced by the matched 
+
+tanh -bounded old-state run. 
+
+final MSE, indicating that the additive fast-weight update alone is less effective when the model must use a longer temporal context. Only-New modulation does not consistently resolve this degradation: although it improves some cells, it often remains close to the Standard QFWP error pattern at N = 32 and N = 64 . In contrast, Only-Old and full Self-Modulating QFWP recover low-MSE solutions across most long-sequence configurations, showing that direct modulation of the accumulated fast-weight state is the dominant factor behind the improved prediction performance. The same heatmaps also identify the stability limitation of the unbounded multiplicative gate. Divergence occurs only in the old-state multiplicative variants, namely full Self-Modulating QFWP and Only-Old. The affected cells are full Self-Modulating QFWP at (H, N ) = (12 , 64) , (10 , 64) , Only-Old at (12 , 64) in the Jaynes–Cummings benchmark, full Self-Modulating QFWP at (14 , 32) , (12 , 64) ,and Only-Old at (14 , 64) , (10 , 64) in the transmon-resonator benchmark. These cells are marked by B, where the displayed value is the matched bounded run rather than the failed unbounded run. The bounded replacements recover low final MSE in these otherwise unstable configurations, suggesting that the performance gain of old-state modulation can be retained while removing the long-sequence divergence mode. The relative-improvement heatmaps in fig. 5 separate the broad trend from isolated unstable cells. On Jaynes–Cummings dynamics, full Self-Modulating QFWP and Only-Old each improve over Standard QFWP in 21 of 28 all-four-completed cells, while Only-New improves in 15 of 28. On the 10 K.-C. Peng et al. 14                         
+
+> 12
+> 10
+> 8
+> 6
+> 4
+> Hidden Size
+> 2.17e-04 4.16e-04 1.31e-04 0.0012 0.0109
+> 2.28e-04 5.39e-05 1.97e-04 1.88e-04 0.0039
+> 3.22e-05 1.03e-04 8.24e-05 8.77e-04 0.0300
+> 3.59e-05 6.44e-05 1.55e-04 2.79e-04 0.0050
+> 9.13e-06 1.20e-04 7.90e-05 8.79e-04 0.0068
+> 1.62e-05 6.75e-05 6.16e-04 0.0019 0.0025
+
+Standard QFWP                         
+
+> 8.12e-06 1.31e-04 2.21e-06 2.23e-04 3.41e-05
+> 1.01e-05 4.35e-06 1.75e-05 1.29e-05 7.01e-06
+> 3.05e-06 4.50e-06 5.14e-05 1.06e-05 3.52e-06
+> 3.30e-06 8.44e-06 2.68e-05 1.14e-06 3.81e-05
+> 6.85e-05 2.94e-06 1.34e-05 1.75e-06 1.62e-05
+> 3.83e-06 2.28e-05 5.80e-06 9.42e-05 3.26e-06
+
+Self-Modulating QFWP     
+
+> B
+> B
+> 4816 32 64
+
+Sequence Length                         
+
+> 14
+> 12
+> 10
+> 8
+> 6
+> 4
+> Hidden Size
+> 4.08e-05 1.05e-05 3.91e-05 4.52e-06 3.85e-05
+> 8.83e-05 9.44e-06 3.12e-05 7.97e-05 1.22e-05
+> 2.20e-04 0.3840 9.11e-06 3.97e-05 9.95e-05
+> 2.15e-04 2.69e-05 6.37e-06 2.52e-06 8.65e-06
+> 1.34e-06 2.31e-06 3.96e-06 0.0016 4.93e-06
+> 7.61e-06 3.55e-06 2.21e-05 4.36e-06 2.29e-05
+
+Only Old Modulated     
+
+> B
+> B
+> 4816 32 64
+
+Sequence Length                         
+
+> 4.05e-06 1.08e-05 8.06e-05 2.60e-05 0.0074
+> 1.12e-04 6.61e-06 1.13e-05 7.48e-06 0.0028
+> 2.89e-04 7.96e-06 3.44e-05 2.03e-04 0.0020
+> 1.13e-05 1.40e-04 9.37e-05 3.67e-05 0.0050
+> 5.09e-06 2.28e-05 6.56e-05 1.69e-04 0.0013
+> 2.01e-05 1.88e-05 1.44e-04 1.48e-05 0.0028
+
+Only New Modulated 
+
+> 10 −5
+> 10 −4
+> 10 −3
+> 10 −2
+> 10 −1
+> Final Test MSE (log scale)
+
+Fig. 4. Final test MSE on transmon-resonator dynamics across hidden sizes and sequence lengths. Values are shown on a log scale. Cells marked B are unbounded multiplicative cells replaced by the matched tanh -bounded old-state run. 
+
+transmon-resonator benchmark, full Self-Modulating QFWP improves in 25 of 26 all-four-completed cells, and Only-Old and Only-New each improve in 22 of 26. A few negative ratios arise either from unstable cells or from very small absolute differences when the Standard baseline already has near-zero error. We therefore treat the ratio heatmaps as diagnostics to be read together with the raw MSE. The Relative Strength and Synergy diagnostics in fig. 6 provide a qualitative view of how the two modulation branches contribute. The Relative Strength panels show that many configurations favor old-state modulation over new-update modulation, especially in cells where the long-sequence degradation of Standard QFWP is recovered. This is consistent with the heatmap evidence that direct control of the accumulated fast-weight state is often the more important component. The Synergy panels, however, are more mixed: the full model does not uniformly exceed the better single-sided variant. We therefore interpret the full Self-Modulating QFWP primarily as a robust combination of old-state and new-update gates, while the most consistent performance gain comes from input-dependent modulation of the accumulated fast-weight state. The bounded-vs-unbounded comparison in table 1 and fig. 7 shows that the numerical instability is tied to the recurrent old-state multiplication. The 
+
+tanh -bounded gate completes all long-sequence cells and reduces the mean final MSE for both old-state multiplicative variants on both datasets. It also improves the median in three of the four dataset–variant pairs; the only exception is the Jaynes–Cummings full Self-Modulating row, where the median changes only slightly from 1.24 × 10 −5 to 1.35 × 10 −5.Stable Self-Modulating QFWPs with Bounded Memory Gates 11 14 
+
+12 
+
+10 
+
+8
+
+6
+
+4
+
+> Hidden Size
+
+0.692 0.454 0.940 0.958 1.000 
+
+-0.218 -0.007 0.662 0.995 0.999 
+
+0.908 -0.213 0.934 0.998 0.997 
+
+0.946 -0.514 -5.025 0.996 1.000 
+
+0.953 -1.374 0.933 0.935 0.996 
+
+-0.175 0.043 0.967 0.975 1.000 
+
+Self-Modulating vs Standard 
+
+> B
+> B
+
+0.533 0.945 0.955 0.990 1.000 
+
+-1.318 -0.945 0.950 0.982 0.997 
+
+0.444 -6.927 0.526 0.999 0.996 
+
+0.853 -11.023 0.622 0.983 1.000 
+
+0.868 -0.300 0.989 0.998 0.962 
+
+-6.137 -0.269 0.284 0.954 0.999 
+
+Only Old vs Standard 
+
+> B
+> Jaynes-Cummings
+
+0.501 0.900 0.729 -2.740 0.977 
+
+-8.299 -1.844 0.119 -0.001 -10.987 
+
+0.709 -1.351 -2.358 0.843 0.256 
+
+-0.138 -10.149 0.529 0.681 0.971 
+
+0.244 -0.243 0.695 0.701 -20.793 
+
+-1.769 -0.867 0.142 -2.820 0.944 
+
+Only New vs Standard 
+
+4 8 16 32 64 
+
+Sequence Length 
+
+14 
+
+12 
+
+10 
+
+8
+
+6
+
+4
+
+> Hidden Size
+
+0.963 0.685 0.983 0.811 0.997 
+
+0.956 0.919 0.911 0.931 0.998 
+
+0.905 0.956 0.377 0.988 1.000 
+
+0.908 0.869 0.827 0.996 0.992 
+
+-6.508 0.976 0.830 0.998 0.998 
+
+0.764 0.663 0.991 0.951 0.999 
+
+> B
+> B
+
+4 8 16 32 64 
+
+Sequence Length 
+
+0.812 0.975 0.702 0.996 0.996 
+
+0.614 0.825 0.841 0.575 0.997 
+
+-5.847 -3719.528 0.889 0.955 0.997 
+
+-4.994 0.582 0.959 0.991 0.998 
+
+0.854 0.981 0.950 -0.782 0.999 
+
+0.531 0.947 0.964 0.998 0.991 
+
+> B
+> B
+
+4 8 16 32 64 
+
+Sequence Length 
+
+> Transmon-resonator
+
+0.981 0.974 0.384 0.978 0.324 
+
+0.511 0.877 0.943 0.960 0.292 
+
+-7.989 0.923 0.583 0.769 0.933 
+
+0.684 -1.174 0.394 0.868 0.002 
+
+0.443 0.810 0.170 0.807 0.813 
+
+-0.236 0.722 0.766 0.992 -0.143 
+
+−6 
+
+−4 
+
+−2 
+
+0
+
+2
+
+4
+
+6
+
+> Relative Improvement
+
+Fig. 5. Relative improvement over Standard QFWP for the three modulated variants. Positive values indicate lower MSE than Standard. Cells marked B use the matched bounded run because the corresponding unbounded multiplicative run did not complete; these cells are excluded from the completed-cell counts. 14 
+
+12 
+
+10 
+
+8
+
+6
+
+4
+
+> Hidden Size
+
+0.032 0.046 0.226 3.730 0.023 
+
+6.981 0.899 0.831 0.984 11.985 
+
+-0.265 -5.576 2.884 0.157 0.740 
+
+0.990 -0.874 0.093 0.302 0.028 
+
+0.624 -0.057 0.293 0.297 21.756 
+
+-4.368 0.599 0.142 3.774 0.056 
+
+Jaynes-Cummings 
+
+B
+
+B
+
+-0.170 0.001 0.317 0.018 0.672 
+
+0.103 -0.053 -0.101 -0.385 0.705 
+
+2.142 -3720.450 0.307 0.186 0.064 
+
+-5.678 1.756 0.564 0.123 0.996 
+
+0.411 0.170 0.780 -1.590 0.186 
+
+0.767 0.226 0.198 0.005 1.134 
+
+Transmon-resonator 
+
+B B
+
+B
+
+B
+
+4 8 16 32 64 
+
+Sequence Length 
+
+14 
+
+12 
+
+10 
+
+8
+
+6
+
+4
+
+> Hidden Size
+
+0.159 -0.491 -0.016 -0.032 0.000 
+
+1.099 0.938 -0.288 0.013 0.002 
+
+0.199 1.138 0.408 -0.001 0.001 
+
+0.093 9.635 -5.647 0.012 0.000 
+
+0.085 -1.131 -0.055 -0.064 0.034 
+
+1.594 0.311 0.683 0.021 0.001 
+
+B
+
+B
+
+4 8 16 32 64 
+
+Sequence Length 
+
+-0.019 -0.290 0.282 -0.185 0.000 
+
+0.342 0.042 -0.031 -0.029 0.001 
+
+6.752 0.034 -0.513 0.033 0.003 
+
+0.224 0.287 -0.132 0.005 -0.006 
+
+-7.362 -0.005 -0.120 0.191 -0.002 
+
+0.233 -0.285 0.026 -0.047 0.008 
+
+B B
+
+B
+
+B
+
+−5.0 
+
+−2.5 
+
+0.0 
+
+2.5 
+
+5.0 
+
+> Relative Strength
+
+−4 
+
+−2 
+
+0
+
+2
+
+4
+
+> Synergy
+
+Fig. 6. Old-state dominance and synergy diagnostics. Positive Relative Strength means that old-state modulation improves more than new-update modulation; positive Synergy means that the full model exceeds the better single-sided variant. 12 K.-C. Peng et al. 14 
+
+12 
+
+10 
+
+8
+
+6
+
+4      
+
+> Hidden size
+> 2.8e-05 1.7e-05
+> 4.8e-06 1.9e-04
+> (ep 2)
+> 1.1e-05 4.3e-03
+> (ep 9)
+> 7.2e-06 1.4e-06
+> 1.0e-04 4.8e-06
+> 1.1e-05 1.3e-05
+
+Unbounded test MSE 
+
+(diverged: last value pre-divergence)       
+
+> 2.7e-05 5.7e-05
+> 3.2e-05 1.1e-06
+> 4.7e-05 4.4e-06
+> 3.5e-05 1.6e-05
+> 1.6e-06 7.2e-07
+> 8.1e-07 1.1e-05
+
+Bounded 
+
+final test MSE       
+
+> +0.05 -2.24
+> -5.64 +0.99
+> -3.08 +1.00
+> -3.81 -10.56
+> +0.98 +0.85
+> +0.92 +0.20
+> Jaynes-Cummings
+> Self-Modulating QFWP
+
+Relative improvement 
+
+(unbounded bounded) 
+
+14 
+
+12 
+
+10 
+
+8
+
+6
+
+4                  
+
+> Hidden size
+> 6.9e-06 8.0e-05
+> 1.9e-05 0.079
+> (ep 1)
+> 4.4e-06 5.2e-06
+> 2.7e-05 1.0e-05
+> 2.8e-06 4.6e-05
+> 2.0e-05 1.3e-04
+> 7.4e-07 1.1e-05
+> 4.7e-06 3.3e-06
+> 3.1e-05 5.6e-06
+> 1.4e-05 1.2e-05
+> 1.4e-06 1.4e-06
+> 8.5e-06 6.7e-05
+> +0.89 +0.87
+> +0.75 +1.00
+> -5.99 -0.08
+> +0.46 -0.15
+> +0.49 +0.97
+> +0.57 +0.48
+> Jaynes-Cummings
+> Only Old Modulated
+
+14 
+
+12 
+
+10 
+
+8
+
+6
+
+4                  
+
+> Hidden size
+> 1.1e-05
+> (ep 50) 3.4e-05
+> 1.3e-05 7.4e-03
+> (ep 23)
+> 1.1e-05 3.5e-06
+> 1.1e-06 3.8e-05
+> 1.8e-06 1.6e-05
+> 9.4e-05 3.3e-06
+> 2.2e-04 1.2e-04
+> 1.6e-05 7.0e-06
+> 1.1e-05 2.2e-05
+> 4.2e-06 1.1e-05
+> 2.9e-06 9.4e-06
+> 1.2e-05 3.3e-06
+> -19.99 -2.48
+> -0.21 +1.00
+> -0.05 -5.24
+> -2.71 +0.72
+> -0.63 +0.42
+> +0.88 -0.02
+> Transmon-resonator
+> Self-Modulating QFWP
+
+32 64 
+
+Sequence length 
+
+14 
+
+12 
+
+10 
+
+8
+
+6
+
+4      
+
+> Hidden size
+> 4.5e-06 1.4e-04
+> (ep 76)
+> 8.0e-05 1.2e-05
+> 4.0e-05 1.4e-05
+> (ep 71)
+> 2.5e-06 8.6e-06
+> 1.6e-03 4.9e-06
+> 4.4e-06 2.3e-05
+
+32 64 
+
+Sequence length       
+
+> 1.6e-05 3.8e-05
+> 6.7e-06 5.2e-06
+> 1.4e-05 9.9e-05
+> 5.4e-06 7.3e-06
+> 1.8e-06 3.4e-06
+> 3.0e-06 2.4e-06
+
+32 64 
+
+Sequence length       
+
+> -2.53 +0.72
+> +0.92 +0.57
+> +0.64 -6.11
+> -1.14 +0.15
+> +1.00 +0.31
+> +0.31 +0.90
+> Transmon-resonator
+> Only Old Modulated
+
+10 6 10 5 10 4 10 3 10 2
+
+Final test MSE (log scale) 
+
+1.0 0.5 0.0 0.5 1.0 
+
+Relative improvement (bounded vs unbounded) 
+
+Fig. 7. Bounded versus unbounded multiplicative variants on the long-sequence sub-grid. The left column shows the unbounded test MSE, and the middle column shows the matched tanh -bounded final test MSE. Annotations of the form (ep ; k) mark unbounded cells that diverged at epoch k; for these cells, the displayed value is the effective test MSE from the last finite epoch before divergence. 
+
+The per-cell comparison should be interpreted as a stability diagnostic rather than as a claim that the bounded run is lower in every cell. The largest positive gains occur in failed high-error unbounded cells such as for the Jaynes–Cummings dataset, full Self-Modulating QFWP at (H, N ) = (12 , 64) and (10 , 64) , Only-Old at (12 , 64) , and for the transmon-resonator dataset, full Self-Modulating QFWP at (12 , 64) , and Only-Old at (14 , 64) . However, in the full Self-Modulating QFWP at (14 , 32) and Only-Old at (10 , 64) for the transmon-resonator dataset, the bounded run completes with low absolute MSE but is higher than the last finite pre-divergence unbounded value. Thus, the main conclusion is that bounding 
+
+M old 
+
+t removes the long-sequence failure mode and improves aggregate robustness, while preserving the input-dependent temporal filtering mechanism in eq. (13). Stable Self-Modulating QFWPs with Bounded Memory Gates 13                                                                                             
+
+> Table 1. Long-sequence bounded-vs-unbounded summary over N∈32 ,64 . Means and medians are computed over 12 cells per dataset and variant. Bounded columns apply only to the multiplicative variants; divergent unbounded cells use the last finite test MSE before termination, with the source epoch annotated in fig. 7. Unbounded Bounded Dataset Variant Mean Median Mean Median Jaynes–Cummings Standard QFWP 7.35 ×10 −21.46 ×10 −3——Self-Modulating 3.91 ×10 −41.24 ×10 −51.94 ×10 −51.35 ×10 −5
+> Only-Old 6.63 ×10 −31.93 ×10 −51.34 ×10 −57.02 ×10 −6
+> Only-New 6.22 ×10 −32.08 ×10 −3——Transmon-resonator Standard QFWP 5.37 ×10 −32.18 ×10 −3——Self-Modulating 6.37 ×10 −41.17 ×10 −53.66 ×10 −51.08 ×10 −5
+> Only-Old 1.58 ×10 −41.31 ×10 −51.69 ×10 −56.07 ×10 −6
+> Only-New 1.81 ×10 −37.37 ×10 −4——
+
+7.2 Telecommunication Activity Prediction 
+
+In this part of the experiment, we evaluate the Self-Modulating QFWP on Milan Telecommunication Activity Dataset. Each cell represents the aggregated results from 100 time-series training, there 100 individually trained models. The paired comparison shown in fig. 8 reveals that the benefit of self-modulation is strongly sequence-length dependent. For short input windows, full Self-Modulating QFWP does not consistently outperform the baselines; however, as the sequence length increases, especially at sequence length 64, full Self-Modulating QFWP achieves consistently lower Test MSE than both Standard QFWP and the Only-New abla-tion, with paired win rates mostly above 0.7. This suggests that self-modulation becomes most useful when the forecasting task requires longer temporal context. Notably, the full model performs similarly to the Only-Old ablation, while the Only-New ablation is clearly weaker in the long-sequence regime. This ablation result is consistent with our previous observations: the main advantage of self-modulation comes from modulating the memory-bearing existing QFWP parameters, rather than merely adding a new modulated parameter branch. These numerical results therefore support the view that retaining and modulating internal memory is critical for exploiting long-range temporal structure in the Milan SMS forecasting task. Finally, we note that the Milan SMS experiment uses the original unbounded Self-Modulating QFWP and its ablations, rather than the bounded-old modifica-tion. This choice reflects the role of this benchmark in our study. The SMS task contains a much larger number of independently trained time series, and all tested configurations completed training without requiring the bounded old-state gate. Therefore, we use this benchmark primarily to test whether the self-modulating memory mechanism observed in the quantum-dynamics experiments also transfers to noisy real-world urban time series. The results support this interpretation: the gains of full Self-Modulating QFWP become most consistent at longer input win-14 K.-C. Peng et al.  
+
+> Fig. 8. Each cell reports results for a fixed sequence length and hidden size. The top row shows the median paired difference in Test MSE, computed as full SM-QFWP minus the comparison method, where negative values indicate better performance of full SM-QFWP. The bottom row shows the paired win rate of full SM-QFWP across square IDs. Full SM-QFWP exhibits clear gains over Standard QFWP and the new-parameter-only ablation primarily at longer sequence lengths, especially for sequence length 64, while its performance is close to the old-parameter-only ablation.
+
+dows, and its behavior remains close to the Only-Old ablation, whereas Only-New is weaker in the long-sequence regime. Thus, the SMS results provide practical evidence that modulating the accumulated fast-weight state is useful beyond simulated quantum dynamics. At the same time, because bounded variants were not exhaustively evaluated on this larger telecommunication grid, we do not claim that the bounded gate is unnecessary for all real-world forecasting settings. Rather, the bounded operation should be viewed as a stability mechanism for regimes where unbounded old-state multiplication exhibits divergence, while the SMS benchmark demonstrates that the original self-modulating mechanism can already be effective and stable under the present telecommunication forecasting protocol. 
+
+8 Conclusion 
+
+We studied Self-Modulating Quantum Fast Weight Programmers as adaptive fast-weight memory controllers. Experiments on two CUDA-Q quantum-dynamics forecasting benchmarks show that the main benefit of self-modulation comes from input-dependent control of the accumulated fast-weight state, with Only-Old and full Self-Modulating QFWP providing the most consistent long-sequence improvements over Standard QFWP. At the same time, the unbounded old-state multiplier can diverge in difficult long-sequence regimes. The proposed sign-preserving tanh -bounded old-state gate removes this failure mode by bound-ing only the recurrent memory branch while leaving the new-update branch unchanged. The Milan SMS telecommunication results further show that the orig-inal Self-Modulating QFWP transfers to noisy real-world time series and is most useful at longer input windows, where its behavior remains close to the Only-Old ablation. Together, these findings identify accumulated-memory modulation as Stable Self-Modulating QFWPs with Bounded Memory Gates 15 
+
+the key mechanism of Self-Modulating QFWP and bounded old-state gating as a simple stabilization strategy when unbounded recurrence becomes unstable. 
+
+Acknowledgments. The views expressed in this article are those of the authors and do not represent the views of Wells Fargo. This article is for informational purposes only. Nothing contained in this article should be construed as investment advice. Wells Fargo makes no express or implied warranties and expressly disclaims all legal, tax, and accounting implications related to this article. 
+
+References 
+
+1. Anschuetz, E.R., Hu, H.Y., Huang, J.L., Gao, X.: Interpretable quantum advantage in neural sequence learning. PRX Quantum 4(2), 020338 (2023) 2. Barlacchi, G., et al.: A multi-source dataset of urban life in the city of milan and the province of trentino. Scientific data 2(1), 1–15 (2015) 3. Bausch, J.: Recurrent quantum neural networks. Advances in neural information processing systems 33 , 1368–1379 (2020) 4. Cao, Y., Zhou, X., Fei, X., Zhao, H., Liu, W., Zhao, J.: Linear-layer-enhanced quantum long short-term memory for carbon price forecasting. Quantum Machine Intelligence 5(2), 26 (2023) 5. Ceschini, A., Rosato, A., Panella, M., Chen, S.Y.C.: Quantum fast weight pro-gramming for time series prediction. In: ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). pp. 22032–22036. IEEE (2026) 6. Chen, C.S., Chen, S.Y.C., Tsai, Y.C.: Benchmarking quantum and classi-cal sequential models for urban telecommunication forecasting. arXiv preprint arXiv:2508.04488 (2025) 7. Chen, K.C., Chen, S.Y.C., Liu, C.Y., Leung, K.K.: Toward large-scale distributed quantum long short-term memory with modular quantum computers. In: 2025 International Wireless Communications and Mobile Computing (IWCMC). pp. 337–342. IEEE (2025) 8. Chen, S.Y.C.: Learning to program variational quantum circuits with fast weights. In: 2024 International Joint Conference on Neural Networks (IJCNN). pp. 1–9. IEEE (2024) 9. Chen, S.Y.C., Yoo, S., Fang, Y.L.L.: Quantum long short-term memory. In: Icassp 2022-2022 IEEE international conference on acoustics, speech and signal processing (ICASSP). pp. 8622–8626. IEEE (2022) 10. Chen, S.Y.C., et al.: Recursive qlstm with dynamic variational quantum circuit adaptation (2026), https://arxiv.org/abs/2606.24932 
+
+11. Chen, S.Y.C., et al.: Self-modulating quantum fast-weight programmers for efficient adaptive sequential learning (2026), https://arxiv.org/abs/2606.24933 
+
+12. Hsu, Y.C., Chen, N.Y., Li, T.Y., Lee, P.H.H., Chen, K.C.: Quantum kernel-based long short-term memory for climate time-series forecasting. In: 2025 International Conference on Quantum Communications, Networking, and Computing (QCNC). pp. 421–426. IEEE (2025) 13. Hsu, Y.C., et al.: Federated quantum kernel-based long short-term memory for human activity recognition. In: 2025 IEEE International Conference on Quantum Computing and Engineering (QCE). vol. 02, pp. 54–58 (2025). https://doi.org/ 10.1109/QCE65121.2025.10293 16 K.-C. Peng et al. 14. Hsu, Y.C., et al.: QKAN-LSTM: Quantum-inspired Kolmogorov–Arnold long short-term memory. In: 2026 International Conference on Quantum Communications, Networking, and Computing (QCNC). pp. 650–659. IEEE (2026) 15. Irie, K., Schlag, I., Csordás, R., Schmidhuber, J.: Going beyond linear transformers with recurrent fast weight programmers. Advances in neural information processing systems 34 , 7703–7717 (2021) 16. Jiang, J.C., Huang, M.Y.C., Chen, T., Goan, H.S.: Quantum variational activation functions empower Kolmogorov-Arnold networks. arXiv preprint arXiv:2509.14026 (2025). https://doi.org/10.48550/arXiv.2509.14026 , https://arxiv.org/abs/ 2509.14026 
+
+17. Khan, S.Z., et al.: Quantum long short-term memory (qlstm) vs. classical lstm in time series forecasting: a comparative study in solar power forecasting. Frontiers in Physics 12 , 1439180 (2024) 18. Kim, J.S., et al.: Cuda quantum: The platform for integrated quantum-classical computing. In: 2023 60th ACM/IEEE Design Automation Conference (DAC). pp. 1–4. IEEE (2023) 19. Kingma, D.P., Ba, J.: Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 (2014) 20. Li, F., Dong, Y.: Air quality prediction based on improved quantum long short-term memory neural networks. Physica Scripta 99 (8), 085035 (2024) 21. Lin, C.H.A., Liu, C.Y., Chen, K.C.: Quantum-train long short-term memory: Application on flood prediction problem. In: 2024 IEEE International Conference on Quantum Computing and Engineering (QCE). vol. 2, pp. 268–273. IEEE (2024) 22. Lin, Y.C., et al.: Generative quantum-inspired Kolmogorov-Arnold eigensolver (2026), https://arxiv.org/abs/2605.04604 
+
+23. Liu, C.Y., Chen, S.Y.C., Chen, K.C., Huang, W.J., Chang, Y.J.: Programming variational quantum circuits with quantum-train agent. In: 2025 International Conference on Quantum Communications, Networking, and Computing (QCNC). pp. 544–548. IEEE (2025) 24. Peng, K.C., et al.: Gated qkan-fwp: Scalable quantum-inspired sequence learning. arXiv preprint arXiv:2605.06734 (2026) 25. Peng, K.C., et al.: Parameter-efficient quantum-inspired fast weight programmers for traffic-matrix forecasting (2026) 26. Schlag, I., Irie, K., Schmidhuber, J.: Linear transformers are secretly fast weight programmers. In: International conference on machine learning. pp. 9355–9366. PMLR (2021) 27. Schmidhuber, J.: Learning to control fast-weight memories: An alternative to dynamic recurrent networks. Neural Computation 4(1), 131–139 (1992) 28. Su, L., Li, D., Qiu, D.: Bls-qlstm: a novel hybrid quantum neural network for stock index forecasting. Humanities and Social Sciences Communications 12 (1), 1–15 (2025) 29. Tran, B.N.D., et al.: Quantum lstm model for estimation of energy expenditure in human aging using wearable iot healthcare technology. IEEE Internet of Things Journal (2025) 30. Tsurkan, O., et al.: Hybrid quantum recurrent neural network for remaining useful life prediction. arXiv preprint arXiv:2504.20823 (2025) 31. Zhang, L., Xu, Y., Wu, M., Wang, L., Xu, H.: Quantum long short-term memory for drug discovery. EPJ Quantum Technology 13 (1), 14 (2026)

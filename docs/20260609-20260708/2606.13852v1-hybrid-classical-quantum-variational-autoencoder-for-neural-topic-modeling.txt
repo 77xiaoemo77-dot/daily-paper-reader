@@ -1,0 +1,623 @@
+Title: Hybrid Classical-Quantum Variational Autoencoder for Neural Topic Modeling
+
+URL Source: https://arxiv.org/pdf/2606.13852v1
+
+Published Time: Mon, 15 Jun 2026 00:14:50 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Hybrid Classical-Quantum Variational Autoencoder for Neural Topic Modeling 
+
+Ivan Kankeu 
+
+Corresponding author(s). E-mail(s): ikankeu.public@gmail.com; 
+
+Abstract 
+
+Neural topic models enable scalable semantic discovery, but their integration with quantum hardware remains largely unexplored. We present a proof-of-concept hybrid classical-quantum variational autoencoder (VAE) for topic modeling, embedding parameterized quantum circuits within the VAE inference network while retaining a classical topic-word decoder. To address the resource constraints of quantum hardware, we propose a modified Gaussian Softmax posterior that decouples latent space dimensionality from the number of topics to be extracted, enabling the model to operate with a low-resource 10-qubit quantum device. On the AgNews dataset, the hybrid VAE outperforms state-of-the-art neural topic models (NTMs), reaching a Cv coherence score of 0.71 and an NPMI score of 0.20 while preserving high topic diversity. For comparison, we also construct a fully classical variant, which also outperforms state-of-the-art models on AgNews and exhibits clear class separation in the latent space. These results demonstrate that hybrid VAEs are computationally viable even on NISQ-era devices and represent a promising direction for quantum-enhanced topic modeling. 
+
+Keywords: Topic modeling, NLP, Variational autoencoder (VAE), Quantum machine learning (QML), Parameterized quantum circuit (PQC) 
+
+1
+
+> arXiv:2606.13852v1 [cs.CL] 11 Jun 2026
+
+## 1 Introduction 
+
+Topic modeling is a machine learning technique used to unveil latent topics within a set of documents, generally in an unsupervised fashion. Topics are represented by sets of semantically related words that collectively describe coherent and distinct semantic concepts. For instance, the topic “politics” may be described by words such as “law,” “policy,” and “government”. Owing to its interpretability, topic modeling has seen widespread use in applications such as text analysis, document retrieval, and content recommendation. Orthodox approaches to topic modeling include Bayesian proba-bilistic models, such as Latent Dirichlet Allocation (LDA), and matrix factorization methods. LDA (Blei et al, 2001), one of the most popular techniques, uses Bayesian inference to discover latent topics by treating documents as distributions over topics. Matrix factorization, on the other hand, decomposes a word-document matrix into two lower-rank matrices: one describing word-topic relationships and the other describing topic-document relationships. Conventional methods, however, face major challenges, including poor scalability to large datasets and an inability to capture non-linear relationships between topics and words. To overcome these limitations, Neural Topic Models (NTMs) have emerged as alternatives that can be trained efficiently and flexibly on large datasets using GPUs. In this paper, we propose and analyze the performance of a hybrid version of a popular NTM, namely the Variational Autoencoder (VAE). Motivated by recent advances in quantum machine learning, this work explores how parameterized quantum circuits can be integrated into a VAE-based topic model while preserving competitive performance. Specifically, we embed quantum compo-nents inside the VAE inference network and compare the resulting hybrid models with fully classical counterparts on standard topic modeling benchmarks. Through this study, we provide a proof of concept for hybrid classical-quantum neural topic mod-eling and assess how the quantum component affects topic coherence, diversity, and latent space organization. 
+
+## 2 Related Work 
+
+In contrast to a standard autoencoder, which offers a deterministic point estimate for the latent representation, a VAE produces latent variables that describe distributions over the latent space. While the latent space in a traditional autoencoder is typi-cally sparse and disjointed, the VAE latent space is smooth and continuous, enabling meaningful and consistent sampled data points (topics). Therefore, a VAE is better equipped to extract and structure topics from a document collection. A VAE-based NTM comprises an inference network (encoder) and a generative network ( sof tmax decoder). The encoder infers latent variables from a bag-of-words (BoW) document representation x, parameterizing distributions from which the topic distribution vector z is sampled. The assumption is that the document collection fol-lows a prior distribution p(z), which can be approximated to determine the topic distributions among documents. Thus, the encoder ϕ computes qϕ(z|x), a variational approximation to p(z|x) = p(z,x ) 
+
+> p(x)
+
+, which is intractable because of the integral in 2p(x) = R p(x|z)p(z)dz . The approximation is obtained by minimizing the Kullback-Leibler (KL) divergence KL [qϕ(z|x)|| p(z|x)] = log p(x) − ELBO , where ELBO is the Evidence Lower Bound. Since log p(x) is constant with respect to z, this is equivalent to minimizing −ELBO = KL [qϕ(z|x)|| p(z)] − Eqϕ(z|x)(log p(x|z)). p(x|z), the condi-tional distribution, is provided by the decoder θ, which reconstructs x, the original document representation. Hence, the loss function is expressed as: 
+
+Lϕ,θ = −ELBO = KL [qϕ(z|x)|| p(z)] − Eqϕ(z|x)(log pθ (x|z)) , (1) where the second term is the reconstruction loss, and the first term, the KL diver-gence, regularizes the variational distribution to be close to the prior distribution. The decoder is typically a bias-free fully connected layer W with pθ (x|z) = sof tmax (W z ). Ordinarily, the prior distribution is assumed to be Gaussian, so the encoder infers the mean and the logarithm of the standard deviation of the distribution ( μ, log σ). Instead of z ∼ N (μ, σ ), the reparameterization trick is applied as z = μ + σϵ with 
+
+ϵ ∈ N (0, I) to alleviate instability during training (Figurnov et al, 2019). However, in topic modeling, the Gaussian prior is not always well-suited, as it tends to push the topic means in latent space toward the center, thereby entangling topics. Therefore, alternative approaches have been proposed to approximate the prior p(z). Miao et al (2018) introduced the Gaussian Softmax (GSM) technique, which applies a linear transformation to z followed by a softmax activation function: 
+
+g(z) = sof tmax (W z + b). A key advantage of GSM is that the latent space dimen-sion can be smaller than the topic count – a feature we harness later. Srivastava and Sutton (2017) propose approximating the Dirichlet multinomial distribution using a Laplace approximation. The Dirichlet distribution is particularly useful because it is defined over a ( K − 1)-dimensional simplex, allowing control over the distribution of topic proportions. Dieng et al (2019) suggest leveraging semantically rich word embed-dings to enhance topic models by factorizing the topic-word matrix into a product of topic embedding and word embedding matrices. Building upon previous work, Xu et al (2023) proposed vONTSS, an NTM based on optimal transport (also used in 2025) that outperforms existing NTMs in an unsupervised setting on the AgNews and 20News benchmark datasets. The vONTSS encoder ϕ maps a bag-of-words (BoW) document representation into ( μ, k ) parameters of the von Mises-Fisher (vMF) distri-bution, from which a latent vector η is sampled. The vMF distribution is employed to mitigate the topic entanglement often ascribed to the Gaussian prior by restrict-ing expressibility. Additionally, the vector η is passed through a temperature function before the sof tmax application to tune the resulting topic distribution vector z. From 
+
+z, the decoder reconstructs the original BoW representation using a trainable topic embedding matrix and a frozen word embedding matrix. Beyond classical autoencoders, quantum and hybrid autoencoders have gained significant attention in the quantum machine learning literature, offering potential advantages over their classical counterparts. Some of these approaches have already been experimentally implemented on real quantum devices, demonstrating their fea-sibility on near-term quantum hardware. In a pioneering study, Romero et al (2017) introduced a quantum autoencoder designed to compress quantum states beyond clas-sical capabilities. Unlike classical autoencoders, where both input and output remain 3classical, their approach directly maps a quantum input to a quantum output, perform-ing compression intrinsically within the quantum circuit. Another notable quantum generative model was introduced by Khoshaman et al (2018), who developed the first quantum VAE based on annealing-based generative models. This work later found applications in generative chemistry (Gircha et al, 2023), demonstrating the potential of quantum-enhanced VAEs for modeling complex probability distributions. More recently, hybrid quantum-classical autoencoders have emerged as promising architectures. These architectures integrate parameterized quantum circuits (PQCs) into classical autoencoder structures to improve various tasks, such as unsupervised dimensionality reduction and anomaly detection (Rivas et al, 2021; Sakhnenko et al, 2022). A common approach involves using a classical encoder to generate a latent representation, which is then processed by a PQC before being measured, yielding expectation values that serve as inputs to a classical decoder. Alternatively, some approaches replace the classical encoder or decoder entirely with a PQC, allowing for direct extraction of information from quantum states or learning the probability dis-tribution of quantum measurements (Rao et al, 2023; Srikumar et al, 2021). Notably, these methods have been shown to efficiently learn hard quantum states (e.g., Haar random states) with only a linear number of parameters, unlike classical models, which scale exponentially. Several recent works adopt a NISQ-oriented strategy in which a classical model first compresses the input and the quantum component operates only on the resulting low-dimensional latent space. Slabbert and Petruccione (2024) trained a ResNet10-inspired convolutional autoencoder for image reconstruction, isolated its 64-dimensional latent representation, amplitude-encoded it into six qubits, and used QSVM/QOCSVM blocks for classification and anomaly detection. Their results show that the down-stream quantum block can work well when the reconstruction latent space preserves discriminative information, but that performance degrades on more abstract or imbal-anced image data. In a related MNIST study, Sarkar (2024) compressed images into 64 autoencoder features, further reduced them to five principal components, mapped them to a 5-qubit circuit, and classified the resulting 32-dimensional measurement distribution; the hybrid model remained functional but fell behind the classical latent space baseline, illustrating the cost of aggressive compression before quantum encod-ing. Outside image data, Verdone et al (2025) combined classical autoencoders with quantum neural networks for heart disease classification and reported competitive accuracy under limited-data and noisy-simulation settings. These studies suggest that classical encoders are currently a practical bridge to quantum processing, while also making the information bottleneck a central design constraint. To the best of our knowledge, our work is the first to apply a hybrid classical-quantum VAE with PQCs for topic modeling. Unlike the above pipelines, our PQCs are embedded inside the VAE inference network to parameterize the posterior distri-bution used to infer document-topic mixtures, while the decoder remains a topic-word reconstruction module tailored to NTM evaluation. 43 Proposed Methods 
+
+Up to this point, we have provided a first glimpse of hybrid neural networks and neural topic modeling. As mentioned above, in topic modeling we have to deal with large datasets, which compels us to devise sophisticated techniques that aptly balance scalability and performance. In the following sections, we propose a novel technique based on VAEs and hybrid computing as a proof of concept for tackling topic modeling using quantum devices. Alongside the hybrid VAE, we also present a fully classical counterpart that is used to comparatively assess the performance of the proposed technique. QN      
+
+> CN
+> h
+> QN
+> m(μ)
+> τ
+> Z
+> η
+> xx'
+> CN CN CN CN
+> L|v| →#h
+> (h )
+> Q#h →#q
+> (μ)
+> Q#h →#q
+> (logσ 2)
+> m(logσ 2)
+> ⊙
+> α(logσ 2)
+> ⊙
+> α(μ)
+
+∼    
+
+> L#q→#topic
+> xx
+> Encoder Decoder
+> L#topic→#emb L#emb→|v|
+> CN
+> CN
+> GSM t
+> Lrecon
+> dropout
+> batch
+> normalization
+> batch
+> normalization
+> tanh
+> softmax softmax
+> LKL
+> LTD
+
+Fig. 1: Architecture of the hybrid VAE. The red components are the trainable nodes, where CN and QN stand for classical node and quantum node, respectively. 
+
+3.1 Hybrid VAE 
+
+Figure 1 illustrates the model architecture at a high level. This model is designed to comply with VQA constraints. At an overarching level, the encoder network transforms a BoW document representation into the mean and logarithm of the variance of a Gaussian Softmax distribution, from which a topic distribution vector is sampled and decoded using a topic-word matrix to reconstruct the BoW representation. The encoder network ϕ comprises a classical component and a quantum component. Starting with a BoW document representation x ∈ R |V |, the model down-projects it to a #h-dimensional vector h using a fully connected layer L(h) 
+
+> |V|→ #h
+
+, where V is the vocabulary of terms appearing in the document collection. The hidden representa-tion h is then amplitude-encoded into VQCs (with padding), Q(μ)#h→#q and Q(log σ2)#h→#q ,following Equation 2 for x ∈ R N :
+
+x 7 → 1
+
+|| x|| 22n−1X
+
+> i=0
+
+xi |i⟩ . (2) The VQCs Q(μ)#h→#q and Q(log σ2)#h→#q compute the mean μ and the logarithm of the vari-ance log σ2, respectively. They consist of sequences of strongly entangling layers, each parameterized with rotation gates (see Figure A1). Ultimately, we measure either the state probabilities of a subset of qubits or the Pauli Z expectation values for each 5qubit, producing #q-dimensional classical vectors m(μ) and m(log σ2). We restrict our-selves to these two types of measurements because both are amenable to differentiation methods, such as the parameter-shift rule and finite differences, using “PennyLane” (Xanadu, 2024). Due to the high entanglement in the VQCs, the measurements need to be individually scaled by learnable #q-dimensional vectors α(μ) and α(log σ2) to increase the variance within the measurements – an important step for alleviating topic entanglement and enhancing diversity. Consequently, we obtain μ = m(μ) ⊙ α(μ)
+
+and σ =
+
+p
+
+e(m(log σ2)⊙α(log σ2)) as the mean and standard deviation of the Gaussian distribution over the latent space. Unlike typical approaches in the literature (Ding et al, 2018; Miao et al, 2018), which output log σ, our method outputs log σ2, which slightly enhances performance. We apply a dropout layer to the input x to prevent memorization, as well as two batch normalization layers to the scaled measurements to stabilize the training process. The Gaussian Softmax distribution ( GSM t), parameterized by the encoder out-puts, is modified and endowed with a learnable temperature parameter τ , so that the topic distribution vector z is sampled as follows: z ∼ GGSM t (μ, σ 2). The sampling process utilizes the reparameterization trick: 
+
+η = μ ⊕ ϵ ⊙ σ, z = sof tmax (τ L#q→#topic (η)) ,
+
+with ϵ ∼ N (μ, σ 2),
+
+(3) where L#q→#topic is a fully connected layer without bias used to project into the topic vector space, whose dimension # topic is the number of topics to be extracted. The 
+
+GSM t is aptly chosen to decouple the topic count from the encoder output dimension, which eases the integration of the quantum components. The temperature, on the other hand, is introduced to foster topic disentanglement. For the decoder network, we follow the proposal of Dieng et al (2019) and utilize topic embedding L#topic →#emb and word embedding L#emb →| V | matrices to construct the topic-word matrix. Thus, x′ is reconstructed as follows: 
+
+x′ = sof tmax (L#emb →| V |(L#topic →#emb (z))) , (4) where L#topic →#emb and L#emb →| V | are both fully connected layers without bias. In our experiments, we initialize the word embedding layer with pre-trained 300-dimensional GloVe embeddings (# emb = 300) (Pennington et al, 2014) to improve training. A topic diversity regularization term LT D is introduced to foster diversity, follow-ing the recommendations of Miao et al (2018). However, instead of using the arccos 
+
+function to capture angular distances as they did, we utilize cosine similarity. The purpose of this regularization is to encourage the model to learn orthogonal topic embedding vectors, thereby reducing topic entanglement. Hence, the regularization is calculated as the sum of the mean and variance of the absolute values of the topic 6embedding distances: 
+
+LT D = ζ + variance (ζ),
+
+with ζ = 1#topic 2#topic X
+
+> i=1 #topic
+
+X
+
+> j=1
+
+|cos sim (ti, t j )|, (5) where ti, t j ∈ L #topic →#emb are topic embeddings of length # emb . To minimize the loss, the model must reduce both ζ and variance( ζ) towards 0 to promote orthogonality. The final loss function L combines the reconstruction loss Lrecon , the topic diversity regularization LT D , and the Kullback-Leibler divergence LKL between the posterior distribution and the standard Gaussian distribution. Ergo, we have 
+
+L = Lrecon + LKL + LT D ,
+
+with Lrecon = 
+
+> |V|
+
+X
+
+> i=1
+
+xi log x′
+
+> i
+
+, LKL = 12
+
+> #q
+
+X
+
+> i=1
+
+(−1 − 2 log σi + σ2 
+
+> i
+
++ μ2 
+
+> i
+
+), (6) where μi and σi are the i-th elements of the vectors μ and σ, respectively. 
+
+3.1.1 Quantum components 
+
+Although the functional form of the encoder has been defined, the specific quantum components have not yet been specified. As illustrated in Figure 1, the encoder ϕ
+
+consists of two PQCs following a fully connected down-projection layer. The hidden representation h is amplitude-encoded into a quantum state as 
+
+|ψh⟩ = S(h) |0⟩⊗#q = 1
+
+∥h∥ 
+
+> 2#q−1
+
+X
+
+> i=0
+
+hi |i⟩ , (7) where S(h) represents an arbitrary state preparation routine parameterized by angles derived from h. The PQCs then process the quantum state |ψh⟩, applying the unitary transformations U (θ(μ)) and U (θ(log σ2)), corresponding to the mean and logarithm of the variance, respectively. To extract classical information, the expectation value of the Pauli-Z operator on each qubit is measured. These expectation values, combined with trainable α-vectors, are used to compute the parameters of the distribution. Specifically, the classical vectors obtained from the quantum circuits are given by 
+
+m(μ) 
+
+> i
+
+= ⟨ψh| ZiU (θ(μ)) |ψh⟩ , m(log σ2) 
+
+> i
+
+= ⟨ψh| ZiU (θ(log σ2)) |ψh⟩ , (8) where Zi denotes the Pauli-Z operator acting on the i-th qubit. Thus, the complete dressed quantum circuit for the encoder can be expressed as 
+
+ϕ = L(h)  
+
+> |V|→ #h
+
+◦ Q (∗)#h→#q ◦ α(∗), (9) 7which maps the BoW representation to the mean and logarithm of the variance of the distribution. 
+
+3.2 Classical VAE 
+
+To construct the classical counterpart, we replace both VQCs with fully connected layers followed by tanh activation functions. Additionally, we remove the temperature parameter as well as the parameter vectors m(μ) and m(log σ2).
+
+## 4 Experiments 
+
+Given the significant impact of dataset pre-processing on evaluation results (2023; 2016; 2021), we strictly adhere to the pre-processing steps outlined in the paper that reports state-of-the-art (SOTA) performance (Xu et al, 2023). To this end, we reuse their publicly accessible pre-processing algorithm (2023) without modifications. This allows us to compare their evaluation results effectively with our own. We test both hybrid and classical models in two variants: a small latent space (SLS) with # q = 10 and a large latent space (LLS) with # q = 32. For the classical model, we simply adjust the size of the fully connected layers accordingly. For the hybrid model, we use 10 qubits and adjust the measurement method, using the Pauli Z expectation values with respect to every qubit for # q = 10 and the state probabilities of the last 5 qubits for # q = 32. Thus, we have two hybrid models and two classical models. Herein, we detail the datasets, evaluation metrics, and experimental settings used in our study. 
+
+Task: 
+
+The objective is to extract 20 topics from each of the benchmark datasets by training the models in an unsupervised manner. The decoder network of the model provides the solution by encoding the probability distribution over words for every topic. Thus, both the hybrid and classical model architectures are adjusted to feature decoders that resemble 20 × | V | matrices. 
+
+Datasets: 
+
+For training and evaluation, we utilize the following popular benchmark datasets: - 20News (Lang, 1995): This dataset consists of approximately 18,000 newsgroup posts across 20 topics, including religion, politics, and sports. It can be accessed using the “octis” library. During pre-processing, each document was tokenized and cleaned, with stop words and words occurring in more than 15% of all documents or fewer than 20 times removed (2023). - AgNews (Zhang et al, 2016): The AG’s News dataset comprises four classes, each containing 30,000 news articles sourced from the web and covering topics such as sports and business. It can be retrieved using the “Hugging Face” datasets library. Its pre-processing is the same as that of the 20News dataset. 8Table 1: Statistics of the topic modeling benchmark datasets used 
+
+Datasets #Documents #Terms 
+
+20News 16,309 1,369 AgNews 120,000 14,696 
+
+Evaluation Metrics: 
+
+To assess the quality of the learned topic-word matrix, we employ standard metrics widely used in topic modeling: - NPMI (Normalized Pointwise Mutual Information) (2014) gauges the strength of the relationship between word pairs within topics based on their co-occurrence in a document collection. It is defined as N P M I (wi, w j ) = P M I (wi,w j )log P (wi,w j ) , where 
+
+P M I (wi, w j ) = log P (wi,w j )    
+
+> P(wi)P(wj)
+
+is the pointwise mutual information, P (wi) is the probability of word wi occurring, and P (wi, w j ) is the probability of both words co-occurring. - Cv Coherence (2015) evaluates topic coherence based on NPMI and word co-occurrence. It posits that words within the same topic should frequently co-occur in the document collection. - TD (Topic Diversity) (2019) measures the diversity of the discovered topics. It is defined as the ratio of unique words among the top-K words across all topics. - Quality (2019) is a derived metric introduced by Dieng et al to provide a single score reflecting topic quality. It is calculated as the product of coherence and topic diversity. In our experiments, we use Cv for coherence, as it offers a more robust evaluation than NPMI. Higher scores for these metrics are better, with 1 indicating the best possible score. In our implementation, we use the top 10 topic words to compute Cv and NPMI, while the top 25 topic words are used for TD, following the settings in the paper with SOTA performance (2023). We employ the Python library “octis” (2021) to calculate all the aforementioned metrics. 
+
+Training settings: 
+
+For our experiments, we set the learning rate to 2e-3 and the batch size to 200, employ the Adam optimizer, and train for 20 epochs. Each model is trained five times, with the seed values for the “torch(cuda)”, “numpy”, and “math” libraries incremented by 1, starting from 42 and ending at 46. This approach ensures consistent initialization conditions, including the same training set and initial parameters. We use a single GPU as hardware. The quantum device is simulated without noise using PennyLane’s “default.qubit” device, with gradients computed via backpropagation. Nevertheless, our hybrid model is fully compatible with differentiation methods such as parameter-shift and finite differences, allowing the quantum components to be executed on either simulated noisy quantum devices or actual quantum hardware. 9Testing settings: 
+
+After each epoch, we assess the performance of the trained model on the benchmark datasets 20News and AgNews using the metrics Cv , NPMI, and TD. The 20 topics are derived from the decoder network by applying a sof tmax function to the topic-word matrix and selecting the top-K words for each topic dimension. Additionally, we save the log data generated during training and evaluation in a ”.txt” file. The log file follows this format: 
+
+Start Training: [date time] Model: _, Pretrained Model: _ Dataset: [dataset name], Batch: [size], GPU: [ID] Epoch _, Train Loss: [training loss] Epoch _, CV: _, NPMI: _, TD: _ End Training: [date time] 
+
+Any information not specified in this format but included in the log files is considered irrelevant and can be disregarded. 
+
+## 5 Result Analysis & Discussion 
+
+So far, we have outlined the model architectures and experimental settings. In this section, we analyze and discuss the results from our experiments for the four different models: classical VAE (SLS), classical VAE (LLS), hybrid VAE (SLS), and hybrid VAE (LLS). Figures 2 and 3 report the quality scores aggregated over five independent runs, providing a basis for comparing the models’ performance. Figure 4 illustrates the latent spaces of the trained models. 0 5 10 15 20 
+
+> 0.3
+> 0.35
+> 0.4
+> 0.45
+> 0.5
+> 0.55
+> 0.6
+> 0.65
+> Classical VAE (SLS)
+> Classical VAE (LLS)
+> Hybrid VAE (SLS)
+> Hybrid VAE (LLS)
+> Epoch
+> Quality
+
+Fig. 2: Averages and standard deviations of model quality scores across 5 runs on AgNews during training. 0 5 10 15 20 
+
+> 0.3
+> 0.35
+> 0.4
+> 0.45
+> 0.5
+> 0.55
+> 0.6
+> Classical VAE (SLS)
+> Classical VAE (LLS)
+> Hybrid VAE (SLS)
+> Hybrid VAE (LLS)
+> Epoch
+> Quality
+
+Fig. 3: Averages and standard deviations of model quality scores across 5 runs on 20News during training. 
+
+We begin by examining the training dynamics of the models. Figures 2 and 3 show the evolution of aggregated quality scores over 20 epochs for AgNews and 20News. Two consistent trends emerge. First, the hybrid models exhibit similar performance regardless of the latent space configuration, with curves closely following each other. Second, while models trained on 20News gradually seem to converge toward an upper 10 plateau, those trained on AgNews reach peak performance rapidly before their scores begin to deteriorate. The first trend indicates that the choice of latent space configuration (SLS vs. LLS) has limited influence on the performance of the hybrid models. Since the two configurations differ only in their measurement strategy, the resulting representations passed from the quantum component to the classical component likely remain similar in informational content. This stands in contrast to the classical models, where the LLS configuration employs a larger fully connected layer with more parameters, producing output vectors that are not only higher-dimensional but also richer in information. The second trend can be attributed to the disparity in dataset sizes: AgNews con-tains nearly seven times more training samples than 20News. This abundance allows models trained on AgNews to reach their optimal performance quickly, after which overfitting causes a decline. In contrast, models trained on 20News start with lower scores and improve gradually, seeming to progress toward a plateau. A closer inspec-tion (Figures A2–A5) reveals that the decline in quality scores is primarily driven by decreasing Cv coherence scores, whereas topic diversity increases and remains rel-atively stable. This pattern suggests that, as training progresses, the models tend to generate less coherent topics, a typical symptom of overfitting. Notably, this issue appears less severe in hybrid models and is exacerbated by the latent space configuration in classical models. Table 2 compares our models with the previously reported SOTA results (2023). The reported SOTA scores are averaged over ten runs, whereas our results are averaged over five runs. 
+
+Table 2: Comparison of model performance. Our results are averaged over five runs. * indicates results reported from the paper presenting the SOTA performance (2023).                                            
+
+> Models AgNews 20News
+> Cv NPMI TD Cv NPMI TD
+> GSM* 0.41 ±0.01 0.03 ±0.01 0.58 ±0.02 0.55 ±0.04 0.07 ±0.03 0.66 ±0.05 vONT* (SOTA) 0.49 ±0.02 0.054 ±0.02 0.99 ±0.01 0.69 ±0.03 0.16 ±0.02 0.96 ±0.03 Our models Classical VAE (SLS) 0.7 ±0.02 0.19 ±0.02 0.93 ±0.02 0.72 ±0.02 0.15 ±0.01 0.84 ±0.01 Classical VAE (LLS) 0.65 ±0.02 0.15 ±0.01 0.92 ±0.03 0.69 ±0.03 0.14 ±0.02 0.82 ±0.02 Hybrid VAE (SLS) 0.71 ±0.02 0.2 ±0.01 0.95 ±0.0 0.71 ±0.02 0.15 ±0.01 0.83 ±0.02 Hybrid VAE (LLS) 0.65 ±0.04 0.16 ±0.03 0.96 ±0.01 0.73 ±0.03 0.16 ±0.01 0.82 ±0.01
+
+Performance on AgNews 
+
+All of our models substantially outperform the SOTA in topic coherence on AgNews. The best-performing model, Hybrid VAE (SLS), achieves a ( Cv ) score of (0.71) and an NPMI of (0.20), compared to (0.49) and (0.054) for the SOTA model. Topic diversity is slightly lower than the SOTA but remains high across all variants. The topic word clouds in Figure A6 show that all models consistently identify the dominant topic keywords. Differences appear mainly in the probability distributions assigned to these words rather than in the discovered topics themselves. Figure 4 reveals an interesting observation: latent space separability does not correlate strongly with topic-modeling performance. The figure shows 1,000 ran-domly sampled latent vectors from three AgNews classes. The classical VAE (LLS) 11 exhibits the clearest inter-class separation, outperforming the latent space organization reported for the vMF-based SOTA model. Yet this geometric clarity fails to translate into higher coherence or diversity scores. This disconnect suggests that current eval-uation metrics capture latent space disentanglement only superficially. In particular, the topology of the learned latent space appears to correlate only weakly with the final performance metrics. For the classical models, the higher-dimensional latent space appears to facilitate topic disentanglement and class separation. In contrast, the hybrid models do not benefit from increased latent dimensionality to the same extent. Despite operating in a high-dimensional latent space, the outputs of the quantum components remain relatively similar across samples, limiting separability. Nevertheless, the hybrid models still achieve reasonable class separation and main-tain competitive topic quality. Topic entanglement is partially mitigated by the learnable scaling vectors applied after the quantum circuit outputs. These scaling parameters increase output variance and improve class separation. −50 0 50 100                  
+
+> −50
+> 0
+> 50
+> −50 050 100 −50 050 100 −50 050 100
+> −50
+> 0
+> 50
+> −50
+> 0
+> 50
+> Class
+> Class 0
+> Class 1
+> Class 3
+> Class 2
+> xxxx
+> y y y
+> Model=Classical VAE (SLS) Model=Classical VAE (LLS) Model=Hybrid VAE (SLS) Model=Hybrid VAE (LLS)
+> ID=2 ID=1 ID=0
+
+Fig. 4: 2-D t-SNE projection of randomly sampled z from latent spaces under 4 different posterior distributions on AgNews. 
+
+Performance on 20News 
+
+On 20News, our models achieve coherence scores comparable to or slightly better than the SOTA. However, this improvement comes at the cost of reduced topic diversity. Inspection of the topic word clouds (Figure A8) indicates that some topics are not captured consistently. For example, the medical topic generated by the Hybrid VAE (SLS) includes unrelated terms such as “bike” and “motorcycle”, indicating residual topic mixing. The latent space visualizations in Figure A7 mirror the pattern observed on AgNews. The classical VAE (LLS) displays the most pronounced cluster separation, whereas the classical VAE (SLS) and the hybrid variants show noticeably weaker structure, with topics entangled near the center. 12 Discussion 
+
+The results support two main conclusions. First, hybrid VAEs are viable and trainable for neural topic modeling. We observe no severe optimization difficulties, significant performance degradation, or evidence of barren plateau effects (2018). Second, the Gaussian Softmax (GSM) posterior enables effective decoupling between the latent representation and the quantum circuit architecture. This flex-ibility allows hybrid models to achieve performance comparable to purely classical alternatives. However, the hybrid models still struggle to disentangle topics as effectively as the best classical variants. This limitation is partially alleviated through post-processing layers applied after the quantum circuit outputs. In further experiments (not reported here), post-processing fully connected layers did not produce better results than simple learnable scaling vectors m(μ) and m(log σ2), suggesting that the model can optimize a plain parameter vector more straightforwardly. The GSM baseline, which also employs the Gaussian Softmax distribution, under-performs considerably relative to our models, likely due to inappropriate activation functions ( sof tplus instead of tanh ), as well as the absence of batch normalization. Finally, although not included in the reported experiments, we evaluated architec-tures with between zero (no trainable layer) and five trainable post-processing layers. None of these configurations produced a significant improvement over the reported results. 
+
+## 6 Conclusion 
+
+In summary, we have successfully integrated a quantum component into the clas-sical framework of a variational autoencoder. This was achieved by designing a VQC-friendly variational autoencoder that uses amplitude encoding and an enhanced Gaussian Softmax distribution. We minimized the resource requirements for the quan-tum component to ensure NISQ compatibility. Consequently, a quantum hardware setup with at least 10 qubits and mild error mitigation can effectively run the quantum circuit instead of relying solely on a quantum simulator. The measurement outcomes, whether 10 or 32 elements, provide an advantage in execution time and enable pre-cise gradient calculation methods, such as the parameter-shift rule, which is essential for good approximations on NISQ hardware, even in the presence of noise. Therefore, aside from the extensive runtime required for training on large datasets, our hybrid VAE could be executed on quantum hardware without significant performance loss. Moreover, while developing our hybrid model, we arrived at an architecture that surpasses SOTA results on AgNews by 45% , in both classical and hybrid implemen-tations. This also shows that latent space dimensionality can be detached from the number of topics to be extracted, although this noticeably affects class separability. However, we emphasize that the primary aim of a hybrid model is not to surpass classi-cal models, which can always be improved, but rather to serve as a proof of concept for hybrid computation with variational autoencoders that ideally preserves performance. 13 Future work could involve training our hybrid VAE on a small dataset using actual quantum hardware and conducting an in-depth study of the effects of noise on model trainability. 
+
+## Data and Code Availability 
+
+The source code used in this manuscript is available at https://github.com/ikankeu-public/hcqvae. 
+
+## Declarations 
+
+Conflict of Interest 
+
+The authors declare no competing interests. 
+
+Generative AI 
+
+AI tools such as ChatGPT-4o and ChatGPT-5.5 have been used for grammar and spelling checks, rephrasing, and rewording to improve the writing style. The generated text has been carefully read and verified to be free of hallucinations. 
+
+## References 
+
+Blei D, Ng A, Jordan M (2001) Latent dirichlet allocation. pp 601–608 Bystrov V, Naboka-Krell V, Staszewska-Bystrova A, et al (2023) Analysing the impact of removing infrequent words on topic quality in lda models. URL https://arxiv. org/abs/2311.14505, 2311.14505 Dieng AB, Ruiz FJR, Blei DM (2019) Topic modeling in embedding spaces. URL https://arxiv.org/abs/1907.04907, 1907.04907 Ding R, Nallapati R, Xiang B (2018) Coherence-aware neural topic modeling. URL https://arxiv.org/abs/1809.02687, 1809.02687 Figurnov M, Mohamed S, Mnih A (2019) Implicit reparameterization gradients. URL https://arxiv.org/abs/1805.08498, 1805.08498 Gircha AI, Boev AS, Avchaciov K, et al (2023) Hybrid quantum-classical machine learning for generative chemistry and drug design. Scientific Reports 13(1). https://doi.org/10.1038/s41598-023-32703-4, URL http://dx.doi.org/10. 1038/s41598-023-32703-4 Khoshaman A, Vinci W, Denis B, et al (2018) Quantum variational autoencoder. Quantum Science and Technology 4(1):014001. https://doi.org/10.1088/2058-9565/ aada1f, URL http://dx.doi.org/10.1088/2058-9565/aada1f Lang K (1995) Newsweeder: Learning to filter netnews. In: Prieditis A, Russell S (eds) Machine Learning Proceedings 1995. Morgan Kaufmann, San Francisco (CA), p 331–339, https://doi.org/https://doi.org/10.1016/B978-1-55860-377-6.50048-7, URL https://www.sciencedirect.com/science/article/pii/B9781558603776500487 Lau JH, Newman D, Baldwin T (2014) Machine reading tea leaves: Automatically evaluating topic coherence and topic model quality. In: Wintner S, Goldwater S, Riezler S (eds) Proceedings of the 14th Conference of the European Chapter of the 14 Association for Computational Linguistics. Association for Computational Linguis-tics, Gothenburg, Sweden, pp 530–539, https://doi.org/10.3115/v1/E14-1056, URL https://aclanthology.org/E14-1056 McClean JR, Boixo S, Smelyanskiy VN, et al (2018) Barren plateaus in quantum neural network training landscapes. Nature Communications 9(1). https://doi.org/ 10.1038/s41467-018-07090-4, URL http://dx.doi.org/10.1038/s41467-018-07090-4 Miao Y, Grefenstette E, Blunsom P (2018) Discovering discrete latent topics with neural variational inference. URL https://arxiv.org/abs/1706.00359, 1706.00359 Pennington J, Socher R, Manning C (2014) GloVe: Global vectors for word repre-sentation. In: Moschitti A, Pang B, Daelemans W (eds) Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP). Asso-ciation for Computational Linguistics, Doha, Qatar, pp 1532–1543, https://doi.org/ 10.3115/v1/D14-1162, URL https://aclanthology.org/D14-1162 Rao A, Madan D, Ray A, et al (2023) Learning hard distributions with quantum-enhanced variational autoencoders. URL https://arxiv.org/abs/2305.01592, 2305. 01592 Rivas P, Zhao L, Orduz J (2021) Hybrid quantum variational autoencoders for repre-sentation learning. In: 2021 International Conference on Computational Science and Computational Intelligence (CSCI), pp 52–57, https://doi.org/10.1109/CSCI54926. 2021.00085 R¨ oder M, Both A, Hinneburg A (2015) Exploring the space of topic coherence measures. In: Proceedings of the Eighth ACM International Conference on Web Search and Data Mining. Association for Computing Machinery, New York, NY, USA, WSDM ’15, p 399–408, https://doi.org/10.1145/2684822.2685324, URL https: //doi.org/10.1145/2684822.2685324 Romero J, Olson JP, Aspuru-Guzik A (2017) Quantum autoencoders for efficient com-pression of quantum data. Quantum Science and Technology 2(4):045001. https: //doi.org/10.1088/2058-9565/aa8072, URL http://dx.doi.org/10.1088/2058-9565/ aa8072 Sakhnenko A, O’Meara C, Ghosh KJB, et al (2022) Hybrid classical-quantum autoen-coder for anomaly detection. Quantum Machine Intelligence 4(2). https://doi.org/ 10.1007/s42484-022-00075-z, URL http://dx.doi.org/10.1007/s42484-022-00075-z Sarkar S (2024) Quantum transfer learning for mnist classification using a hybrid quantum-classical approach. URL https://arxiv.org/abs/2408.03351, 2408.03351 Schofield A, Mimno D (2016) Comparing apples to apple: The effects of stemmers on topic models. Transactions of the Association for Computational Linguis-tics 4:287–300. https://doi.org/10.1162/tacl a 00099, URL https://aclanthology. org/Q16-1021 Slabbert D, Petruccione F (2024) Hybrid quantum-classical feature extraction approach for image classification using autoencoders and quantum svms. URL https://arxiv.org/abs/2410.18814, 2410.18814 Srikumar M, Hill CD, Hollenberg LCL (2021) Clustering and enhanced classifi-cation using a hybrid quantum autoencoder. Quantum Science and Technology 7(1):015020. https://doi.org/10.1088/2058-9565/ac3c53, URL http://dx.doi.org/ 10.1088/2058-9565/ac3c53 15 Srivastava A, Sutton C (2017) Autoencoding variational inference for topic models. URL https://arxiv.org/abs/1703.01488, 1703.01488 Terragni S, Fersini E, Galuzzi BG, et al (2021) OCTIS: Comparing and optimiz-ing topic models is simple! In: Gkatzia D, Seddah D (eds) Proceedings of the 16th Conference of the European Chapter of the Association for Computational Linguistics: System Demonstrations. Association for Computational Linguistics, Online, pp 263–270, https://doi.org/10.18653/v1/2021.eacl-demos.31, URL https: //aclanthology.org/2021.eacl-demos.31 Verdone A, Succetti F, Ceschini A, et al (2025) A hybrid quantum-neural network for heart disease classification. Biomedical Signal Processing and Control 113:109185. https://doi.org/10.1016/j.bspc.2025.109185, URL https://www.sciencedirect.com/ science/article/pii/S1746809425016969 Vuong HT, Le T, Vu T, et al (2025) HiCOT: Improving neural topic models via optimal transport and contrastive learning. In: Findings of the Association for Computa-tional Linguistics: ACL 2025. Association for Computational Linguistics, Vienna, Austria, pp 13894–13920, https://doi.org/10.18653/v1/2025.findings-acl.715, URL https://aclanthology.org/2025.findings-acl.715/ Xanadu I (2024) Supported configurations for differentiation methods. https://docs. pennylane.ai/en/stable/introduction/interfaces.html, accessed: 2024-09-19 Xu W (2023) vontss implementation. https://github.com/xuweijieshuai/ Neural-Topic-Modeling-vmf, accessed: 2024-09-13 Xu W, Jiang X, Sengamedu Hanumantha Rao S, et al (2023) vontss: vmf based semi-supervised neural topic modeling with optimal transport. In: Findings of the Association for Computational Linguistics: ACL 2023. Association for Computa-tional Linguistics, p 4433–4457, https://doi.org/10.18653/v1/2023.findings-acl.271, URL http://dx.doi.org/10.18653/v1/2023.findings-acl.271 Zhang X, Zhao J, LeCun Y (2016) Character-level convolutional networks for text classification. URL https://arxiv.org/abs/1509.01626, 1509.01626 
+
+## Appendix A Experiment Details 
+
+A.1 Quantum circuit 0
+
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> |
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+> Rot
+
+Fig. A1: Quantum circuit of the hybrid VAE. 
+
+16 0 5 10 15 20 
+
+0.3 
+
+0.35 
+
+0.4 
+
+0.45 
+
+0.5 
+
+0.55 
+
+0.6 
+
+0.65 
+
+0.7 
+
+0.75 Classical VAE (SLS) 
+
+Classical VAE (LLS) 
+
+Hybrid VAE (SLS) 
+
+Hybrid VAE (LLS) 
+
+Epoch 
+
+> CV
+
+Fig. A2: Averages and standard deviations of model Cv scores across 5 runs on AgNews during training. 0 5 10 15 20 
+
+0.45 
+
+0.5 
+
+0.55 
+
+0.6 
+
+0.65 
+
+0.7 
+
+0.75 
+
+Classical VAE (SLS) 
+
+Classical VAE (LLS) 
+
+Hybrid VAE (SLS) 
+
+Hybrid VAE (LLS) 
+
+Epoch 
+
+> CV
+
+Fig. A3: Averages and standard deviations of model Cv scores across 5 runs on 20News during training. 0 5 10 15 20 
+
+0.7 
+
+0.75 
+
+0.8 
+
+0.85 
+
+0.9 
+
+0.95 
+
+1 Classical VAE (SLS) 
+
+Classical VAE (LLS) 
+
+Hybrid VAE (SLS) 
+
+Hybrid VAE (LLS) 
+
+Epoch 
+
+> TD
+
+Fig. A4: Averages and standard deviations of model TD scores across 5 runs on AgNews during training. 0 5 10 15 20 
+
+0.6 
+
+0.65 
+
+0.7 
+
+0.75 
+
+0.8 
+
+0.85 Classical VAE (SLS) 
+
+Classical VAE (LLS) 
+
+Hybrid VAE (SLS) 
+
+Hybrid VAE (LLS) 
+
+Epoch 
+
+> TD
+
+Fig. A5: Averages and standard deviations of model TD scores across 5 runs on 20News during training. 
+
+17 A.2 Result details Space/Science 
+
+Topic 10 
+
+Classical VAE SLS 
+
+Topic 18 
+
+Classical VAE LLS 
+
+Topic 15 
+
+Hybrid VAE SLS 
+
+Topic 8 
+
+Hybrid VAE LLS 
+
+> Natural Disaster
+
+Topic 9 Topic 1 Topic 14 Topic 1 
+
+> Sports/Olympics
+
+Topic 14 Topic 20 Topic 6 Topic 15 
+
+Fig. A6: Top 100 word clouds for semantic topics across models on AgNews. −50 0 50 
+
+−60 
+
+−40 
+
+−20 
+
+0
+
+20 
+
+40 
+
+60 
+
+−50 0 50 −50 0 50 −50 0 50 
+
+Group, Class 
+
+Politics, talk.politics.misc 
+
+Politics, talk.politics.mideast 
+
+Politics, talk.politics.guns 
+
+Science, sci.crypt 
+
+Science, sci.space 
+
+Science, sci.electronics 
+
+Science, sci.med 
+
+Religion, talk.religion.misc 
+
+Religion, alt.atheism 
+
+Religion, soc.religion.christian 
+
+Computer, comp.os.ms-windows.misc 
+
+Computer, comp.windows.x 
+
+Computer, comp.graphics 
+
+Computer, comp.sys.ibm.pc.hardware 
+
+Computer, comp.sys.mac.hardware 
+
+Sports/Rec, rec.motorcycles 
+
+Sports/Rec, rec.sport.hockey 
+
+Sports/Rec, rec.sport.baseball 
+
+Sports/Rec, rec.autos 
+
+Misc, misc.forsale 
+
+x x x x
+
+> y
+
+Model=Classical VAE (SLS) Model=Classical VAE (LLS) Model=Hybrid VAE (SLS) Model=Hybrid VAE (LLS) 
+
+> ID=0
+
+Fig. A7: 2-D t-SNE projection of randomly sampled z from latent spaces under 20 different posterior distributions on 20News. 
+
+18 Space 
+
+Topic 4 
+
+Classical VAE SLS 
+
+Topic 12 
+
+Classical VAE LLS 
+
+Topic 15 
+
+Hybrid VAE SLS 
+
+Topic 18 
+
+Hybrid VAE LLS 
+
+> Crypt
+
+Topic 16 Topic 5 Topic 4 Topic 12 
+
+> Medical
+
+Topic 6 Topic 18 Topic 20 Topic 7 Fig. A8: Top 100 word clouds for semantic topics across models on 20News. 
+
+19

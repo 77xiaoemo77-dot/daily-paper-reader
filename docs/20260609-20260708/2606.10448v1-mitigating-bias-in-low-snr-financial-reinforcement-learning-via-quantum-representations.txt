@@ -1,0 +1,696 @@
+Title: Mitigating Bias in Low-SNR Financial Reinforcement Learning via Quantum Representations
+
+URL Source: https://arxiv.org/pdf/2606.10448v1
+
+Published Time: Wed, 10 Jun 2026 00:40:26 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# Mitigating Bias in Low-SNR Financial Reinforcement Learning via Quantum Representations 
+
+Zeyu LIU ∗ Xuanzhi FENG ∗ LAI Sing Kwong ∗ Yuanchen GAO Xiaoyi PANG Hualei ZHANG Jingcai GUO Jie ZHANG † Song GUO †
+
+The Hong Kong University of Science and Technology 
+
+zliugj@connect.ust.hk csejzhang@connect.ust.hk songguo@ust.hk 
+
+## Abstract 
+
+The financial market is a typical low signal-to-noise ratio (SNR) setting, which of-ten destabilizes off-policy maximum-entropy methods like Soft Actor-Critic (SAC). Specifically, noisy state representations may produce unreliable Q-value estimates, and bootstrapping amplifies these errors, forming a failure mode we call the “Fi-nancial Entropy Trap”. In this paper, we propose FPQC-SAC , an efficient and plug-and-play SAC variant that places a compact and bounded Parameterized Quantum Circuit (PQC) before the actor and critic networks to constrain feature propagation at the representation level, rather than filtering raw inputs or regularizing Q-values after bootstrapping. Notably, FPQC-SAC reduces the impact of extreme market fluctuations on Bellman target estimation, while trainable quantum entanglement preserves flexible cross-asset interactions. Empirical evaluations on real-world portfolio management tasks demonstrate that FPQC-SAC substantially enhances out-of-sample stability and cumulative returns by achieving a 66.89% relative gain in cumulative return over standard unconstrained SAC and outperforms the best continuous-control deep reinforcement learning baseline by ∼27%. open-source code is available at https://github.com/ZeyuLIU-UST/FPQC-SAC-main .
+
+## 1 Introduction 
+
+Financial markets are inherently low signal-to-noise ratio (SNR) environments. Useful financial signals are often extremely weak, whereas short-term fluctuations, market microstructure noise, investor sentiment, and liquidity shocks are dominant. Prior studies have shown that financial prediction naturally suffers from these high noises, along with non-stationarity and distribution shifts. This makes models prone to fitting historical noise patterns, consequently suffering severe performance degradation in out-of-sample testing or real trading environments [ 14 , 6, 5, 46 ]. Under such extreme uncertainty, sequential financial decision-making faces profound challenges. At the core of this challenge lies sequential asset allocation: continuously determining when and how much to buy, hold, or sell. While traditional statistical models struggle to characterize complex market-state transitions, Deep Reinforcement Learning (DRL) provides a promising end-to-end framework [ 27 , 28 , 21 , 47 , 38 ]. Among these, maximum-entropy reinforcement learning , represented by Soft Actor-Critic (SAC) [ 15 ], explicitly maximizes policy entropy to encourage stochastic exploration, aiming to maintain trading-policy diversity and generate high-quality decisions. However, the Actor-Critic architecture becomes significantly fragile in noise-dominant markets. Entropy-driven stochastic exploration does not necessarily gather effective information; instead, it may amplify noise-dominated update directions. This prevents the policy from stably capturing 
+
+> ∗Equal contribution.
+> †Corresponding authors. Preprint.
+> arXiv:2606.10448v1 [cs.LG] 9 Jun 2026
+
+weak predictive signals. Consequently, noise contaminates value estimation and guides erroneous exploration, forming a self-reinforcing loop. We refer to this critical failure mode of maximum-entropy RL in financial decision-making as the Financial Entropy Trap .To escape the Financial Entropy Trap, we first examine existing stabilization mechanisms. We consider two direct solutions: transferring general RL stabilization methods, and introducing explicit input filtering. Unfortunately, both paradigms exhibit inherent limitations: • Output-side regularization intervenes too late. Methods like clipped double-Q learning [13 ], large-scale critic ensembles [ 10 ], and distributional critic truncation [ 24 ] mainly act at the end of the update pipeline. Even contemporary advancements utilizing dropout Q-functions [ 17 ] or cross-Q updates [ 7 ] focus primarily on stabilizing network-layer gradients during Bellman bootstrapping. Once market noise has passed through conventional encoders and contaminated intermediate representations [ 31 , 43 ], posterior corrections can only provide after-the-fact mitigation. It becomes nearly impossible to recover weak predictive signals that have already been mixed or distorted. • Input-side filtering intervenes too rigidly. Classical input-denoising pipelines, such as Kalman filtering, wavelet denoising, and Fourier-domain filtering, attempt to directly sup-press noise before states enter the model [ 1, 3 , 41 ]. However, these methods usually rely on strong handcrafted priors, e.g., treating noise as measurement uncertainty or approximating it as high-frequency perturbations. Because useful financial signals themselves may also be transient and high-frequency, aggressive filtering often erases scarce valuable signals alongside the noise. Neither approach fundamentally blocks the propagation of noise perturbations into value estimation while preserving weak financial signals. To bridge this gap, we draw inspiration from a structurally relevant physical phenomenon in quantum optics [ 22 ], where destructive interference partially cancels noise fluctuations without degrading the primary signal. This provides a crucial insight for low-SNR RL: effective noise suppression should not force a rigid choice between isolated pre-filtering or post-clipping, but rather introduce an incremental, structural constraint during signal representation. Inspired by this, we propose the 
+
+FPQC-SAC architecture by embedding a Parameterized Quantum Circuit (PQC) at the representation front-end of SAC. As a plug-and-play enhancement, PQC goes beyond simply adding a new module; it leverages the natural interference structure induced by entangled evolution and measurement readout. This allows unstructured noise to statistically cancel within a high-dimensional representation space, effectively decoupling noise suppression from signal retention and overcoming the limitations of classical approaches. The main contributions of this paper are summarized as follows: • Identification of the Financial Entropy Trap and the Representation Gap. We theoreti-cally characterize a critical failure mode of maximum-entropy RL in low-SNR environments, demonstrating how stochastic exploration systematically amplifies market noise. Further-more, we provide a principled analysis of why existing filtering and regularization methods fail to balance noise suppression with information preservation. • Proposal and Theoretical Grounding of the FPQC-SAC Architecture. Moving beyond heuristic module combinations, we design FPQC-SAC by embedding a Parameterized Quan-tum Circuit at the SAC front-end. We theoretically motivate how quantum entanglement and interference inherently provide a structural constraint that dynamically cancels unstructured noise while preserving temporally correlated weak signals, offering a rigorous decoupling mechanism that traditional architectures lack. • Empirical validation and mechanism explanation. Rigorous backtesting on three real-world datasets shows that FPQC-SAC improves performance over standard SAC by at least 50% and outperforms the best baseline model by more than 20%. Ablation studies further verify that this performance leap originates from the trainable quantum entanglement structure and trainable quantum rotation matrices. 22 Related Work 
+
+2.1 Financial RL under Low-SNR Market Dynamics 
+
+In quantitative finance, continuous portfolio management and asset allocation are canonically formu-lated as Markov Decision Processes (MDPs). FinRL [ 27 ] provides an open-source DRL library for automated stock trading, and FinRL-Meta [ 28 ] further expands this line into market environments and benchmarks for data-driven financial RL. Early portfolio-management work by Jiang et al. [ 21 ]formulates deep RL for financial portfolio allocation, while Zhang et al. [ 47 ] studies DRL-based trading in broader market settings. These applications commonly rely on standard continuous-control algorithms, including DDPG [ 26 ], TD3 [ 13 ], and SAC [ 15 ]. As summarized in the survey by Pippas et al. [ 38 ], on-policy methods are often favored for stability in volatile markets, whereas off-policy methods offer stronger sample efficiency and exploration. Restoring the training stability of off-policy continuous control methods in financial environments therefore remains a critical challenge. However, existing financial RL pipelines typically treat the representation module as a standard neural encoder, leaving open how low-SNR market noise should be structurally constrained before value estimation. 
+
+2.2 Value-Level Stabilization in Noisy Off-Policy Learning 
+
+A primary vulnerability of off-policy Q-learning is overestimation bias, which arises when noisy Q-value estimates are amplified during Bellman bootstrapping. Fujimoto et al. [ 13 ] analyze this function-approximation error and introduce TD3, which uses clipped double-Q learning to reduce overestimation in continuous control. SAC [ 15 ] instead stabilizes off-policy learning through a maximum-entropy objective that encourages stochastic exploration. Later value-level methods further modify the critic side: REDQ [ 10 ] uses randomized critic ensembles to improve sample efficiency, whereas TQC [24] truncates distributional quantile critics to control excessive value estimates. However, when applied to financial time series characterized by inherently low signal-to-noise ratios (SNR), value-level corrections can be insufficient because noisy states may already have contaminated the learned representation before critic-side mitigation is applied. Lyle et al. [ 31 ] show that normalization and effective learning rates can substantially affect RL update dynamics, and Tran et al. [ 43 ] revisit overestimation bias and stable policy optimization in hybrid-action actor-critic learning. These studies highlight that critic stabilization is sensitive to the upstream representation and optimization pipeline. This motivates our focus on structural interventions at the geometric representation bottleneck level: value-level corrections mitigate the symptoms of noisy bootstrapping, but they do not prevent noisy financial states from entering the value function in the first place. 
+
+2.3 Quantum Representations for Robust Feature Learning 
+
+Data re-uploading enables PQCs to repeatedly encode classical inputs and act as expressive models for continuous variables, as shown by Pérez-Salinas et al. [ 37 ]. This expressivity has encouraged the use of Quantum Reinforcement Learning (QRL) in continuous-control domains. Acuto et al. [ 2]instantiate a variational quantum SAC architecture for robotic arm control. Hohenfeld et al. [ 18 ] and Lokossou et al. [ 30 ] evaluate quantum deep RL variants for robot-navigation tasks. On the algorithmic side, Jerbi et al. [ 20 ] develop quantum policy-gradient algorithms, while Xu and Aggarwal [ 45 ]accelerate QRL with a quantum natural policy-gradient approach. Nevertheless, most QRL explorations emphasize parameter efficiency, policy optimization, or sample complexity in physical-control simulators. In financial trading, Liu et al. [ 29 ] combine quantum-enhanced RL with LSTM forecasting signals, but the quantum component is still primarily used as a nonlinear feature map for decision making. In this work, we pivot the application of QRL: rather than primarily optimizing for parameter reduction, we use the PQC as a representation-level inductive bias for attenuating stochastic financial noise under low-SNR Itô dynamics. 
+
+2.4 PQC Expressivity, Trainability, and Geometric Bottlenecks 
+
+The design of quantum neural networks is governed by a trade-off between expressivity and train-ability. Caro et al. [ 9] derive encoding-dependent generalization bounds for PQCs, emphasizing that the data-encoding choice shapes generalization behavior. Martyniuk et al. [ 33 ] survey quantum architecture search and discuss how circuit structure affects expressivity and trainability. Röseler et 3al. [ 39 ] further study how to identify parameterized circuits that remain both expressible and trainable. In noisy financial environments, excessive expressivity can become a liability because the model may fit stochastic variance rather than weak predictive structure. Our architecture therefore adopts a shallow PQC and treats its restricted capacity as an intentional geometric bottleneck, regularizing the representation before actor-critic value estimation. 
+
+## 3 Methodology and Theoretical Foundations 
+
+This section systematically establishes why the quantum representation layer provides a robust struc-tural mechanism to mitigate Q-value overestimation within the Soft Actor-Critic (SAC) framework. We first formalize the extreme low Signal-to-Noise Ratio (SNR) dynamics of financial markets as stochastic differential equations (SDEs) governed by high-dimensional Brownian motion, clarifying the core representational difficulty. Crucially, we shift the paradigm from classical value-clipping to geometric interference. We introduce the network topology and progressively analyze the core structural effects of the Parameterized Quantum Circuit (PQC) bottleneck—hyperspherical phase encoding, entanglement-driven isotropic noise cancellation, and constructive signal alignment— demonstrating how this architecture intrinsically dissipates Temporal Difference (TD) target variance rather than merely enforcing hard boundaries. 
+
+3.1 Low-SNR Itô SDE and the Representation Challenge 
+
+In the continuous-time limit, the state variables or asset prices in financial markets can be modeled as multi-dimensional Itô diffusion processes. 
+
+Assumption 1 (Low-SNR Local Itô Transition) . Let the state vector Xt ∈ Rd evolve according to the following stochastic differential equation (SDE): 
+
+dX t = μ(Xt, A t)dt + σ(Xt)dW t (1) 
+
+where μ(·) is the drift function carrying the directional predictive signal, σ(·) is the instantaneous volatility matrix, and Wt is a d-dimensional standard Brownian motion. In the financial low-SNR regime, the critical characteristic is that the magnitude of the drift is vastly eclipsed by the diffusion term: 
+
+∥μ(Xt, A t)dt ∥ ≪ ∥ σ(Xt)dW t∥ (2) Although the Brownian increment dW t possesses independent increments and a zero mean, its sample paths exhibit infinite variation over any arbitrarily small time interval. This implies that on the discrete timescales of algorithmic observation and policy updates, the spatial perturbation of state 
+
+Xt is mathematically unbounded in Euclidean space. The direct consequence of this formulation is catastrophic for standard deep reinforcement learning. If unconstrained raw states are fed directly into classical Critic networks, the high-variance diffusion term is injected unmitigated into value function estimation. This causes the bootstrapped Bellman Temporal Difference (TD) targets to fluctuate violently. This mechanism is the representational root of the financial entropy trap : noise inherently pollutes the state representation, distorts the Q-value gradients, and is progressively amplified by self-bootstrapping. We provide a mathematical formalization of the Financial Entropy Trap in Appendix C.2 .
+
+3.2 FPQC-SAC Architecture and End-to-End Workflow 
+
+To fundamentally resolve the Financial Entropy Trap, we must separate the weak drift μ from the dominating diffusion σdW t. Simply clipping the input or bounding the output is insufficient, as it rigidly squashes both noise and signal. Instead, we embed a Parameterized Quantum Circuit (PQC) as a shared representation bottleneck to naturally filter noise via complex hyperspherical interference. The end-to-end data flow is detailed in Figure 1. 
+
+Hybrid Quantum-Classical Architecture and Hyperspherical Isolation 
+
+The framework maps high-noise financial observations (At, X t) onto a stabilized latent manifold. The state space is initially compressed via a classical linear layer to a 7-dimensional vector, aligning with the qubit topology. These features are subsequently embedded into the quantum Hilbert space via continuous Rx angle encoding. The unitary evolution U (X, θ ) utilizes L = 2 layers of circular 4Figure 1: The system architecture and end-to-end workflow of FPQC-SAC. By forcing high-variance irregular Brownian paths through a 7-qubit, 2-layer circularly entangled unitary space, the architecture maps Euclidean noise onto a complex hypersphere. Here, isotropic noise undergoes destructive interference, naturally filtering extreme perturbations before they reach the classical Actor-Critic heads. CNOT entanglement and single-qubit rotations. The resulting latent representation ft is derived from the expectation values of Pauli-Z observables, as formalized in Definition 1. 
+
+Definition 1 (PQC Latent Mapping) . Let U (X, θ ) = QLl=1 Wl(θl)Rx(X) denote the parameterized quantum circuit. The latent representation f (X, θ ) ∈ Rk is extracted via the expected values of Pauli observables { ˆOj }kj=1 following Born’s rule: 
+
+fj (X, θ ) = Tr 
+
+ ˆOj U (X, θ )|0⟩⟨ 0|U †(X, θ )
+
+
+
+. (3) In the reinforcement learning phase, the latent features ft serve as inputs for the stochastic Actor policy πϕ and the Twin Critics Qψ1,2 . Crucially, an Exponential Moving Average (EMA) copy of the PQC parameters ( ¯θ) is included within the target network cascade. This ensures that the Bellman bootstrapping process evaluates states strictly through the lens of the quantum interference bottleneck, preventing raw environmental variance from infiltrating the non-smooth min( Q ¯ψ1 , Q ¯ψ2 ) operator. Detailed explanations of this interference-driven noise suppression are provided in Sections 3.3, 3.4, and 3.5. 
+
+3.3 Expectation Attenuation via Complex Phase Encoding 
+
+Before evaluating the quantum encoding, we must account for the classical Pre-Net. As formally proven in Appendix C.3 , passing the raw Itô diffusion through a piecewise-linear, locally Lipschitz Pre-Net (e.g., ReLU) functionally preserves the local Itô structure almost everywhere, mapping the effective noise covariance to ΣZ = JhΣX J⊤ 
+
+> h
+
+. The unbounded nature of the Brownian noise propagates into the latent space, setting the stage for PQC attenuation. The first layer of the PQC’s denoising mechanism originates from its fundamental operation of angle encoding (the Rx gates shown in Stage 3), which maps classical real-valued inputs into complex exponential phases. Let the pre-processed latent state evolve according to the Itô process 
+
+dZ s = μsds + σsdW s over the time interval s ∈ [t, t + ∆ t].
+
+Proposition 1 (Diffusion Attenuation in Periodic Complex Features) . Given an initial latent state Zt,and assuming the drift μs and diffusion covariance Σs = σsσ⊤ 
+
+> s
+
+are locally stable over [t, t + ∆ t],encoding the Itô diffusion into a continuous unitary generator mode ω yields the following expected 
+
+5evolution of the complex phase: 
+
+E[eiω ⊤Zt+∆ t ] = eiω ⊤Zt · exp i
+
+Z t+∆ tt
+
+ω⊤μsds 
+
+!| {z }
+
+> Signal Phase Translation
+
+· exp − 12
+
+Z t+∆ tt
+
+ω⊤Σsωds 
+
+!| {z }
+
+> Diffusion Attenuation
+
+. (4) This analytical equation (detailed proof provided in Appendix C.1 ) mathematically decouples two distinctly divergent effects: • Signal Preservation: The predictive drift term μs is perfectly preserved as a directional phase translation. The directional information of the causal signal survives cleanly within the argument of the complex exponential. • Diffusion Attenuation: Due to its independent increments and zero mean, the stochastic diffusion σsdW s algebraically induces an exponential decay factor weighted by the covari-ance Σs under expectation. Intuitively, the isotropic random jumps of Brownian motion are “rotationally averaged” across the complex plane—random phase oscillations in all directions mutually cancel out in expectation. The core mathematical insight here is that the complex exponential mapping naturally separates the deterministic trend of the signal from the random diffusion of the noise in an expected sense. Signals are retained as phase shifts, while noise is mathematically suppressed as an attenuation factor. 
+
+3.4 The Core Role of Entanglement: Synergistic Signal-to-Noise Separation 
+
+The true filtering capability of the PQC does not stem merely from its finite output range, but from how entanglement structurally discriminates between noise and signal within the hypersphere. This functionality manifests in two complementary dimensions: 
+
+Scattering Noise into Isotropic Dimensions (Destructive Interference). If the PQC solely relied on complex phase encoding without inter-qubit interactions, noise would remain isolated within single-qubit subspaces. Introducing the circular CNOT chain instantaneously diffuses local, independent Brownian perturbations into a collective, multi-body entangled state. Because the financial diffusion term σdW t is stochastic and largely unstructured, entanglement scrambles these errors into a high-dimensional, isotropic phase perturbation. Due to the projective nature of Pauli measurements (the trace operation), these uniformly scattered random phases destructively interfere and statistically cancel each other out upon readout. Classical sine/cosine bases cannot replicate this synergistic, high-dimensional cancellation. 
+
+Aligning Signals along Principal Directions (Constructive Interference). While noise is scattered isotropically, the weak drift signal μdt possesses intrinsic temporal and cross-asset correlations (e.g., subtle momentum continuations). Under the tuning of trainable rotation gates, the circuit does not scatter these correlated phases uniformly. Instead, it dynamically rotates the hyperspherical basis to align these coherent phase evolutions along specific Pauli measurement directions. Ablation results in Table 4 demonstrate that removing CNOT gates or freezing rotations destroys performance. Simply put, entanglement treats noise and signal asymmetrically: it scrambles isotropic noise into destructive cancellation, while combing the structural signal into a focused, constructively interfering output. For a detailed mathematical analysis of these entangled modes, see Appendix C.4. 
+
+3.5 Geometric Consequence: Variance Attenuation via Hyperspherical Cancellation 
+
+To establish a mathematically rigorous safeguard for off-policy learning, we formalize the conse-quence of the aforementioned phase interference. While classical bottlenecks (like Tanh) merely clip extreme values—leaving the variance dense at the boundaries—the PQC fundamentally attenuates the variance of the underlying stochastic process. 
+
+Proposition 2 (Hyperspherical Phase Cancellation and Variance Attenuation) . Under unitary evo-lution, the state ρ is confined to a norm-preserving complex hypersphere. When subjected to the unbounded local Itô diffusion dW t, the spatial variance is mapped to phase fluctuations. During the expected measurement over Pauli observables, isotropic phase variations lacking structural correlation undergo destructive interference. Consequently, for an input spatial perturbation with 
+
+6variance ΣX , the variance of the resulting PQC representation, Var (fPQC ), is exponentially attenu-ated relative to the intensity of the isotropic noise, completely decoupling the output stability from the infinite-variation nature of the raw SDE. 
+
+Because this attenuation derives geometrically from the trace operation over an entangled complex manifold, it provides a superior structural guarantee compared to classical bounds. 
+
+Corollary 1 (Stabilized Representation Cascade) . In the hybrid FPQC-SAC architecture, even if the classical Pre-Net amplifies the raw market noise, the subsequent projection through the PQC bottleneck forces the isotropic components to destructively cancel. Assuming a locally Lipschitz Post-Net, the final representation perturbation ∥f (X) − f ( ¯X)∥2 exhibits a tightly concentrated variance, immune to the catastrophic Brownian spikes that bypass standard Euclidean neural encoders. 
+
+In this context, the quantum bottleneck acts not as a simple hard-clipping wall, but as an active representational dissipater that absorbs and neutralizes high-variance unstructured noise. 
+
+3.6 Structural Regularization of TD Targets via Variance Dissipation 
+
+We now connect this geometric cancellation to the most noise-sensitive component of SAC: the Temporal Difference (TD) target. The vulnerability of standard maximum-entropy RL lies in the operator yt = rt + γ max a′ Q(Xt+1 , a ′). When Xt+1 contains unmitigated Brownian noise, the maximization over noisy representations systematically induces a positive bias, inflating the Q-values. In our framework, the bootstrapped target is computed as: 
+
+yt = rt + γB (f (Xt+1 )) , (5) where B denotes the locally Lipschitz soft Bellman target map. Because f (Xt+1 ) has passed through the PQC, its isotropic noise components have been dissipated via destructive interference (Proposition 2). Consequently, the variance of the input to the Bellman operator is drastically suppressed: Var (f (Xt+1 )) ≪ Var (Xt+1 ).This means the amplitude of the spurious spikes entering B(·) is structurally minimized. Without extreme positive noise spikes, the max (or soft-max) operator has no artificial high values to exploit. Thus, FPQC-SAC systematically starves the overestimation bias of its necessary fuel (high-variance perturbations). By dissipating the noise before Bellman bootstrapping rather than trying to regularize the Q-values after the fact, the architecture successfully bypasses the amplification channel of the Financial Entropy Trap. 
+
+3.7 Closing the Loop: Theoretical Mechanisms Meet Empirical Validation 
+
+The mechanisms elucidated in Sections 3.3–3.6—complex hyperspherical encoding, entanglement-driven destructive/constructive interference, and variance dissipation—are structurally unified. Phase encoding converts spatial noise to phase variation, entanglement scrambles it isotropically, and quantum measurement neutralizes it while preserving the coherently aligned drift signals. To rigorously guarantee that this interference-based filtering does not squash causal signals alongside the noise, Appendix D derives a theoretical lower bound for the Output Signal-to-Noise Ratio ( SNR out ). We mathematically demonstrate that while unstructured noise variance is aggressively dissipated, the sensitivity to deterministic structural signals remains strictly bounded away from zero. This mathematically justified mechanism formulates a verifiable hypothesis: the PQC acts as an interference-driven filter that separates signal from noise, thus stabilizing value estimation. Therefore, Section 4 evaluates FPQC-SAC through a complete empirical causal chain: Interference-driven signal-preserving bottleneck (Sections 3.3–3.6) 
+
+↓
+
+Suppressed TD variance and minimal Q-gap (Section 4.2) 
+
+↓
+
+Superior out-of-sample trading performance (Section 4.3) .
+
+7Specifically, we first test whether the PQC bottleneck can suppress TD-target variance and reduce the Q-gap without destroying structural information (outperforming simple classical bounded activation like Tanh). Subsequently, we evaluate whether this intrinsic Bellman stability directly translates into superior out-of-sample trading returns. Through this closed loop of theoretical mechanisms, algorithmic stability, and final financial performance, the superiority of the hyperspherical cancellation paradigm is thoroughly validated. 
+
+## 4 Experiments 
+
+4.1 Experimental Setup 
+
+We evaluate FPQC-SAC on three non-overlapping U.S. multi-asset portfolios, covering 18 distinct assets across benchmark, defensive, and high-volatility regimes. The first portfolio (AAPL, AMZN, GOOGL, MSFT, QQQ, SPY) follows the canonical FinRL portfolio-allocation setting [ 27 ], providing a direct comparison with the standard financial RL benchmark rather than a post-hoc asset selection. To test whether the observed gains extend beyond this benchmark regime, we further construct two supplementary six-asset portfolios: a stable blue-chip portfolio (BAC, JNJ, JPM, PG, WMT, XOM) with persistent signals and lower volatility, and a high-growth technology portfolio (AVGO, BRK.B, META, NFLX, NVDA, TSLA) with concentrated growth exposure and elevated regime sensitivity. This design preserves the six-asset evaluation scale commonly used in FinRL-style portfolio allocation while extending the evaluation across distinct market conditions. All DRL agents are trained from 2013-01-02 to 2018-12-31 for 25,000 environment steps and tested out-of-sample from 2019-01-02 to 2021-08-31, covering the COVID-19 shock and recovery. Metrics are reported as mean ±std over independent seeds using a 10% two-sided trimmed mean, removing the two highest and two lowest cumulative-return seeds from 20 runs to improve robustness against outlier runs [ 32 ]. Detailed parameters are provided in Appendix B. Baselines are divided into three categories: (1) classic continuous-control DRL algorithms (SAC, TD3, PPO, DDPG, A2C); (2) output-regularized robust DRL methods for mitigating Q-value overestimation (REDQ, TQC); (3) rule-based trading strategies, including MACD, SMA, KDJ-RSI, and ZMR. 
+
+4.2 Q-Value Overestimation Mitigation and Bottleneck Analysis 
+
+In this section, we respond to the theoretical hypothesis proposed in Section 3.7 by testing whether the PQC representation constraint can suppress TD-target variance and reduce the Q-gap. During the out-of-sample testing phase, we measured the deviation between the learned Critic values and the Monte Carlo soft returns (Q-gap), alongside Temporal Difference variance (TD-var) and Critic-loss variance (C-loss-var). Furthermore, to definitively rule out the alternative hypothesis that "any structural representation bottleneck could achieve similar stabilizing effects," we systematically substituted the PQC with a suite of classical representation designs. These include bounded activations (Tanh), feature clipping (Clipped Latent), dimensionality compression (Linear and MLP Bottlenecks), generic regularization (Weight Decay), and normalization techniques (LayerNorm and SpectralNorm). Each bottleneck is embedded within the identical Actor-Critic backbone and trained under the exact same protocol. Table 1 reveals key findings. Unconstrained SAC suffers catastrophic Q-value explosions Table 1: Systematic comparison of classical representation bottlenecks and FPQC-SAC on return-stability metrics.                                                                                               
+
+> Model CR% ↑AR% ↑SR ↑Sortino ↑Calmar ↑Q-gap ↓TD-var ↓C-loss-var ↓
+> Linear Bottleneck [36] 98.9 ±60.1 27.8 ±16.8 1.18 ±0.63 1.31 ±0.75 1.06 ±0.56 -0.553 ±2.16 4.16 ×10 3±7.49 ×10 34.71 ×10 5±1.20 ×10 6
+> SAC (No Bottleneck) [15] 117.0 ±18.6 33.7 ±4.29 1.40 ±0.12 1.59 ±0.19 1.11 ±0.23 26.4 ±81.8 2.55 ×10 7±1.01 ×10 81.32 ×10 13 ±4.78 ×10 13
+> Weight Decay Bot. [23] 125.0 ±33.4 35.4 ±7.54 1.43 ±0.19 1.71 ±0.26 1.31 ±0.32 -0.148 ±0.30 23.6 ±31.6 157 ±277 MLP Bottleneck [19, 16] 136.0 ±29.2 37.9 ±6.38 1.53 ±0.18 1.77 ±0.30 1.31 ±0.33 -0.047 ±0.14 25.1 ±35.1 140 ±334 SpectralNorm Bot. [34] 144.0 ±65.2 38.4 ±16.4 1.44 ±0.57 1.73 ±0.71 1.38 ±0.60 1.92 ×10 12 ±8.73 ×10 12 2.91 ×10 27 ±1.30 ×10 28 2.99 ×10 57 ±1.34 ×10 58
+> Tanh Bottleneck [25] 154.0 ±30.4 41.6 ±6.35 1.57 ±0.16 1.88 ±0.20 1.46 ±0.25 -0.004 ±0.05 0.81 ±1.02 14.8 ±28.4 Clipped Latent [11, 44] 155.0 ±30.1 41.9 ±6.20 1.55 ±0.21 1.91 ±0.19 1.54 ±0.20 -0.007 ±0.05 0.93 ±1.65 18.7 ±46.6 LayerNorm Bot. [4] 170.0 ±36.8 44.9 ±7.52 1.63 ±0.21 2.00 ±0.26 1.64 ±0.29 -0.002 ±0.05 0.76 ±0.74 8.99 ±14.3
+> FPQC-SAC (Ours) 195.3 ±26.9 50.0 ±5.15 1.71 ±0.15 2.13 ±0.19 1.75 ±0.20 0.0004 ±0.05 0.54 ±0.69 8.19 ±13.7
+
+and extreme estimation variance, which distort policy gradients and mislead the actor. To address this, our analysis focuses fundamentally on the role of bounded features. Bounded constraints themselves are not rare. Classical operations, e.g., tanh activations, gradient clipping, and LayerNorm can also impose range restrictions on feature spaces. While these classical bottlenecks exhibit a clear return-stability trade-off—with LayerNorm and Tanh variants achieving moderate returns and partial 8stability gains—they cannot fully suppress noise while retaining weak predictive signals. Furthermore, we note that some ill-designed representation constraints exhibit extremely high estimation variance, which is primarily attributed to catastrophic training seed explosions. Only PQC simultaneously delivers high returns and stability. Crucially, addressing our theoretical propositions from Section 3, FPQC-SAC achieves the lowest TD-variance (0.54), Q-gap (0.0004), and Critic-loss-variance (8.19) across all tested architectures. It significantly outperforms the most competitive classical bounded baselines, further reducing the TD-variance compared to LayerNorm (0.76) and Tanh (0.81), while achieving a much tighter Q-gap approximation than Clipped Latent (0.007). These stability advantages seamlessly translate into performance, allowing FPQC-SAC to reach a 195.3% cumulative return, comfortably outperforming the runner-up LayerNorm Bot-tleneck (170.0%). Ultimately, PQC’s unique combination of unitary-constrained bounded readout and entanglement-induced phase cancellation creates a stable architecture not easily replicated by conventional designs. For more detailed variance, explained-variance, Q-gap, and TD-var analyses of representative spectral/filtering encoders, please see Appendix A. 
+
+4.3 Trading Performance Comparison 
+
+Having shown that the PQC bottleneck stabilizes value estimation in Section 4.2, we now test whether this stability translates into out-of-sample trading performance. Our evaluation uses one benchmark experiment and two regime-extension experiments. For the Main Experiment , we use the canonical FinRL [ 27 ] 6-asset portfolio (AAPL, AMZN, GOOGL, MSFT, QQQ, SPY), which combines large-cap technology stocks with broad market ETFs. We extend the original FinRL test horizon to cover the COVID-19 shock and recovery, and compare FPQC-SAC against both standard continuous-control baselines and the SAC family, including SAC, REDQ, TQC, DroQ, and CrossQ. To test generalization beyond the FinRL benchmark, we add two non-overlapping six-asset portfolios: 
+
+Sub-experiment 1 (Defensive Blue-chip) uses BAC, JNJ, JPM, PG, WMT, and XOM to represent a lower-volatility regime with more persistent signals and stronger downside-risk considerations. 
+
+Sub-experiment 2 (High-Volatility Growth) uses NVDA, META, AVGO, TSLA, NFLX, and BRK.B to stress-test models under elevated volatility, growth concentration, and severe stochastic interference. Together, the three portfolios cover 18 distinct assets across benchmark, defensive, and high-volatility regimes. For all experiments, metrics follow the 10% trimmed-mean protocol over 20 random seeds. Table 2: Main experiment on the Mainstream Tech & Market-Index Portfolio (QQQ, SPY, MSFT, GOOGL, AMZN, AAPL). Red marks the best result and blue marks the second-best.                                                                                    
+
+> Category Model CR% ↑AR% ↑SR ↑Sortino ↑Calmar ↑
+> Market B&H 88.57 ±0.00 26.90 ±0.00 1.18 ±0.00 1.28 ±0.00 0.80 ±0.00 Our Model FPQC-SAC 195.32 ±26.94 50.05 ±5.15 1.71 ±0.15 2.13 ±0.19 1.75 ±0.20
+> DRL-based SAC [15] 117.04 ±18.56 33.67 ±4.29 1.40 ±0.12 1.59 ±0.19 1.11 ±0.23 CrossQ [7] 148.19 ±38.63 40.32 ±8.21 1.54 ±0.26 1.87 ±0.34 1.53 ±0.36 DroQ [17] 152.80 ±21.61 41.55 ±4.51 1.56 ±0.13 1.91 ±0.15 1.56 ±0.18 REDQ [10] 147.87 ±23.48 40.48 ±5.16 1.57 ±0.14 1.85 ±0.20 1.44 ±0.24 TQC [24] 145.10 ±23.24 39.89 ±5.01 1.57 ±0.11 1.82 ±0.18 1.38 ±0.24 TD3 [13] 151.55 ±29.20 41.20 ±6.12 1.57 ±0.12 1.87 ±0.21 1.46 ±0.29 DDPG [26] 153.65 ±27.25 41.67 ±5.68 1.60 ±0.12 1.90 ±0.20 1.48 ±0.28 PPO [40] 151.94 ±27.50 41.31 ±5.72 1.56 ±0.15 1.89 ±0.20 1.48 ±0.21 A2C [35] 145.76 ±21.32 40.06 ±4.57 1.51 ±0.14 1.84 ±0.16 1.46 ±0.20 Rule-based MACD 14.55 ±0.00 5.23 ±0.00 0.39 ±0.00 0.38 ±0.00 0.28 ±0.00 SMA 49.47 ±0.00 16.29 ±0.00 0.87 ±0.00 0.83 ±0.00 0.70 ±0.00 KDJ_RSI 0.86 ±0.00 0.32 ±0.00 0.74 ±0.00 0.17 ±0.00 0.58 ±0.00 ZMR 43.12 ±0.00 14.41 ±0.00 0.82 ±0.00 0.85 ±0.00 0.52 ±0.00
+
+9Table 3: Generalization experiments across defensive blue-chip and high-volatility growth portfolios. Red marks the best result and blue marks the second-best.                                                                                                                                      
+
+> Category Model Defensive Blue-chip Portfolio (Sub-experiment 1) High-Volatility Growth Portfolio (Sub-experiment 2)
+> CR% ↑AR% ↑SR ↑Sortino ↑Calmar ↑CR% ↑AR% ↑SR ↑Sortino ↑Calmar ↑
+> Our Model FPQC-SAC 45.01 ±13.58 14.86 ±4.20 0.62 ±0.21 0.81 ±0.28 0.64 ±0.33 183.26 ±75.58 46.77 ±14.20 1.37 ±0.30 1.76 ±0.39 1.35 ±0.36
+> Off-policy DRL SAC [15] 27.25 ±24.62 8.97 ±8.45 0.41 ±0.35 0.51 ±0.44 0.33 ±0.29 133.33 ±54.18 36.72 ±11.37 1.14 ±0.33 1.46 ±0.39 1.10 ±0.29 CrossQ [7] 47.15 ±6.11 15.59 ±1.79 0.62 ±0.11 0.76 ±0.13 0.50 ±0.13 87.31 ±28.66 26.26 ±7.13 1.02 ±0.22 1.20 ±0.28 0.87 ±0.26 DroQ [17] 31.71 ±7.42 10.86 ±2.33 0.50 ±0.09 0.60 ±0.12 0.35 ±0.07 111.37 ±40.43 31.93 ±9.43 1.11 ±0.30 1.37 ±0.34 1.01 ±0.25 REDQ [10] 41.47 ±15.48 13.75 ±4.96 0.58 ±0.22 0.74 ±0.28 0.49 ±0.22 136.65 ±82.74 38.20 ±16.31 1.10 ±0.30 1.50 ±0.37 1.10 ±0.27 TQC [24] 30.02 ±31.07 9.56 ±10.74 0.44 ±0.41 0.54 ±0.54 0.39 ±0.38 118.14 ±69.60 32.58 ±15.75 1.15 ±0.43 1.42 ±0.54 1.02 ±0.41 TD3 [13] 33.68 ±11.91 11.42 ±3.77 0.51 ±0.18 0.62 ±0.21 0.35 ±0.14 154.99 ±58.16 41.36 ±11.78 1.36 ±0.28 1.70 ±0.35 1.25 ±0.26 DDPG [26] 35.85 ±11.70 12.10 ±3.63 0.55 ±0.19 0.67 ±0.23 0.41 ±0.20 144.49 ±39.61 39.45 ±9.00 1.30 ±0.25 1.64 ±0.30 1.21 ±0.21 Rule-based MACD 4.11 ±0.00 1.52 ±0.00 0.25 ±0.00 0.29 ±0.00 0.11 ±0.00 22.16 ±0.00 7.81 ±0.00 0.83 ±0.00 0.95 ±0.00 0.71 ±0.00 SMA 5.16 ±0.00 1.91 ±0.00 0.30 ±0.00 0.29 ±0.00 0.14 ±0.00 37.34 ±0.00 12.65 ±0.00 0.99 ±0.00 0.97 ±0.00 0.80 ±0.00 KDJ_RSI -1.82 ±0.00 -0.69 ±0.00 -0.12 ±0.00 -0.16 ±0.00 -0.05 ±0.00 1.09 ±0.00 0.41 ±0.00 0.10 ±0.00 0.08 ±0.00 0.06 ±0.00 ZMR 10.90 ±0.00 3.96 ±0.00 0.24 ±0.00 0.28 ±0.00 0.13 ±0.00 66.79 ±0.00 21.18 ±0.00 1.10 ±0.00 1.21 ±0.00 0.73 ±0.00
+
+Tables 2 and 3 demonstrate that FPQC-SAC consistently dominates across varied market regimes, explicitly highlighting the structural vulnerabilities of standard SAC improvements. In the Main Experiment , contemporary baselines successfully improve sample efficiency and stability over vanilla SAC, with DroQ [ 17 ] (152.80% CR) strongly competing with prior algorithms. Nevertheless, FPQC-SAC maintains a substantial 42-percentage-point lead ( 195.32% CR). This confirms that weak-signal-preserving representation filtering is fundamentally more effective than downstream heuristic regularizations in standard market conditions. This divergence becomes highly nuanced in the generalization tests. In the defensive Sub-experiment 1, where noise is low and trends are persistent, standard off-policy algorithms typically struggle. Here, CrossQ [ 7 ] adapts exceptionally well, leveraging its cross-Q updates to fit weak trends and achieve the highest absolute return ( 47.15% CR). However, this emphasizes a classic risk-reward trade-off: while CrossQ extracts slightly higher absolute profits, FPQC-SAC trades off a marginal amount of return to retain significantly superior downside protection, dominating the risk-adjusted metrics with the highest Sortino ( 0.81 ) and Calmar ( 0.64 ) ratios. This validates the PQC bottleneck’s inherent capability to restrict tail risks even in calm markets. Most critically, Sub-experiment 2 illustrates the Financial Entropy Trap . In this highly volatile port-folio, extreme stochastic noise severely penalizes traditional continuous control architectures. Despite their theoretical stability in standard benchmarks, both DroQ and CrossQ suffer severe structural collapse here, dropping to 111.37% and 87.31% CR respectively, completely underperforming vanilla SAC (133.33% CR). This exposes a vulnerability: network-layer perturbations—such as dropout Q-functions [ 17 ] or cross-Q updates [ 7]—can inadvertently amplify gradient variance when exposed to extreme out-of-distribution market noise. In stark contrast, FPQC-SAC anchors policy updates via its path-wise bounded quantum readout, mitigating the extreme variance and achieving 183.26% CR. These results validate our core hypothesis: while downstream regularizations provide stability and efficiency in standard settings, embedding a hard structural constraint at the representation level is the only mechanism that provides universal robustness across all financial regimes. 
+
+4.4 Ablations and Analysis 
+
+This section conducts ablation experiments to identify the core components driving performance gains. The fully trainable FPQC-SAC is benchmarked against two degraded variants: Frozen-PQC FPQC-SAC , which freezes all trainable rotation parameters while preserving the CNOT topology, and No-CNOT FPQC-SAC , which removes all CNOT connections while retaining trainable single-qubit rotations. We further vary PQC depth across L ∈ { 1, 2, 3, 4, 5} to explore the influence of circuit expressivity. Table 4 shows disabling either parameter trainability or quantum entanglement markedly degrades performance: the cumulative return falls from 195.32% to 144.51% for Frozen-PQC and 148.49% for No-CNOT. The No-CNOT variant also presents substantially higher seed-level variance, indi-cating entanglement boosts both trading returns and training stability. These outcomes confirm the performance gain stems not from fixed bounded projection or isolated single-qubit rotations alone, but from the joint effect of trainable rotations and entangled circuit topology. Table 4 further shows L = 2 yields the best overall performance: L = 1 underperforms, while L ≥ 3
+
+causes consistent degradation. This indicates FPQC-SAC benefits from a shallow yet expressive 10 Table 4: Ablation studies of FPQC-SAC. Red/blue denote best/second best. 
+
+## Model CR% ↑ AR% ↑ SR ↑ Sortino ↑ Calmar ↑
+
+## Core Structural Ablation Trainable 195.32 ±26.94 50.05 ±5.15 1.71 ±0.15 2.13 ±0.19 1.75 ±0.20 
+
+## No-CNOT 148.49 ±69.60 40.37 ±15.49 1.45 ±0.38 1.86 ±0.52 1.54 ±0.43 Frozen-PQC 144.51 ±20.21 39.76 ±4.31 1.51 ±0.10 1.81 ±0.16 1.39 ±0.19 
+
+## PQC Depth Ablation 
+
+## L1 150.90 ±22.09 41.06 ±4.75 1.48 ±0.15 1.87 ±0.18 1.52 ±0.21 
+
+## L2 195.32 ±26.94 50.05 ±5.15 1.71 ±0.15 2.13 ±0.19 1.75 ±0.20 
+
+## L3 152.18 ±21.83 41.33 ±4.68 1.51 ±0.12 1.90 ±0.17 1.53 ±0.20 L4 164.85 ±37.17 43.73 ±7.52 1.54 ±0.19 1.94 ±0.23 1.60 ±0.29 L5 151.48 ±27.71 41.15 ±5.97 1.54 ±0.17 1.89 ±0.22 1.48 ±0.22 
+
+quantum bottleneck, with sufficient capacity to model useful market structure without overfitting stochastic fluctuations. Combined with the representation analysis in Appendix A and the classical bottleneck comparisons in Table 1, these ablations confirm FPQC-SAC’s improvement stems from its specific shallow, trainable, entangled PQC design—not generic dimensionality reduction or bounded feature compression. 
+
+## 5 Conclusion 
+
+This paper addresses a theoretical vulnerability when applying maximum-entropy off-policy rein-forcement learning to low-SNR financial environments. We identify the “Financial Entropy Trap”, where maximum-entropy RL can amplify low-SNR noise into systematic Q-value overestimation, and establish that a bounded quantum representation acts as a geometric constraint under local Lipschitz assumptions. Based on this insight, we propose FPQC-SAC, an architectural innovation that relies on a shallow Parameterized Quantum Circuit (PQC) as a structural information bottleneck to map noisy inputs into periodic complex phases for statistical attenuation while leveraging circular entanglement to induce destructive interference of unstructured noise and constructively align weak predictive signals within a bounded unitary space. Extensive empirical evaluations validate this design: FPQC-SAC achieves a 66.89% relative gain in cumulative return over standard SAC, outperforms the strongest continuous-control DRL baseline by ∼27%, and yields the lowest TD-target variance (0.54). Ultimately, these results underscore a promising paradigm shift: utilizing quantum circuits not merely for computational speedup, but as robust geometric constraints to mitigate representation vulnerabilities in highly stochastic domains. 
+
+## References 
+
+[1] S. J. Abdulkadir and S.-P. Yong. Unscented kalman filter for noisy multivariate financial time-series data. In Multi-disciplinary Trends in Artificial Intelligence , volume 8271 of Lecture Notes in Computer Science , pages 87–96. Springer, 2013. doi: 10.1007/978-3-642-44949-9_9. [2] A. Acuto, P. Barillà, L. Bozzolo, M. Conterno, M. Pavese, and A. Policicchio. Variational quantum soft actor-critic for robotic arm control. arXiv preprint arXiv:2212.11681 , 2022. [3] R. M. Alrumaih and M. A. Al-Fawzan. Time series forecasting using wavelet denoising: An application to saudi stock index. Journal of King Saud University: Engineering Sciences , 14(2): 221–233, 2002. doi: 10.1016/S1018-3639(18)30755-4. [4] J. L. Ba, J. R. Kiros, and G. E. Hinton. Layer normalization. arXiv preprint arXiv:1607.06450 ,2016. 11 [5] D. H. Bailey, J. M. Borwein, M. López de Prado, and Q. J. Zhu. The probability of backtest overfitting. Journal of Computational Finance , 20(4):39–69, 2017. doi: 10.21314/JCF.2016.322. [6] W. Bao, J. Yue, and Y. Rao. A deep learning framework for financial time series using stacked autoencoders and long-short term memory. PLOS ONE , 12(7):e0180944, 2017. doi: 10.1371/journal.pone.0180944. [7] A. Bhatt, D. Palenicek, B. Belousov, M. Argus, A. Amiranashvili, T. Brox, and J. Pe-ters. Crossq: Batch normalization in deep reinforcement learning for greater sam-ple efficiency and simplicity. In International Conference on Learning Representations (ICLR) , 2024. URL https://proceedings.iclr.cc/paper_files/paper/2024/hash/ f381114cf5aba4e45552869863deaaa7-Abstract-Conference.html .[8] S. Cameron, T. Cameron, A. Pretorius, and S. Roberts. Robust and scalable sde learning: A functional perspective. arXiv preprint arXiv:2110.05167 , 2021. [9] M. C. Caro, E. Gil-Fuster, J. J. Meyer, J. Eisert, and R. Sweke. Encoding-dependent generalization bounds for parametrized quantum circuits. Quantum , 5:582, 2021. doi: 10.22331/q-2021-11-17-582. [10] X. Chen, C. Wang, Z. Zhou, and K. Ross. Randomized ensembled double q-learning: Learning fast without a model. In International Conference on Learning Representations , 2021. URL 
+
+https://openreview.net/forum?id=AY8zfZm0tDd .[11] J. Choi, Z. Wang, S. Venkataramani, P. I.-J. Chuang, V. Srinivasan, and K. Gopalakrish-nan. Pact: Parameterized clipping activation for quantized neural networks. arXiv preprint arXiv:1805.06085 , 2018. [12] V. Duarte, D. Duarte, and D. H. Silva. Machine learning for continuous-time finance. The Review of Financial Studies , 37(11):3217–3271, 2024. doi: 10.1093/rfs/hhae043. [13] S. Fujimoto, H. van Hoof, and D. Meger. Addressing function approximation error in actor-critic methods. In International conference on machine learning , pages 1587–1596. PMLR, 2018. URL https://proceedings.mlr.press/v80/fujimoto18a.html .[14] S. Gu, B. Kelly, and D. Xiu. Empirical asset pricing via machine learning. The Review of Financial Studies , 33(5):2223–2273, 2020. doi: 10.1093/rfs/hhaa009. [15] T. Haarnoja, A. Zhou, P. Abbeel, and S. Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International conference on machine learning , pages 1861–1870. PMLR, 2018. URL https://proceedings.mlr.press/v80/ haarnoja18b.html .[16] G. E. Hinton and R. R. Salakhutdinov. Reducing the dimensionality of data with neural networks. 
+
+science , 313(5786):504–507, 2006. doi: 10.1126/science.1127647. [17] T. Hiraoka, T. Imagawa, T. Hashimoto, T. Onishi, and Y. Tsuruoka. Dropout q-functions for dou-bly efficient reinforcement learning. In International Conference on Learning Representations (ICLR) , 2022. URL https://openreview.net/forum?id=xCVJMsPv3RT .[18] H. Hohenfeld, D. Heimann, F. Wiebe, and F. Kirchner. Quantum deep reinforcement learning for robot navigation tasks. IEEE Access , 12:87217–87236, 2024. doi: 10.1109/ACCESS.2024. 3417808. [19] K. Hornik, M. Stinchcombe, and H. White. Multilayer feedforward networks are universal approximators. Neural networks , 2(5):359–366, 1989. doi: 10.1016/0893-6080(89)90020-8. [20] S. Jerbi, A. Cornelissen, M. Ozols, and V. Dunjko. Quantum policy gradient algorithms. In 
+
+18th Conference on the Theory of Quantum Computation, Communication and Cryptography (TQC 2023) , volume 266, pages 13:1–13:24. Schloss Dagstuhl-Leibniz-Zentrum für Informatik, 2023. doi: 10.4230/LIPIcs.TQC.2023.13. [21] Z. Jiang, D. Xu, and J. Liang. A deep reinforcement learning framework for the financial portfolio management problem. arXiv preprint arXiv:1706.10059 , 2017. 12 [22] J. Kong, F. Hudelist, Z. Y. Ou, and W. Zhang. Cancellation of internal quantum noise of an amplifier by quantum correlation. Physical Review Letters , 111(3):033608, July 2013. doi: 10.1103/PhysRevLett.111.033608. [23] A. Krogh and J. Hertz. A simple weight decay can improve generalization. Advances in neural information processing systems , 4, 1991. URL https://proceedings.neurips.cc/ paper/1991/hash/8eefcfdf5990e441f0fb6f3fad709e21-Abstract.html .[24] A. Kuznetsov, P. Shvechikov, A. Grishin, and D. Vetrov. Controlling overestimation bias with truncated mixture of continuous distributional quantile critics. In Proceedings of the 37th International Conference on Machine Learning , volume 119 of Proceedings of Machine Learning Research , pages 5556–5566. PMLR, 2020. doi: 10.48550/arXiv.2005.04269. [25] Y. LeCun, L. Bottou, G. B. Orr, and K.-R. Müller. Efficient backprop. In Neural Networks: Tricks of the Trade , volume 7700 of Lecture Notes in Computer Science , pages 9–48. Springer, 2012. doi: 10.1007/978-3-642-35289-8_3. [26] T. P. Lillicrap, J. J. Hunt, A. Pritzel, N. Heess, T. Erez, Y. Tassa, D. Silver, and D. Wierstra. Continuous control with deep reinforcement learning. arXiv preprint arXiv:1509.02971 , 2015. [27] X.-Y. Liu, H. Yang, Q. Chen, R. Zhang, L. Yang, B. Xiao, and C. D. Wang. Finrl: A deep reinforcement learning library for automated stock trading in quantitative finance. In Deep RL Workshop, NeurIPS 2020 , 2020. URL https://arxiv.org/abs/2011.09607 .[28] X.-Y. Liu, Z. Xia, J. Rui, J. Gao, H. Yang, M. Zhu, C. D. Wang, Z. Wang, and J. Guo. Finrl-meta: Market environments and benchmarks for data-driven financial reinforcement learning. In Advances in Neural Information Process-ing Systems 35 (NeurIPS 2022) Datasets and Benchmarks Track , volume 35, 2022. URL https://papers.neurips.cc/paper_files/paper/2022/hash/ 0bf54b80686d2c4dc0808c2e98d430f7-Abstract-Datasets_and_Benchmarks.html .[29] Y.-K. Liu, Y.-H. Pan, P.-F. Lu, Y.-C. Tsai, and S. Y.-C. Chen. Quantum-enhanced reinforcement learning with LSTM forecasting signals for optimizing fintech trading decisions. In Proceedings of the IEEE International Conference on Quantum Computing and Engineering (QCE) , pages 235–240, 2025. doi: 10.1109/QCE65121.2025.10325. [30] R. Lokossou, B. S. Girma, O. K. Tonguz, and A. Biyabani. Quantum deep reinforcement learning for humanoid robot navigation task. arXiv preprint arXiv:2509.11388 , 2025. [31] C. Lyle, Z. Zheng, K. Khetarpal, J. Martens, H. van Hasselt, R. Pascanu, and W. Dabney. Normal-ization and effective learning rates in reinforcement learning. In Advances in Neural Information Processing Systems , volume 37, 2024. URL https://papers.nips.cc/paper_files/ paper/2024/hash/c04d37be05ba74419d2d5705972a9d64-Abstract-Conference. html .[32] P. Mair and R. Wilcox. Robust statistical methods in r using the wrs2 package. Behavior research methods , 52(2):464–488, 2020. doi: 10.3758/s13428-019-01246-w. [33] D. Martyniuk, J. Jung, and A. Paschke. Quantum architecture search: A survey. In Proceedings of the IEEE International Conference on Quantum Computing and Engineering (QCE) , pages 1695–1706, 2024. doi: 10.1109/QCE60285.2024.00198. [34] T. Miyato, T. Kataoka, M. Koyama, and Y. Yoshida. Spectral normalization for generative adversarial networks. arXiv preprint arXiv:1802.05957 , 2018. [35] V. Mnih, A. P. Badia, M. Mirza, A. Graves, T. Lillicrap, T. Harley, D. Silver, and K. Kavukcuoglu. Asynchronous methods for deep reinforcement learning. In International conference on machine learning , pages 1928–1937. PMLR, 2016. URL https://proceedings.mlr.press/v48/ mniha16.html .[36] K. Pearson. Liii. on lines and planes of closest fit to systems of points in space. The London, Edinburgh, and Dublin philosophical magazine and journal of science , 2(11):559–572, 1901. doi: 10.1080/14786440109462720. 13 [37] A. Pérez-Salinas, A. Cervera-Lierta, E. Gil-Fuster, and J. I. Latorre. Data re-uploading for a universal quantum classifier. Quantum , 4:226, 2020. doi: 10.22331/q-2020-02-06-226. [38] N. Pippas, E. A. Ludvig, and C. Turkay. The evolution of reinforcement learning in quantitative finance: A survey. ACM Computing Surveys , 57(11):1–51, 2025. doi: 10.1145/3733714. [39] P. Röseler, D. Willsch, and K. Michielsen. How to find expressible and trainable parameterized quantum circuits? arXiv preprint arXiv:2603.14451 , 2026. [40] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. [41] D. Song, A. M. C. Baek, and N. Kim. Forecasting stock market indices using padding-based fourier transform denoising and time series deep learning models. IEEE Access , 9:83786–83796, 2021. doi: 10.1109/ACCESS.2021.3086537. [42] R. Sweke, E. Recio-Armengol, S. Jerbi, E. Gil-Fuster, B. Fuller, J. Eisert, and J. J. Meyer. Potential and limitations of random fourier features for dequantizing quantum machine learning. 
+
+Quantum , 9:1640, 2025. doi: 10.22331/q-2025-02-20-1640. [43] T.-T. Tran, T. N. Canh, N. Y. Chong, and X. HoangVan. Hybrid td3: Overestimation bias analysis and stable policy optimization for hybrid action space. arXiv preprint arXiv:2603.01302 , 2026. [44] W. Xu, D. Evans, and Y. Qi. Feature squeezing: Detecting adversarial examples in deep neural networks. In Network and Distributed System Security Symposium (NDSS) , 2018. doi: 10.14722/ndss.2018.23198. URL https://www.ndss-symposium.org/wp-content/ uploads/2018/02/ndss2018_03A-4_Xu_paper.pdf .[45] Y. Xu and V. Aggarwal. Accelerating quantum reinforcement learning with a quantum natural policy gradient based approach. In International Conference on Machine Learning , 2025. URL 
+
+https://proceedings.mlr.press/v267/xu25a.html .[46] L. Zhang and L. Hua. Major issues in high-frequency financial data analysis: A survey of solutions. Mathematics , 13(3):347, 2025. doi: 10.3390/math13030347. [47] Z. Zhang, S. Zohren, and S. Roberts. Deep reinforcement learning for trading. The Journal of Financial Data Science , 2(2):25–40, 2020. doi: 10.3905/jfds.2020.1.030. 
+
+## A Representation Quality Evaluation 
+
+To verify whether PQC fulfills its core design goal of noise suppression and signal structure preserva-tion, we analyze the variance and VAF of the learned representations. Under identical experimental settings, we extract representations from the same raw input state and report two groups of compar-isons: representative spectral/filtering examples, including FPQC-SAC, RFF/Fourier features [ 42 ], Wavelet filtering [ 3], and Kalman filtering [ 1 ], and the classical bottleneck controls used in Table 1. Total Latent Variance quantifies the overall intensity of spatial noise perturbations in the representa-tion manifold, while VAF@1 (Variance Accounted For by the 1st PC) assesses structural coherence and the representation’s capability to linearly preserve predictable environmental structure, with higher values implying fewer unstructured noise components. Table 5: Performance and available Q-value training diagnostics for FPQC-SAC and representative signal-processing encoders.                                
+
+> Encoder CR% ↑AR% ↑SR ↑Sortino ↑Calmar ↑Q-gap ↓TD-var ↓C-loss-var ↓
+> FPQC-SAC 195.32 ±26.94 50.05 ±5.15 1.71 ±0.15 2.13 ±0.19 1.75 ±0.20 4.55 ×10 −4±4.61 ×10 −20.535 ±0.69 8.19 ±14
+> RFF 162.23 ±37.25 43.30 ±7.76 1.53 ±0.22 1.94 ±0.25 1.61 ±0.29 5.79 ×10 −4±5.10 ×10 −20.552 ±0.67 8.08 ±12 Wavelet 138.44 ±36.39 38.23 ±8.00 1.49 ±0.17 1.76 ±0.27 1.32 ±0.35 -0.252 ±0.37 7.81 ×10 2±1.74 ×10 32.61 ×10 3±4.96 ×10 3
+> Kalman 130.44 ±23.78 36.66 ±5.26 1.50 ±0.15 1.72 ±0.23 1.23 ±0.26 -0.170 ±0.05 10.00 ±7.62 61.09 ±95.59
+
+14 Figure 2: Representation quality for FPQC-SAC, RFF/Fourier features, Wavelet filtering, and Kalman filtering. Lower Total Latent Variance and higher VAF@1 indicate stronger noise suppression and structural coherence. 
+
+Figure 3: Representation quality for the classical bottleneck controls in Table 1. Lower Total Latent Variance and higher VAF@1 indicate stronger noise suppression and structural coherence. 
+
+## B Reproducibility Details 
+
+B.1 Markov Decision Process (MDP) and Environment Settings 
+
+The trading environment is formulated as a continuous-control Markov Decision Process (MDP). The portfolio consists of 6 highly volatile U.S. assets: AAPL, AMZN, GOOGL, MSFT, QQQ, and SPY. In implementation, this look-back reward adjustment helps the agent consider short-term risk-adjusted performance in addition to immediate asset gains. 
+
+B.2 Quantum Circuit Architecture and Network Topology 
+
+In our FPQC-SAC implementation, the quantum component acts specifically as a Quantum Feature Extractor that processes the raw market state before passing the representations to the classical Actor and Critic heads. The topology follows a bottleneck structure: 1. Pre-Net (Classical): A linear projection with ReLU activation maps the 64-dimensional state to 7 dimensions ( 64 → 7). 2. PQC Layer (Quantum): The 7-dimensional vector is encoded into 7 qubits via Angle Embedding ( Rx rotations). This is followed by 2 layers of BasicEntanglerLayers 
+
+15 Table 6: State space, action space, and environment configuration. 
+
+Parameter Value / Description State Space Dimension 64 
+
+State Composition [1 Cash , 6 Holdings , 6 Prices , 8×6 Tech Indicators , 3 Additional Market Features ]
+
+Technical Indicators (8) MACD, BOLL_UB, BOLL_LB, RSI_30, CCI_30, DX_30, SMA_30, SMA_60 State Normalization None (Raw values are used, with internal cash scaling) 
+
+Action Space Continuous Box space, Dimension 6
+
+Action Meaning Values mapped to [−1, 1] . Positive = Buy, Negative = Sell Maximum Shares ( hmax ) 100 shares per transaction 
+
+Trading Parameters 
+
+Initial Account Balance $100,000 Transaction Fee Rate 0.01% ( 0.0001 ) for both buy and sell orders Reward Function Stepwise change in portfolio value plus a 10-day look-back Sharpe reward: 
+
+Rt = rstep  
+
+> t
+
++ rlookback  
+
+> t
+
+,rstep  
+
+> t
+
+= At − At−1,rlookback  
+
+> t
+
+= ¯∆At−10: t
+
+pVar(∆ At−10: t) + ϵ ,
+
+¯∆At−10: t = 110 
+
+> t
+
+X 
+
+> τ=t−9
+
+∆Aτ , ∆Aτ = Aτ − Aτ −1.
+
+(6) where ϵ > 0 is a small constant to avoid division by zero. Reward Scaling 1 × 10 −4
+
+(parameterized rotations connected by circular CNOTs). The output is obtained via Pauli-Z expectation values ( ⟨Z⟩) across all 7 qubits. 3. Post-Net (Classical): A linear projection with ReLU activation expands the 7-dimensional quantum measurement back to a 64-dimensional feature vector ( 7 → 64 ). 4. Actor-Critic Heads: Standard SB3 MLP networks (two layers of 256 units: [256 , 256] )process the 64-dimensional feature vector to output policies and Q-values Table 7: Quantum Parameterized Quantum Circuit (PQC) settings. 
+
+Parameter Configuration 
+
+Number of Qubits ( N ) 7Encoding Strategy qml.AngleEmbedding 
+
+Variational Layers 2 layers of qml.BasicEntanglerLayers 
+
+Observable Expectation value of Pauli-Z ( ⟨Z⟩) per qubit Simulator Backend default.qubit (PennyLane) Differentiation Method Exact backpropagation ( diff_method="backprop" )Total PQC Trainable Weights 14 parameters (Shape: 2 × 7)
+
+B.3 Training Hyperparameters 
+
+The models are trained over the period from 2013-01-02 to 2018-12-31 and strictly evaluated out-of-sample from 2019-01-02 to 2021-08-31 (∼672 trading days). Each agent is trained for 25,000 environment steps. All DRL experiments are executed across 20 distinct, fixed random seeds to ensure statistical reliability. 16 Table 8: Algorithmic hyperparameters for standard and quantum DRL baselines.              
+
+> Hyperparameter Value
+> Total Environment Steps 25,000 Learning Rate 3×10 −4
+> Batch Size (SAC, DDPG, TD3) 64 Replay Buffer Size 200,000 Discount Factor ( γ)0.99 Target Smoothing Coefficient ( τ)0.005 Entropy Coefficient (SAC/FPQC-SAC) “auto” (dynamically adjusted to target entropy −6)Optimizer Adam
+
+## C Extended Theoretical Analysis and Proofs 
+
+C.1 Proof of Proposition 1: Expectation Attenuation 
+
+Proof. Given the effective latent SDE dZ s = μZ ds + σZ dW s (from Lemma C.3) over s ∈ [t, t + ∆ t].The quantum angle encoding maps this state into complex periodic components. Let vω (Zs) = exp( iω ⊤Zs). Applying Itô’s formula to the complex-valued process vω :
+
+dv ω (Zs) = vω (Zs)
+
+
+
+iω ⊤μZ − 12 ω⊤ΣZ ω
+
+
+
+ds + vω (Zs)iω ⊤σZ dW s (7) Taking the expectation E[·] over local Brownian paths, the Itô integral with respect to Brownian motion is a martingale and evaluates to zero. Solving the deterministic ordinary differential equation over ∆t yields: 
+
+E[eiω ⊤Zt+∆ t ] = eiω ⊤Zt exp i
+
+Z t+∆ tt
+
+ω⊤μZ ds 
+
+!
+
+exp − 12
+
+Z t+∆ tt
+
+ω⊤JhΣX J⊤ 
+
+> h
+
+ωds 
+
+!
+
+(8) This establishes that despite the unconstrained affine mapping Jh, the complex phase mathematically enforces an expectation-level exponential attenuation of the diffusion variance. This section rigorously formalizes the theoretical framework established in Section 3, providing end-to-end mathematical proofs connecting the financial Itô diffusion, the entropy trap, and the quantum representation bounds. 
+
+C.2 Formalizing the Financial Entropy Trap 
+
+When Q-values are perturbed by environmental noise, the soft value update operator of SAC, 
+
+α log R exp( Q/α )da , systematically converts zero-mean noise into a positive bias. Inspired by the analysis of the log-sum-exp overestimation tendency by Kuznetsov et al. [ 24 ], we contextualize this mechanism within the bootstrapped financial low-SNR setting, identifying it as the structural root of SAC’s systematic failure in such environments. Let the true action-value be Q⋆(s, a ). Due to environmental diffusion, the estimated Q-value contains a zero-mean perturbation: ˜Q(s, a ) = Q⋆(s, a )+ ϵ(s, a ), with Eϵ[ϵ(s, a )] = 0 . The soft value estimate over the continuous action space A is given by V (s) = α log R 
+
+> A
+
+exp( ˜Q(s, a )/α )da .Because the continuous log R exp( ·) operator is strictly convex, applying Jensen’s inequality with respect to the noise distribution yields a strict positive bias: 
+
+Eϵ[V (s)] = Eϵ
+
+
+
+α log 
+
+Z
+
+> A
+
+exp 
+
+ Q⋆(s, a ) + ϵ(s, a )
+
+α
+
+
+
+da 
+
+
+
+> α log 
+
+Z
+
+> A
+
+exp 
+
+ Eϵ[Q⋆(s, a ) + ϵ(s, a )] 
+
+α
+
+
+
+da 
+
+= α log 
+
+Z
+
+> A
+
+exp 
+
+ Q⋆(s, a )
+
+α
+
+
+
+da ≡ V ⋆(s).
+
+(9) 17 Furthermore, assuming the environmental noise ϵ(s, a ) is locally sub-Gaussian with a variance proxy 
+
+σ2 
+
+> ϵ
+
+, the moment-generating function restricts this overestimation bias to a deterministic upper bound : 
+
+0 < Eϵ[V (s)] − V ⋆(s) ≤ σ2
+
+> ϵ
+
+2α . (10) 
+
+Mathematical Implication: These inequalities establish a harsh reality: even if the noise is strictly zero-mean, the expected value estimation is deterministically skewed upward. Within SAC’s boot-strapping iterations, this positive bias is repeatedly injected into the target network and continuously amplified, forming the mathematical genesis of the Financial Entropy Trap. The upper bound 
+
+O(σ2 
+
+> ϵ
+
+/α ) explicitly dictates that the larger the market diffusion variance σ2 
+
+> ϵ
+
+, the more severe the overestimation; furthermore, as the entropy temperature α decays during training, this explosive bias is further exacerbated. 
+
+Financial Intuition: The consequence of this mathematical mechanism can be intuitively understood through a notorious market phenomenon. In a highly uncertain environment, asset price fluctuations inherently lack clear directional signals. However, some traders may misinterpret a random upward noise spike as a genuine trend signal and choose to follow. These follow-up actions artificially drive the price higher, attracting even more participants and forming a self-reinforcing positive feedback loop. Yet, when the price inevitably reverts to its fundamentals, the accumulated directional positions reverse almost synchronously. The resulting stampede causes a drawdown far exceeding the initial artificial gains. Late participants not only fail to realize their paper profits but suffer severe real losses. This market dynamic perfectly mirrors the catastrophic policy degradation of an RL agent falling into the Financial Entropy Trap. 
+
+C.3 Pre-Net Jacobian and Local Effective Itô Diffusion 
+
+We use a standard local reduction to connect the raw Itô state process to the latent diffusion analyzed in Appendix C.1. Prior work in continuous-time finance has established the use of neural-network Jacobians and automatic differentiation together with Itô’s lemma for high-dimensional stochastic dynamic systems [ 12 ]. Separately, SDE-learning literature has observed that when the transformation network is piecewise linear, such as ReLU networks, the second-order Itô correction vanishes almost everywhere, reducing the transformed dynamics to Jacobian-vector products [8]. Concretely, let the raw state follow 
+
+dX t = μX dt + σX dW t, (11) and let the preprocessed latent state be 
+
+Zt = hpre (Xt). (12) Since the Pre-Net uses piecewise-linear activations such as ReLU, it is locally affine within each fixed activation region. Away from nonsmooth activation boundaries, the diffusion component is therefore locally propagated through the Pre-Net Jacobian: 
+
+dZ t ≈ Jh(Xt)μX dt + Jh(Xt)σX dW t, (13) where Jh(Xt) denotes the local Jacobian of hpre at Xt. Consequently, the local instantaneous covariance of the latent process is 
+
+ΣZ (Xt) =  Jh(Xt)σX
+
+  Jh(Xt)σX
+
+⊤ = Jh(Xt)Σ X Jh(Xt)⊤. (14) This step is a standard local piecewise-linear approximation used to identify the effective diffusion covariance entering the PQC encoder. A fully exact treatment of nonsmooth activation boundaries would require generalized Itô–Tanaka arguments and may introduce local-time correction terms at kink boundaries. Since our subsequent analysis only requires the local covariance propagated into the latent space, we use ΣZ = JhΣX J⊤ 
+
+> h
+
+as the effective latent diffusion covariance. 
+
+C.4 The Role of Entanglement: Cross-Dimensional Feature Crossing and Constructive Interference of Consensus Signals 
+
+A Parameterized Quantum Circuit (PQC) without CNOT gates restricts Pauli-Z measurements strictly to separable single-coordinate Fourier modes. In financial markets, this is equivalent to relying on a 18 single technical indicator, which is often noisy and prone to failure. In contrast, CNOT entanglement forces local single-qubit states to bind into multi-body Pauli strings, thereby generating inseparable cross-coordinate feature interactions. This entangled structure acts as an efficient high-dimensional feature crossing mechanism, enabling the model to evaluate joint signals across assets or indicators: only when multiple weak signals form a consistent structural consensus within the entangled state are they amplified through measurement (constructive interference); meanwhile, isolated, uncorrelated random noise cancels out in the complex phase superposition (destructive interference). To illustrate this mechanism structurally, consider that in a circuit without entanglement, the unitary evolution factorizes completely across qubits: 
+
+U (Z) = 
+
+> n
+
+O
+
+> j=1
+
+Uj (Zj ). (15) For a local Pauli-Z measurement on qubit j, the expectation takes the form 
+
+fj (Z) = ⟨0|Uj (Zj )†ZU j (Zj )|0⟩, (16) and therefore depends only on the single latent coordinate Zj . Under angle encoding, its Fourier spectrum is confined to single-coordinate modes such as ω = ±ej . From a quantitative trading perspective, this corresponds to the model making decisions based solely on a single isolated indicator (such as an individual MACD or RSI), which frequently fails in low-SNR markets. By Proposition 1, these modes undergo expectation attenuation governed by: 
+
+exp − 12
+
+Z t+∆ tt
+
+e⊤ 
+
+> j
+
+ΣZ ej ds 
+
+!
+
+. (17) This implies that without entanglement, phase attenuation occurs strictly independently along in-dividual coordinate axes, and traditional linear feature extraction struggles to capture high-order correlations. Now consider a CNOT gate with control qubit j and target qubit k. In the Heisenberg picture: 
+
+CNOT †
+
+> j→k
+
+(I ⊗ Zk)CNOT j→k = Zj ⊗ Zk. (18) Thus, a local measurement after the entangling layer can correspond to a two-body Pauli string before the entangler. Its expectation contains products of trigonometric phase terms, for example: 
+
+cos( Zj ) cos( Zk) = 12 [cos( Zj + Zk) + cos( Zj − Zk)] . (19) Through this mechanism, entanglement naturally introduces joint Fourier modes: 
+
+ω = ej + ek, ω = ej − ek. (20) These modes also inherit the attenuation law in Proposition 1: 
+
+exp − 12
+
+Z t+∆ tt
+
+(ej ± ek)⊤ΣZ (ej ± ek)ds 
+
+!
+
+. (21) Expanding the quadratic form gives: 
+
+(ej ± ek)⊤ΣZ (ej ± ek) = (Σ Z )jj + (Σ Z )kk ± 2(Σ Z )jk . (22) This demonstrates that entanglement does not merely blindly add more non-linear features. It fundamentally provides an efficient cross-dimensional feature crossing mechanism. When processing financial features, this mechanism exhibits distinctly different filtering properties for "noise" versus "signal": 
+
+1. Destructive Interference of Isolated Noise (Analogous to Denoising): For independent, isotropic noise lacking intrinsic correlation (where ΣZ = σ2I), the joint mode satisfies: 
+
+(ej ± ek)⊤ΣZ (ej ± ek) = 2 σ2, (23) 19 which is larger than the single-coordinate variance σ2. This indicates that unstructured random noise lacking correlation will induce more violent phase fluctuations within these entangled cross modes, thereby accelerating attenuation and canceling each other out in the final expectation projection. 
+
+2. Constructive Interference of Structural Consensus (Analogous to Signal Amplification): 
+
+Conversely, effective trading signals are often hidden within the joint distributions or non-linear combinations of multiple indicators (e.g., price breakouts accompanied by specific volume and volatility contractions). When there is a weak drift structure shared across adjacent latent coordinates (i.e., a genuine market consensus exists among indicators), it induces coherent phase translations in the related qubits. Trainable rotation gates can dynamically adjust the measurement basis so that these structural consensus signals (correlated phase translations) are precisely projected onto selected Pauli readout directions. Along these directions, the phase contributions of multiple weak signals undergo constructive accumulation (constructive interference) and are effectively amplified. In conclusion, entanglement does not clean up noise in a perfect mathematical sense. Instead, it forces independent indicators to coalesce into multi-body states. This setup not only uses the diffusion attenuation mechanism from Proposition 1 to keep uncorrelated noise in check, but also adds the ability to capture—and amplify—the structural consensus embedded in financial signals. 
+
+## D Weak-Signal-Preserving Property 
+
+Lemma 1 (Representation Output SNR Lower Bound) . Consider an environment transition X →
+
+X + δ + ξ, where δ is a weak deterministic drift signal and ξ is high-variance zero-mean noise. Let 
+
+Jeff  
+
+> ϕ
+
+(X) = ∇X Eξ [ϕ(X + ξ)] (24) 
+
+denote the effective local Jacobian of the expectation-level PQC mapping. If the trained circuit is non-singular along the signal direction such that 
+
+σmin 
+
+
+
+Jeff  
+
+> ϕspan( δ)
+
+
+
+≥ c > 0, (25) 
+
+then for any fixed nonzero drift δ, the output signal-to-noise ratio is lower-bounded by 
+
+SNR out ≥ c2∥δ∥22
+
+k . (26) 
+
+Proof. By a first-order Taylor expansion of the expected representation mapping, the preserved signal magnitude satisfies 
+
+∥∆E[ϕ]∥22 = ∥E[ϕ(X + δ + ξ)] − E[ϕ(X + ξ)] ∥22 ≈ ∥ Jeff  
+
+> ϕ
+
+(X)δ∥22 ≥ c2∥δ∥22. (27) The output noise power is measured by the trace of the covariance across the representation dimen-sions: 
+
+Tr(Cov[ ϕ(X + ξ)]) = 
+
+> k
+
+X
+
+> j=1
+
+Var( ϕj (X + ξ)) . (28) By the bounded Pauli readout established in Proposition 2, each PQC feature dimension satisfies 
+
+ϕj (X + ξ) ∈ [−1, 1] . Therefore, by Popoviciu’s inequality, 
+
+Var( ϕj (X + ξ)) ≤ (1 − (−1)) 2
+
+4 = 1 . (29) Consequently, 
+
+Tr(Cov[ ϕ(X + ξ)]) ≤ k. (30) The output SNR therefore satisfies 
+
+SNR out = ∥∆E[ϕ]∥22
+
+Tr(Cov[ ϕ]) ≥ c2∥δ∥22
+
+k . (31) This shows that the PQC bottleneck can preserve a nonzero deterministic signal component along learned non-singular directions, while imposing a dimension-dependent ceiling on the output noise power. 20 E Extended Out-of-Sample Extrapolation (2019–2024) 
+
+To further evaluate the long-term robustness and generalization capability of the learned policies, we conduct an extended out-of-sample extrapolation experiment. In this setting, the DRL agents, which were trained solely on data up to 2018-12-31, are deployed without any retraining over an extended testing horizon from 2019-01-02 to 2023-12-31. This prolonged period introduces entirely unseen macroeconomic regimes, most notably the sustained market downturn of 2022 and the subsequent recovery phase in 2023. 
+
+Figure 4: Extended out-of-sample median account value trajectories from 2019 to 2023. The shaded area represents the further extrapolation period beyond the original experiment. FPQC-SAC (red) maintains its relative rank and overall trajectory without structural breakdown despite the lack of retraining over the extended horizon. Figure 4 illustrates the median account value trajectories across this extended horizon. As expected, the systemic macroeconomic shifts in 2022 induce drawdowns across all evaluated models. However, FPQC-SAC consistently maintains its relative positioning above the DRL baselines. The policy does not exhibit catastrophic forgetting or structural breakdown over the prolonged out-of-sample period, remaining resilient even when the market environment deviates from the 2013–2018 training distribution. 
+
+## F Statistical Significance Analysis 
+
+To rigorously evaluate whether the observed performance improvements are statistically reliable, we conduct Welch’s t-tests comparing FPQC-SAC against SAC across 20 independent random seeds. The results are detailed in the following table: 
+
+Strong statistical significance in volatile regime (Main Experiment). On the Mainstream Tech & Market-Index Portfolio (QQQ, SPY, MSFT, GOOGL, AMZN, AAPL), which represents a technology-heavy and high-volatility regime, FPQC-SAC achieves highly statistically significant improvements across all evaluation metrics. All p-values are well below 10 −6, corresponding to confidence levels exceeding 99.99% (***). This provides strong evidence that the observed performance gains are remarkably robust and not attributable to random variation, validating the effectiveness of FPQC-SAC in low-SNR environments with strong stochastic perturbations. 
+
+Consistent significance in stable regime (Sub-experiment 1). In the Defensive Blue-chip Portfolio (Sub-experiment 1), FPQC-SAC also successfully reaches statistical significance across all metrics. 21 Table 9: Welch’s t-test significance analysis comparing FPQC-SAC against SAC.                                                                       
+
+> Dataset Metric Welch’s p-value Significance Level Statistical Confidence
+> Mainstream Tech Cumulative Return 4.14 ×10 −10 *** >99.99% & Market-Index Annual Return 1.11 ×10 −10 *** >99.99% Sharpe Ratio 3.74 ×10 −7*** >99.99% Sortino Ratio 3.87 ×10 −9*** >99.99% Calmar Ratio 2.96 ×10 −9*** >99.99% Defensive Blue-chip Cumulative Return 1.87 ×10 −2*>98.13% (Sub-experiment 1) Annual Return 2.06 ×10 −2*>97.94% Sharpe Ratio 4.90 ×10 −2*>95.10% Sortino Ratio 2.83 ×10 −2*>97.17% Calmar Ratio 8.72 ×10 −3** >99.13% High-Volatility Growth Cumulative Return 4.08 ×10 −2*>95.92% Portfolio (Sub-experiment 2) Annual Return 3.52 ×10 −2*>96.48% Sharpe Ratio 4.48 ×10 −2*>95.52% Sortino Ratio 3.63 ×10 −2*>96.37% Calmar Ratio 3.55 ×10 −2*>96.45%
+
+The Calmar Ratio shows strong significance ( p < 0.01 ), while the Cumulative Return, Annual Return, Sharpe Ratio, and Sortino Ratio all achieve conventional significance thresholds ( p < 0.05 ). This is a noteworthy achievement, as stable blue-chip environments typically compress the performance margin between competing methods. 
+
+Resilience in extreme volatility (Sub-experiment 2). In the High-Volatility Growth Portfolio (Sub-experiment 2), characterized by extreme stochastic noise that typically destabilizes traditional continuous control architectures, FPQC-SAC maintains statistical significance across all evaluation metrics ( p < 0.05 ). This confirms that the PQC bottleneck successfully preserves stability and performance even when market variance is severely elevated. 
+
+Interpretation and Implications. These findings highlight FPQC-SAC’s universal robustness across diverse market conditions. In stable, low-variance markets where algorithmic edges are notoriously difficult to prove against static strategies, FPQC-SAC delivers systematically reliable gains. Conversely, in highly volatile regimes where dynamic decision-making is essential but prone to catastrophic variance amplification, the model effectively anchors policy updates. Ultimately, this significance analysis confirms that FPQC-SAC provides a substantial, directionally consistent, and statistically reliable advantage regardless of the underlying market regime. 
+
+## G Evaluation Metrics 
+
+To comprehensively assess the trading performance and risk management capabilities of the learned policies, we employ five standard financial evaluation metrics. Before defining the metrics, we first formally define the portfolio net return. Let Vt denote the total portfolio value at time step t. At each step, the agent executes trading actions that incur a transaction fee rate of c = 0 .01% (0.0001 ) for both buying and selling. The net daily return Rt at step t naturally incorporates this transaction cost and is given by: 
+
+Rt = Vt − Vt−1
+
+Vt−1
+
+(32) where Vt is the net portfolio value after deducting the transaction fees associated with the generated action at. Let T be the total number of trading days in the out-of-sample period, and Rf be the daily risk-free return rate (set to zero in our experiments for simplicity). The metrics are defined as follows: 
+
+1. Cumulative Return (CR%) Cumulative Return measures the overall percentage increase of the portfolio value from the beginning to the end of the trading period. CR = VT − V0
+
+V0
+
+× 100% (33) 22 2. Annualized Return (AR%) Annualized Return represents the geometric average amount of money earned by the investment each year over a given time period. Assuming 252 trading days in a year, it is calculated as: AR =
+
+
+
+(1 + CR ) 252  
+
+> T
+
+− 1
+
+
+
+× 100% (34) 
+
+3. Sharpe Ratio (SR) The Sharpe Ratio evaluates the risk-adjusted return of the portfolio by penalizing excessive volatility. It is the ratio of the annualized expected excess return to the annualized standard deviation of returns: SR =
+
+√252 · E[Rt − Rf ]
+
+σ(Rt) (35) where E[Rt − Rf ] is the mean of the daily excess returns, and σ(Rt) is the standard deviation of the daily returns. 
+
+4. Sortino Ratio (Sortino) The Sortino Ratio is a variation of the Sharpe ratio that differentiates harmful volatility from total overall volatility by using the asset’s downside deviation. It only penalizes negative returns: Sortino =
+
+√252 · E[Rt − Rf ]
+
+σd
+
+(36) where σd = pE[min(0 , R t − Rf )2] is the target downside deviation. 
+
+5. Calmar Ratio (Calmar) The Calmar Ratio measures the annualized return relative to the Maximum Drawdown (MDD), serving as an indicator of return relative to tail-end downside risk. The MDD represents the largest peak-to-trough drop in the portfolio value: MDD = max   
+
+> τ∈(0 ,T )
+
+ max t∈(0 ,τ ) Vt − Vτ
+
+max t∈(0 ,τ ) Vt
+
+
+
+(37) Calmar = AR MDD (38) 
+
+## H Limitations and Future Work 
+
+While FPQC-SAC demonstrates substantial performance leaps in low-SNR financial environments, we outline the theoretical and computational boundaries of the current framework, which naturally motivate our future research trajectory. 
+
+Theoretical Boundaries and Degenerate Market Regimes. The noise-attenuation mechanisms of FPQC-SAC are fundamentally anchored in the assumption that market dynamics exhibit Itô-diffusion characteristics (as defined in Assumption 1). Specifically, it excels at separating high-variance Brownian perturbations from weak but existing deterministic drift (predictive signals). Consequently, the efficacy of this denoising paradigm may be intrinsically bounded in fully degenerate market regimes—such as assets driven purely by macroscopic behavioral sentiment, meme-stock frenzies, or zero-drift microstructure noise. In such scenarios, the lack of an underlying structural signal renders any signal-preserving operation mathematically less meaningful, as the market itself behaves as pure noise. We view this not as an algorithmic deficiency, but rather as a rigorous reflection of the model’s theoretical specificity: FPQC-SAC is designed to extract weak signals where they exist, rather than hallucinate signals where there are none. 
+
+Computational Footprint and Scalability. In this study, our empirical validation focuses on highly representative, compact asset portfolios. This design choice is partially motivated by the inherent physical constraints of classical hardware: simulating the entanglement and unitary evolution of high-dimensional quantum states entails an exponentially growing computational footprint. Consequently, extending the current classical-simulation-based FPQC-SAC to massively scaled combinatorial port-folios (e.g., thousands of concurrent assets) presents practical computational bottlenecks. However, our strategic use of the PQC as a compact bottleneck elegantly turns this limitation into an advantage, enabling efficient deployment on current classical GPUs without compromising the architectural integrity of the quantum representation. 23 Future Work: Transitioning to Physical Quantum Hardware. The computational bottleneck of simulating quantum mechanics on classical machines is precisely what quantum hardware is designed to resolve. As an exciting and natural progression, our immediate future work aims to deploy the FPQC-SAC architecture onto real-world physical Quantum Processing Units (QPUs). By transitioning from classical simulators to actual quantum hardware, we anticipate bypassing the exponential simulation overhead. This will allow us to scale the qubit register to accommodate massive-scale portfolio management tasks, fully unlocking the intrinsic parallel processing power and natural entanglement dynamics of genuine quantum systems in real-time financial trading. 
+
+## I Broader Impact 
+
+This paper presents work whose goal is to advance the intersection of quantitative finance and ar-tificial intelligence. To ensure reproducibility, we have open-sourced the official implementation at https://github.com/ZeyuLIU-UST/FPQC-SAC-main . While our primary focus is on algo-rithmic stability and methodological improvements in reinforcement learning, we acknowledge that deploying automated trading systems in real-world financial markets carries inherent economic implications and market risks, which necessitate careful risk management in practical applications. 24
